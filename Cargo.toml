@@ -1,0 +1,18 @@
+[package]
+name = "rpki"
+version = "0.1.0"
+authors = [
+    "Tim Bruijnzeels <tim@nlnetlabs.nl>",
+    "Martin Hoffmann <martin@nlnetlabs.nl>"
+]
+
+[dependencies]
+base64          = "^0.9"
+ber             = { git="https://github.com/NLnetLabs/ber-rs.git" }
+bytes           = "^0.4"
+chrono          = "^0.4"
+failure         = "^0.1"
+log             = "^0.4"
+ring            = "^0.12"
+untrusted       = "^0.5"
+
