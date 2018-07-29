@@ -35,15 +35,13 @@ impl Roa {
     pub fn process<F>(
         self,
         issuer: &ResourceCert,
-        origins: &mut RouteOrigins,
         check_crl: F,
-    ) -> Result<(), ValidationError>
+    ) -> Result<RouteOriginAttestation, ValidationError>
     where F: FnOnce(&Cert) -> Result<(), ValidationError> {
         let cert = self.signed.validate(issuer)?;
         self.content.validate(&cert)?;
         check_crl(cert.as_ref())?;
-        origins.push(self.content);
-        Ok(())
+        Ok(self.content)
     }
 }
 
@@ -209,7 +207,7 @@ impl<'a> Iterator for RoaIpAddressIter<'a> {
 
 //------------ RoaIpAddress --------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct RoaIpAddress {
     address: u128,
     address_length: u8,
@@ -270,7 +268,7 @@ impl RoaIpAddress {
 
 //------------ FriendlyRoaIpAddress ------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct FriendlyRoaIpAddress {
     addr: RoaIpAddress,
     v4: bool
@@ -310,40 +308,6 @@ impl FriendlyRoaIpAddress {
 
     pub fn max_length(&self) -> u8 {
         self.addr.max_length.unwrap_or(self.addr.address_length)
-    }
-}
-
-
-//------------ RouteOrigins --------------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct RouteOrigins {
-    origins: Vec<RouteOriginAttestation>
-}
-
-impl RouteOrigins {
-    pub fn new() -> Self {
-        RouteOrigins { origins: Vec::new() }
-    }
-
-    pub fn push(&mut self, attestation: RouteOriginAttestation) {
-        self.origins.push(attestation)
-    }
-
-    pub fn merge(&mut self, mut other: RouteOrigins) {
-        self.origins.append(&mut other.origins)
-    }
-
-    pub fn len(&self) -> usize {
-        self.origins.len()
-    }
-
-    pub fn drain(self) -> impl Iterator<Item=RouteOriginAttestation> {
-        self.origins.into_iter()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item=&RouteOriginAttestation> {
-        self.origins.iter()
     }
 }
 

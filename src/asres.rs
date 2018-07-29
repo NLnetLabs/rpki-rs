@@ -322,7 +322,7 @@ impl AsBlock {
 //------------ AsId ----------------------------------------------------------
 
 /// An AS number.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct AsId(u32);
 
 impl AsId {
