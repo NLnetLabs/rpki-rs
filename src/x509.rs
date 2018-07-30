@@ -5,6 +5,7 @@ use std::str::FromStr;
 use bytes::Bytes;
 use chrono::{DateTime, LocalResult, TimeZone, Utc};
 use super::ber::{BitString, Constructed, Error, Source, Tag};
+use super::time;
 
 
 //------------ Functions -----------------------------------------------------
@@ -210,7 +211,7 @@ impl Time {
     }
 
     pub fn validate_not_before(&self) -> Result<(), ValidationError> {
-        if Utc::now() < self.0 {
+        if time::now() < self.0 {
             Err(ValidationError)
         }
         else {
@@ -219,7 +220,7 @@ impl Time {
     }
 
     pub fn validate_not_after(&self) -> Result<(), ValidationError> {
-        if Utc::now() > self.0 {
+        if time::now() > self.0 {
             Err(ValidationError)
         }
         else {
