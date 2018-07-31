@@ -43,38 +43,32 @@ impl PublisherRequest {
     pub fn open<P: AsRef<Path>>(path: P)
         -> Result<Self, PublisherRequestError> {
 
-        let mut r = XmlReader::open(path)?;
-        r.start_document()?;
-
-        let att = r.expect_element("publisher_request")?;
-
-        match att.get_opt("version") {
-            Some(version) => {
-                if version != "1".to_string() {
+        XmlReader::open(path, |r| {
+            r.take_named_element("publisher_request", |a, r| {
+                if let Ok("1") = a.get_req("version") {
+                   // Ok, proceed
+                } else {
                     return Err(PublisherRequestError::InvalidVersion)
                 }
-            },
-            _ => return Err(PublisherRequestError::InvalidVersion)
-        }
 
-        let tag = att.get_opt("tag");
-        let publisher_handle = att.get_req("publisher_handle")?;
+                let tag = a.get_opt("tag");
+                let ph = a.get_req("publisher_handle")?;
 
-        r.expect_element("publisher_bpki_ta")?;
+                let cert = r.take_named_element("publisher_bpki_ta", |_,r| {
+                    r.take_characters()
+                })?;
 
-        let base64_cert = r.expect_characters()?;
-        let encoded_cert = base64::decode_config(&base64_cert, base64::MIME)?;
+                let cert = base64::decode_config(&cert, base64::MIME)?;
+                let cert = IdCert::decode(Bytes::from(cert))?.validate_ta()?;
 
-        r.expect_close("publisher_bpki_ta")?;
-        r.expect_close("publisher_request")?;
-        r.end_document()?;
-
-        let id_cert = IdCert::decode(Bytes::from(encoded_cert))?;
-        let id_cert = id_cert.validate_ta()?;
-
-        Ok(PublisherRequest{tag, publisher_handle, id_cert})
+                Ok(PublisherRequest{
+                    tag: tag.map(Into::into),
+                    publisher_handle: ph.into(),
+                    id_cert: cert
+                })
+            })
+        })
     }
-
 }
 
 
