@@ -513,19 +513,14 @@ mod tests {
     use time;
     use chrono::{TimeZone, Utc};
 
-
     #[test]
     fn test_parse_id_publisher_ta_cert() {
+        let d = Utc.ymd(2012, 1, 1).and_hms(0, 0, 0);
+        time::with_now(d, || {
         let data = fs::read("test/oob/id-publisher-ta.cer").unwrap();
         let cert = IdCert::decode(Bytes::from(data)).unwrap();
-
-        let d = Utc.ymd(2012, 1, 1).and_hms(0, 0, 0);
-
-        time::with_now(d, || {
             assert!(cert.validate_ta().is_ok());
         });
-
-
     }
 }
 

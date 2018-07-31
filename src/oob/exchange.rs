@@ -156,7 +156,6 @@ mod tests {
     # [test]
     fn test_parse_publisher_request() {
         let d = Utc.ymd(2012, 1, 1).and_hms(0, 0, 0);
-
         time::with_now(d, || {
             let pr = PublisherRequest::open("test/oob/publisher_request.xml")
                 .unwrap();
