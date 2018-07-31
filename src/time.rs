@@ -29,9 +29,18 @@ pub fn now() -> DateTime<Utc> {
 }
 
 #[cfg(test)]
-pub fn set_offset(seconds: i64) {
+pub fn with_offset<F: FnOnce()>(seconds: i64, op: F) {
     OFFSET.with(|offset| offset.replace(seconds));
+    op();
+    OFFSET.with(|offset| offset.replace(0));
 }
+
+#[cfg(test)]
+#[allow(dead_code)]
+pub fn with_now<F: FnOnce()>(now: DateTime<Utc>, op: F) {
+    with_offset(now.timestamp() - Utc::now().timestamp(), op)
+}
+
 
 #[cfg(test)]
 mod test {
@@ -39,7 +48,8 @@ mod test {
 
     #[test]
     fn offset() {
-        set_offset(-10);
-        assert_eq!(now().timestamp() + 10, Utc::now().timestamp());
+        with_offset(-10, || {
+            assert_eq!(now().timestamp() + 10, Utc::now().timestamp());
+        })
     }
 }
