@@ -8,6 +8,10 @@ use std::io;
 use std::path::Path;
 use base64;
 use base64::DecodeError;
+use ber;
+use bytes::Bytes;
+use x509;
+use super::idcert::IdCert;
 use super::xml::{XmlReader, XmlReaderErr};
 use super::xml::AttributesError;
 
@@ -30,7 +34,7 @@ pub struct PublisherRequest {
 
     /// The encoded Identity Certificate
     /// (for now, will be replaced by a concrete IdCert once it's defined)
-    encoded_cert: Vec<u8>,
+    id_cert: IdCert,
 }
 
 impl PublisherRequest {
@@ -65,7 +69,10 @@ impl PublisherRequest {
         r.expect_close("publisher_request")?;
         r.end_document()?;
 
-        Ok(PublisherRequest{tag, publisher_handle, encoded_cert})
+        let id_cert = IdCert::decode(Bytes::from(encoded_cert))?;
+        let id_cert = id_cert.validate_ta()?;
+
+        Ok(PublisherRequest{tag, publisher_handle, id_cert})
     }
 
 }
@@ -91,7 +98,13 @@ pub enum PublisherRequestError {
     XmlAttributesError(AttributesError),
 
     #[fail(display = "Invalid base64: {}", _0)]
-    Base64Error(DecodeError)
+    Base64Error(DecodeError),
+
+    #[fail(display = "Cannot parse identity certificate: {}", _0)]
+    CannotParseIdCert(ber::Error),
+
+    #[fail(display = "Invalid identity certificate: {}", _0)]
+    InvalidIdCert(x509::ValidationError),
 }
 
 impl From<io::Error> for PublisherRequestError {
@@ -118,6 +131,18 @@ impl From<DecodeError> for PublisherRequestError {
     }
 }
 
+impl From<ber::Error> for PublisherRequestError {
+    fn from(e: ber::Error) -> PublisherRequestError {
+        PublisherRequestError::CannotParseIdCert(e)
+    }
+}
+
+impl From<x509::ValidationError> for PublisherRequestError {
+    fn from(e: x509::ValidationError) -> PublisherRequestError {
+        PublisherRequestError::InvalidIdCert(e)
+    }
+}
+
 
 //------------ Tests ---------------------------------------------------------
 
@@ -125,13 +150,18 @@ impl From<DecodeError> for PublisherRequestError {
 mod tests {
 
     use super::*;
+    use time;
+    use chrono::{TimeZone, Utc};
 
     # [test]
     fn test_parse_publisher_request() {
-        let pr = PublisherRequest::open("test/oob/publisher_request.xml")
-            .unwrap();
+        let d = Utc.ymd(2012, 1, 1).and_hms(0, 0, 0);
 
-        assert_eq!("Bob", pr.publisher_handle);
-        assert_eq!(Some("A0001".to_string()), pr.tag);
+        time::with_now(d, || {
+            let pr = PublisherRequest::open("test/oob/publisher_request.xml")
+                .unwrap();
+            assert_eq!("Bob", pr.publisher_handle);
+            assert_eq!(Some("A0001".to_string()), pr.tag);
+        });
     }
 }

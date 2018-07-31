@@ -1,12 +1,11 @@
 //! Identity Certificates.
 //!
 
-use std::fs;
+
 use ber::{
     BitString, Constructed, Error, Mode, OctetString, Oid, Source, Tag,
     Unsigned
 };
-use bytes::Bytes;
 use ring::digest::{self, Digest};
 use x509::{
     update_once, Name, SignatureAlgorithm, SignedData, Time, ValidationError
@@ -509,19 +508,24 @@ mod oid {
 mod tests {
 
     use super::*;
+    use std::fs;
+    use bytes::Bytes;
+    use time;
+    use chrono::{TimeZone, Utc};
+
 
     #[test]
-    // The certificate does not validate yet, because it expired on
-    // Jun 30 04:07:23 2012 GMT
-    //
-    // Martin will add support for (threadlocal) manipulation of the time
-    // through a proxy, and once that is there we can finish this test.
-    #[ignore]
     fn test_parse_id_publisher_ta_cert() {
         let data = fs::read("test/oob/id-publisher-ta.cer").unwrap();
         let cert = IdCert::decode(Bytes::from(data)).unwrap();
 
-        assert!(cert.validate_ta().is_ok());
+        let d = Utc.ymd(2012, 1, 1).and_hms(0, 0, 0);
+
+        time::with_now(d, || {
+            assert!(cert.validate_ta().is_ok());
+        });
+
+
     }
 }
 
