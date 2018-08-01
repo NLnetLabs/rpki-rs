@@ -104,7 +104,7 @@ impl IdCert {
     /// Returns a reference to the certificate’s public key.
     pub fn public_key(&self) -> &[u8] {
         self.subject_public_key_info
-            .subject_public_key.octet_slice().unwrap()
+            .subject_public_key().octet_slice().unwrap()
     }
 
     /// Returns a reference to the subject key identifier.
@@ -146,7 +146,7 @@ impl IdCert {
         // Verify that this is self signed
         self.signed_data.verify_signature(
             self.subject_public_key_info
-                .subject_public_key.octet_slice().unwrap()
+                .subject_public_key().octet_slice().unwrap()
         )?;
 
         Ok(self)

@@ -547,13 +547,17 @@ impl Validity {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SubjectPublicKeyInfo {
-    pub algorithm: PublicKeyAlgorithm,
-    pub subject_public_key: BitString,
+    algorithm: PublicKeyAlgorithm,
+    subject_public_key: BitString,
 }
 
 impl SubjectPublicKeyInfo {
     pub fn decode<S: Source>(source: S) -> Result<Self, S::Err> {
         Mode::Der.decode(source, Self::take_from)
+    }
+
+    pub fn subject_public_key(&self) -> &BitString {
+        &self.subject_public_key
     }
  
     pub fn take_from<S: Source>(
