@@ -5,7 +5,6 @@
 //! parent CA and/or RPKI Publication Servers.
 
 use std::io;
-use std::path::Path;
 use base64;
 use base64::DecodeError;
 use ber;
@@ -40,10 +39,10 @@ pub struct PublisherRequest {
 impl PublisherRequest {
 
     /// Parses a <publisher_request /> message.
-    pub fn open<P: AsRef<Path>>(path: P)
-        -> Result<Self, PublisherRequestError> {
+    pub fn decode<R>(reader: R) -> Result<Self, PublisherRequestError>
+        where R: io::Read {
 
-        XmlReader::open(path, |r| {
+        XmlReader::decode(reader, |r| {
             r.take_named_element("publisher_request", |a, r| {
                 if let Ok("1") = a.get_req("version") {
                    // Ok, proceed
@@ -151,8 +150,8 @@ mod tests {
     fn test_parse_publisher_request() {
         let d = Utc.ymd(2012, 1, 1).and_hms(0, 0, 0);
         time::with_now(d, || {
-            let pr = PublisherRequest::open("test/oob/publisher_request.xml")
-                .unwrap();
+            let xml = include_str!("../../test/oob/publisher_request.xml");
+            let pr = PublisherRequest::decode(xml.as_bytes()).unwrap();
             assert_eq!("Bob", pr.publisher_handle);
             assert_eq!(Some("A0001".to_string()), pr.tag);
         });

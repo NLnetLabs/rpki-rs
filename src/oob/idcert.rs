@@ -322,7 +322,6 @@ impl IdExtensions {
 mod tests {
 
     use super::*;
-    use std::fs;
     use bytes::Bytes;
     use time;
     use chrono::{TimeZone, Utc};
@@ -331,8 +330,8 @@ mod tests {
     fn test_parse_id_publisher_ta_cert() {
         let d = Utc.ymd(2012, 1, 1).and_hms(0, 0, 0);
         time::with_now(d, || {
-        let data = fs::read("test/oob/id-publisher-ta.cer").unwrap();
-        let cert = IdCert::decode(Bytes::from(data)).unwrap();
+        let data = include_bytes!("../../test/oob/id-publisher-ta.cer");
+        let cert = IdCert::decode(Bytes::from_static(data)).unwrap();
             assert!(cert.validate_ta().is_ok());
         });
     }
