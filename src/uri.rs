@@ -176,6 +176,77 @@ impl fmt::Display for RsyncModule {
 }
 
 
+//------------ Http ----------------------------------------------------------
+
+/// A simple HTTP(s) URI
+///
+/// This supports only what we need for the references in RPKI objects and
+/// publication / provisioning messages. In particular, this does not support
+/// the query and fragment components of URIs.
+#[derive(Debug)]
+pub struct Http {
+    scheme: Scheme,
+    host:   Bytes,
+    path:   Bytes
+}
+
+impl Http {
+
+    pub fn from_slice(slice: &[u8]) -> Result<Self, Error> {
+        Self::from_bytes(slice.into())
+    }
+
+    pub fn from_bytes(mut bytes: Bytes) -> Result<Self, Error> {
+        if !is_uri_ascii(&bytes) {
+            return Err(Error::NotAscii)
+        }
+
+        let scheme = scheme(&bytes)?;
+
+        bytes.advance(
+            match scheme {
+                Scheme::Http => { 7 }
+                Scheme::Https => { 8 }
+        });
+
+        let host_length = {
+            let mut parts = bytes.splitn(3, |ch| *ch == b'/');
+            match parts.next() {
+                Some(host) => { host.len() }
+                None => return Err(Error::BadUri)
+            }
+        };
+
+        let host = bytes.split_to(host_length);
+        let path = bytes;
+
+        if path.len() == 0 {
+            return Err(Error::BadUri)
+        }
+
+        Ok(Http{scheme, host, path})
+    }
+
+}
+
+fn scheme(bytes: &Bytes) -> Result<Scheme, Error> {
+
+    if bytes.len()>8 && bytes[..8].eq_ignore_ascii_case(b"https://") {
+        return Ok(Scheme::Https)
+    }
+    if bytes.len()>7 && bytes[..7].eq_ignore_ascii_case(b"http://") {
+        return Ok(Scheme::Http)
+    }
+    Err(Error::BadScheme)
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Scheme {
+    Http,
+    Https
+}
+
+
 //------------ Helper Functions ----------------------------------------------
 
 pub fn is_uri_ascii<S: AsRef<[u8]>>(slice: S) -> bool {
@@ -203,3 +274,49 @@ pub enum Error {
 }
 
 
+//------------ Tests ---------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_reject_non_ascii_http_uri() {
+        match  Http::from_bytes(Bytes::from("http://my.høst.tld/å/pâth")) {
+            Err(Error::NotAscii) => { }
+            _ => { assert!(false); }
+        }
+    }
+
+    #[test]
+    fn should_reject_bad_scheme_http_uri() {
+        match Http::from_slice(b"ftp://my.host.tld/path") {
+            Err(Error::BadScheme) => {}
+            _ => { assert!(false)}
+        }
+    }
+
+    #[test]
+    fn should_reject_bad_http_uri() {
+        match Http::from_slice(b"http://my.host.tld") {
+            Err(Error::BadUri) => {}
+            _ => { assert!(false)}
+        }
+    }
+
+    #[test]
+    fn should_parse_http_uri() {
+        let http = Http::from_slice(b"http://my.host.tld/and/a/path").unwrap();
+        assert_eq!(Scheme::Http, http.scheme);
+        assert_eq!(Bytes::from("my.host.tld"), http.host);
+        assert_eq!(Bytes::from("/and/a/path"), http.path);
+    }
+
+    #[test]
+    fn should_parse_https_uri() {
+        let http = Http::from_slice(b"https://my.host.tld/and/a/path").unwrap();
+        assert_eq!(Scheme::Https, http.scheme);
+        assert_eq!(Bytes::from("my.host.tld"), http.host);
+        assert_eq!(Bytes::from("/and/a/path"), http.path);
+    }
+}
