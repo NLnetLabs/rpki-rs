@@ -11,7 +11,7 @@
 //! [`ManifestContent`]: struct.ManifestContent.html
 
 use bytes::Bytes;
-use super::rsync;
+use super::uri;
 use super::ber::{
     BitString, Constructed, Error, Mode, OctetString, Source, Tag, Unsigned
 };
@@ -125,7 +125,7 @@ impl ManifestContent {
     ///
     /// The returned iterator returns a pair of the file URI and the SHA256
     /// hash of the file.
-    pub fn iter_uris(&self, base: rsync::Uri) -> ManifestIter {
+    pub fn iter_uris(&self, base: uri::Rsync) -> ManifestIter {
         ManifestIter { base, file_list: self.file_list.clone() }
     }
 }
@@ -139,12 +139,12 @@ impl ManifestContent {
 /// SHA256 hash values.
 #[derive(Clone, Debug)]
 pub struct ManifestIter{
-    base: rsync::Uri,
+    base: uri::Rsync,
     file_list: Bytes,
 }
 
 impl Iterator for ManifestIter {
-    type Item = Result<(rsync::Uri, ManifestHash), ValidationError>;
+    type Item = Result<(uri::Rsync, ManifestHash), ValidationError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.file_list.is_empty() {
@@ -206,8 +206,8 @@ impl FileAndHash {
     /// Converts a value into a pair of an absolute URI and its hash.
     fn to_uri_etc(
         self,
-        base: &rsync::Uri
-    ) -> Result<(rsync::Uri, ManifestHash), ValidationError> {
+        base: &uri::Rsync
+    ) -> Result<(uri::Rsync, ManifestHash), ValidationError> {
         let name = self.file.to_bytes();
         if !name.is_ascii() {
             return Err(ValidationError)

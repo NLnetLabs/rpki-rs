@@ -19,7 +19,7 @@
 
 use bytes::Bytes;
 use ring::digest::{self, Digest};
-use super::rsync;
+use super::uri;
 use super::asres::{AsBlocks, AsResources};
 use super::ber::{
     BitString, Constructed, Error, Mode, OctetString, Oid, Source, Tag,
@@ -489,7 +489,7 @@ impl ResourceCert {
     }
 
     /// Returns the repository rsync URI of this certificate if available.
-    pub fn repository_uri(&self) -> Option<rsync::Uri> {
+    pub fn repository_uri(&self) -> Option<uri::Rsync> {
         for uri in self.cert.extensions.subject_info_access
                        .iter().filter_oid(oid::AD_CA_REPOSITORY)
         {
@@ -1139,8 +1139,8 @@ impl UriGeneralName {
         })
     }
 
-    pub fn into_rsync_uri(self) -> Option<rsync::Uri> {
-        rsync::Uri::from_bytes(self.0.clone()).ok()
+    pub fn into_rsync_uri(self) -> Option<uri::Rsync> {
+        uri::Rsync::from_bytes(self.0.clone()).ok()
     }
 }
 

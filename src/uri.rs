@@ -1,10 +1,10 @@
-//! rsync URIs.
+//! URIs.
 
 use std::{fmt, str};
 use bytes::{BufMut, Bytes, BytesMut};
 
 
-//------------ Uri -----------------------------------------------------------
+//------------ Rsync ---------------------------------------------------------
 
 /// An rsync URI.
 ///
@@ -20,37 +20,37 @@ use bytes::{BufMut, Bytes, BytesMut};
 //     SPACE CONTROL " # < > ? [ \\ ] ^ ` { | }
 //
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Uri {
-    module: Module,
+pub struct Rsync {
+    module: RsyncModule,
     path: Bytes
 }
 
-impl Uri {
-    pub fn new(module: Module, path: Bytes) -> Self {
-        Uri { module, path }
+impl Rsync {
+    pub fn new(module: RsyncModule, path: Bytes) -> Self {
+        Rsync { module, path }
     }
 
-    pub fn from_slice(slice: &[u8]) -> Result<Self, UriError> {
+    pub fn from_slice(slice: &[u8]) -> Result<Self, Error> {
         Self::from_bytes(slice.into())
     }
 
-    pub fn from_bytes(mut bytes: Bytes) -> Result<Self, UriError> {
+    pub fn from_bytes(mut bytes: Bytes) -> Result<Self, Error> {
         if !is_uri_ascii(&bytes) {
-            return Err(UriError::NotAscii)
+            return Err(Error::NotAscii)
         }
         if !bytes.starts_with(b"rsync://") {
-            return Err(UriError::BadScheme)
+            return Err(Error::BadScheme)
         }
         bytes.advance(8);
         let (authority, module) = {
             let mut parts = bytes.splitn(3, |ch| *ch == b'/');
             let authority = match parts.next() {
                 Some(part) => part.len(),
-                None => return Err(UriError::BadUri)
+                None => return Err(Error::BadUri)
             };
             let module = match parts.next() {
                 Some(part) => part.len(),
-                None => return Err(UriError::BadUri)
+                None => return Err(Error::BadUri)
             };
             (authority, module)
         };
@@ -58,17 +58,17 @@ impl Uri {
         bytes.advance(1);
         let module = bytes.split_to(module);
         bytes.advance(1);
-        Ok(Uri {
-            module: Module::new(authority, module),
+        Ok(Rsync {
+            module: RsyncModule::new(authority, module),
             path: bytes
         })
     }
 
-    pub fn module(&self) -> &Module {
+    pub fn module(&self) -> &RsyncModule {
         &self.module
     }
 
-    pub fn to_module(&self) -> Module {
+    pub fn to_module(&self) -> RsyncModule {
         self.module.clone()
     }
 
@@ -120,7 +120,7 @@ impl Uri {
     }
 }
 
-impl fmt::Display for Uri {
+impl fmt::Display for Rsync {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.module.fmt(f)?;
         if !self.path.is_empty() {
@@ -131,26 +131,26 @@ impl fmt::Display for Uri {
 }
 
 
-//------------ Module --------------------------------------------------------
+//------------ RsyncModule ---------------------------------------------------
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Module {
+pub struct RsyncModule {
     authority: Bytes,
     module: Bytes,
 }
 
-impl Module {
+impl RsyncModule {
     pub fn new<A, M>(authority: A, module: M) -> Self
     where A: Into<Bytes>, M: Into<Bytes> {
         let authority = authority.into();
         let module = module.into();
         assert!(is_uri_ascii(authority.as_ref()));
         assert!(is_uri_ascii(module.as_ref()));
-        Module { authority, module }
+        RsyncModule { authority, module }
     }
 
-    pub fn to_uri(&self) -> Uri {
-        Uri {
+    pub fn to_uri(&self) -> Rsync {
+        Rsync {
             module: self.clone(),
             path: Bytes::from_static(b""),
         }
@@ -169,7 +169,7 @@ impl Module {
     }
 }
 
-impl fmt::Display for Module {
+impl fmt::Display for RsyncModule {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "rsync://{}/{}/", self.authority(), self.module())
     }
@@ -188,10 +188,10 @@ pub fn is_uri_ascii<S: AsRef<[u8]>>(slice: S) -> bool {
 }
 
 
-//------------ UriError ------------------------------------------------------
+//------------ Error ---------------------------------------------------------
 
 #[derive(Clone, Debug, Fail)]
-pub enum UriError {
+pub enum Error {
     #[fail(display="invalid characters")]
     NotAscii,
 
