@@ -555,6 +555,10 @@ impl SubjectPublicKeyInfo {
     pub fn decode<S: Source>(source: S) -> Result<Self, S::Err> {
         Mode::Der.decode(source, Self::take_from)
     }
+
+    pub fn subject_public_key(&self) -> &BitString {
+        &self.subject_public_key
+    }
  
     pub fn take_from<S: Source>(
         cons: &mut Constructed<S>
@@ -772,7 +776,7 @@ impl Extensions {
     ///
     /// The cA field gets chosen by the CA. The pathLenConstraint field must
     /// not be present.
-    fn take_basic_ca<S: Source>(
+    pub fn take_basic_ca<S: Source>(
         cons: &mut Constructed<S>,
         basic_ca: &mut Option<bool>
     ) -> Result<(), S::Err> {
@@ -793,7 +797,7 @@ impl Extensions {
     /// SubjectKeyIdentifier ::= KeyIdentifier
     /// KeyIdentifier        ::= OCTET STRING
     /// ```
-    fn take_subject_key_identifier<S: Source>(
+    pub fn take_subject_key_identifier<S: Source>(
         cons: &mut Constructed<S>,
         subject_key_id: &mut Option<OctetString>
     ) -> Result<(), S::Err> {
@@ -823,7 +827,7 @@ impl Extensions {
     /// ```
     ///
     /// Only keyIdentifier must be present.
-    fn take_authority_key_identifier<S: Source>(
+    pub fn take_authority_key_identifier<S: Source>(
         cons: &mut Constructed<S>,
         authority_key_id: &mut Option<OctetString>
     ) -> Result<(), S::Err> {
@@ -1257,7 +1261,7 @@ impl CertificatePolicies {
 //------------ OIDs ----------------------------------------------------------
 
 #[allow(dead_code)] // XXX
-mod oid {
+pub mod oid {
     use ::ber::Oid;
 
     pub const RSA_ENCRYPTION: Oid<&[u8]>

@@ -16,6 +16,7 @@ extern crate chrono;
 #[macro_use] extern crate log;
 extern crate ring;
 extern crate untrusted;
+extern crate xml;
 
 pub mod asres;
 pub mod cert;
@@ -28,4 +29,5 @@ pub mod sigobj;
 pub mod tal;
 pub mod x509;
 
+pub mod oob;
 mod time;
