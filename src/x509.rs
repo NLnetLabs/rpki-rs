@@ -213,7 +213,6 @@ impl Time {
 
     pub fn validate_not_before(&self) -> Result<(), ValidationError> {
         if time::now() < self.0 {
-            println!("Not valid before!");
             Err(ValidationError)
         }
         else {
