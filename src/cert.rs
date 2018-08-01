@@ -547,8 +547,8 @@ impl Validity {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SubjectPublicKeyInfo {
-    algorithm: PublicKeyAlgorithm,
-    subject_public_key: BitString,
+    pub algorithm: PublicKeyAlgorithm,
+    pub subject_public_key: BitString,
 }
 
 impl SubjectPublicKeyInfo {
@@ -772,7 +772,7 @@ impl Extensions {
     ///
     /// The cA field gets chosen by the CA. The pathLenConstraint field must
     /// not be present.
-    fn take_basic_ca<S: Source>(
+    pub fn take_basic_ca<S: Source>(
         cons: &mut Constructed<S>,
         basic_ca: &mut Option<bool>
     ) -> Result<(), S::Err> {
@@ -793,7 +793,7 @@ impl Extensions {
     /// SubjectKeyIdentifier ::= KeyIdentifier
     /// KeyIdentifier        ::= OCTET STRING
     /// ```
-    fn take_subject_key_identifier<S: Source>(
+    pub fn take_subject_key_identifier<S: Source>(
         cons: &mut Constructed<S>,
         subject_key_id: &mut Option<OctetString>
     ) -> Result<(), S::Err> {
@@ -823,7 +823,7 @@ impl Extensions {
     /// ```
     ///
     /// Only keyIdentifier must be present.
-    fn take_authority_key_identifier<S: Source>(
+    pub fn take_authority_key_identifier<S: Source>(
         cons: &mut Constructed<S>,
         authority_key_id: &mut Option<OctetString>
     ) -> Result<(), S::Err> {
@@ -1257,7 +1257,7 @@ impl CertificatePolicies {
 //------------ OIDs ----------------------------------------------------------
 
 #[allow(dead_code)] // XXX
-mod oid {
+pub mod oid {
     use ::ber::Oid;
 
     pub const RSA_ENCRYPTION: Oid<&[u8]>

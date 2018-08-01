@@ -1,15 +1,10 @@
 //! Identity Certificates.
 //!
 
-
-use ber::{
-    BitString, Constructed, Error, Mode, OctetString, Oid, Source, Tag,
-    Unsigned
-};
-use ring::digest::{self, Digest};
-use x509::{
-    update_once, Name, SignatureAlgorithm, SignedData, Time, ValidationError
-};
+use ber::{Constructed, Error, Mode, OctetString, Oid, Source, Tag, Unsigned};
+use cert::{Extensions, SubjectPublicKeyInfo, Validity};
+use cert::oid;
+use x509::{Name, SignatureAlgorithm, SignedData, ValidationError};
 
 
 //------------ IdCert --------------------------------------------------------
@@ -59,7 +54,7 @@ pub struct IdCert {
     subject_public_key_info: SubjectPublicKeyInfo,
 
     /// The certificate extensions.
-    extensions: Extensions,
+    extensions: IdExtensions,
 }
 
 impl IdCert {
@@ -99,7 +94,7 @@ impl IdCert {
                     SubjectPublicKeyInfo::take_from(cons)?,
                     extensions: cons.take_constructed_if(
                         Tag::CTX_3,
-                        Extensions::take_from
+                        IdExtensions::take_from
                     )?,
                 })
             })
@@ -259,99 +254,11 @@ impl AsRef<IdCert> for IdCert {
     }
 }
 
-//------------ Validity ------------------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct Validity {
-    not_before: Time,
-    not_after: Time,
-}
-
-impl Validity {
-    pub fn new(not_before: Time, not_after: Time) -> Self {
-        Validity { not_before, not_after }
-    }
-
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_sequence(|cons| {
-            Ok(Validity::new(
-                Time::take_from(cons)?,
-                Time::take_from(cons)?,
-            ))
-        })
-    }
-
-    pub fn validate(&self) -> Result<(), ValidationError> {
-        self.not_before.validate_not_before()?;
-        self.not_after.validate_not_after()?;
-        Ok(())
-    }
-}
-
-
-//------------ SubjectPublicKeyInfo ------------------------------------------
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SubjectPublicKeyInfo {
-    algorithm: PublicKeyAlgorithm,
-    subject_public_key: BitString,
-}
-
-impl SubjectPublicKeyInfo {
-    pub fn decode<S: Source>(source: S) -> Result<Self, S::Err> {
-        Mode::Der.decode(source, Self::take_from)
-    }
-
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_sequence(|cons| {
-            Ok(SubjectPublicKeyInfo {
-                algorithm: PublicKeyAlgorithm::take_from(cons)?,
-                subject_public_key: BitString::take_from(cons)?
-            })
-        })
-    }
-
-    pub fn key_identifier(&self) -> Digest {
-        digest::digest(
-            &digest::SHA1,
-            self.subject_public_key.octet_slice().unwrap()
-        )
-    }
-}
-
-
-//------------ PublicKeyAlgorithm --------------------------------------------
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PublicKeyAlgorithm {
-    RsaEncryption,
-}
-
-impl PublicKeyAlgorithm {
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_sequence(Self::take_content_from)
-    }
-
-    pub fn take_content_from<S: Source>(
-        cons: &mut Constructed<S>
-    ) -> Result<Self, S::Err> {
-        oid::RSA_ENCRYPTION.skip_if(cons)?;
-        cons.take_opt_null()?;
-        Ok(PublicKeyAlgorithm::RsaEncryption)
-    }
-}
-
 
 //------------ Extensions ----------------------------------------------------
 
 #[derive(Clone, Debug)]
-pub struct Extensions {
+pub struct IdExtensions {
     /// Basic Contraints.
     ///
     /// The field indicates whether the extension is present and, if so,
@@ -365,7 +272,7 @@ pub struct Extensions {
     authority_key_id: Option<OctetString>,
 }
 
-impl Extensions {
+impl IdExtensions {
     pub fn take_from<S: Source>(
         cons: &mut Constructed<S>
     ) -> Result<Self, S::Err> {
@@ -379,13 +286,13 @@ impl Extensions {
                 let value = OctetString::take_from(cons)?;
                 Mode::Der.decode(value.to_source(), |content| {
                     if id == oid::CE_BASIC_CONSTRAINTS {
-                        Self::take_basic_ca(content, &mut basic_ca)
+                        Extensions::take_basic_ca(content, &mut basic_ca)
                     } else if id == oid::CE_SUBJECT_KEY_IDENTIFIER {
-                        Self::take_subject_key_identifier(
+                        Extensions::take_subject_key_identifier(
                             content, &mut subject_key_id
                         )
                     } else if id == oid::CE_AUTHORITY_KEY_IDENTIFIER {
-                        Self::take_authority_key_identifier(
+                        Extensions::take_authority_key_identifier(
                             content, &mut authority_key_id
                         )
                     } else if critical {
@@ -399,106 +306,13 @@ impl Extensions {
                 })?;
                 Ok(())
             })? {}
-            Ok(Extensions {
+            Ok(IdExtensions {
                 basic_ca,
                 subject_key_id: subject_key_id.ok_or(Error::Malformed)?,
                 authority_key_id,
             })
         })
     }
-
-    /// Parses the Basic Constraints Extension.
-    ///
-    /// The extension must be present in CA certificates and must not be
-    /// present in EE certificats.
-    ///
-    /// ```text
-    ///   BasicConstraints ::= SEQUENCE {
-    ///        cA                      BOOLEAN DEFAULT FALSE,
-    ///        pathLenConstraint       INTEGER (0..MAX) OPTIONAL }
-    /// ```
-    ///
-    /// The cA field gets chosen by the CA. The pathLenConstraint field must
-    /// not be present.
-    fn take_basic_ca<S: Source>(
-        cons: &mut Constructed<S>,
-        basic_ca: &mut Option<bool>
-    ) -> Result<(), S::Err> {
-        update_once(basic_ca, || {
-            match cons.take_sequence(|cons| cons.take_opt_bool())? {
-                Some(res) => Ok(res),
-                None => Ok(false)
-            }
-        })
-    }
-
-    /// Parses the Subject Key Identifier Extension.
-    ///
-    /// The extension must be present and contain the 160 bit SHA-1 hash of
-    /// the value of the DER-encoded bit string of the subject public key.
-    ///
-    /// ```text
-    /// SubjectKeyIdentifier ::= KeyIdentifier
-    /// KeyIdentifier        ::= OCTET STRING
-    /// ```
-    fn take_subject_key_identifier<S: Source>(
-        cons: &mut Constructed<S>,
-        subject_key_id: &mut Option<OctetString>
-    ) -> Result<(), S::Err> {
-        update_once(subject_key_id, || {
-            let id = OctetString::take_from(cons)?;
-            if id.len() != 20 {
-                xerr!(Err(Error::Malformed.into()))
-            } else {
-                Ok(id)
-            }
-        })
-    }
-
-    /// Parses the Authority Key Identifier Extension.
-    ///
-    /// Must be present except in self-signed CA certificates where it is
-    /// optional.
-    ///
-    /// ```text
-    /// AuthorityKeyIdentifier ::= SEQUENCE {
-    ///   keyIdentifier             [0] KeyIdentifier           OPTIONAL,
-    ///   authorityCertIssuer       [1] GeneralNames            OPTIONAL,
-    ///   authorityCertSerialNumber [2] CertificateSerialNumber OPTIONAL  }
-    ///
-    /// KeyIdentifier ::= OCTET STRING
-    /// ```
-    ///
-    /// Only keyIdentifier must be present.
-    fn take_authority_key_identifier<S: Source>(
-        cons: &mut Constructed<S>,
-        authority_key_id: &mut Option<OctetString>
-    ) -> Result<(), S::Err> {
-        update_once(authority_key_id, || {
-            let res = cons.take_sequence(|cons| {
-                cons.take_value_if(Tag::CTX_0, OctetString::take_content_from)
-            })?;
-            if res.len() != 20 {
-                return Err(Error::Malformed.into())
-            } else {
-                Ok(res)
-            }
-        })
-    }
-}
-
-
-//------------ OIDs ----------------------------------------------------------
-
-mod oid {
-    use ::ber::Oid;
-
-    pub const RSA_ENCRYPTION: Oid<&[u8]>
-    = Oid(&[42, 134, 72, 134, 247, 13, 1, 1, 1]);
-
-    pub const CE_SUBJECT_KEY_IDENTIFIER: Oid<&[u8]> = Oid(&[85, 29, 14]);
-    pub const CE_BASIC_CONSTRAINTS: Oid<&[u8]> = Oid(&[85, 29, 19]);
-    pub const CE_AUTHORITY_KEY_IDENTIFIER: Oid<&[u8]> = Oid(&[85, 29, 35]);
 }
 
 
