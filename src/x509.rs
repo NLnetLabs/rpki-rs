@@ -2,7 +2,6 @@
 
 use std::str;
 use std::str::FromStr;
-use std::fmt;
 use bytes::Bytes;
 use chrono::{DateTime, LocalResult, TimeZone, Utc};
 use super::ber::{BitString, Constructed, Error, Source, Tag};
@@ -266,14 +265,9 @@ fn read_four_char<S: Source>(source: &mut S) -> Result<u32, S::Err> {
 
 //------------ ValidationError -----------------------------------------------
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Fail)]
+#[fail(display="validation error")]
 pub struct ValidationError;
-
-impl fmt::Display for ValidationError{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Validation Error")
-    }
-}
 
 
 //------------ Object Identifiers --------------------------------------------
