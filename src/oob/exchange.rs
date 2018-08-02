@@ -174,12 +174,12 @@ impl RepositoryResponse {
 
                 let tag = a.get_opt("tag");
                 let publisher_handle = a.get_req("publisher_handle")?;
-                let service_uri = uri::Http::from_bytes(
-                    a.get_req("service_uri")?.into())?;
-                let sia_base = uri::Rsync::from_bytes(
-                    a.get_req("sia_base")?.into())?;
-                let rrdp_notification_uri = uri::Http::from_bytes(
-                    a.get_req("rrdp_notification_uri")?.into())?;
+                let service_uri = uri::Http::from_str(
+                    a.get_req("service_uri")?)?;
+                let sia_base = uri::Rsync::from_str(
+                    a.get_req("sia_base")?)?;
+                let rrdp_notification_uri = uri::Http::from_str(
+                    a.get_req("rrdp_notification_uri")?)?;
 
                 let id_cert = r.take_named_element(
                     "repository_bpki_ta", |_,r| { r.take_characters() })?;
@@ -300,16 +300,16 @@ mod tests {
             assert_eq!(Some("A0001".to_string()), rr.tag);
             assert_eq!("Alice/Bob-42".to_string(), rr.publisher_handle);
             assert_eq!(
-                uri::Http::from_slice(
-                    b"http://a.example/publication/Alice/Bob-42").unwrap(),
+                uri::Http::from_str(
+                    "http://a.example/publication/Alice/Bob-42").unwrap(),
                 rr.service_uri);
             assert_eq!(
-                uri::Http::from_slice(
-                    b"https://rpki.example/rrdp/notify.xml").unwrap(),
+                uri::Http::from_str(
+                    "https://rpki.example/rrdp/notify.xml").unwrap(),
                 rr.rrdp_notification_uri);
             assert_eq!(
-                uri::Rsync::from_slice(
-                    b"rsync://a.example/rpki/Alice/Bob-42/").unwrap(),
+                uri::Rsync::from_str(
+                    "rsync://a.example/rpki/Alice/Bob-42/").unwrap(),
                 rr.sia_base);
 
             assert!(rr.id_cert.validate_ta().is_ok());

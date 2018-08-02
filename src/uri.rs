@@ -30,6 +30,10 @@ impl Rsync {
         Rsync { module, path }
     }
 
+    pub fn from_str(s: &str) -> Result<Self, Error> {
+        Self::from_bytes(Bytes::from(s))
+    }
+
     pub fn from_slice(slice: &[u8]) -> Result<Self, Error> {
         Self::from_bytes(slice.into())
     }
@@ -194,6 +198,10 @@ pub struct Http {
 
 impl Http {
 
+    pub fn from_str(s: &str) -> Result<Self, Error> {
+        Self::from_bytes(Bytes::from(s))
+    }
+
     pub fn from_slice(slice: &[u8]) -> Result<Self, Error> {
         Self::from_bytes(slice.into())
     }
@@ -310,7 +318,7 @@ mod tests {
 
     #[test]
     fn should_reject_bad_scheme_http_uri() {
-        match Http::from_slice(b"rsync://my.host.tld/path") {
+        match Http::from_str("rsync://my.host.tld/path") {
             Err(Error::BadScheme) => {}
             _ => { assert!(false)}
         }
@@ -318,7 +326,7 @@ mod tests {
 
     #[test]
     fn should_reject_bad_http_uri() {
-        match Http::from_slice(b"http://my.host.tld") {
+        match Http::from_str("http://my.host.tld") {
             Err(Error::BadUri) => {}
             _ => { assert!(false)}
         }
@@ -326,7 +334,7 @@ mod tests {
 
     #[test]
     fn should_parse_http_uri() {
-        let http = Http::from_slice(b"http://my.host.tld/and/a/path").unwrap();
+        let http = Http::from_str("http://my.host.tld/and/a/path").unwrap();
         assert_eq!(Scheme::Http, http.scheme);
         assert_eq!(Bytes::from("my.host.tld"), http.host);
         assert_eq!(Bytes::from("/and/a/path"), http.path);
@@ -334,7 +342,7 @@ mod tests {
 
     #[test]
     fn should_parse_https_uri() {
-        let http = Http::from_slice(b"https://my.host.tld/and/a/path").unwrap();
+        let http = Http::from_str("https://my.host.tld/and/a/path").unwrap();
         assert_eq!(Scheme::Https, http.scheme);
         assert_eq!(Bytes::from("my.host.tld"), http.host);
         assert_eq!(Bytes::from("/and/a/path"), http.path);
