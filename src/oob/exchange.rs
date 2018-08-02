@@ -44,17 +44,23 @@ impl PublisherRequest {
         where R: io::Read {
 
         XmlReader::decode(reader, |r| {
-            r.take_named_element("publisher_request", |a, r| {
-                if let Ok("1") = a.get_req("version") {
-                   // Ok, proceed
-                } else {
-                    return Err(PublisherRequestError::InvalidVersion)
+            r.take_named_element("publisher_request", |mut a, r| {
+                match a.take_req("version") {
+                    Ok(s) => {
+                        if s != "1".to_string() {
+                            return Err(PublisherRequestError::InvalidVersion)
+                        }
+                    }
+                    _ => return Err(PublisherRequestError::InvalidVersion)
                 }
 
-                let tag = a.get_opt("tag");
-                let ph = a.get_req("publisher_handle")?;
+                let tag = a.take_opt("tag");
+                let ph = a.take_req("publisher_handle")?;
 
-                let cert = r.take_named_element("publisher_bpki_ta", |_,r| {
+                a.no_more_attributes()?;
+
+                let cert = r.take_named_element("publisher_bpki_ta", |a, r| {
+                    a.no_more_attributes()?;
                     r.take_characters()
                 })?;
 
@@ -165,24 +171,29 @@ impl RepositoryResponse {
         where R: io::Read {
 
         XmlReader::decode(reader, |r| {
-            r.take_named_element("repository_response", |a, r| {
-                if let Ok("1") = a.get_req("version") {
-                    // Ok, proceed
-                } else {
-                    return Err(RepositoryResponseError::InvalidVersion)
+            r.take_named_element("repository_response", |mut a, r| {
+                match a.take_req("version") {
+                    Ok(s) => if s != "1".to_string() {
+                        return Err(RepositoryResponseError::InvalidVersion)
+                    }
+                    _ => return Err(RepositoryResponseError::InvalidVersion)
                 }
 
-                let tag = a.get_opt("tag");
-                let publisher_handle = a.get_req("publisher_handle")?;
-                let service_uri = uri::Http::from_str(
-                    a.get_req("service_uri")?)?;
-                let sia_base = uri::Rsync::from_str(
-                    a.get_req("sia_base")?)?;
-                let rrdp_notification_uri = uri::Http::from_str(
-                    a.get_req("rrdp_notification_uri")?)?;
+                let tag = a.take_opt("tag");
+                let publisher_handle = a.take_req("publisher_handle")?;
+                let service_uri = uri::Http::from_string(
+                    a.take_req("service_uri")?)?;
+                let sia_base = uri::Rsync::from_string(
+                    a.take_req("sia_base")?)?;
+                let rrdp_notification_uri = uri::Http::from_string(
+                    a.take_req("rrdp_notification_uri")?)?;
+
+                a.no_more_attributes()?;
 
                 let id_cert = r.take_named_element(
-                    "repository_bpki_ta", |_,r| { r.take_characters() })?;
+                    "repository_bpki_ta", |a, r| {
+                        a.no_more_attributes()?;
+                        r.take_characters()})?;
 
                 let id_cert = base64::decode_config(&id_cert, base64::MIME)?;
                 let id_cert = IdCert::decode(Bytes::from(id_cert))?
@@ -278,21 +289,21 @@ mod tests {
     use time;
     use chrono::{TimeZone, Utc};
 
-    # [test]
-    fn test_parse_publisher_request() {
+    #[test]
+    fn should_parse_publisher_request() {
         let d = Utc.ymd(2012, 1, 1).and_hms(0, 0, 0);
         time::with_now(d, || {
             let xml = include_str!("../../test/oob/publisher_request.xml");
             let pr = PublisherRequest::decode(xml.as_bytes()).unwrap();
-            assert_eq!("Bob", pr.publisher_handle);
+            assert_eq!("Bob".to_string(), pr.publisher_handle);
             assert_eq!(Some("A0001".to_string()), pr.tag);
 
             assert!(pr.id_cert.validate_ta().is_ok());
         });
     }
 
-    # [test]
-    fn test_parse_repository_response() {
+    #[test]
+    fn should_parse_repository_response() {
         let d = Utc.ymd(2012, 1, 1).and_hms(0, 0, 0);
         time::with_now(d, || {
             let xml = include_str!("../../test/oob/repository_response.xml");

@@ -30,6 +30,10 @@ impl Rsync {
         Rsync { module, path }
     }
 
+    pub fn from_string(s: String) -> Result<Self, Error> {
+        Self::from_bytes(Bytes::from(s))
+    }
+
     pub fn from_str(s: &str) -> Result<Self, Error> {
         Self::from_bytes(Bytes::from(s))
     }
@@ -197,6 +201,10 @@ pub struct Http {
 }
 
 impl Http {
+
+    pub fn from_string(s: String) -> Result<Self, Error> {
+        Self::from_bytes(Bytes::from(s))
+    }
 
     pub fn from_str(s: &str) -> Result<Self, Error> {
         Self::from_bytes(Bytes::from(s))

@@ -90,10 +90,10 @@ impl <R: io::Read> XmlReader<R> {
         let mut xml = XmlReader{reader: config.create_reader(source)};
 
         xml.start_document()?;
-        let res = op(&mut xml);
+        let res = op(&mut xml)?;
         xml.end_document()?;
 
-        res
+        Ok(res)
     }
 
     /// Takes an element and process it in a closure
@@ -181,11 +181,20 @@ pub enum XmlReaderErr {
 
     #[fail(display = "Error reading file: {}", _0)]
     IoError(io::Error),
+
+    #[fail(display = "Attributes Error: {}", _0)]
+    AttributesError(AttributesError),
 }
 
 impl From<io::Error> for XmlReaderErr {
     fn from(e: io::Error) -> XmlReaderErr{
         XmlReaderErr::IoError(e)
+    }
+}
+
+impl From<AttributesError> for XmlReaderErr {
+    fn from(e: AttributesError) -> XmlReaderErr {
+        XmlReaderErr::AttributesError(e)
     }
 }
 
@@ -199,18 +208,33 @@ pub struct Attributes {
 
 impl Attributes {
 
-    /// Gets an optional attribute by name
-    pub fn get_opt(&self, name: &str) -> Option<&str> {
-        self.attributes.iter()
-            .find(|a| a.name.local_name == name)
-            .map(|a| a.value.as_ref())
+    /// Takes an optional attribute by name
+    pub fn take_opt(&mut self, name: &str) -> Option<String> {
+        let i = self.attributes.iter().position(|a| a.name.local_name == name);
+        match i {
+            Some(i) => {
+                let a = self.attributes.swap_remove(i);
+                Some(a.value)
+            }
+            _ => None
+        }
     }
 
-    /// Gets a required attribute by name
-    pub fn get_req(&self, name: &str) -> Result<&str, AttributesError> {
-        self.get_opt(name)
+    /// Takes a required attribute by name
+    pub fn take_req(&mut self, name: &str) -> Result<String, AttributesError> {
+        self.take_opt(name)
             .ok_or(AttributesError::MissingAttribute(name.to_string()))
     }
+
+    /// Verifies that there are no more attributes
+    pub fn no_more_attributes(&self) -> Result<(), AttributesError> {
+        if self.attributes.len() > 0 {
+            return Err(AttributesError::ExtraAttributes)
+        }
+        Ok(())
+    }
+
+
 }
 
 
@@ -220,6 +244,9 @@ impl Attributes {
 pub enum AttributesError {
     #[fail(display = "Required attribute missing: {}", _0)]
     MissingAttribute(String),
+
+    #[fail(display = "Extra attributes found")]
+    ExtraAttributes,
 }
 
 
