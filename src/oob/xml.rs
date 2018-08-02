@@ -216,7 +216,7 @@ impl Attributes {
                 let a = self.attributes.swap_remove(i);
                 Some(a.value)
             }
-            _ => None
+            None => None
         }
     }
 
