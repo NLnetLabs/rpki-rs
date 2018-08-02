@@ -38,10 +38,12 @@ impl Rsync {
         if !is_uri_ascii(&bytes) {
             return Err(Error::NotAscii)
         }
-        if !bytes.starts_with(b"rsync://") {
-            return Err(Error::BadScheme)
+
+        match Scheme::take_scheme(&mut bytes) {
+            Ok(Scheme::Rsync) => {}
+            _ => return Err(Error::BadScheme)
         }
-        bytes.advance(8);
+
         let (authority, module) = {
             let mut parts = bytes.splitn(3, |ch| *ch == b'/');
             let authority = match parts.next() {
@@ -202,6 +204,10 @@ impl Http {
         }
 
         let scheme = Scheme::take_scheme(&mut bytes)?;
+        match scheme {
+            Scheme::Rsync => { return Err(Error::BadScheme) }
+            _ => { }
+        }
 
         let host_length = {
             let mut parts = bytes.splitn(3, |ch| *ch == b'/');
@@ -227,19 +233,32 @@ impl Http {
 #[derive(Debug, PartialEq)]
 pub enum Scheme {
     Http,
-    Https
+    Https,
+    Rsync
 }
 
 impl Scheme {
 
+    fn take_if_matches(bytes: &mut Bytes, s: &str) -> bool {
+
+        let l = s.len();
+
+        if bytes.len()>l && bytes[..l].eq_ignore_ascii_case(s.as_ref()) {
+            bytes.advance(l);
+            return true
+        }
+        return false
+    }
+
     fn take_scheme(bytes: &mut Bytes) -> Result<Scheme, Error> {
 
-        if bytes.len()>8 && bytes[..8].eq_ignore_ascii_case(b"https://") {
-            bytes.advance(8);
+        if Scheme::take_if_matches(bytes, "rsync://") {
+            return Ok(Scheme::Rsync)
+        }
+        if Scheme::take_if_matches(bytes, "https://") {
             return Ok(Scheme::Https)
         }
-        if bytes.len()>7 && bytes[..7].eq_ignore_ascii_case(b"http://") {
-            bytes.advance(7);
+        if Scheme::take_if_matches(bytes, "http://") {
             return Ok(Scheme::Http)
         }
         Err(Error::BadScheme)
@@ -291,7 +310,7 @@ mod tests {
 
     #[test]
     fn should_reject_bad_scheme_http_uri() {
-        match Http::from_slice(b"ftp://my.host.tld/path") {
+        match Http::from_slice(b"rsync://my.host.tld/path") {
             Err(Error::BadScheme) => {}
             _ => { assert!(false)}
         }
