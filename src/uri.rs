@@ -201,13 +201,7 @@ impl Http {
             return Err(Error::NotAscii)
         }
 
-        let scheme = scheme(&bytes)?;
-
-        bytes.advance(
-            match scheme {
-                Scheme::Http => { 7 }
-                Scheme::Https => { 8 }
-        });
+        let scheme = Scheme::take_scheme(&mut bytes)?;
 
         let host_length = {
             let mut parts = bytes.splitn(3, |ch| *ch == b'/');
@@ -226,24 +220,31 @@ impl Http {
 
         Ok(Http{scheme, host, path})
     }
-
 }
 
-fn scheme(bytes: &Bytes) -> Result<Scheme, Error> {
 
-    if bytes.len()>8 && bytes[..8].eq_ignore_ascii_case(b"https://") {
-        return Ok(Scheme::Https)
-    }
-    if bytes.len()>7 && bytes[..7].eq_ignore_ascii_case(b"http://") {
-        return Ok(Scheme::Http)
-    }
-    Err(Error::BadScheme)
-}
 
 #[derive(Debug, PartialEq)]
 pub enum Scheme {
     Http,
     Https
+}
+
+impl Scheme {
+
+    fn take_scheme(bytes: &mut Bytes) -> Result<Scheme, Error> {
+
+        if bytes.len()>8 && bytes[..8].eq_ignore_ascii_case(b"https://") {
+            bytes.advance(8);
+            return Ok(Scheme::Https)
+        }
+        if bytes.len()>7 && bytes[..7].eq_ignore_ascii_case(b"http://") {
+            bytes.advance(7);
+            return Ok(Scheme::Http)
+        }
+        Err(Error::BadScheme)
+    }
+
 }
 
 
