@@ -227,7 +227,7 @@ impl Attributes {
     }
 
     /// Verifies that there are no more attributes
-    pub fn no_more_attributes(&self) -> Result<(), AttributesError> {
+    pub fn exhausted(&self) -> Result<(), AttributesError> {
         if self.attributes.len() > 0 {
             return Err(AttributesError::ExtraAttributes)
         }

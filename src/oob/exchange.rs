@@ -57,10 +57,10 @@ impl PublisherRequest {
                 let tag = a.take_opt("tag");
                 let ph = a.take_req("publisher_handle")?;
 
-                a.no_more_attributes()?;
+                a.exhausted()?;
 
                 let cert = r.take_named_element("publisher_bpki_ta", |a, r| {
-                    a.no_more_attributes()?;
+                    a.exhausted()?;
                     r.take_characters()
                 })?;
 
@@ -173,7 +173,7 @@ impl RepositoryResponse {
         XmlReader::decode(reader, |r| {
             r.take_named_element("repository_response", |mut a, r| {
                 match a.take_req("version") {
-                    Ok(s) => if s != "1".to_string() {
+                    Ok(s) => if s != "1" {
                         return Err(RepositoryResponseError::InvalidVersion)
                     }
                     _ => return Err(RepositoryResponseError::InvalidVersion)
@@ -188,11 +188,11 @@ impl RepositoryResponse {
                 let rrdp_notification_uri = uri::Http::from_string(
                     a.take_req("rrdp_notification_uri")?)?;
 
-                a.no_more_attributes()?;
+                a.exhausted()?;
 
                 let id_cert = r.take_named_element(
                     "repository_bpki_ta", |a, r| {
-                        a.no_more_attributes()?;
+                        a.exhausted()?;
                         r.take_characters()})?;
 
                 let id_cert = base64::decode_config(&id_cert, base64::MIME)?;
