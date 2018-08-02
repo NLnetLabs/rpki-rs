@@ -43,7 +43,7 @@ impl Rsync {
             return Err(Error::NotAscii)
         }
 
-        match Scheme::take_scheme(&mut bytes) {
+        match Scheme::take(&mut bytes) {
             Ok(Scheme::Rsync) => {}
             _ => return Err(Error::BadScheme)
         }
@@ -211,7 +211,7 @@ impl Http {
             return Err(Error::NotAscii)
         }
 
-        let scheme = Scheme::take_scheme(&mut bytes)?;
+        let scheme = Scheme::take(&mut bytes)?;
         match scheme {
             Scheme::Rsync => { return Err(Error::BadScheme) }
             _ => { }
@@ -258,7 +258,7 @@ impl Scheme {
         return false
     }
 
-    fn take_scheme(bytes: &mut Bytes) -> Result<Scheme, Error> {
+    fn take(bytes: &mut Bytes) -> Result<Scheme, Error> {
 
         if Scheme::take_if_matches(bytes, "rsync://") {
             return Ok(Scheme::Rsync)
