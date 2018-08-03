@@ -351,8 +351,8 @@ impl <W: io::Write> XmlWriter<W> {
     /// that you cannot have both Characters and other included elements.
     /// This would be valid XML, but it's not used by any of the RPKI XML
     /// structures.
-    pub fn put_blob(&mut self, bytes: Bytes) -> Result<(), XmlWriterError> {
-        let b64 = base64::encode(&bytes);
+    pub fn put_blob(&mut self, bytes: &Bytes) -> Result<(), XmlWriterError> {
+        let b64 = base64::encode(bytes);
         self.writer.write(writer::XmlEvent::Characters(b64.as_ref()))?;
         Ok(())
     }
@@ -404,6 +404,12 @@ pub struct AttributePair<'a> {
     v: &'a str
 }
 
+impl <'a> AttributePair<'a> {
+    pub fn from(k: &'a str, v: &'a str) -> Self {
+        AttributePair{k, v}
+    }
+}
+
 
 //------------ XmlWriterError ------------------------------------------------
 
@@ -444,11 +450,11 @@ mod tests {
             w.put_first_element_with_attributes(
                 "a",
                 "http://ns/",
-                vec![AttributePair{k: "c", v: "d"}],
+                vec![AttributePair::from("c", "d")],
                 |w|
                     {
                         w.put_element("b", |w| {
-                            w.put_blob(Bytes::from("X"))
+                            w.put_blob(&Bytes::from("X"))
                         })
                     }
             )

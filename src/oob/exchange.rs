@@ -14,6 +14,8 @@ use x509;
 use super::idcert::IdCert;
 use super::xml::{XmlReader, XmlReaderErr};
 use super::xml::AttributesError;
+use oob::xml::XmlWriter;
+use oob::xml::AttributePair;
 
 
 //------------ PublisherRequest ----------------------------------------------
@@ -73,6 +75,40 @@ impl PublisherRequest {
                     id_cert: cert
                 })
             })
+        })
+    }
+
+    pub fn encode_vec(&self) -> Vec<u8> {
+        XmlWriter::encode_vec(|w| {
+
+            let mut attr = vec![
+                AttributePair::from(
+                    "version",
+                    "1"),
+                AttributePair::from(
+                    "publisher_handle",
+                    self.publisher_handle.as_ref()),
+            ];
+            if let Some(ref t) = self.tag {
+                attr.push(AttributePair::from(
+                    "tag",
+                    t));
+            }
+
+            w.put_first_element_with_attributes(
+                "publisher_request",
+                "http://www.hactrn.net/uris/rpki/rpki-setup/",
+                attr,
+                |w| {
+                    w.put_element(
+                        "publisher_bpki_ta",
+                        |w| {
+                            w.put_blob(&self.id_cert.to_bytes())
+                        }
+                    )
+                }
+
+            )
         })
     }
 }
@@ -286,6 +322,7 @@ impl From<x509::ValidationError> for RepositoryResponseError {
 mod tests {
 
     use super::*;
+    use std::str;
     use time;
     use chrono::{TimeZone, Utc};
 
@@ -326,4 +363,23 @@ mod tests {
             assert!(rr.id_cert.validate_ta().is_ok());
         });
     }
+
+    #[test]
+    fn should_generate_publisher_request() {
+        let d = Utc.ymd(2012, 1, 1).and_hms(0, 0, 0);
+        time::with_now(d, || {
+            let cert = ::oob::idcert::tests::test_id_certificate();
+
+            let pr = PublisherRequest {
+                tag: Some("tag".to_string()),
+                publisher_handle: "tim".to_string(),
+                id_cert: cert
+            };
+
+            let enc = pr.encode_vec();
+
+            PublisherRequest::decode(str::from_utf8(&enc).unwrap().as_bytes()).unwrap();
+        });
+    }
+
 }
