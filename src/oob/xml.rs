@@ -282,16 +282,20 @@ impl <W: io::Write> XmlWriter<W> {
         &mut self,
         name: &str,
         namespace: Option<&str>,
+        attr: Option<Vec<AttributePair>>,
         op: F) -> Result<(), XmlWriterError>
     where F: FnOnce(&mut Self) -> Result<(), XmlWriterError> {
         let mut start = writer::XmlEvent::start_element(name);
 
-        match namespace {
-            Some(ns) => { start = start.ns("", ns); },
-            None => {}
+        if let Some(ns) = namespace {
+            start = start.ns("", ns);
         }
 
-        // Attributes
+        if let Some(v) = attr {
+            for a in v {
+                start = start.attr(a.k, a.v);
+            }
+        }
 
         self.writer.write(start)?;
         op(self)?;
@@ -308,8 +312,21 @@ impl <W: io::Write> XmlWriter<W> {
         namespace: &str,
         op: F) -> Result<(), XmlWriterError>
         where F: FnOnce(&mut Self) -> Result<(), XmlWriterError> {
-        self.put_some_element(name, Some(namespace), op)
+        self.put_some_element(name, Some(namespace), None, op)
     }
+
+    /// Creates the first element for your XML structure. Note that namespace
+    /// is required because all the RPKI XML structures have one.
+    pub fn put_first_element_with_attributes<F>(
+        &mut self,
+        name: &str,
+        namespace: &str,
+        attr: Vec<AttributePair>,
+        op: F) -> Result<(), XmlWriterError>
+        where F: FnOnce(&mut Self) -> Result<(), XmlWriterError> {
+        self.put_some_element(name, Some(namespace), Some(attr), op)
+    }
+
 
     /// Creates a nested element.
     pub fn put_element<F>(
@@ -317,7 +334,17 @@ impl <W: io::Write> XmlWriter<W> {
         name: &str,
         op: F) -> Result<(), XmlWriterError>
         where F: FnOnce(&mut Self) -> Result<(), XmlWriterError> {
-        self.put_some_element(name, None, op)
+        self.put_some_element(name, None, None, op)
+    }
+
+    /// Creates a nested element.
+    pub fn put_element_with_attributes<F>(
+        &mut self,
+        name: &str,
+        attr: Vec<AttributePair>,
+        op: F) -> Result<(), XmlWriterError>
+        where F: FnOnce(&mut Self) -> Result<(), XmlWriterError> {
+        self.put_some_element(name, None, Some(attr), op)
     }
 
     /// Converts bytes to base64 encoded Characters as the content. Note
@@ -347,6 +374,7 @@ impl <W: io::Write> XmlWriter<W> {
         let writer = EmitterConfig::new()
             .write_document_declaration(false)
             .normalize_empty_elements(false)
+            .perform_indent(true)
             .create_writer(w);
 
         let mut x = XmlWriter { writer };
@@ -358,12 +386,22 @@ impl <W: io::Write> XmlWriter<W> {
 
 impl XmlWriter<()> {
 
+    /// Call this to encode XML into a Vec<u8>
     pub fn encode_vec<F>(op: F) -> Vec<u8>
         where F: FnOnce(&mut XmlWriter<&mut Vec<u8>>) -> Result<(), XmlWriterError> {
         let mut b = Vec::new();
         XmlWriter::encode(&mut b, op).unwrap();
         b
     }
+}
+
+
+//------------ AttributePair -------------------------------------------------
+
+/// A little helper to add attribute key value pairs when encoding XML
+pub struct AttributePair<'a> {
+    k: &'a str,
+    v: &'a str
 }
 
 
@@ -403,13 +441,14 @@ mod tests {
     fn should_write_xml() {
 
         let xml = XmlWriter::encode_vec(|w| {
-            w.put_first_element(
-                "hello",
-                "http://namespace/",
+            w.put_first_element_with_attributes(
+                "a",
+                "http://ns/",
+                vec![AttributePair{k: "c", v: "d"}],
                 |w|
                     {
-                        w.put_element("world", |w| {
-                            w.put_blob(Bytes::from("howdy"))
+                        w.put_element("b", |w| {
+                            w.put_blob(Bytes::from("X"))
                         })
                     }
             )
@@ -417,6 +456,6 @@ mod tests {
 
         assert_eq!(
             str::from_utf8(&xml).unwrap(),
-            r#"<hello xmlns="http://namespace/"><world>aG93ZHk=</world></hello>"#);
+            "<a xmlns=\"http://ns/\" c=\"d\">\n  <b>WA==</b>\n</a>");
     }
 }
