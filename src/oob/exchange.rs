@@ -47,7 +47,7 @@ impl PublisherRequest {
             r.take_named_element("publisher_request", |mut a, r| {
                 match a.take_req("version") {
                     Ok(s) => {
-                        if s != "1".to_string() {
+                        if s != "1" {
                             return Err(PublisherRequestError::InvalidVersion)
                         }
                     }
