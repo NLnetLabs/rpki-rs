@@ -17,7 +17,7 @@
 use bytes::Bytes;
 use ber::decode;
 use ber::{Mode, OctetString, Oid, Tag, Unsigned};
-use super::rsync;
+use super::uri;
 use super::cert::Cert;
 use super::x509::{
     update_once, Name, SignatureAlgorithm, SignedData, Time, ValidationError
@@ -318,7 +318,7 @@ impl Extensions {
 #[derive(Clone, Debug)]
 pub struct CrlStore {
     // This is a simple vector because most likely we’ll only ever have one.
-    crls: Vec<(rsync::Uri, Crl)>
+    crls: Vec<(uri::Rsync, Crl)>
 }
 
 impl CrlStore {
@@ -330,12 +330,12 @@ impl CrlStore {
     /// Adds an entry to the CRL store.
     ///
     /// The CRL is keyed by its rsync `uri`.
-    pub fn push(&mut self, uri: rsync::Uri, crl: Crl) {
+    pub fn push(&mut self, uri: uri::Rsync, crl: Crl) {
         self.crls.push((uri, crl))
     }
 
     /// Returns a reference to a CRL if it is available in the store.
-    pub fn get(&self, uri: &rsync::Uri) -> Option<&Crl> {
+    pub fn get(&self, uri: &uri::Rsync) -> Option<&Crl> {
         for &(ref stored_uri, ref crl) in &self.crls {
             if *stored_uri == *uri {
                 return Some(crl)

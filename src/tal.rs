@@ -6,14 +6,14 @@ use std::path::Path;
 use base64;
 use ber::decode;
 use super::cert::SubjectPublicKeyInfo;
-use super::rsync;
+use super::uri;
 
 
 //------------ Tal -----------------------------------------------------------
 
 #[derive(Clone, Debug)]
 pub struct Tal {
-    uris: Vec<rsync::Uri>,
+    uris: Vec<uri::Rsync>,
     key_info: SubjectPublicKeyInfo,
 }
 
@@ -36,7 +36,7 @@ impl Tal {
         Ok(Tal { uris, key_info })
     }
 
-    fn take_uri(data: &mut &[u8]) -> Result<Option<rsync::Uri>, ReadError> {
+    fn take_uri(data: &mut &[u8]) -> Result<Option<uri::Rsync>, ReadError> {
         let mut split = data.splitn(2, |&ch| ch == b'\n');
         let mut line = split.next().ok_or(ReadError::UnexpectedEof)?;
         *data = split.next().ok_or(ReadError::UnexpectedEof)?;
@@ -47,13 +47,13 @@ impl Tal {
             Ok(None)
         }
         else {
-            Ok(Some(rsync::Uri::from_slice(line)?))
+            Ok(Some(uri::Rsync::from_slice(line)?))
         }
     }
 }
 
 impl Tal {
-    pub fn uris(&self) -> ::std::slice::Iter<rsync::Uri> {
+    pub fn uris(&self) -> ::std::slice::Iter<uri::Rsync> {
         self.uris.iter()
     }
 
@@ -111,7 +111,7 @@ pub enum ReadError {
     UnexpectedEof,
 
     #[fail(display="bad trunst anchor URI: {}", _0)]
-    BadUri(rsync::UriError),
+    BadUri(uri::Error),
 
     #[fail(display="bad key info: {}", _0)]
     BadKeyInfoEncoding(base64::DecodeError),
@@ -126,8 +126,8 @@ impl From<io::Error> for ReadError {
     }
 }
 
-impl From<rsync::UriError> for ReadError {
-    fn from(err: rsync::UriError) -> ReadError {
+impl From<uri::Error> for ReadError {
+    fn from(err: uri::Error) -> ReadError {
         ReadError::BadUri(err)
     }
 }

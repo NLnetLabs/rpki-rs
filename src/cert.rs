@@ -19,7 +19,7 @@
 
 use bytes::Bytes;
 use ring::digest::{self, Digest};
-use super::rsync;
+use super::uri;
 use super::asres::{AsBlocks, AsResources};
 use ber::decode;
 use ber::{BitString, Mode, OctetString, Oid, Tag, Unsigned};
@@ -487,7 +487,7 @@ impl ResourceCert {
     }
 
     /// Returns the repository rsync URI of this certificate if available.
-    pub fn repository_uri(&self) -> Option<rsync::Uri> {
+    pub fn repository_uri(&self) -> Option<uri::Rsync> {
         for uri in self.cert.extensions.subject_info_access
                        .iter().filter_oid(oid::AD_CA_REPOSITORY)
         {
@@ -552,6 +552,10 @@ pub struct SubjectPublicKeyInfo {
 impl SubjectPublicKeyInfo {
     pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
         Mode::Der.decode(source, Self::take_from)
+    }
+
+    pub fn subject_public_key(&self) -> &BitString {
+        &self.subject_public_key
     }
  
     pub fn take_from<S: decode::Source>(
@@ -770,7 +774,7 @@ impl Extensions {
     ///
     /// The cA field gets chosen by the CA. The pathLenConstraint field must
     /// not be present.
-    fn take_basic_ca<S: decode::Source>(
+    pub fn take_basic_ca<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         basic_ca: &mut Option<bool>
     ) -> Result<(), S::Err> {
@@ -791,7 +795,7 @@ impl Extensions {
     /// SubjectKeyIdentifier ::= KeyIdentifier
     /// KeyIdentifier        ::= OCTET STRING
     /// ```
-    fn take_subject_key_identifier<S: decode::Source>(
+    pub fn take_subject_key_identifier<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         subject_key_id: &mut Option<OctetString>
     ) -> Result<(), S::Err> {
@@ -821,7 +825,7 @@ impl Extensions {
     /// ```
     ///
     /// Only keyIdentifier must be present.
-    fn take_authority_key_identifier<S: decode::Source>(
+    pub fn take_authority_key_identifier<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         authority_key_id: &mut Option<OctetString>
     ) -> Result<(), S::Err> {
@@ -1133,8 +1137,8 @@ impl UriGeneralName {
         })
     }
 
-    pub fn into_rsync_uri(self) -> Option<rsync::Uri> {
-        rsync::Uri::from_bytes(self.0.clone()).ok()
+    pub fn into_rsync_uri(self) -> Option<uri::Rsync> {
+        uri::Rsync::from_bytes(self.0.clone()).ok()
     }
 }
 
@@ -1255,7 +1259,7 @@ impl CertificatePolicies {
 //------------ OIDs ----------------------------------------------------------
 
 #[allow(dead_code)] // XXX
-mod oid {
+pub mod oid {
     use ::ber::Oid;
 
     pub const RSA_ENCRYPTION: Oid<&[u8]>

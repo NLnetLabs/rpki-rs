@@ -15,4 +15,6 @@ failure         = "^0.1"
 log             = "^0.4"
 ring            = "^0.12"
 untrusted       = "^0.5"
+xml-rs          = "^0.8"
+
 
