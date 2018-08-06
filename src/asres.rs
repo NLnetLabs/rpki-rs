@@ -7,7 +7,8 @@
 
 use std::{fmt, ops};
 use bytes::Bytes;
-use super::ber::{Constructed, Content, Error, Mode, Source, Tag};
+use ber::decode;
+use ber::{Mode, Tag};
 use super::x509::ValidationError;
 
 
@@ -50,8 +51,8 @@ impl AsResources {
     }
 
     /// Takes the AS resources from the beginning of an encoded value.
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             cons.take_constructed_if(Tag::CTX_0, |cons| {
@@ -65,7 +66,7 @@ impl AsResources {
                             .map(AsResources::Ids)
                     }
                     else {
-                        xerr!(Err(Error::Malformed.into()))
+                        xerr!(Err(decode::Error::Malformed.into()))
                     }
                 })
             })
@@ -141,8 +142,8 @@ impl AsIdBlocks {
 
 impl AsIdBlocks {
     /// Parses the content of a AS ID blocks sequence.
-    fn parse_content<S: Source>(
-        content: &mut Content<S>
+    fn parse_content<S: decode::Source>(
+        content: &mut decode::Content<S>
     ) -> Result<Self, S::Err> {
         let cons = content.as_constructed()?;
         cons.capture(|cons| {
@@ -284,8 +285,8 @@ impl AsBlock {
 
 impl AsBlock {
     /// Takes an optional AS bock from the beginning of an encoded value.
-    fn take_opt_from<S: Source>(
-        cons: &mut Constructed<S>
+    fn take_opt_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, S::Err> {
         cons.take_opt_value(|tag, content| {
             if tag == Tag::INTEGER {
@@ -295,14 +296,14 @@ impl AsBlock {
                 AsRange::parse_content(content).map(AsBlock::Range)
             }
             else {
-                xerr!(Err(Error::Malformed.into()))
+                xerr!(Err(decode::Error::Malformed.into()))
             }
         })
     }
 
     /// Skips over the AS block at the beginning of an encoded value.
-    fn skip_opt_in<S: Source>(
-        cons: &mut Constructed<S>
+    fn skip_opt_in<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Option<()>, S::Err> {
         cons.take_opt_value(|tag, content| {
             if tag == Tag::INTEGER {
@@ -312,7 +313,7 @@ impl AsBlock {
                 AsRange::skip_content(content)
             }
             else {
-                xerr!(Err(Error::Malformed.into()))
+                xerr!(Err(decode::Error::Malformed.into()))
             }
         })
     }
@@ -327,29 +328,29 @@ pub struct AsId(u32);
 
 impl AsId {
     /// Takes an AS number from the beginning of an encoded value.
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_u32().map(AsId)
     }
 
     /// Skips over the AS number at the beginning of an encoded value.
-    fn skip_in<S: Source>(
-        cons: &mut Constructed<S>
+    fn skip_in<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<(), S::Err> {
         cons.take_u32().map(|_| ())
     }
 
     /// Parses the content of an AS number value.
-    fn parse_content<S: Source>(
-        content: &mut Content<S>
+    fn parse_content<S: decode::Source>(
+        content: &mut decode::Content<S>
     ) -> Result<Self, S::Err> {
         content.to_u32().map(AsId)
     }
 
     /// Skips the content of an AS number value.
-    fn skip_content<S: Source>(
-        content: &mut Content<S>
+    fn skip_content<S: decode::Source>(
+        content: &mut decode::Content<S>
     ) -> Result<(), S::Err> {
         content.to_u32().map(|_| ())
     }
@@ -405,8 +406,8 @@ impl AsRange {
 
 impl AsRange {
     /// Parses the content of an AS range value.
-    fn parse_content<S: Source>(
-        content: &mut Content<S>
+    fn parse_content<S: decode::Source>(
+        content: &mut decode::Content<S>
     ) -> Result<Self, S::Err> {
         let cons = content.as_constructed()?;
         Ok(AsRange {
@@ -416,8 +417,8 @@ impl AsRange {
     }
 
     /// Skips over the content of an AS range value.
-    fn skip_content<S: Source>(
-        content: &mut Content<S>
+    fn skip_content<S: decode::Source>(
+        content: &mut decode::Content<S>
     ) -> Result<(), S::Err> {
         let cons = content.as_constructed()?;
         AsId::skip_in(cons)?;

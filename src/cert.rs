@@ -21,10 +21,8 @@ use bytes::Bytes;
 use ring::digest::{self, Digest};
 use super::uri;
 use super::asres::{AsBlocks, AsResources};
-use super::ber::{
-    BitString, Constructed, Error, Mode, OctetString, Oid, Source, Tag,
-    Unsigned
-};
+use ber::decode;
+use ber::{BitString, Mode, OctetString, Oid, Tag, Unsigned};
 use super::ipres::{IpAddressBlocks, IpResources};
 use super::x509::{
     update_once, Name, SignatureAlgorithm, SignedData, Time, ValidationError
@@ -96,20 +94,20 @@ pub struct Cert {
 
 impl Cert {
     /// Decodes a source as a certificate.
-    pub fn decode<S: Source>(source: S) -> Result<Self, S::Err> {
+    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
         Mode::Der.decode(source, Self::take_from)
     }
 
     /// Takes an encoded certificate from the beginning of a value.
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(Self::take_content_from)
     }
 
     /// Parses the content of a Certificate sequence.
-    pub fn take_content_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_content_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         let signed_data = SignedData::take_content_from(cons)?;
 
@@ -524,8 +522,8 @@ impl Validity {
         Validity { not_before, not_after }
     }
 
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             Ok(Validity::new(
@@ -552,7 +550,7 @@ pub struct SubjectPublicKeyInfo {
 }
 
 impl SubjectPublicKeyInfo {
-    pub fn decode<S: Source>(source: S) -> Result<Self, S::Err> {
+    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
         Mode::Der.decode(source, Self::take_from)
     }
 
@@ -560,8 +558,8 @@ impl SubjectPublicKeyInfo {
         &self.subject_public_key
     }
  
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             Ok(SubjectPublicKeyInfo {
@@ -588,14 +586,14 @@ pub enum PublicKeyAlgorithm {
 }
 
 impl PublicKeyAlgorithm {
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(Self::take_content_from)
     }
 
-    pub fn take_content_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_content_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         oid::RSA_ENCRYPTION.skip_if(cons)?;
         cons.take_opt_null()?;
@@ -657,8 +655,8 @@ pub struct Extensions {
 }
 
 impl Extensions {
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             let mut basic_ca = None;
@@ -731,7 +729,7 @@ impl Extensions {
                         )
                     }
                     else if critical {
-                        xerr!(Err(Error::Malformed))
+                        xerr!(Err(decode::Malformed))
                     }
                     else {
                         // RFC 5280 says we can ignore non-critical
@@ -743,20 +741,20 @@ impl Extensions {
                 Ok(())
             })? { }
             if ip_resources.is_none() && as_resources.is_none() {
-                xerr!(return Err(Error::Malformed.into()))
+                xerr!(return Err(decode::Malformed.into()))
             }
             Ok(Extensions {
                 basic_ca,
-                subject_key_id: subject_key_id.ok_or(Error::Malformed)?,
+                subject_key_id: subject_key_id.ok_or(decode::Malformed)?,
                 authority_key_id,
-                key_usage_ca: key_usage_ca.ok_or(Error::Malformed)?,
+                key_usage_ca: key_usage_ca.ok_or(decode::Malformed)?,
                 extended_key_usage,
                 crl_distribution,
                 authority_info_access,
                 subject_info_access:
-                    subject_info_access.ok_or(Error::Malformed)?,
+                    subject_info_access.ok_or(decode::Malformed)?,
                 certificate_policies:
-                    certificate_policies.ok_or(Error::Malformed)?,
+                    certificate_policies.ok_or(decode::Malformed)?,
                 ip_resources,
                 as_resources,
             })
@@ -776,8 +774,8 @@ impl Extensions {
     ///
     /// The cA field gets chosen by the CA. The pathLenConstraint field must
     /// not be present.
-    pub fn take_basic_ca<S: Source>(
-        cons: &mut Constructed<S>,
+    pub fn take_basic_ca<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
         basic_ca: &mut Option<bool>
     ) -> Result<(), S::Err> {
         update_once(basic_ca, || {
@@ -797,14 +795,14 @@ impl Extensions {
     /// SubjectKeyIdentifier ::= KeyIdentifier
     /// KeyIdentifier        ::= OCTET STRING
     /// ```
-    pub fn take_subject_key_identifier<S: Source>(
-        cons: &mut Constructed<S>,
+    pub fn take_subject_key_identifier<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
         subject_key_id: &mut Option<OctetString>
     ) -> Result<(), S::Err> {
         update_once(subject_key_id, || {
             let id = OctetString::take_from(cons)?;
             if id.len() != 20 {
-                xerr!(Err(Error::Malformed.into()))
+                xerr!(Err(decode::Malformed.into()))
             }
             else {
                 Ok(id)
@@ -827,8 +825,8 @@ impl Extensions {
     /// ```
     ///
     /// Only keyIdentifier must be present.
-    pub fn take_authority_key_identifier<S: Source>(
-        cons: &mut Constructed<S>,
+    pub fn take_authority_key_identifier<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
         authority_key_id: &mut Option<OctetString>
     ) -> Result<(), S::Err> {
         update_once(authority_key_id, || {
@@ -836,7 +834,7 @@ impl Extensions {
                 cons.take_value_if(Tag::CTX_0, OctetString::take_content_from)
             })?;
             if res.len() != 20 {
-                return Err(Error::Malformed.into())
+                return Err(decode::Malformed.into())
             }
             else {
                 Ok(res)
@@ -863,8 +861,8 @@ impl Extensions {
     /// CRLSign must be set, in EE certificates, digitalSignatures must be
     /// set. This field therefore simply describes whether the certificate
     /// is for a CA.
-    fn take_key_usage<S: Source>(
-        cons: &mut Constructed<S>,
+    fn take_key_usage<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
         key_usage_ca: &mut Option<bool>
     ) -> Result<(), S::Err> {
         update_once(key_usage_ca, || {
@@ -876,7 +874,7 @@ impl Extensions {
                 Ok(false)
             }
             else {
-                Err(Error::Malformed.into())
+                Err(decode::Malformed.into())
             }
         })
     }
@@ -889,8 +887,8 @@ impl Extensions {
     /// ```
     ///
     /// May only be present in EE certificates issued to devices.
-    fn take_extended_key_usage<S: Source>(
-        cons: &mut Constructed<S>,
+    fn take_extended_key_usage<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
         extended_key_usage: &mut Option<Bytes>
     ) -> Result<(), S::Err> {
         update_once(extended_key_usage, || {
@@ -924,8 +922,8 @@ impl Extensions {
     /// distributionPoint field must be present and it must contain
     /// the fullName choice which can be one or more uniformResourceIdentifier
     /// choices.
-    fn take_crl_distribution_points<S: Source>(
-        cons: &mut Constructed<S>,
+    fn take_crl_distribution_points<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
         crl_distribution: &mut Option<UriGeneralNames>
     ) -> Result<(), S::Err> {
         update_once(crl_distribution, || {
@@ -955,8 +953,8 @@ impl Extensions {
     /// Must be present except in self-signed certificates. Must contain
     /// exactly one entry with accessMethod id-ad-caIssuers and a URI as a
     /// generalName.
-    fn take_authority_info_access<S: Source>(
-        cons: &mut Constructed<S>,
+    fn take_authority_info_access<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
         authority_info_access: &mut Option<UriGeneralName>
     ) -> Result<(), S::Err> {
         update_once(authority_info_access, || {
@@ -992,8 +990,8 @@ impl Extensions {
     ///
     /// Since we don’t necessarily know what kind of certificate we have yet,
     /// we may accept the wrong kind here. This needs to be checked later.
-    fn take_subject_info_access<S: Source>(
-        cons: &mut Constructed<S>,
+    fn take_subject_info_access<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
         subject_info_access: &mut Option<SubjectInfoAccess>,
     ) -> Result<(), S::Err> {
         update_once(
@@ -1005,8 +1003,8 @@ impl Extensions {
     /// Parses the Certificate Policies extension.
     ///
     /// Must be present.
-    fn take_certificate_policies<S: Source>(
-        cons: &mut Constructed<S>,
+    fn take_certificate_policies<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
         certificate_policies: &mut Option<CertificatePolicies>,
     ) -> Result<(), S::Err> {
         update_once(certificate_policies, || {
@@ -1015,8 +1013,8 @@ impl Extensions {
     }
 
     /// Parses the IP Resources extension.
-    fn take_ip_resources<S: Source>(
-        cons: &mut Constructed<S>,
+    fn take_ip_resources<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
         ip_resources: &mut Option<IpResources>
     ) -> Result<(), S::Err> {
         update_once(ip_resources, || {
@@ -1025,8 +1023,8 @@ impl Extensions {
     }
 
     /// Parses the AS Resources extension.
-    fn take_as_resources<S: Source>(
-        cons: &mut Constructed<S>,
+    fn take_as_resources<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
         as_resources: &mut Option<AsResources>
     ) -> Result<(), S::Err> {
         update_once(as_resources, || {
@@ -1051,12 +1049,12 @@ impl<'a> UriGeneralNames {
     ///    uniformResourceIdentifier       [6]     IA5String,
     ///    ... }
     /// ```
-    fn take_content_from<S: Source>(
-        cons: &mut Constructed<S>
+    fn take_content_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         Ok(UriGeneralNames(cons.capture(|cons| {
             if let None = UriGeneralName::skip_opt(cons)? {
-                xerr!(return Err(Error::Malformed.into()))
+                xerr!(return Err(decode::Malformed.into()))
             }
             while let Some(()) = UriGeneralName::skip_opt(cons)? { }
             Ok(())
@@ -1097,8 +1095,8 @@ impl Iterator for UriGeneralNameIter {
 pub struct UriGeneralName(Bytes);
 
 impl UriGeneralName {
-    fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_primitive_if(Tag::CTX_6, |prim| {
             let res = prim.take_all()?;
@@ -1106,13 +1104,13 @@ impl UriGeneralName {
                 Ok(UriGeneralName(res))
             }
             else {
-                xerr!(Err(Error::Malformed.into()))
+                xerr!(Err(decode::Malformed.into()))
             }
         })
     }
 
-    fn take_opt_from<S: Source>(
-        cons: &mut Constructed<S>
+    fn take_opt_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, S::Err> {
         cons.take_opt_primitive_if(Tag::CTX_6, |prim| {
             let res = prim.take_all()?;
@@ -1120,13 +1118,13 @@ impl UriGeneralName {
                 Ok(UriGeneralName(res))
             }
             else {
-                xerr!(Err(Error::Malformed.into()))
+                xerr!(Err(decode::Malformed.into()))
             }
         })
     }
 
-    fn skip_opt<S: Source>(
-        cons: &mut Constructed<S>
+    fn skip_opt<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Option<()>, S::Err> {
         cons.take_opt_primitive_if(Tag::CTX_6, |prim| {
             if prim.slice_all()?.is_ascii() {
@@ -1134,7 +1132,7 @@ impl UriGeneralName {
                 Ok(())
             }
             else {
-                xerr!(Err(Error::Malformed.into()))
+                xerr!(Err(decode::Malformed.into()))
             }
         })
     }
@@ -1158,8 +1156,8 @@ impl SubjectInfoAccess {
         SiaIter { content: self.content.clone() }
     }
 
-    fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             let mut ca = None;
@@ -1173,7 +1171,7 @@ impl SubjectInfoAccess {
                             None => ca = Some(true),
                             Some(true) => { }
                             Some(false) => {
-                                xerr!(return Err(Error::Malformed.into()))
+                                xerr!(return Err(decode::Malformed.into()))
                             }
                         }
                     }
@@ -1182,7 +1180,7 @@ impl SubjectInfoAccess {
                             None => ca = Some(false),
                             Some(false) => { }
                             Some(true) => {
-                                xerr!(return Err(Error::Malformed.into()))
+                                xerr!(return Err(decode::Malformed.into()))
                             }
                         }
                     }
@@ -1196,7 +1194,7 @@ impl SubjectInfoAccess {
             }
             else {
                 // The sequence was empty.
-                xerr!(Err(Error::Malformed.into()))
+                xerr!(Err(decode::Malformed.into()))
             }
         })
     }
@@ -1249,8 +1247,8 @@ impl Iterator for SiaIter {
 pub struct CertificatePolicies(Bytes);
 
 impl CertificatePolicies {
-    fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         // XXX TODO Parse properly.
         cons.take_sequence(|c| c.capture_all()).map(CertificatePolicies)
