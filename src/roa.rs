@@ -3,9 +3,11 @@
 //! For details, see RFC 6482.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use ber::decode;
+use ber::{BitString, Mode, Tag};
+use ber::decode::Source;
 use bytes::Bytes;
 use super::asres::AsId;
-use super::ber::{BitString, Constructed, Error, Mode, Source, Tag};
 use super::cert::{Cert, ResourceCert};
 use super::ipres::AddressFamily;
 use super::sigobj::SignedObject;
@@ -21,7 +23,7 @@ pub struct Roa {
 }
 
 impl Roa {
-    pub fn decode<S: Source>(
+    pub fn decode<S: decode::Source>(
         source: S,
         strict: bool
     ) -> Result<Self, S::Err> {
@@ -80,13 +82,13 @@ impl RouteOriginAttestation {
 }
 
 impl RouteOriginAttestation {
-    fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             cons.take_opt_primitive_if(Tag::CTX_0, |prim| {
                 if prim.take_u8()? != 0 {
-                    xerr!(Err(Error::Malformed.into()))
+                    xerr!(Err(decode::Malformed.into()))
                 }
                 else {
                     Ok(())
@@ -100,13 +102,13 @@ impl RouteOriginAttestation {
                     match AddressFamily::take_from(cons)? {
                         AddressFamily::Ipv4 => {
                             if v4.is_some() {
-                                xerr!(return Err(Error::Malformed.into()));
+                                xerr!(return Err(decode::Malformed.into()));
                             }
                             v4 = Some(RoaIpAddresses::take_from(cons)?);
                         }
                         AddressFamily::Ipv6 => {
                             if v6.is_some() {
-                                xerr!(return Err(Error::Malformed.into()));
+                                xerr!(return Err(decode::Malformed.into()));
                             }
                             v6 = Some(RoaIpAddresses::take_from(cons)?);
                         }
@@ -163,8 +165,8 @@ impl RouteOriginAttestation {
 pub struct RoaIpAddresses(Bytes);
 
 impl RoaIpAddresses {
-    fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             cons.capture(|cons| {
@@ -227,14 +229,14 @@ impl RoaIpAddress {
 }
 
 impl RoaIpAddress {
-    fn take_opt_from<S: Source>(
-        cons: &mut Constructed<S>
+    fn take_opt_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, S::Err> {
         cons.take_opt_sequence(|cons| {
             let bs = BitString::take_from(cons)?;
             let max = cons.take_opt_u8()?;
             if bs.octet_len() > 16 {
-                xerr!(return Err(Error::Malformed.into()))
+                xerr!(return Err(decode::Malformed.into()))
             }
             let mut addr = 0;
             for octet in bs.octets() {
@@ -251,14 +253,14 @@ impl RoaIpAddress {
         })
     }
 
-    fn skip_opt_in<S: Source>(
-        cons: &mut Constructed<S>
+    fn skip_opt_in<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Option<()>, S::Err> {
         cons.take_opt_sequence(|cons| {
             let bs = BitString::take_from(cons)?;
             let _ = cons.take_opt_u8()?;
             if bs.octet_len() > 16 {
-                xerr!(return Err(Error::Malformed.into()))
+                xerr!(return Err(decode::Malformed.into()))
             }
             Ok(())
         })

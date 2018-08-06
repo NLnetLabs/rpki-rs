@@ -2,18 +2,20 @@
 
 use std::str;
 use std::str::FromStr;
+use ber::decode;
+use ber::{BitString, Tag};
+use ber::decode::Source;
 use bytes::Bytes;
 use chrono::{DateTime, LocalResult, TimeZone, Utc};
-use super::ber::{BitString, Constructed, Error, Source, Tag};
 use super::time;
 
 
 //------------ Functions -----------------------------------------------------
 
 pub fn update_once<F, T, E>(opt: &mut Option<T>, op: F) -> Result<(), E>
-where F: FnOnce() -> Result<T, E>, E: From<Error> {
+where F: FnOnce() -> Result<T, E>, E: From<decode::Error> {
     if opt.is_some() {
-        Err(Error::Malformed.into())
+        Err(decode::Malformed.into())
     }
     else {
         *opt = Some(op()?);
@@ -28,8 +30,8 @@ where F: FnOnce() -> Result<T, E>, E: From<Error> {
 pub struct Name(Bytes);
 
 impl Name {
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| cons.capture_all()).map(Name)
     }
@@ -44,14 +46,14 @@ pub enum SignatureAlgorithm {
 }
 
 impl SignatureAlgorithm {
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(Self::take_content_from)
     }
 
-    pub fn take_content_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_content_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         oid::SHA256_WITH_RSA_ENCRYPTION.skip_if(cons)?;
         cons.take_opt_null()?;
@@ -70,14 +72,14 @@ pub struct SignedData {
 }
 
 impl SignedData {
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(Self::take_content_from)
     }
 
-    pub fn take_content_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_content_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         Ok(SignedData {
             data: cons.capture_one()?,
@@ -112,8 +114,8 @@ impl SignedData {
 pub struct Time(DateTime<Utc>);
 
 impl Time {
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_primitive(|tag, prim| {
             match tag {
@@ -131,7 +133,7 @@ impl Time {
                         read_two_char(prim)?,
                     );
                     if prim.take_u8()? != b'Z' {
-                        return Err(Error::Malformed.into())
+                        return Err(decode::Malformed.into())
                     }
                     Self::from_parts(res).map_err(Into::into)
                 }
@@ -146,19 +148,19 @@ impl Time {
                         read_two_char(prim)?,
                     );
                     if prim.take_u8()? != b'Z' {
-                        return Err(Error::Malformed.into())
+                        return Err(decode::Malformed.into())
                     }
                     Self::from_parts(res).map_err(Into::into)
                 }
                 _ => {
-                    xerr!(Err(Error::Malformed.into()))
+                    xerr!(Err(decode::Malformed.into()))
                 }
             }
         })
     }
 
-    pub fn take_opt_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_opt_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, S::Err> {
         let res = cons.take_opt_primitive_if(Tag::UTC_TIME, |prim| {
             let year = read_two_char(prim)? as i32;
@@ -173,7 +175,7 @@ impl Time {
                 read_two_char(prim)?,
             );
             if prim.take_u8()? != b'Z' {
-                return Err(Error::Malformed.into())
+                return Err(decode::Malformed.into())
             }
             Self::from_parts(res).map_err(Into::into)
         })?;
@@ -190,7 +192,7 @@ impl Time {
                 read_two_char(prim)?,
             );
             if prim.take_u8()? != b'Z' {
-                return Err(Error::Malformed.into())
+                return Err(decode::Malformed.into())
             }
             Self::from_parts(res).map_err(Into::into)
         })
@@ -198,15 +200,15 @@ impl Time {
 
     fn from_parts(
         parts: (i32, u32, u32, u32, u32, u32)
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, decode::Error> {
         Ok(Time(match Utc.ymd_opt(parts.0, parts.1, parts.2) {
             LocalResult::Single(dt) => {
                 match dt.and_hms_opt(parts.3, parts.4, parts.5) {
                     Some(dt) => dt,
-                    None => return Err(Error::Malformed),
+                    None => return Err(decode::Malformed),
                 }
             }
-            _ => return Err(Error::Malformed)
+            _ => return Err(decode::Malformed)
         }))
     }
 
@@ -229,23 +231,23 @@ impl Time {
     }
 }
 
-fn read_two_char<S: Source>(source: &mut S) -> Result<u32, S::Err> {
+fn read_two_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Err> {
     let mut s = [0u8; 2];
     s[0] = source.take_u8()?;
     s[1] = source.take_u8()?;
     let s = match str::from_utf8(&s[..]) {
         Ok(s) => s,
         Err(_err) => {
-            xerr!(return Err(Error::Malformed.into()))
+            xerr!(return Err(decode::Malformed.into()))
         }
     };
     u32::from_str(s).map_err(|_err| {
-        xerr!(Error::Malformed.into())
+        xerr!(decode::Malformed.into())
     })
 }
 
 
-fn read_four_char<S: Source>(source: &mut S) -> Result<u32, S::Err> {
+fn read_four_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Err> {
     let mut s = [0u8; 4];
     s[0] = source.take_u8()?;
     s[1] = source.take_u8()?;
@@ -254,11 +256,11 @@ fn read_four_char<S: Source>(source: &mut S) -> Result<u32, S::Err> {
     let s = match str::from_utf8(&s[..]) {
         Ok(s) => s,
         Err(_err) => {
-            xerr!(return Err(Error::Malformed.into()))
+            xerr!(return Err(decode::Malformed.into()))
         }
     };
     u32::from_str(s).map_err(|_err| {
-        xerr!(Error::Malformed.into())
+        xerr!(decode::Malformed.into())
     })
 }
 

@@ -1,11 +1,11 @@
 //! Signed Objects
 
+use ber::decode;
+use ber::{Mode, Oid, Tag};
+use ber::ostring::{OctetString, OctetStringSource};
 use bytes::Bytes;
 use ring::digest;
 use untrusted::Input;
-use super::ber::{
-    Constructed, Error, Mode, OctetString, OctetStringSource, Oid, Source, Tag
-};
 use super::x509::update_once;
 use super::cert::{Cert, ResourceCert};
 use super::x509::{Time, ValidationError};
@@ -26,7 +26,7 @@ pub struct SignedObject {
 }
 
 impl SignedObject {
-    pub fn decode<S: Source>(
+    pub fn decode<S: decode::Source>(
         source: S,
         strict: bool
     ) -> Result<Self, S::Err> {
@@ -45,8 +45,9 @@ impl SignedObject {
         &self.content
     }
 
-    pub fn decode_content<F, T>(&self, op: F) -> Result<T, Error>
-    where F: FnOnce(&mut Constructed<OctetStringSource>) -> Result<T, Error> {
+    pub fn decode_content<F, T>(&self, op: F) -> Result<T, decode::Error>
+    where F: FnOnce(&mut decode::Constructed<OctetStringSource>)
+                    -> Result<T, decode::Error> {
         // XXX Let’s see if using DER here at least holds.
         Mode::Der.decode(self.content.to_source(), op)
     }
@@ -59,8 +60,8 @@ impl SignedObject {
 
 
 impl SignedObject {
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             oid::SIGNED_DATA.skip_if(cons)?; // contentType
@@ -83,8 +84,8 @@ impl SignedObject {
     /// ```
     ///
     /// `version` must be 3, `certificates` present and `crls` not.
-    fn take_signed_data<S: Source>(
-        cons: &mut Constructed<S>
+    fn take_signed_data<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             cons.skip_u8_if(3)?; // version -- must be 3
@@ -110,8 +111,8 @@ impl SignedObject {
     /// ```
     ///
     /// For a ROA, `eContentType` must be `oid:::ROUTE_ORIGIN_AUTH`.
-    fn take_encap_content_info<S: Source>(
-        cons: &mut Constructed<S>
+    fn take_encap_content_info<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<(Oid<Bytes>, OctetString), S::Err> {
         cons.take_sequence(|cons| {
             Ok((
@@ -144,15 +145,15 @@ impl SignedObject {
     /// other choices.
     ///
     /// RFC 6288 limites the set to exactly one.
-    fn take_certificates<S: Source>(
-        cons: &mut Constructed<S>
+    fn take_certificates<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Cert, S::Err> {
         cons.take_constructed_if(Tag::CTX_0, |cons| {
             cons.take_constructed(|tag, cons| {
                 match tag {
                     Tag::SEQUENCE =>  Cert::take_content_from(cons),
                     _ => {
-                        xerr!(Err(Error::Unimplemented.into()))
+                        xerr!(Err(decode::Unimplemented.into()))
                     }
                 }
             })
@@ -227,20 +228,20 @@ pub enum DigestAlgorithm {
 
 
 impl DigestAlgorithm {
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(Self::take_content_from)
     }
 
-    pub fn take_opt_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_opt_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, S::Err> {
         cons.take_opt_sequence(Self::take_content_from)
     }
 
-    fn take_content_from<S: Source>(
-        cons: &mut Constructed<S>
+    fn take_content_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         oid::SHA256.skip_if(cons)?;
         cons.take_opt_null()?;
@@ -257,8 +258,8 @@ impl DigestAlgorithm {
     ///
     /// Section 2.1.2. of RFC 6488 requires there to be exactly one element
     /// chosen from the allowed values.
-    pub fn skip_set<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn skip_set<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<(), S::Err> {
         cons.take_constructed_if(Tag::SET, |cons| {
             while let Some(_) = Self::take_opt_from(cons)? { }
@@ -280,14 +281,14 @@ pub struct SignerInfo {
 }
 
 impl SignerInfo {
-    pub fn take_set_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_set_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_set(Self::take_from)
     }
 
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             cons.skip_u8_if(3)?;
@@ -321,8 +322,8 @@ pub struct SignedAttributes {
 }
 
 impl SignedAttributes {
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         let raw = cons.take_constructed_if(Tag::CTX_0, |c| c.capture_all())?;
         Mode::Ber.decode(raw.clone(), |cons| {
@@ -348,16 +349,16 @@ impl SignedAttributes {
                     )
                 }
                 else {
-                    xerr!(Err(Error::Malformed))
+                    xerr!(Err(decode::Malformed))
                 }
             })? { }
             let message_digest = match message_digest {
                 Some(some) => some,
-                None => return Err(Error::Malformed)
+                None => return Err(decode::Malformed)
             };
             let content_type = match content_type {
                 Some(some) => some,
-                None => return Err(Error::Malformed)
+                None => return Err(decode::Malformed)
             };
             Ok(SignedAttributes {
                 raw,
@@ -373,8 +374,8 @@ impl SignedAttributes {
     ///
     /// This attribute is defined in section 11.1. of RFC 5652. The attribute
     /// value is a SET of exactly one OBJECT IDENTIFIER.
-    fn take_content_type<S: Source>(
-        cons: &mut Constructed<S>,
+    fn take_content_type<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
         content_type: &mut Option<Oid<Bytes>>
     ) -> Result<(), S::Err> {
         update_once(content_type, || {
@@ -382,8 +383,8 @@ impl SignedAttributes {
         })
     }
 
-    fn take_message_digest<S: Source>(
-        cons: &mut Constructed<S>,
+    fn take_message_digest<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
         message_digest: &mut Option<OctetString>
     ) -> Result<(), S::Err> {
         update_once(message_digest, || {
@@ -391,8 +392,8 @@ impl SignedAttributes {
         })
     }
 
-    fn take_signing_time<S: Source>(
-        cons: &mut Constructed<S>,
+    fn take_signing_time<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
         signing_time: &mut Option<Time>
     ) -> Result<(), S::Err> {
         update_once(signing_time, || {
@@ -400,8 +401,8 @@ impl SignedAttributes {
         })
     }
 
-    fn take_bin_signing_time<S: Source>(
-        cons: &mut Constructed<S>,
+    fn take_bin_signing_time<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
         bin_signing_time: &mut Option<u64>
     ) -> Result<(), S::Err> {
         update_once(bin_signing_time, || {
@@ -438,20 +439,20 @@ pub enum SignatureAlgorithm {
 }
 
 impl SignatureAlgorithm {
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(Self::take_content_from)
     }
 
-    pub fn take_content_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_content_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         let oid = Oid::take_from(cons)?;
         if oid != oid::RSA_ENCRYPTION &&
             oid != oid::SHA256_WITH_RSA_ENCRYPTION
         {
-            return Err(Error::Malformed.into())
+            return Err(decode::Malformed.into())
         }
         cons.take_opt_null()?;
         Ok(SignatureAlgorithm::Sha256WithRsaEncryption)

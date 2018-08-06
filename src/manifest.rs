@@ -10,11 +10,10 @@
 //! [`Manifest`]: struct.Manifest.html
 //! [`ManifestContent`]: struct.ManifestContent.html
 
+use ber::decode;
+use ber::{BitString, Mode, OctetString, Tag, Unsigned};
 use bytes::Bytes;
 use super::rsync;
-use super::ber::{
-    BitString, Constructed, Error, Mode, OctetString, Source, Tag, Unsigned
-};
 use super::cert::{ResourceCert};
 use super::sigobj::{self, SignedObject};
 use super::x509::{Time, ValidationError};
@@ -35,7 +34,7 @@ pub struct Manifest {
 
 impl Manifest {
     /// Decodes a manifest from a source.
-    pub fn decode<S: Source>(
+    pub fn decode<S: decode::Source>(
         source: S,
         strict: bool
     ) -> Result<Self, S::Err> {
@@ -86,13 +85,13 @@ pub struct ManifestContent {
 
 impl ManifestContent {
     /// Decodes the manifest content from its encoded form.
-    fn decode<S: Source>(
-        cons: &mut Constructed<S>
+    fn decode<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             cons.take_opt_primitive_if(Tag::CTX_0, |prim| {
                 if prim.to_u8()? != 0 {
-                    xerr!(Err(Error::Malformed.into()))
+                    xerr!(Err(decode::Malformed.into()))
                 }
                 else {
                     Ok(())
@@ -102,7 +101,7 @@ impl ManifestContent {
             let this_update = Time::take_from(cons)?;
             let next_update = Time::take_from(cons)?;
             if this_update > next_update {
-                xerr!(return Err(Error::Malformed.into()));
+                xerr!(return Err(decode::Malformed.into()));
             }
             sigobj::oid::SHA256.skip_if(cons)?;
             let file_list = cons.take_sequence(|cons| {
@@ -175,8 +174,8 @@ pub struct FileAndHash {
 
 impl FileAndHash {
     /// Skips over an optional value in a constructed value.
-    fn skip_opt_in<S: Source>(
-        cons: &mut Constructed<S>
+    fn skip_opt_in<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Option<()>, S::Err> {
         cons.take_opt_sequence(|cons| {
             cons.take_value_if(
@@ -189,8 +188,8 @@ impl FileAndHash {
     }
 
     /// Takes an optional value from the beginning of a constructed value.
-    fn take_opt_from<S: Source>(
-        cons: &mut Constructed<S>
+    fn take_opt_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, S::Err> {
         cons.take_opt_sequence(|cons| {
             Ok(FileAndHash {
