@@ -345,7 +345,7 @@ pub mod tests {
     }
 
     #[test]
-    fn test_parse_id_publisher_ta_cert() {
+    fn should_parse_id_publisher_ta_cert() {
         let d = Utc.ymd(2012, 1, 1).and_hms(0, 0, 0);
         time::with_now(d, || {
             let cert = test_id_certificate();

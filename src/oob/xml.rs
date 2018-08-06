@@ -405,6 +405,9 @@ pub struct AttributePair<'a> {
 }
 
 impl <'a> AttributePair<'a> {
+
+    /// Creates an AttributePair from a key and a value, e.g.:
+    /// let pair = AttributePair::from("key", "value");
     pub fn from(k: &'a str, v: &'a str) -> Self {
         AttributePair{k, v}
     }

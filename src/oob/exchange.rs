@@ -78,6 +78,7 @@ impl PublisherRequest {
         })
     }
 
+    /// Encodes a <publisher_request> to a Vec
     pub fn encode_vec(&self) -> Vec<u8> {
         XmlWriter::encode_vec(|w| {
 
@@ -247,6 +248,7 @@ impl RepositoryResponse {
         })
     }
 
+    /// Encodes the <repository_response/> to a Vec
     pub fn encode_vec(&self) -> Vec<u8> {
         XmlWriter::encode_vec(|w| {
 
