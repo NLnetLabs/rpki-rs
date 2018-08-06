@@ -30,4 +30,5 @@ pub mod tal;
 pub mod x509;
 
 pub mod oob;
+pub mod remote;
 mod time;

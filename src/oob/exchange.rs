@@ -11,11 +11,11 @@ use ber;
 use bytes::Bytes;
 use uri;
 use x509;
-use super::idcert::IdCert;
-use super::xml::{XmlReader, XmlReaderErr};
-use super::xml::AttributesError;
-use oob::xml::XmlWriter;
-use oob::xml::AttributePair;
+use remote::idcert::IdCert;
+use remote::xml::XmlWriter;
+use remote::xml::AttributePair;
+use remote::xml::{XmlReader, XmlReaderErr};
+use remote::xml::AttributesError;
 
 
 //------------ PublisherRequest ----------------------------------------------
@@ -423,7 +423,7 @@ mod tests {
     fn should_generate_publisher_request() {
         let d = Utc.ymd(2012, 1, 1).and_hms(0, 0, 0);
         time::with_now(d, || {
-            let cert = ::oob::idcert::tests::test_id_certificate();
+            let cert = ::remote::idcert::tests::test_id_certificate();
 
             let pr = PublisherRequest {
                 tag: Some("tag".to_string()),
@@ -441,7 +441,7 @@ mod tests {
     fn should_generate_repository_response() {
         let d = Utc.ymd(2012, 1, 1).and_hms(0, 0, 0);
         time::with_now(d, || {
-            let cert = ::oob::idcert::tests::test_id_certificate();
+            let cert = ::remote::idcert::tests::test_id_certificate();
 
             let pr = RepositoryResponse {
                 tag: Some("tag".to_string()),
