@@ -4,7 +4,7 @@ use std::fs::{read_dir, DirEntry, File, ReadDir};
 use std::io::{self, Read};
 use std::path::Path;
 use base64;
-use super::ber;
+use ber::decode;
 use super::cert::SubjectPublicKeyInfo;
 use super::uri;
 
@@ -117,7 +117,7 @@ pub enum ReadError {
     BadKeyInfoEncoding(base64::DecodeError),
 
     #[fail(display="bad key info: {}", _0)]
-    BadKeyInfo(ber::Error),
+    BadKeyInfo(decode::Error),
 }
 
 impl From<io::Error> for ReadError {
@@ -138,8 +138,8 @@ impl From<base64::DecodeError> for ReadError {
     }
 }
 
-impl From<ber::Error> for ReadError {
-    fn from(err: ber::Error) -> ReadError {
+impl From<decode::Error> for ReadError {
+    fn from(err: decode::Error) -> ReadError {
         ReadError::BadKeyInfo(err)
     }
 }

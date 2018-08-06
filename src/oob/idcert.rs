@@ -1,7 +1,8 @@
 //! Identity Certificates.
 //!
 
-use ber::{Constructed, Error, Mode, OctetString, Oid, Source, Tag, Unsigned};
+use ber::decode;
+use ber::{Mode, OctetString, Oid, Tag, Unsigned};
 use cert::{Extensions, SubjectPublicKeyInfo, Validity};
 use cert::oid;
 use x509::{Name, SignatureAlgorithm, SignedData, ValidationError};
@@ -60,20 +61,20 @@ pub struct IdCert {
 
 impl IdCert {
     /// Decodes a source as a certificate.
-    pub fn decode<S: Source>(source: S) -> Result<Self, S::Err> {
+    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
         Mode::Der.decode(source, Self::take_from)
     }
 
     /// Takes an encoded certificate from the beginning of a value.
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(Self::take_content_from)
     }
 
     /// Parses the content of a Certificate sequence.
-    pub fn take_content_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_content_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         let signed_data = SignedData::take_content_from(cons)?;
 
@@ -281,8 +282,8 @@ pub struct IdExtensions {
 }
 
 impl IdExtensions {
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             let mut basic_ca = None;
@@ -304,7 +305,7 @@ impl IdExtensions {
                             content, &mut authority_key_id
                         )
                     } else if critical {
-                        xerr!(Err(Error::Malformed))
+                        xerr!(Err(decode::Malformed))
                     } else {
                         // RFC 5280 says we can ignore non-critical
                         // extensions we don’t know of. RFC 6487
@@ -316,7 +317,7 @@ impl IdExtensions {
             })? {}
             Ok(IdExtensions {
                 basic_ca,
-                subject_key_id: subject_key_id.ok_or(Error::Malformed)?,
+                subject_key_id: subject_key_id.ok_or(decode::Malformed)?,
                 authority_key_id,
             })
         })

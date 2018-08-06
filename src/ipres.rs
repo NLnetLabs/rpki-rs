@@ -8,9 +8,8 @@
 //! non-empty.
 
 use bytes::Bytes;
-use super::ber::{
-    BitString, Constructed, Content, Error, Mode, OctetString, Source, Tag,
-};
+use ber::decode;
+use ber::{BitString, Mode, OctetString, Tag};
 use super::roa::RoaIpAddress;
 use super::x509::ValidationError;
 
@@ -33,8 +32,8 @@ pub struct IpResources {
 
 impl IpResources {
     /// Takes the IP resources from the beginning of a constructed value.
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             let mut v4 = None;
@@ -44,13 +43,13 @@ impl IpResources {
                 match af {
                     AddressFamily::Ipv4 => {
                         if v4.is_some() {
-                            xerr!(return Err(Error::Malformed.into()));
+                            xerr!(return Err(decode::Malformed.into()));
                         }
                         v4 = Some(AddressChoice::take_from(cons)?);
                     }
                     AddressFamily::Ipv6 => {
                         if v6.is_some() {
-                            xerr!(return Err(Error::Malformed.into()));
+                            xerr!(return Err(decode::Malformed.into()));
                         }
                         v6 = Some(AddressChoice::take_from(cons)?);
                     }
@@ -58,7 +57,7 @@ impl IpResources {
                 Ok(())
             })? { }
             if v4.is_none() && v6.is_none() {
-                xerr!(return Err(Error::Malformed.into()));
+                xerr!(return Err(decode::Malformed.into()));
             }
             Ok(IpResources { v4, v6 })
         })
@@ -102,8 +101,8 @@ impl AddressChoice {
 
 impl AddressChoice {
     /// Takes an address choice from the beginning of a constructed value.
-    fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_value(|tag, content| {
             if tag == Tag::NULL {
@@ -115,7 +114,7 @@ impl AddressChoice {
                     .map(AddressChoice::Blocks)
             }
             else {
-                xerr!(Err(Error::Malformed.into()))
+                xerr!(Err(decode::Malformed.into()))
             }
         })
     }
@@ -221,8 +220,8 @@ impl AddressBlocks {
 
 impl AddressBlocks {
     /// Parses the content of an address block sequence.
-    fn parse_content<S: Source>(
-        content: &mut Content<S>
+    fn parse_content<S: decode::Source>(
+        content: &mut decode::Content<S>
     ) -> Result<Self, S::Err> {
         content.as_constructed()?.capture(|cons| {
             while let Some(()) = AddressRange::skip_opt_in(cons)? {
@@ -401,8 +400,8 @@ impl AddressRange {
 
 impl AddressRange {
     /// Takes an option address range from the beginning of a value.
-    fn take_opt_from<S: Source>(
-        cons: &mut Constructed<S>
+    fn take_opt_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, S::Err> {
         cons.take_opt_value(|tag, content| {
             if tag == Tag::BIT_STRING {
@@ -412,21 +411,21 @@ impl AddressRange {
                 Self::parse_range_content(content)
             }
             else {
-                xerr!(Err(Error::Malformed.into()))
+                xerr!(Err(decode::Malformed.into()))
             }
         })
     }
 
     /// Skips over the address range at the beginning of a value.
-    fn skip_opt_in<S: Source>(
-        cons: &mut Constructed<S>
+    fn skip_opt_in<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Option<()>, S::Err> {
         Self::take_opt_from(cons).map(|x| x.map(|_| ()))
     }
 
     /// Parses the content of the IPAddress variant of an address range.
-    fn parse_address_content<S: Source>(
-        content: &mut Content<S>
+    fn parse_address_content<S: decode::Source>(
+        content: &mut decode::Content<S>
     ) -> Result<Self, S::Err> {
         let bs = BitString::parse_content(content)?;
         Ok(AddressRange {
@@ -436,8 +435,8 @@ impl AddressRange {
     }
 
     /// Parses the content of the IPAddressRange variant of an address range.
-    fn parse_range_content<S: Source>(
-        content: &mut Content<S>
+    fn parse_range_content<S: decode::Source>(
+        content: &mut decode::Content<S>
     ) -> Result<Self, S::Err> {
         let mut cons = content.as_constructed()?;
         Ok(AddressRange {
@@ -447,7 +446,7 @@ impl AddressRange {
     }
 
     /// Calculates the minumum IP address from a bit string.
-    fn min_from_bits(bs: &BitString) -> Result<u128, Error> {
+    fn min_from_bits(bs: &BitString) -> Result<u128, decode::Error> {
         if bs.octet_len() == 0 {
             return Ok(0)
         }
@@ -457,7 +456,7 @@ impl AddressRange {
     }
 
     /// Calculates the maximum IP address from a bit string.
-    fn max_from_bits(bs: &BitString) -> Result<u128, Error> {
+    fn max_from_bits(bs: &BitString) -> Result<u128, decode::Error> {
         if bs.octet_len() == 0 {
             return Ok(!0)
         }
@@ -470,9 +469,9 @@ impl AddressRange {
     }
 
     /// Calculates the minumum and maximum IP addresses from a bit string.
-    fn from_bits(bs: &BitString) -> Result<(u128, u128), Error> {
+    fn from_bits(bs: &BitString) -> Result<(u128, u128), decode::Error> {
         if bs.octet_len() > 16 {
-            xerr!(return Err(Error::Malformed.into()))
+            xerr!(return Err(decode::Malformed.into()))
         }
         let mut addr = 0;
         for octet in bs.octets() {
@@ -506,26 +505,26 @@ pub enum AddressFamily {
 
 impl AddressFamily {
     /// Takes a single address family from the beginning of a value.
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         let str = OctetString::take_from(cons)?;
         let mut octets = str.octets();
         let first = match octets.next() {
             Some(first) => first,
-            None => xerr!(return Err(Error::Malformed.into()))
+            None => xerr!(return Err(decode::Malformed.into()))
         };
         let second = match octets.next() {
             Some(second) => second,
-            None => xerr!(return Err(Error::Malformed.into()))
+            None => xerr!(return Err(decode::Malformed.into()))
         };
         if let Some(_) = octets.next() {
-            xerr!(return Err(Error::Malformed.into()))
+            xerr!(return Err(decode::Malformed.into()))
         }
         match (first, second) {
             (0, 1) => Ok(AddressFamily::Ipv4),
             (0, 2) => Ok(AddressFamily::Ipv6),
-            _ => xerr!(Err(Error::Malformed.into())),
+            _ => xerr!(Err(decode::Malformed.into())),
         }
     }
 }

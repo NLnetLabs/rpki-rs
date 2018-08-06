@@ -7,7 +7,7 @@
 use std::io;
 use base64;
 use base64::DecodeError;
-use ber;
+use ber::decode;
 use bytes::Bytes;
 use uri;
 use x509;
@@ -135,7 +135,7 @@ pub enum PublisherRequestError {
     Base64Error(DecodeError),
 
     #[fail(display = "Cannot parse identity certificate: {}", _0)]
-    CannotParseIdCert(ber::Error),
+    CannotParseIdCert(decode::Error),
 
     #[fail(display = "Invalid identity certificate: {}", _0)]
     InvalidIdCert(x509::ValidationError),
@@ -159,8 +159,8 @@ impl From<DecodeError> for PublisherRequestError {
     }
 }
 
-impl From<ber::Error> for PublisherRequestError {
-    fn from(e: ber::Error) -> PublisherRequestError {
+impl From<decode::Error> for PublisherRequestError {
+    fn from(e: decode::Error) -> PublisherRequestError {
         PublisherRequestError::CannotParseIdCert(e)
     }
 }
@@ -318,7 +318,7 @@ pub enum RepositoryResponseError {
     Base64Error(DecodeError),
 
     #[fail(display = "Cannot parse identity certificate: {}", _0)]
-    CannotParseIdCert(ber::Error),
+    CannotParseIdCert(decode::Error),
 
     #[fail(display = "Invalid identity certificate: {}", _0)]
     InvalidIdCert(x509::ValidationError),
@@ -352,8 +352,8 @@ impl From<DecodeError> for RepositoryResponseError {
     }
 }
 
-impl From<ber::Error> for RepositoryResponseError {
-    fn from(e: ber::Error) -> RepositoryResponseError {
+impl From<decode::Error> for RepositoryResponseError {
+    fn from(e: decode::Error) -> RepositoryResponseError {
         RepositoryResponseError::CannotParseIdCert(e)
     }
 }

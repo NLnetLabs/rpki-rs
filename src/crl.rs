@@ -15,10 +15,9 @@
 //! [`CrlStore`]: struct.CrlStore.html
 
 use bytes::Bytes;
+use ber::decode;
+use ber::{Mode, OctetString, Oid, Tag, Unsigned};
 use super::uri;
-use super::ber::{
-    Constructed, Error, Mode, OctetString, Oid, Source, Tag, Unsigned
-};
 use super::cert::Cert;
 use super::x509::{
     update_once, Name, SignatureAlgorithm, SignedData, Time, ValidationError
@@ -60,20 +59,20 @@ pub struct Crl {
 
 impl Crl {
     /// Parses a source as a certificate revocation list.
-    pub fn decode<S: Source>(source: S) -> Result<Self, S::Err> {
+    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
         Mode::Der.decode(source, Self::take_from)
     }
 
     /// Takes an encoded CRL from the beginning of a constructed value.
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(Self::take_content_from)
     }
 
     /// Parses the content of a certificate revocation list.
-    pub fn take_content_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_content_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         let signed_data = SignedData::take_content_from(cons)?;
 
@@ -126,8 +125,8 @@ pub struct RevokedCertificates(Bytes);
 
 impl RevokedCertificates {
     /// Takes a revoked certificates list from the beginning of a value.
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         let res = cons.take_opt_sequence(|cons| {
             cons.capture(|cons| {
@@ -172,22 +171,22 @@ pub struct CrlEntry {
 
 impl CrlEntry {
     /// Takes a single CRL entry from the beginning of a constructed value.
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(Self::take_content_from)
     }
 
     /// Takes an optional CRL entry from the beginning of a contructed value.
-    pub fn take_opt_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_opt_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, S::Err> {
         cons.take_opt_sequence(Self::take_content_from)
     }
 
     /// Parses the content of a CRL entry.
-    pub fn take_content_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_content_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         Ok(CrlEntry {
             user_certificate: Unsigned::take_from(cons)?,
@@ -217,8 +216,8 @@ pub struct Extensions {
 
 impl Extensions {
     /// Takes the CRL extension from the beginning of a constructed value.
-    pub fn take_from<S: Source>(
-        cons: &mut Constructed<S>
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             let mut authority_key_id = None;
@@ -240,17 +239,17 @@ impl Extensions {
                         // RFC 6487 says that no other extensions are
                         // allowed. So we fail even if there is only
                         // non-critical extension.
-                        xerr!(Err(Error::Malformed))
+                        xerr!(Err(decode::Malformed))
                     }
                 }).map_err(Into::into)
             })? { }
             let authority_key_id = match authority_key_id {
                 Some(some) => some,
-                None => return Err(Error::Malformed.into())
+                None => return Err(decode::Malformed.into())
             };
             let crl_number = match crl_number {
                 Some(some) => some,
-                None => return Err(Error::Malformed.into())
+                None => return Err(decode::Malformed.into())
             };
             Ok(Extensions {
                 authority_key_id,
@@ -274,8 +273,8 @@ impl Extensions {
     ///
     /// For certificates, only keyIdentifier must be present. Let’s assume
     /// the same is true for CRLs.
-    fn take_authority_key_identifier<S: Source>(
-        cons: &mut Constructed<S>,
+    fn take_authority_key_identifier<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
         authority_key_id: &mut Option<OctetString>
     ) -> Result<(), S::Err> {
         update_once(authority_key_id, || {
@@ -283,7 +282,7 @@ impl Extensions {
                 cons.take_value_if(Tag::CTX_0, OctetString::take_content_from)
             })?;
             if res.len() != 20 {
-                return Err(Error::Malformed.into())
+                return Err(decode::Malformed.into())
             }
             else {
                 Ok(res)
@@ -298,8 +297,8 @@ impl Extensions {
     /// ```text
     /// CRLNumber ::= INTEGER (0..MAX)
     /// ```
-    fn take_crl_number<S: Source>(
-        cons: &mut Constructed<S>,
+    fn take_crl_number<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
         crl_number: &mut Option<Unsigned>
     ) -> Result<(), S::Err> {
         update_once(crl_number, || {
