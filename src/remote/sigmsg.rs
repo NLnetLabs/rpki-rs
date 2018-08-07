@@ -153,31 +153,31 @@ mod tests {
     use chrono::{TimeZone, Utc};
 
     #[test]
-    fn should_parse_and_validate_cms() {
+    fn should_parse_and_validate_signed_message() {
         let d = Utc.ymd(2012, 1, 1).and_hms(0, 0, 0);
         time::with_now(d, || {
             let der = include_bytes!("../../test/remote/pdu.200.der");
-            let cms = SignedMessage::decode(Bytes::from_static(der), false).unwrap();
+            let msg = SignedMessage::decode(Bytes::from_static(der), false).unwrap();
 
             let b = include_bytes!("../../test/remote/cms-ta.cer");
             let id_cert = IdCert::decode(Bytes::from_static(b)).unwrap();
 
-            cms.validate(&id_cert).unwrap();
+            msg.validate(&id_cert).unwrap();
 
         });
     }
 
     #[test]
-    fn should_reject_invalid_cms() {
+    fn should_reject_invalid_signed_message() {
         let d = Utc.ymd(2012, 1, 1).and_hms(0, 0, 0);
         time::with_now(d, || {
             let der = include_bytes!("../../test/remote/pdu.200.der");
-            let cms = SignedMessage::decode(Bytes::from_static(der), false).unwrap();
+            let msg = SignedMessage::decode(Bytes::from_static(der), false).unwrap();
 
             let b = include_bytes!("../../test/oob/id-publisher-ta.cer");
             let id_cert = IdCert::decode(Bytes::from_static(b)).unwrap();
 
-            assert_eq!(ValidationError, cms.validate(&id_cert).unwrap_err());
+            assert_eq!(ValidationError, msg.validate(&id_cert).unwrap_err());
         });
     }
 }
