@@ -111,7 +111,7 @@ impl SignedObject {
     /// ```
     ///
     /// For a ROA, `eContentType` must be `oid:::ROUTE_ORIGIN_AUTH`.
-    fn take_encap_content_info<S: decode::Source>(
+    pub fn take_encap_content_info<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<(Oid<Bytes>, OctetString), S::Err> {
         cons.take_sequence(|cons| {
@@ -281,6 +281,15 @@ pub struct SignerInfo {
 }
 
 impl SignerInfo {
+
+    pub fn signed_attrs(&self) -> &SignedAttributes {
+        &self.signed_attrs
+    }
+
+    pub fn signature_value(&self) -> &OctetString {
+        &self.signature_value
+    }
+
     pub fn take_set_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
@@ -411,6 +420,7 @@ impl SignedAttributes {
     }
 
     pub fn encode_verify(&self) -> Vec<u8> {
+        // XXX This may be outdated. Check!
         let mut res = Vec::new();
         res.push(0x31); // SET
         let len = self.raw.len();
