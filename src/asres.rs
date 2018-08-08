@@ -6,9 +6,9 @@
 //! "inherit" value is not used, the set of identifiers must be non-empty.
 
 use std::{fmt, ops};
-use bytes::Bytes;
-use ber::decode;
-use ber::{Mode, Tag};
+use ber::{decode, encode};
+use ber::{Captured, Mode, Tag};
+use ber::encode::PrimitiveContent;
 use super::x509::ValidationError;
 
 
@@ -129,11 +129,24 @@ impl AsBlocks {
 
 //------------ AsIdBlocks ----------------------------------------------------
 
-/// A DER-enoded sequence of blocks of consecutive AS numbers.
+/// A DER-encoded sequence of blocks of consecutive AS numbers.
+//
+//  The bytes values contains the content octets of the DER encoding of the
+//  blocks.
 #[derive(Clone, Debug)]
-pub struct AsIdBlocks(Bytes);
+pub struct AsIdBlocks(Captured);
 
 impl AsIdBlocks {
+    /// Creates a new, empty value.
+    pub fn new() -> Self {
+        AsIdBlocks(Captured::empty())
+    }
+
+    /// Pushes a new block to the end of the value.
+    pub fn push(&mut self, block: &AsBlock) {
+        self.0.extend(block.encode())
+    }
+
     /// Returns an iterator over the individual AS number blocks.
     pub fn iter(&self) -> AsIdBlockIter {
         AsIdBlockIter(self.0.as_ref())
@@ -194,6 +207,10 @@ impl AsIdBlocks {
                 }
             }
         }
+    }
+
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        &self.0
     }
 }
 
@@ -317,6 +334,13 @@ impl AsBlock {
             }
         })
     }
+
+    fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        match *self {
+            AsBlock::Id(ref inner) => encode::Choice2::One(inner.encode()),
+            AsBlock::Range(ref inner) => encode::Choice2::Two(inner.encode()),
+        }
+    }
 }
 
 
@@ -353,6 +377,10 @@ impl AsId {
         content: &mut decode::Content<S>
     ) -> Result<(), S::Err> {
         content.to_u32().map(|_| ())
+    }
+
+    fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        self.0.value()
     }
 }
 
@@ -424,6 +452,13 @@ impl AsRange {
         AsId::skip_in(cons)?;
         AsId::skip_in(cons)?;
         Ok(())
+    }
+
+    fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence((
+            self.min.encode(),
+            self.max.encode(),
+        ))
     }
 }
 

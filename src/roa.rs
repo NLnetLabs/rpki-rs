@@ -4,9 +4,8 @@
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use ber::decode;
-use ber::{BitString, Mode, Tag};
+use ber::{BitString, Captured, Mode, Tag};
 use ber::decode::Source;
-use bytes::Bytes;
 use super::asres::AsId;
 use super::cert::{Cert, ResourceCert};
 use super::ipres::AddressFamily;
@@ -121,11 +120,11 @@ impl RouteOriginAttestation {
                 as_id,
                 v4_addrs: match v4 {
                     Some(addrs) => addrs,
-                    None => RoaIpAddresses(Bytes::from_static(b""))
+                    None => RoaIpAddresses(Captured::empty())
                 },
                 v6_addrs: match v6 {
                     Some(addrs) => addrs,
-                    None => RoaIpAddresses(Bytes::from_static(b""))
+                    None => RoaIpAddresses(Captured::empty())
                 }
             })
         })
@@ -162,7 +161,7 @@ impl RouteOriginAttestation {
 //------------ RoaIpAddresses ------------------------------------------------
 
 #[derive(Clone, Debug)]
-pub struct RoaIpAddresses(Bytes);
+pub struct RoaIpAddresses(Captured);
 
 impl RoaIpAddresses {
     fn take_from<S: decode::Source>(

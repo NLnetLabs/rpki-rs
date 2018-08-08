@@ -14,9 +14,8 @@
 //! [`Crl`]: struct.Crl.html
 //! [`CrlStore`]: struct.CrlStore.html
 
-use bytes::Bytes;
 use ber::decode;
-use ber::{Mode, OctetString, Oid, Tag, Unsigned};
+use ber::{Captured, Mode, OctetString, Oid, Tag, Unsigned};
 use super::uri;
 use super::cert::Cert;
 use super::x509::{
@@ -121,7 +120,7 @@ impl Crl {
 /// check whether a certain serial number is part of this list via the
 /// `contains` method.
 #[derive(Clone, Debug)]
-pub struct RevokedCertificates(Bytes);
+pub struct RevokedCertificates(Captured);
 
 impl RevokedCertificates {
     /// Takes a revoked certificates list from the beginning of a value.
@@ -136,7 +135,7 @@ impl RevokedCertificates {
         })?;
         Ok(RevokedCertificates(match res {
             Some(res) => res,
-            None => Bytes::new(),
+            None => Captured::empty()
         }))
     }
 
