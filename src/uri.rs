@@ -242,8 +242,32 @@ impl Http {
 
         Ok(Http{scheme, host, path})
     }
+
+    pub fn host(&self) -> &str {
+        unsafe { ::std::str::from_utf8_unchecked(self.host.as_ref()) }
+    }
+
+    pub fn path(&self) -> &str {
+        unsafe { ::std::str::from_utf8_unchecked(self.path.as_ref()) }
+    }
+
+    pub fn to_string(&self) -> String {
+        format!("{}", self)
+    }
 }
 
+impl fmt::Display for Http {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.scheme.fmt(f)?;
+        if !self.host.is_empty() {
+            write!(f, "{}", self.host())?;
+        }
+        if !self.path.is_empty() {
+            write!(f, "{}", self.path())?;
+        }
+        Ok(())
+    }
+}
 
 
 #[derive(Debug, PartialEq)]
@@ -280,7 +304,22 @@ impl Scheme {
         Err(Error::BadScheme)
     }
 
+    pub fn to_string(&self) -> String {
+        format!("{}", self)
+    }
 }
+
+impl fmt::Display for Scheme {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Scheme::Http  => { write!(f, "{}", "http://")?; },
+            Scheme::Https => { write!(f, "{}", "https://")?; },
+            Scheme::Rsync => { write!(f, "{}", "rsync://")?; }
+        }
+        Ok(())
+    }
+}
+
 
 
 //------------ Helper Functions ----------------------------------------------

@@ -14,6 +14,8 @@ use x509;
 use super::idcert::IdCert;
 use super::xml::{XmlReader, XmlReaderErr};
 use super::xml::AttributesError;
+use oob::xml::XmlWriter;
+use oob::xml::AttributePair;
 
 
 //------------ PublisherRequest ----------------------------------------------
@@ -47,7 +49,7 @@ impl PublisherRequest {
             r.take_named_element("publisher_request", |mut a, r| {
                 match a.take_req("version") {
                     Ok(s) => {
-                        if s != "1".to_string() {
+                        if s != "1" {
                             return Err(PublisherRequestError::InvalidVersion)
                         }
                     }
@@ -73,6 +75,41 @@ impl PublisherRequest {
                     id_cert: cert
                 })
             })
+        })
+    }
+
+    /// Encodes a <publisher_request> to a Vec
+    pub fn encode_vec(&self) -> Vec<u8> {
+        XmlWriter::encode_vec(|w| {
+
+            let mut attr = vec![
+                AttributePair::from(
+                    "version",
+                    "1"),
+                AttributePair::from(
+                    "publisher_handle",
+                    self.publisher_handle.as_ref()),
+            ];
+            if let Some(ref t) = self.tag {
+                attr.push(AttributePair::from(
+                    "tag",
+                    t));
+            }
+
+            w.put_first_element_with_attributes(
+                "publisher_request",
+                "http://www.hactrn.net/uris/rpki/rpki-setup/",
+                attr,
+                |w| {
+                    w.put_element(
+                        "publisher_bpki_ta",
+                        |w| {
+                            w.put_blob(&self.id_cert.to_bytes())
+                        }
+                    )
+                }
+
+            )
         })
     }
 }
@@ -210,6 +247,54 @@ impl RepositoryResponse {
             })
         })
     }
+
+    /// Encodes the <repository_response/> to a Vec
+    pub fn encode_vec(&self) -> Vec<u8> {
+        XmlWriter::encode_vec(|w| {
+
+            let service_uri = self.service_uri.to_string();
+            let sia_base = self.sia_base.to_string();
+            let rrdp_notification_uri = self.rrdp_notification_uri.to_string();
+
+            let mut attr = vec![
+                AttributePair::from(
+                    "version",
+                    "1"),
+                AttributePair::from(
+                    "publisher_handle",
+                    self.publisher_handle.as_ref()),
+                AttributePair::from(
+                    "service_uri",
+                    service_uri.as_ref()),
+                AttributePair::from(
+                    "sia_base",
+                    sia_base.as_ref()),
+                AttributePair::from(
+                    "rrdp_notification_uri",
+                    rrdp_notification_uri.as_ref()),
+            ];
+            if let Some(ref t) = self.tag {
+                attr.push(AttributePair::from(
+                    "tag",
+                    t));
+            }
+
+            w.put_first_element_with_attributes(
+                "repository_response",
+                "http://www.hactrn.net/uris/rpki/rpki-setup/",
+                attr,
+                |w| {
+                    w.put_element(
+                        "repository_bpki_ta",
+                        |w| {
+                            w.put_blob(&self.id_cert.to_bytes())
+                        }
+                    )
+                }
+
+            )
+        })
+    }
 }
 
 
@@ -286,8 +371,24 @@ impl From<x509::ValidationError> for RepositoryResponseError {
 mod tests {
 
     use super::*;
+    use std::str;
     use time;
     use chrono::{TimeZone, Utc};
+
+    fn example_rrdp_uri() -> uri::Http {
+        uri::Http::from_str(
+            "https://rpki.example/rrdp/notify.xml").unwrap()
+    }
+
+    fn example_sia_base() -> uri::Rsync {
+        uri::Rsync::from_str(
+            "rsync://a.example/rpki/Alice/Bob-42/").unwrap()
+    }
+
+    fn example_service_uri() -> uri::Http {
+        uri::Http::from_str(
+            "http://a.example/publication/Alice/Bob-42").unwrap()
+    }
 
     #[test]
     fn should_parse_publisher_request() {
@@ -310,20 +411,52 @@ mod tests {
             let rr = RepositoryResponse::decode(xml.as_bytes()).unwrap();
             assert_eq!(Some("A0001".to_string()), rr.tag);
             assert_eq!("Alice/Bob-42".to_string(), rr.publisher_handle);
-            assert_eq!(
-                uri::Http::from_str(
-                    "http://a.example/publication/Alice/Bob-42").unwrap(),
-                rr.service_uri);
-            assert_eq!(
-                uri::Http::from_str(
-                    "https://rpki.example/rrdp/notify.xml").unwrap(),
-                rr.rrdp_notification_uri);
-            assert_eq!(
-                uri::Rsync::from_str(
-                    "rsync://a.example/rpki/Alice/Bob-42/").unwrap(),
-                rr.sia_base);
+            assert_eq!(example_service_uri(), rr.service_uri);
+            assert_eq!(example_rrdp_uri(), rr.rrdp_notification_uri);
+            assert_eq!(example_sia_base(), rr.sia_base);
 
             assert!(rr.id_cert.validate_ta().is_ok());
         });
     }
+
+    #[test]
+    fn should_generate_publisher_request() {
+        let d = Utc.ymd(2012, 1, 1).and_hms(0, 0, 0);
+        time::with_now(d, || {
+            let cert = ::oob::idcert::tests::test_id_certificate();
+
+            let pr = PublisherRequest {
+                tag: Some("tag".to_string()),
+                publisher_handle: "tim".to_string(),
+                id_cert: cert
+            };
+
+            let enc = pr.encode_vec();
+
+            PublisherRequest::decode(str::from_utf8(&enc).unwrap().as_bytes()).unwrap();
+        });
+    }
+
+    #[test]
+    fn should_generate_repository_response() {
+        let d = Utc.ymd(2012, 1, 1).and_hms(0, 0, 0);
+        time::with_now(d, || {
+            let cert = ::oob::idcert::tests::test_id_certificate();
+
+            let pr = RepositoryResponse {
+                tag: Some("tag".to_string()),
+                publisher_handle: "tim".to_string(),
+                rrdp_notification_uri: example_rrdp_uri(),
+                sia_base: example_sia_base(),
+                service_uri: example_service_uri(),
+                id_cert: cert
+            };
+
+            let enc = pr.encode_vec();
+
+            RepositoryResponse::decode(str::from_utf8(&enc).unwrap().as_bytes()).unwrap();
+        });
+    }
+
+
 }

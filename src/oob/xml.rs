@@ -2,10 +2,15 @@
 
 use std::{fs, io};
 use std::path::Path;
+use base64;
+use bytes::Bytes;
 use xml::EventReader;
 use xml::ParserConfig;
-use xml::reader::XmlEvent;
+use xml::reader;
+use xml::writer;
 use xml::attribute::OwnedAttribute;
+use xml::EventWriter;
+use xml::EmitterConfig;
 
 
 //------------ XmlReader -----------------------------------------------------
@@ -27,7 +32,7 @@ impl <R: io::Read> XmlReader<R> {
     /// Takes the next element and expects a start of document.
     fn start_document(&mut self) -> Result<(), XmlReaderErr> {
         match self.reader.next() {
-            Ok(XmlEvent::StartDocument {..}) => { Ok(())},
+            Ok(reader::XmlEvent::StartDocument {..}) => { Ok(())},
             _ => return Err(XmlReaderErr::ExpectedStartDocument)
         }
     }
@@ -35,7 +40,7 @@ impl <R: io::Read> XmlReader<R> {
     /// Takes the next element and expects a start element with the given name.
     fn expect_element(&mut self) -> Result<(Tag, Attributes), XmlReaderErr> {
         match self.reader.next() {
-            Ok(XmlEvent::StartElement { name, attributes, ..}) => {
+            Ok(reader::XmlEvent::StartElement { name, attributes, ..}) => {
                 Ok((Tag{name: name.local_name}, Attributes{attributes}))
             },
             _ => return Err(XmlReaderErr::ExpectedStart)
@@ -45,7 +50,7 @@ impl <R: io::Read> XmlReader<R> {
     /// Takes the next element and expects a close element with the given name.
     fn expect_close(&mut self, tag: Tag) -> Result<(), XmlReaderErr> {
         match self.reader.next() {
-            Ok(XmlEvent::EndElement { name, ..}) => {
+            Ok(reader::XmlEvent::EndElement { name, ..}) => {
                 if name.local_name == tag.name {
                     Ok(())
                 } else {
@@ -62,7 +67,7 @@ impl <R: io::Read> XmlReader<R> {
     /// an error otherwise.
     fn end_document(&mut self) -> Result<(), XmlReaderErr> {
         match self.reader.next() {
-            Ok(XmlEvent::EndDocument) => Ok(()),
+            Ok(reader::XmlEvent::EndDocument) => Ok(()),
             _ => Err(XmlReaderErr::ExpectedEnd)
         }
     }
@@ -140,7 +145,7 @@ impl <R: io::Read> XmlReader<R> {
     /// an error if the next element is any other type.
     pub fn take_characters(&mut self) -> Result<String, XmlReaderErr> {
         match self.reader.next() {
-            Ok(XmlEvent::Characters(chars)) => { Ok(chars) }
+            Ok(reader::XmlEvent::Characters(chars)) => { Ok(chars) }
             _ => return Err(XmlReaderErr::ExpectedCharacters)
         }
     }
@@ -254,4 +259,212 @@ pub enum AttributesError {
 
 pub struct Tag {
     pub name: String
+}
+
+
+//------------ XmlWriter -----------------------------------------------------
+
+/// A convenience wrapper for RPKI XML generation
+///
+/// This type only exposes things we need for the RPKI XML structures.
+pub struct XmlWriter<W> {
+    /// The underlying xml-rs writer
+    writer: EventWriter<W>
+}
+
+
+/// Generate the XML.
+impl <W: io::Write> XmlWriter<W> {
+
+    /// Private general method called by the pub put_first_element with
+    /// Some(namespace) and put_element with None for namespace.
+    fn put_some_element<F>(
+        &mut self,
+        name: &str,
+        namespace: Option<&str>,
+        attr: Option<Vec<AttributePair>>,
+        op: F) -> Result<(), XmlWriterError>
+    where F: FnOnce(&mut Self) -> Result<(), XmlWriterError> {
+        let mut start = writer::XmlEvent::start_element(name);
+
+        if let Some(ns) = namespace {
+            start = start.ns("", ns);
+        }
+
+        if let Some(v) = attr {
+            for a in v {
+                start = start.attr(a.k, a.v);
+            }
+        }
+
+        self.writer.write(start)?;
+        op(self)?;
+        self.writer.write(writer::XmlEvent::end_element())?;
+
+        Ok(())
+    }
+
+    /// Creates the first element for your XML structure. Note that namespace
+    /// is required because all the RPKI XML structures have one.
+    pub fn put_first_element<F>(
+        &mut self,
+        name: &str,
+        namespace: &str,
+        op: F) -> Result<(), XmlWriterError>
+        where F: FnOnce(&mut Self) -> Result<(), XmlWriterError> {
+        self.put_some_element(name, Some(namespace), None, op)
+    }
+
+    /// Creates the first element for your XML structure. Note that namespace
+    /// is required because all the RPKI XML structures have one.
+    pub fn put_first_element_with_attributes<F>(
+        &mut self,
+        name: &str,
+        namespace: &str,
+        attr: Vec<AttributePair>,
+        op: F) -> Result<(), XmlWriterError>
+        where F: FnOnce(&mut Self) -> Result<(), XmlWriterError> {
+        self.put_some_element(name, Some(namespace), Some(attr), op)
+    }
+
+
+    /// Creates a nested element.
+    pub fn put_element<F>(
+        &mut self,
+        name: &str,
+        op: F) -> Result<(), XmlWriterError>
+        where F: FnOnce(&mut Self) -> Result<(), XmlWriterError> {
+        self.put_some_element(name, None, None, op)
+    }
+
+    /// Creates a nested element.
+    pub fn put_element_with_attributes<F>(
+        &mut self,
+        name: &str,
+        attr: Vec<AttributePair>,
+        op: F) -> Result<(), XmlWriterError>
+        where F: FnOnce(&mut Self) -> Result<(), XmlWriterError> {
+        self.put_some_element(name, None, Some(attr), op)
+    }
+
+    /// Converts bytes to base64 encoded Characters as the content. Note
+    /// that you cannot have both Characters and other included elements.
+    /// This would be valid XML, but it's not used by any of the RPKI XML
+    /// structures.
+    pub fn put_blob(&mut self, bytes: &Bytes) -> Result<(), XmlWriterError> {
+        let b64 = base64::encode(bytes);
+        self.writer.write(writer::XmlEvent::Characters(b64.as_ref()))?;
+        Ok(())
+    }
+
+    /// Use this for convenience where empty content is required
+    pub fn empty(&mut self) -> Result<(), XmlWriterError> {
+        Ok(())
+    }
+
+    /// Sets up the writer config and returns a closure that is expected
+    /// to add the actual content of the XML.
+    ///
+    /// This method is private because one should use the pub encode_vec
+    /// method, and in future others like it, to set up the writer for a
+    /// specific type (Vec<u8>, File, etc.).
+    fn encode<F>(w: W, op: F) -> Result<(), XmlWriterError>
+    where F: FnOnce(&mut Self) -> Result<(), XmlWriterError> {
+
+        let writer = EmitterConfig::new()
+            .write_document_declaration(false)
+            .normalize_empty_elements(false)
+            .perform_indent(true)
+            .create_writer(w);
+
+        let mut x = XmlWriter { writer };
+
+        op(&mut x)
+    }
+}
+
+
+impl XmlWriter<()> {
+
+    /// Call this to encode XML into a Vec<u8>
+    pub fn encode_vec<F>(op: F) -> Vec<u8>
+        where F: FnOnce(&mut XmlWriter<&mut Vec<u8>>) -> Result<(), XmlWriterError> {
+        let mut b = Vec::new();
+        XmlWriter::encode(&mut b, op).unwrap();
+        b
+    }
+}
+
+
+//------------ AttributePair -------------------------------------------------
+
+/// A little helper to add attribute key value pairs when encoding XML
+pub struct AttributePair<'a> {
+    k: &'a str,
+    v: &'a str
+}
+
+impl <'a> AttributePair<'a> {
+
+    /// Creates an AttributePair from a key and a value, e.g.:
+    /// let pair = AttributePair::from("key", "value");
+    pub fn from(k: &'a str, v: &'a str) -> Self {
+        AttributePair{k, v}
+    }
+}
+
+
+//------------ XmlWriterError ------------------------------------------------
+
+#[derive(Debug, Fail)]
+pub enum XmlWriterError {
+    #[fail(display = "I/O Error: {}", _0)]
+    IoError(io::Error),
+
+    #[fail(display = "Writer (emitter) error: {}", _0)]
+    EmitterError(writer::Error),
+}
+
+impl From<io::Error> for XmlWriterError {
+    fn from(e: io::Error) -> XmlWriterError {
+        XmlWriterError::IoError(e)
+    }
+}
+
+impl From<writer::Error> for XmlWriterError {
+    fn from(e: writer::Error) -> XmlWriterError {
+        XmlWriterError::EmitterError(e)
+    }
+}
+
+//------------ Tests ---------------------------------------------------------
+
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use std::str;
+
+    #[test]
+    fn should_write_xml() {
+
+        let xml = XmlWriter::encode_vec(|w| {
+            w.put_first_element_with_attributes(
+                "a",
+                "http://ns/",
+                vec![AttributePair::from("c", "d")],
+                |w|
+                    {
+                        w.put_element("b", |w| {
+                            w.put_blob(&Bytes::from("X"))
+                        })
+                    }
+            )
+        });
+
+        assert_eq!(
+            str::from_utf8(&xml).unwrap(),
+            "<a xmlns=\"http://ns/\" c=\"d\">\n  <b>WA==</b>\n</a>");
+    }
 }
