@@ -10,6 +10,8 @@ use remote::xml::Attributes;
 
 
 //------------ Query ---------------------------------------------------------
+/// Type representing a multi element query as described in
+/// https://tools.ietf.org/html/rfc8181#section-3.7
 #[derive(Debug)]
 pub struct Query {
     elements: Vec<QueryElement>
@@ -51,6 +53,8 @@ impl Query {
     }
 
 
+    /// Decodes a query XML structure. Expects that the outer <msg> element
+    /// is processed by PublicationMessage::decode
     pub fn decode<R: io::Read>(r: &mut XmlReader<R>)
         -> Result<Self, PublicationMessageError> {
 
@@ -81,6 +85,7 @@ impl Query {
         }
         Ok(Query{elements})
     }
+
 }
 
 

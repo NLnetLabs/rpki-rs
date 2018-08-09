@@ -9,13 +9,14 @@ use uri;
 
 //------------ PublicationMessage --------------------------------------------
 
+/// This type represents the Publication Messages defined in RFC8181
 pub enum PublicationMessage {
     Query(Query),
 }
 
-
 impl PublicationMessage {
 
+    /// Decodes an XML structure
     pub fn decode<R>(reader: R) -> Result<Self, PublicationMessageError>
         where R: io::Read {
 
@@ -95,10 +96,8 @@ mod tests {
 
     #[test]
     fn should_parse_publish_xml() {
-
         let xml = include_str!("../../test/publication/publish.xml");
         PublicationMessage::decode(xml.as_bytes()).unwrap();
-
     }
 
 }
