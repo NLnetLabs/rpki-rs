@@ -1,15 +1,19 @@
 //! Common components for publication protocol messages
 
 use std::io;
-use remote::xml::{XmlReader, XmlReaderErr};
-use remote::xml::AttributesError;
-use publication::query::Query;
 use uri;
+use publication::query::Query;
+use remote::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
+use remote::xml::AttributePair;
 
 
 //------------ PublicationMessage --------------------------------------------
 
+pub const VERSION: &'static str = "4";
+pub const NS: &'static str = "http://www.hactrn.net/uris/rpki/publication-spec/";
+
 /// This type represents the Publication Messages defined in RFC8181
+#[derive(Debug, Eq, PartialEq)]
 pub enum PublicationMessage {
     Query(Query),
 }
@@ -24,7 +28,7 @@ impl PublicationMessage {
             r.take_named_element("msg", |mut a, r| {
 
                 match a.take_req("version")?.as_ref() {
-                    "4" => { },
+                    VERSION => { },
                     _ => return Err(PublicationMessageError::InvalidVersion)
                 }
                 let msg_type = a.take_req("type")?;
@@ -39,6 +43,31 @@ impl PublicationMessage {
                     }
                 }
             })
+        })
+    }
+
+    /// Encodes to a Vec
+    pub fn encode_vec(&self) -> Vec<u8> {
+        XmlWriter::encode_vec(|w| {
+
+            let msg_type = match self {
+                PublicationMessage::Query(_) => "query"
+            };
+            let a = vec![
+                AttributePair::from("version", VERSION),
+                AttributePair::from("type", msg_type),
+            ];
+
+            w.put_first_element_with_attributes(
+                "msg",
+                NS,
+                a,
+                |w| {
+                    match self {
+                        PublicationMessage::Query(q) => { q.encode_vec(w) }
+                    }
+                }
+            )
         })
     }
 
@@ -93,11 +122,23 @@ impl From<uri::Error> for PublicationMessageError {
 mod tests {
 
     use super::*;
+    use std::str;
 
     #[test]
     fn should_parse_publish_xml() {
         let xml = include_str!("../../test/publication/publish.xml");
         PublicationMessage::decode(xml.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn should_encode_publish() {
+        let xml = include_str!("../../test/publication/publish.xml");
+        let pm = PublicationMessage::decode(xml.as_bytes()).unwrap();
+        let vec = pm.encode_vec();
+        let encoded = str::from_utf8(&vec).unwrap();
+        let pm_from_encoded = PublicationMessage::decode(encoded.as_bytes()).unwrap();
+        assert_eq!(pm, pm_from_encoded);
+        assert_eq!(xml, encoded);
     }
 
 }
