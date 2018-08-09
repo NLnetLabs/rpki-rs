@@ -12,6 +12,7 @@ ber             = { git="https://github.com/NLnetLabs/ber-rs.git" }
 bytes           = "^0.4"
 chrono          = "^0.4"
 failure         = "^0.1"
+hex             = "^0.3"
 log             = "^0.4"
 ring            = "^0.12"
 untrusted       = "^0.5"

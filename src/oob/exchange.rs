@@ -5,10 +5,8 @@
 //! parent CA and/or RPKI Publication Servers.
 
 use std::io;
-use base64;
 use base64::DecodeError;
 use ber::decode;
-use bytes::Bytes;
 use uri;
 use x509;
 use remote::idcert::IdCert;
@@ -63,11 +61,10 @@ impl PublisherRequest {
 
                 let cert = r.take_named_element("publisher_bpki_ta", |a, r| {
                     a.exhausted()?;
-                    r.take_characters()
+                    r.take_bytes_characters()
                 })?;
 
-                let cert = base64::decode_config(&cert, base64::MIME)?;
-                let cert = IdCert::decode(Bytes::from(cert))?.validate_ta()?;
+                let cert = IdCert::decode(cert)?.validate_ta()?;
 
                 Ok(PublisherRequest{
                     tag: tag.map(Into::into),
@@ -230,11 +227,9 @@ impl RepositoryResponse {
                 let id_cert = r.take_named_element(
                     "repository_bpki_ta", |a, r| {
                         a.exhausted()?;
-                        r.take_characters()})?;
+                        r.take_bytes_characters()})?;
 
-                let id_cert = base64::decode_config(&id_cert, base64::MIME)?;
-                let id_cert = IdCert::decode(Bytes::from(id_cert))?
-                    .validate_ta()?;
+                let id_cert = IdCert::decode(id_cert)?.validate_ta()?;
 
                 Ok(RepositoryResponse{
                     tag: tag.map(Into::into),

@@ -4,6 +4,7 @@ use std::{fs, io};
 use std::path::Path;
 use base64;
 use bytes::Bytes;
+use hex;
 use xml::EventReader;
 use xml::ParserConfig;
 use xml::reader;
@@ -11,6 +12,8 @@ use xml::writer;
 use xml::attribute::OwnedAttribute;
 use xml::EventWriter;
 use xml::EmitterConfig;
+use xml::reader::XmlEvent;
+use base64::DecodeError;
 
 
 //------------ XmlReader -----------------------------------------------------
@@ -20,8 +23,51 @@ use xml::EmitterConfig;
 /// This type only exposes things we need for the RPKI XML structures.
 pub struct XmlReader<R: io::Read> {
     /// The underlying xml-rs reader
-    reader: EventReader<R>
+    reader: EventReader<R>,
+
+    /// Placeholder for an event so that 'peak' can be supported, as
+    /// well as temporarily caching a close event in case a list of
+    /// inner elements is processed.
+    cached_event: Option<XmlEvent>
 }
+
+
+/// Reader methods
+impl <R: io::Read> XmlReader<R> {
+
+    /// Gets the next XmlEvent
+    ///
+    /// Will take cached event if there is one
+    pub fn next(&mut self) -> Result<XmlEvent, XmlReaderErr> {
+        match self.cached_event.take() {
+            Some(e) => Ok(e),
+            None    => Ok(self.reader.next()?)
+        }
+    }
+
+    /// Gets the next XmlEvent if it is start element, otherwise
+    /// returns None and puts whatever was found back on the cache
+    pub fn next_start(&mut self) -> Result<Option<(Tag, Attributes)>, XmlReaderErr> {
+        let e = self.next()?;
+        match e {
+
+            XmlEvent::StartElement { name, attributes, ..} => {
+                Ok(Some((Tag{name: name.local_name}, Attributes{attributes})))
+            },
+
+            _ => {
+                self.cache(e);
+                Ok(None)
+            }
+        }
+    }
+
+    /// Puts an XmlEvent back so that it can be retrieved by 'next'
+    pub fn cache(&mut self, e: XmlEvent) -> () {
+        self.cached_event = Some(e);
+    }
+}
+
 
 /// Basic operations to parse the XML.
 ///
@@ -31,7 +77,7 @@ pub struct XmlReader<R: io::Read> {
 impl <R: io::Read> XmlReader<R> {
     /// Takes the next element and expects a start of document.
     fn start_document(&mut self) -> Result<(), XmlReaderErr> {
-        match self.reader.next() {
+        match self.next() {
             Ok(reader::XmlEvent::StartDocument {..}) => { Ok(())},
             _ => return Err(XmlReaderErr::ExpectedStartDocument)
         }
@@ -39,7 +85,7 @@ impl <R: io::Read> XmlReader<R> {
 
     /// Takes the next element and expects a start element with the given name.
     fn expect_element(&mut self) -> Result<(Tag, Attributes), XmlReaderErr> {
-        match self.reader.next() {
+        match self.next() {
             Ok(reader::XmlEvent::StartElement { name, attributes, ..}) => {
                 Ok((Tag{name: name.local_name}, Attributes{attributes}))
             },
@@ -48,8 +94,8 @@ impl <R: io::Read> XmlReader<R> {
     }
 
     /// Takes the next element and expects a close element with the given name.
-    fn expect_close(&mut self, tag: Tag) -> Result<(), XmlReaderErr> {
-        match self.reader.next() {
+    pub fn expect_close(&mut self, tag: Tag) -> Result<(), XmlReaderErr> {
+        match self.next() {
             Ok(reader::XmlEvent::EndElement { name, ..}) => {
                 if name.local_name == tag.name {
                     Ok(())
@@ -66,7 +112,7 @@ impl <R: io::Read> XmlReader<R> {
     /// Returns Ok(true) if the element is the end of document, or
     /// an error otherwise.
     fn end_document(&mut self) -> Result<(), XmlReaderErr> {
-        match self.reader.next() {
+        match self.next() {
             Ok(reader::XmlEvent::EndDocument) => Ok(()),
             _ => Err(XmlReaderErr::ExpectedEnd)
         }
@@ -92,7 +138,10 @@ impl <R: io::Read> XmlReader<R> {
         config.trim_whitespace = true;
         config.ignore_comments = true;
 
-        let mut xml = XmlReader{reader: config.create_reader(source)};
+        let mut xml = XmlReader{
+            reader: config.create_reader(source),
+            cached_event: None
+        };
 
         xml.start_document()?;
         let res = op(&mut xml)?;
@@ -139,16 +188,18 @@ impl <R: io::Read> XmlReader<R> {
         })
     }
 
-    /// Takes characters.
-    ///
-    /// Returns Ok(String) containing the value of the characters, or
-    /// an error if the next element is any other type.
-    pub fn take_characters(&mut self) -> Result<String, XmlReaderErr> {
-        match self.reader.next() {
-            Ok(reader::XmlEvent::Characters(chars)) => { Ok(chars) }
+    /// Takes base64 encoded bytes from the next 'characters' event.
+    pub fn take_bytes_characters(&mut self) -> Result<Bytes, XmlReaderErr> {
+        match self.next() {
+            Ok(reader::XmlEvent::Characters(chars)) => {
+                let decoded = base64::decode_config(&chars, base64::MIME)?;
+                Ok(Bytes::from(decoded))
+            }
             _ => return Err(XmlReaderErr::ExpectedCharacters)
         }
+
     }
+
 }
 
 impl XmlReader<fs::File> {
@@ -189,6 +240,12 @@ pub enum XmlReaderErr {
 
     #[fail(display = "Attributes Error: {}", _0)]
     AttributesError(AttributesError),
+
+    #[fail(display = "XML Reader Error: {}", _0)]
+    ReaderError(reader::Error),
+
+    #[fail(display = "Base64 decoding issue: {}", _0)]
+    Base64Error(DecodeError)
 }
 
 impl From<io::Error> for XmlReaderErr {
@@ -202,6 +259,19 @@ impl From<AttributesError> for XmlReaderErr {
         XmlReaderErr::AttributesError(e)
     }
 }
+
+impl From<reader::Error> for XmlReaderErr {
+    fn from(e: reader::Error) -> XmlReaderErr {
+        XmlReaderErr::ReaderError(e)
+    }
+}
+
+impl From<DecodeError> for XmlReaderErr {
+    fn from(e: DecodeError) -> XmlReaderErr {
+        XmlReaderErr::Base64Error(e)
+    }
+}
+
 
 //------------ Attributes ----------------------------------------------------
 
@@ -222,6 +292,20 @@ impl Attributes {
                 Some(a.value)
             }
             None => None
+        }
+    }
+
+    /// Takes an optional hexencoded attribute and converts it to Bytes
+    pub fn take_opt_hex(&mut self, name: &str) -> Option<Bytes> {
+        match self.take_opt(name) {
+            None => None,
+            Some(s) => {
+                let d = hex::decode(s);
+                match d {
+                    Err(_) => None,
+                    Ok(b) => Some(Bytes::from(b))
+                }
+            }
         }
     }
 
