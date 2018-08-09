@@ -12,6 +12,7 @@ use sigobj::oid;
 use sigobj::{DigestAlgorithm, SignedObject, SignerInfo};
 use super::idcert::IdCert;
 use x509::ValidationError;
+use ber::Captured;
 
 //------------ Cms -----------------------------------------------------------
 
@@ -89,7 +90,7 @@ impl SignedMessage {
 
     fn take_crls<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Bytes, S::Err> {
+    ) -> Result<Captured, S::Err> {
         cons.take_constructed_if(Tag::CTX_1, |cons| {
             // XXX: To do: capture the CRL so we can check that there is no
             //             no regression, and someone is doing a replay attack
