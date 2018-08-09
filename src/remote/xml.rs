@@ -14,6 +14,7 @@ use xml::EventWriter;
 use xml::EmitterConfig;
 use xml::reader::XmlEvent;
 use base64::DecodeError;
+use hex::FromHexError;
 
 
 //------------ XmlReader -----------------------------------------------------
@@ -316,22 +317,23 @@ impl Attributes {
 
     /// Takes an optional hexencoded attribute and converts it to Bytes
     pub fn take_opt_hex(&mut self, name: &str) -> Option<Bytes> {
-        match self.take_opt(name) {
-            None => None,
-            Some(s) => {
-                let d = hex::decode(s);
-                match d {
-                    Err(_) => None,
-                    Ok(b) => Some(Bytes::from(b))
-                }
-            }
-        }
+        self.take_req_hex(name).ok()
     }
 
     /// Takes a required attribute by name
     pub fn take_req(&mut self, name: &str) -> Result<String, AttributesError> {
         self.take_opt(name)
             .ok_or(AttributesError::MissingAttribute(name.to_string()))
+    }
+
+    /// Takes a required hexencoded attribute and converts it to Bytes
+    pub fn take_req_hex(&mut self, name: &str)
+        -> Result<Bytes, AttributesError> {
+
+        match hex::decode(self.take_req(name)?) {
+            Err(e) => return Err(AttributesError::HexError(e)),
+            Ok(b)  => Ok(Bytes::from(b))
+        }
     }
 
     /// Verifies that there are no more attributes
@@ -355,6 +357,9 @@ pub enum AttributesError {
 
     #[fail(display = "Extra attributes found")]
     ExtraAttributes,
+
+    #[fail(display = "Wrong hex encoding: {}", _0)]
+    HexError(FromHexError)
 }
 
 

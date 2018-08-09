@@ -29,10 +29,24 @@ impl Query {
         let object = r.take_bytes_characters()?;
 
         Ok(Publish {
+            hash,
             tag,
             uri,
-            hash,
             object
+        })
+    }
+
+    fn decode_withdraw(a: &mut Attributes)
+        -> Result<Withdraw, PublicationMessageError> {
+
+        let hash = a.take_req_hex("hash")?;
+        let uri = uri::Rsync::from_string(a.take_req("uri")?)?;
+        let tag = a.take_req("tag")?;
+
+        Ok(Withdraw {
+            hash,
+            tag,
+            uri
         })
     }
 
@@ -49,6 +63,10 @@ impl Query {
                         let p = Query::decode_publish(&mut a, r)?;
                         Ok(Some(QueryElement::Publish(p)))
                     },
+                    "withdraw" => {
+                        let w = Query::decode_withdraw(&mut a)?;
+                        Ok(Some(QueryElement::Withdraw(w)))
+                    }
                     _ => {
                         Err(
                             PublicationMessageError::UnexpectedStart(
@@ -88,7 +106,7 @@ pub struct Publish {
 //------------ Withdraw ------------------------------------------------------
 #[derive(Debug)]
 pub struct Withdraw {
-    hash: Option<Bytes>,
+    hash: Bytes,
     tag: String,
     uri: uri::Rsync
 }
