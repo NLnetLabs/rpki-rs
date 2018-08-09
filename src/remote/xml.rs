@@ -38,32 +38,15 @@ impl <R: io::Read> XmlReader<R> {
     /// Gets the next XmlEvent
     ///
     /// Will take cached event if there is one
-    pub fn next(&mut self) -> Result<XmlEvent, XmlReaderErr> {
+    fn next(&mut self) -> Result<XmlEvent, XmlReaderErr> {
         match self.cached_event.take() {
             Some(e) => Ok(e),
-            None    => Ok(self.reader.next()?)
-        }
-    }
-
-    /// Gets the next XmlEvent if it is start element, otherwise
-    /// returns None and puts whatever was found back on the cache
-    pub fn next_start(&mut self) -> Result<Option<(Tag, Attributes)>, XmlReaderErr> {
-        let e = self.next()?;
-        match e {
-
-            XmlEvent::StartElement { name, attributes, ..} => {
-                Ok(Some((Tag{name: name.local_name}, Attributes{attributes})))
-            },
-
-            _ => {
-                self.cache(e);
-                Ok(None)
-            }
+            None => Ok(self.reader.next()?)
         }
     }
 
     /// Puts an XmlEvent back so that it can be retrieved by 'next'
-    pub fn cache(&mut self, e: XmlEvent) -> () {
+    fn cache(&mut self, e: XmlEvent) -> () {
         self.cached_event = Some(e);
     }
 }
@@ -94,7 +77,7 @@ impl <R: io::Read> XmlReader<R> {
     }
 
     /// Takes the next element and expects a close element with the given name.
-    pub fn expect_close(&mut self, tag: Tag) -> Result<(), XmlReaderErr> {
+    fn expect_close(&mut self, tag: Tag) -> Result<(), XmlReaderErr> {
         match self.next() {
             Ok(reader::XmlEvent::EndElement { name, ..}) => {
                 if name.local_name == tag.name {
@@ -187,6 +170,42 @@ impl <R: io::Read> XmlReader<R> {
             }
         })
     }
+
+    /// Takes the next element that is part of a list of elements under the
+    /// current element, and processes it using a closure. When the end of the
+    /// list is encountered, i.e. the next element is not a start element, then
+    /// the closure is not executed and Ok(None) is returned. The element is
+    /// put back on the cache for processing by the parent structure.
+    ///
+    /// Note: This will break if we encounter a parent XML element that has
+    /// both a list of children XML elements *and* some (character) content.
+    /// However, this is not used by the RPKI XML structures. Also, provided
+    /// that a 'take_*' method with a closure was used for the parent element,
+    /// then we will get a clear error there (expect end element).
+    pub fn take_list_element<F, T, E>(&mut self, op: F) -> Result<Option<T>, E>
+    where F: FnOnce(&Tag, Attributes, &mut Self) -> Result<Option<T>, E>,
+          E: From<XmlReaderErr> {
+
+        let n = self.next()?;
+        match n {
+            XmlEvent::StartElement { name, attributes, ..} => {
+                let tag = Tag{name: name.local_name};
+                let res = op(
+                    &tag,
+                    Attributes{attributes},
+                    self
+                );
+                self.expect_close(tag)?;
+                res
+            },
+            _ => {
+                self.cache(n);
+                Ok(None)
+            }
+        }
+    }
+
+
 
     /// Takes base64 encoded bytes from the next 'characters' event.
     pub fn take_bytes_characters(&mut self) -> Result<Bytes, XmlReaderErr> {

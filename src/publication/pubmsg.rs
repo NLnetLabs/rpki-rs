@@ -55,7 +55,7 @@ pub enum PublicationMessageError {
     UnknownMessageType,
 
     #[fail(display = "Unexpected XML Start Tag: {}", _0)]
-    UnexpectedXmlStartTag(String),
+    UnexpectedStart(String),
 
     #[fail(display = "Invalid XML file: {}", _0)]
     XmlReadError(XmlReaderErr),
