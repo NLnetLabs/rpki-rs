@@ -7,9 +7,8 @@
 //! value is not used for an address family, the set of addresses must be
 //! non-empty.
 
-use bytes::Bytes;
 use ber::decode;
-use ber::{BitString, Mode, OctetString, Tag};
+use ber::{BitString, Captured, Mode, OctetString, Tag};
 use super::roa::RoaIpAddress;
 use super::x509::ValidationError;
 
@@ -198,7 +197,7 @@ impl IpAddressBlocks {
 
 /// A sequence of address ranges for one address family.
 #[derive(Clone, Debug)]
-pub struct AddressBlocks(Bytes);
+pub struct AddressBlocks(Captured);
 
 impl AddressBlocks {
     /// Returns an iterator over the address ranges in the block.

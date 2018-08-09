@@ -11,8 +11,7 @@
 //! [`ManifestContent`]: struct.ManifestContent.html
 
 use ber::decode;
-use ber::{BitString, Mode, OctetString, Tag, Unsigned};
-use bytes::Bytes;
+use ber::{BitString, Captured, OctetString, Tag, Unsigned};
 use super::uri;
 use super::cert::{ResourceCert};
 use super::sigobj::{self, SignedObject};
@@ -80,7 +79,7 @@ pub struct ManifestContent {
     next_update: Time,
 
     /// The list of files in its encoded form.
-    file_list: Bytes,
+    file_list: Captured,
 }
 
 impl ManifestContent {
@@ -139,7 +138,7 @@ impl ManifestContent {
 #[derive(Clone, Debug)]
 pub struct ManifestIter{
     base: uri::Rsync,
-    file_list: Bytes,
+    file_list: Captured,
 }
 
 impl Iterator for ManifestIter {
@@ -150,7 +149,7 @@ impl Iterator for ManifestIter {
             None
         }
         else {
-            Mode::Ber.decode(&mut self.file_list, |cons| {
+            self.file_list.decode_partial(|cons| {
                 FileAndHash::take_opt_from(cons)
             }).unwrap().map(|item| {
                 item.to_uri_etc(&self.base)
