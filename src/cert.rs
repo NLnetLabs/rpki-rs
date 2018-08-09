@@ -22,7 +22,7 @@ use ring::digest::{self, Digest};
 use super::uri;
 use super::asres::{AsBlocks, AsResources};
 use ber::decode;
-use ber::{BitString, Mode, OctetString, Oid, Tag, Unsigned};
+use ber::{BitString, Captured, Mode, OctetString, Oid, Tag, Unsigned};
 use super::ipres::{IpAddressBlocks, IpResources};
 use super::x509::{
     update_once, Name, SignatureAlgorithm, SignedData, Time, ValidationError
@@ -624,9 +624,9 @@ pub struct Extensions {
 
     /// Extended Key Usage.
     ///
-    /// The valud is the content of the DER-encoded sequence of object
+    /// The value is the content of the DER-encoded sequence of object
     /// identifiers.
-    extended_key_usage: Option<Bytes>,
+    extended_key_usage: Option<Captured>,
 
     /// CRL Distribution Points
     crl_distribution: Option<UriGeneralNames>,
@@ -889,11 +889,11 @@ impl Extensions {
     /// May only be present in EE certificates issued to devices.
     fn take_extended_key_usage<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
-        extended_key_usage: &mut Option<Bytes>
+        extended_key_usage: &mut Option<Captured>
     ) -> Result<(), S::Err> {
         update_once(extended_key_usage, || {
             let res = cons.take_sequence(|c| c.capture_all())?;
-            Mode::Der.decode(res.clone(), |cons| {
+            res.clone().decode(|cons| {
                 Oid::skip_in(cons)?;
                 while let Some(_) = Oid::skip_opt_in(cons)? { }
                 Ok(res)
@@ -1038,7 +1038,7 @@ impl Extensions {
 
 /// A GeneralNames value limited to uniformResourceIdentifier choices.
 #[derive(Clone, Debug)]
-pub struct UriGeneralNames(Bytes);
+pub struct UriGeneralNames(Captured);
 
 impl<'a> UriGeneralNames {
     /// ```text
@@ -1071,7 +1071,7 @@ impl<'a> UriGeneralNames {
 
 // XXX This can be improved quite a bit.
 #[derive(Clone, Debug)]
-pub struct UriGeneralNameIter(Bytes);
+pub struct UriGeneralNameIter(Captured);
 
 impl Iterator for UriGeneralNameIter {
     type Item = UriGeneralName;
@@ -1081,7 +1081,7 @@ impl Iterator for UriGeneralNameIter {
             None
         }
         else {
-            Mode::Der.decode(&mut self.0, |cons| {
+            self.0.decode_partial(|cons| {
                 UriGeneralName::take_opt_from(cons)
             }).unwrap()
         }
@@ -1147,7 +1147,7 @@ impl UriGeneralName {
 
 #[derive(Clone, Debug)]
 pub struct SubjectInfoAccess {
-    content: Bytes,
+    content: Captured,
     ca: bool
 }
 
@@ -1205,7 +1205,7 @@ impl SubjectInfoAccess {
 
 #[derive(Clone, Debug)]
 pub struct SiaIter {
-    content: Bytes,
+    content: Captured,
 }
 
 impl SiaIter {
@@ -1229,7 +1229,7 @@ impl Iterator for SiaIter {
     type Item = (Oid, UriGeneralName);
 
     fn next(&mut self) -> Option<Self::Item> {
-        Mode::Der.decode(&mut self.content, |cons| {
+        self.content.decode_partial(|cons| {
             cons.take_opt_sequence(|cons| {
                 Ok((
                     Oid::take_from(cons)?,
@@ -1244,7 +1244,7 @@ impl Iterator for SiaIter {
 //------------ CertificatePolicies -------------------------------------------
 
 #[derive(Clone, Debug)]
-pub struct CertificatePolicies(Bytes);
+pub struct CertificatePolicies(Captured);
 
 impl CertificatePolicies {
     fn take_from<S: decode::Source>(

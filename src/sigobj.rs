@@ -1,7 +1,7 @@
 //! Signed Objects
 
 use ber::decode;
-use ber::{Mode, Oid, Tag};
+use ber::{Captured, Mode, Oid, Tag};
 use ber::ostring::{OctetString, OctetStringSource};
 use bytes::Bytes;
 use ring::digest;
@@ -323,7 +323,7 @@ impl SignerInfo {
 
 #[derive(Clone, Debug)]
 pub struct SignedAttributes {
-    raw: Bytes,
+    raw: Captured,
     message_digest: OctetString,
     content_type: Oid<Bytes>,
     signing_time: Option<Time>,
@@ -335,7 +335,7 @@ impl SignedAttributes {
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         let raw = cons.take_constructed_if(Tag::CTX_0, |c| c.capture_all())?;
-        Mode::Ber.decode(raw.clone(), |cons| {
+        raw.clone().decode(|cons| {
             let mut message_digest = None;
             let mut content_type = None;
             let mut signing_time = None;

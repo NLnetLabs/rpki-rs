@@ -3,7 +3,7 @@
 use std::str;
 use std::str::FromStr;
 use ber::decode;
-use ber::{BitString, Tag};
+use ber::{BitString, Captured, Tag};
 use ber::decode::Source;
 use bytes::Bytes;
 use chrono::{DateTime, LocalResult, TimeZone, Utc};
@@ -27,7 +27,7 @@ where F: FnOnce() -> Result<T, E>, E: From<decode::Error> {
 //------------ Name ----------------------------------------------------------
 
 #[derive(Clone, Debug)]
-pub struct Name(Bytes);
+pub struct Name(Captured);
 
 impl Name {
     pub fn take_from<S: decode::Source>(
@@ -66,7 +66,7 @@ impl SignatureAlgorithm {
 
 #[derive(Clone, Debug)]
 pub struct SignedData {
-    data: Bytes,
+    data: Captured,
     signature_algorithm: SignatureAlgorithm,
     signature_value: BitString,
 }
