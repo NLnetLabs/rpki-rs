@@ -207,7 +207,6 @@ impl <R: io::Read> XmlReader<R> {
     }
 
 
-
     /// Takes base64 encoded bytes from the next 'characters' event.
     pub fn take_bytes_characters(&mut self) -> Result<Bytes, XmlReaderErr> {
         match self.next() {
@@ -219,7 +218,6 @@ impl <R: io::Read> XmlReader<R> {
         }
 
     }
-
 }
 
 impl XmlReader<fs::File> {

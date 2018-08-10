@@ -5,28 +5,28 @@ use std::io;
 use bytes::Bytes;
 use hex;
 use uri;
-use publication::pubmsg::PublicationMessageError;
+use publication::pubmsg::MessageError;
 use remote::xml::XmlReader;
 use remote::xml::Attributes;
 use remote::xml::XmlWriter;
 use remote::xml::XmlWriterError;
 
 
-//------------ Query ---------------------------------------------------------
+//------------ PublishQuery --------------------------------------------------
 /// Type representing a multi element query as described in
 /// https://tools.ietf.org/html/rfc8181#section-3.7
 #[derive(Debug, Eq, PartialEq)]
-pub struct Query {
-    elements: Vec<QueryElement>
+pub struct PublishQuery {
+    elements: Vec<PublishElement>
 }
 
 
-impl Query {
+impl PublishQuery {
 
     fn decode_publish<R: io::Read>(
         a: &mut Attributes,
         r: &mut XmlReader<R>
-    ) -> Result<QueryElement, PublicationMessageError> {
+    ) -> Result<PublishElement, MessageError> {
 
         let uri = uri::Rsync::from_string(a.take_req("uri")?)?;
         let tag = a.take_req("tag")?;
@@ -34,12 +34,12 @@ impl Query {
 
         match a.take_opt_hex("hash") {
             Some(hash) => {
-                Ok(QueryElement::Update(Update{
+                Ok(PublishElement::Update(Update{
                     hash, tag, uri, object
                 }))
             },
             None => {
-                Ok(QueryElement::Publish(Publish{
+                Ok(PublishElement::Publish(Publish{
                     tag, uri, object
                 }))
             }
@@ -47,13 +47,13 @@ impl Query {
     }
 
     fn decode_withdraw(a: &mut Attributes)
-        -> Result<QueryElement, PublicationMessageError> {
+        -> Result<PublishElement, MessageError> {
 
         let hash = a.take_req_hex("hash")?;
         let uri = uri::Rsync::from_string(a.take_req("uri")?)?;
         let tag = a.take_req("tag")?;
 
-        Ok(QueryElement::Withdraw(Withdraw {
+        Ok(PublishElement::Withdraw(Withdraw {
             hash,
             tag,
             uri
@@ -64,18 +64,18 @@ impl Query {
     /// Decodes a query XML structure. Expects that the outer <msg> element
     /// is processed by PublicationMessage::decode
     pub fn decode<R: io::Read>(r: &mut XmlReader<R>)
-        -> Result<Self, PublicationMessageError> {
+        -> Result<Self, MessageError> {
 
         let mut elements = vec![];
 
         loop {
             let e = r.take_opt_element(|t, mut a, r| {
                 match t.name.as_ref() {
-                    "publish"  => { Ok(Some(Query::decode_publish(&mut a, r)?)) },
-                    "withdraw" => { Ok(Some(Query::decode_withdraw(&mut a)?)) },
+                    "publish"  => { Ok(Some(PublishQuery::decode_publish(&mut a, r)?)) },
+                    "withdraw" => { Ok(Some(PublishQuery::decode_withdraw(&mut a)?)) },
                     _ => {
                         Err(
-                            PublicationMessageError::UnexpectedStart(
+                            MessageError::UnexpectedStart(
                                 t.name.clone()))
                     }
                 }
@@ -85,7 +85,7 @@ impl Query {
                 None => break
             }
         }
-        Ok(Query{elements})
+        Ok(PublishQuery {elements})
     }
 
     pub fn encode_vec<W: io::Write>(&self, w: &mut XmlWriter<W>)
@@ -93,9 +93,9 @@ impl Query {
 
         for e in &self.elements {
             match e {
-                QueryElement::Publish(p)   => { p.encode_vec(w)?; },
-                QueryElement::Update(u)    => { u.encode_vec(w)?; },
-                QueryElement::Withdraw(wi) => { wi.encode_vec(w)?; }
+                PublishElement::Publish(p)   => { p.encode_vec(w)?; },
+                PublishElement::Update(u)    => { u.encode_vec(w)?; },
+                PublishElement::Withdraw(wi) => { wi.encode_vec(w)?; }
             }
         }
 
@@ -106,9 +106,9 @@ impl Query {
 
 
 
-//------------ QueryElement --------------------------------------------------
+//------------ PublishElement ------------------------------------------------
 #[derive(Debug, Eq, PartialEq)]
-pub enum QueryElement {
+pub enum PublishElement {
     Publish(Publish),
     Update(Update),
     Withdraw(Withdraw)
