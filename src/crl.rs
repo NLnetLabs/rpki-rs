@@ -75,7 +75,7 @@ impl Crl {
     ) -> Result<Self, S::Err> {
         let signed_data = SignedData::take_content_from(cons)?;
 
-        Mode::Der.decode(signed_data.data().clone(), |cons| {
+        signed_data.data().clone().decode(|cons| {
             cons.take_sequence(|cons| {
                 cons.skip_u8_if(1)?; // v2 => 1
                 Ok(Crl {

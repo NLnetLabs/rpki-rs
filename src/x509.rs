@@ -2,10 +2,9 @@
 
 use std::str;
 use std::str::FromStr;
-use ber::decode;
-use ber::{BitString, Captured, Tag};
+use ber::{decode, encode};
+use ber::{BitString, Captured, Mode, Tag};
 use ber::decode::Source;
-use bytes::Bytes;
 use chrono::{DateTime, LocalResult, TimeZone, Utc};
 use super::time;
 
@@ -59,6 +58,13 @@ impl SignatureAlgorithm {
         cons.take_opt_null()?;
         Ok(SignatureAlgorithm::Sha256WithRsaEncryption)
     }
+
+    pub fn encode(&self) -> impl encode::Values {
+        encode::sequence((
+            oid::SHA256_WITH_RSA_ENCRYPTION.encode(),
+            encode::PrimitiveContent::value(&()),
+        ))
+    }
 }
 
 
@@ -72,6 +78,10 @@ pub struct SignedData {
 }
 
 impl SignedData {
+    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
+        Mode::Der.decode(source, Self::take_from)
+    }
+
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
@@ -88,7 +98,7 @@ impl SignedData {
         })
     }
 
-    pub fn data(&self) -> &Bytes {
+    pub fn data(&self) -> &Captured {
         &self.data
     }
 
@@ -105,6 +115,15 @@ impl SignedData {
             )
         ).map_err(|_| ValidationError)
     }
+
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence((
+            &self.data,
+            self.signature_algorithm.encode(),
+            self.signature_value.encode(),
+        ))
+    }
+
 }
 
 
@@ -281,3 +300,21 @@ mod oid {
         = Oid(&[42, 134, 72, 134, 247, 13, 1, 1, 11]);
 }
 
+
+//------------ Testing. One. Two. Three --------------------------------------
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use ber::encode::Values;
+
+    #[test]
+    fn signed_data_decode_then_encode() {
+        let data = include_bytes!("../test/oob/id-publisher-ta.cer");
+        let obj = SignedData::decode(data.as_ref()).unwrap();
+        let mut encoded = Vec::new();
+        obj.encode().write_encoded(Mode::Der, &mut encoded).unwrap();
+        assert_eq!(data.len(), encoded.len());
+        assert_eq!(data.as_ref(), AsRef::<[u8]>::as_ref(&encoded));
+    }
+}
