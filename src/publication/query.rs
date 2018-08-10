@@ -13,6 +13,33 @@ use remote::xml::XmlWriterError;
 
 
 //------------ PublishQuery --------------------------------------------------
+#[derive(Debug, Eq, PartialEq)]
+pub struct ListQuery;
+
+impl ListQuery {
+
+    pub fn decode<R: io::Read>(r: &mut XmlReader<R>)
+        -> Result<Self, MessageError> {
+        r.take_named_element("list", |_, r| { r.take_empty()})?;
+        Ok(ListQuery)
+    }
+
+    pub fn encode_vec<W: io::Write>(&self, w: &mut XmlWriter<W>)
+        -> Result<(), XmlWriterError> {
+
+        w.put_element(
+            "list",
+            None,
+            |w| { w.empty() }
+        )?;
+
+        Ok(())
+    }
+
+}
+
+
+//------------ PublishQuery --------------------------------------------------
 /// Type representing a multi element query as described in
 /// https://tools.ietf.org/html/rfc8181#section-3.7
 #[derive(Debug, Eq, PartialEq)]

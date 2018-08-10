@@ -4,6 +4,7 @@ use std::io;
 use uri;
 use publication::query::PublishQuery;
 use remote::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
+use publication::query::ListQuery;
 
 
 //------------ PublicationMessage --------------------------------------------
@@ -14,7 +15,8 @@ pub const NS: &'static str = "http://www.hactrn.net/uris/rpki/publication-spec/"
 /// This type represents the Publication Messages defined in RFC8181
 #[derive(Debug, Eq, PartialEq)]
 pub enum Message {
-    Query(PublishQuery),
+    PublishQuery(PublishQuery),
+    ListQuery(ListQuery)
 }
 
 impl Message {
@@ -35,8 +37,11 @@ impl Message {
 
                 match msg_type.as_ref() {
                     "query" => {
-
-                        Ok(Message::Query(PublishQuery::decode(r)?))
+                        if r.next_element_name("list") {
+                            Ok(Message::ListQuery(ListQuery::decode(r)?))
+                        } else {
+                            Ok(Message::PublishQuery(PublishQuery::decode(r)?))
+                        }
                     },
                     _ => {
                         return Err(MessageError::UnknownMessageType)
@@ -51,7 +56,8 @@ impl Message {
         XmlWriter::encode_vec(|w| {
 
             let msg_type = match self {
-                Message::Query(_) => "query"
+                Message::PublishQuery(_) => "query",
+                Message::ListQuery(_) => "query"
             };
             let a = [
                 ("xmlns", NS),
@@ -64,7 +70,8 @@ impl Message {
                 Some(&a),
                 |w| {
                     match self {
-                        Message::Query(q) => { q.encode_vec(w) }
+                        Message::PublishQuery(q) => { q.encode_vec(w) }
+                        Message::ListQuery(l) => { l.encode_vec(w) }
                     }
                 }
             )
@@ -139,5 +146,16 @@ mod tests {
         let pm_from_encoded = Message::decode(encoded.as_bytes()).unwrap();
         assert_eq!(pm, pm_from_encoded);
         assert_eq!(xml, encoded);
+    }
+
+    #[test]
+    fn should_parse_list_query() {
+        let xml = include_str!("../../test/publication/list.xml");
+        let l = Message::decode(xml.as_bytes()).unwrap();
+        let vec = l.encode_vec();
+        let xml_enc = str::from_utf8(&vec).unwrap();
+        let l_from_enc = Message::decode(xml_enc.as_bytes()).unwrap();
+        assert_eq!(l, l_from_enc);
+        assert_eq!(xml, xml_enc);
     }
 }

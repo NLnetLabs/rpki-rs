@@ -206,7 +206,6 @@ impl <R: io::Read> XmlReader<R> {
         }
     }
 
-
     /// Takes base64 encoded bytes from the next 'characters' event.
     pub fn take_bytes_characters(&mut self) -> Result<Bytes, XmlReaderErr> {
         match self.next() {
@@ -216,8 +215,27 @@ impl <R: io::Read> XmlReader<R> {
             }
             _ => return Err(XmlReaderErr::ExpectedCharacters)
         }
-
     }
+
+    pub fn take_empty(&mut self) -> Result<(), XmlReaderErr> {
+        Ok(())
+    }
+
+    pub fn next_element_name(&mut self, exp_name: &str) -> bool {
+        match self.next() {
+            Err(_) => false,
+            Ok(n) => {
+                let mut res = false;
+                if let XmlEvent::StartElement { ref name, ..} = n {
+                    res = name.local_name == exp_name;
+                }
+                self.cache(n);
+                res
+            }
+        }
+    }
+
+
 }
 
 impl XmlReader<fs::File> {
