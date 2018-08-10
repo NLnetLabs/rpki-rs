@@ -145,7 +145,7 @@ impl IdCert {
         self.validate_ca_basics()?;
 
         // Authority Key Identifier. May be present, if so, must be
-        // equal to the subject key indentifier.
+        // equal to the subject key identifier.
         if let Some(ref aki) = self.extensions.authority_key_id {
             if *aki != self.extensions.subject_key_id {
                 return Err(ValidationError);

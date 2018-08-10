@@ -11,12 +11,14 @@ use uri;
 use x509;
 use remote::idcert::IdCert;
 use remote::xml::XmlWriter;
-use remote::xml::AttributePair;
 use remote::xml::{XmlReader, XmlReaderErr};
 use remote::xml::AttributesError;
 
 
 //------------ PublisherRequest ----------------------------------------------
+
+pub const VERSION: &'static str = "1";
+pub const NS: &'static str = "http://www.hactrn.net/uris/rpki/rpki-setup/";
 
 /// Type representing a <publisher_request/>
 ///
@@ -79,27 +81,23 @@ impl PublisherRequest {
     pub fn encode_vec(&self) -> Vec<u8> {
         XmlWriter::encode_vec(|w| {
 
-            let mut attr = vec![
-                AttributePair::from(
-                    "version",
-                    "1"),
-                AttributePair::from(
-                    "publisher_handle",
-                    self.publisher_handle.as_ref()),
+            let mut a = vec![
+                ("xmlns", NS),
+                ("version", VERSION),
+                ("publisher_handle", self.publisher_handle.as_ref())
             ];
+
             if let Some(ref t) = self.tag {
-                attr.push(AttributePair::from(
-                    "tag",
-                    t));
+                a.push(("tag", t.as_ref()));
             }
 
-            w.put_first_element_with_attributes(
+            w.put_element(
                 "publisher_request",
-                "http://www.hactrn.net/uris/rpki/rpki-setup/",
-                attr,
+                Some(a.as_ref()),
                 |w| {
                     w.put_element(
                         "publisher_bpki_ta",
+                        None,
                         |w| {
                             w.put_blob(&self.id_cert.to_bytes())
                         }
@@ -251,36 +249,26 @@ impl RepositoryResponse {
             let sia_base = self.sia_base.to_string();
             let rrdp_notification_uri = self.rrdp_notification_uri.to_string();
 
-            let mut attr = vec![
-                AttributePair::from(
-                    "version",
-                    "1"),
-                AttributePair::from(
-                    "publisher_handle",
-                    self.publisher_handle.as_ref()),
-                AttributePair::from(
-                    "service_uri",
-                    service_uri.as_ref()),
-                AttributePair::from(
-                    "sia_base",
-                    sia_base.as_ref()),
-                AttributePair::from(
-                    "rrdp_notification_uri",
-                    rrdp_notification_uri.as_ref()),
+            let mut a = vec![
+                ("xmlns", NS),
+                ("version", VERSION),
+                ("publisher_handle", self.publisher_handle.as_ref()),
+                ("service_uri", service_uri.as_ref()),
+                ("sia_base", sia_base.as_ref()),
+                ("rrdp_notification_uri", rrdp_notification_uri.as_ref())
             ];
+
             if let Some(ref t) = self.tag {
-                attr.push(AttributePair::from(
-                    "tag",
-                    t));
+                a.push(("tag", t.as_ref()));
             }
 
-            w.put_first_element_with_attributes(
+            w.put_element(
                 "repository_response",
-                "http://www.hactrn.net/uris/rpki/rpki-setup/",
-                attr,
+                Some(&a),
                 |w| {
                     w.put_element(
                         "repository_bpki_ta",
+                        None,
                         |w| {
                             w.put_blob(&self.id_cert.to_bytes())
                         }

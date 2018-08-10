@@ -183,7 +183,7 @@ impl <R: io::Read> XmlReader<R> {
     /// However, this is not used by the RPKI XML structures. Also, provided
     /// that a 'take_*' method with a closure was used for the parent element,
     /// then we will get a clear error there (expect end element).
-    pub fn take_list_element<F, T, E>(&mut self, op: F) -> Result<Option<T>, E>
+    pub fn take_opt_element<F, T, E>(&mut self, op: F) -> Result<Option<T>, E>
     where F: FnOnce(&Tag, Attributes, &mut Self) -> Result<Option<T>, E>,
           E: From<XmlReaderErr> {
 
@@ -384,24 +384,18 @@ pub struct XmlWriter<W> {
 /// Generate the XML.
 impl <W: io::Write> XmlWriter<W> {
 
-    /// Private general method called by the pub put_first_element with
-    /// Some(namespace) and put_element with None for namespace.
-    fn put_some_element<F>(
+    /// Adds an element
+    pub fn put_element<F>(
         &mut self,
         name: &str,
-        namespace: Option<&str>,
-        attr: Option<Vec<AttributePair>>,
+        attr: Option<&[(&str, &str)]>,
         op: F) -> Result<(), XmlWriterError>
     where F: FnOnce(&mut Self) -> Result<(), XmlWriterError> {
         let mut start = writer::XmlEvent::start_element(name);
 
-        if let Some(ns) = namespace {
-            start = start.ns("", ns);
-        }
-
         if let Some(v) = attr {
             for a in v {
-                start = start.attr(a.k, a.v);
+                start = start.attr(a.0, a.1);
             }
         }
 
@@ -410,49 +404,6 @@ impl <W: io::Write> XmlWriter<W> {
         self.writer.write(writer::XmlEvent::end_element())?;
 
         Ok(())
-    }
-
-    /// Creates the first element for your XML structure. Note that namespace
-    /// is required because all the RPKI XML structures have one.
-    pub fn put_first_element<F>(
-        &mut self,
-        name: &str,
-        namespace: &str,
-        op: F) -> Result<(), XmlWriterError>
-        where F: FnOnce(&mut Self) -> Result<(), XmlWriterError> {
-        self.put_some_element(name, Some(namespace), None, op)
-    }
-
-    /// Creates the first element for your XML structure. Note that namespace
-    /// is required because all the RPKI XML structures have one.
-    pub fn put_first_element_with_attributes<F>(
-        &mut self,
-        name: &str,
-        namespace: &str,
-        attr: Vec<AttributePair>,
-        op: F) -> Result<(), XmlWriterError>
-        where F: FnOnce(&mut Self) -> Result<(), XmlWriterError> {
-        self.put_some_element(name, Some(namespace), Some(attr), op)
-    }
-
-
-    /// Creates a nested element.
-    pub fn put_element<F>(
-        &mut self,
-        name: &str,
-        op: F) -> Result<(), XmlWriterError>
-        where F: FnOnce(&mut Self) -> Result<(), XmlWriterError> {
-        self.put_some_element(name, None, None, op)
-    }
-
-    /// Creates a nested element.
-    pub fn put_element_with_attributes<F>(
-        &mut self,
-        name: &str,
-        attr: Vec<AttributePair>,
-        op: F) -> Result<(), XmlWriterError>
-        where F: FnOnce(&mut Self) -> Result<(), XmlWriterError> {
-        self.put_some_element(name, None, Some(attr), op)
     }
 
     /// Converts bytes to base64 encoded Characters as the content. Note
@@ -481,7 +432,7 @@ impl <W: io::Write> XmlWriter<W> {
 
         let writer = EmitterConfig::new()
             .write_document_declaration(false)
-            .normalize_empty_elements(false)
+            .normalize_empty_elements(true)
             .perform_indent(true)
             .create_writer(w);
 
@@ -500,24 +451,6 @@ impl XmlWriter<()> {
         let mut b = Vec::new();
         XmlWriter::encode(&mut b, op).unwrap();
         b
-    }
-}
-
-
-//------------ AttributePair -------------------------------------------------
-
-/// A little helper to add attribute key value pairs when encoding XML
-pub struct AttributePair<'a> {
-    k: &'a str,
-    v: &'a str
-}
-
-impl <'a> AttributePair<'a> {
-
-    /// Creates an AttributePair from a key and a value, e.g.:
-    /// let pair = AttributePair::from("key", "value");
-    pub fn from(k: &'a str, v: &'a str) -> Self {
-        AttributePair{k, v}
     }
 }
 
@@ -558,21 +491,23 @@ mod tests {
     fn should_write_xml() {
 
         let xml = XmlWriter::encode_vec(|w| {
-            w.put_first_element_with_attributes(
+            w.put_element(
                 "a",
-                "http://ns/",
-                vec![AttributePair::from("c", "d")],
-                |w|
-                    {
-                        w.put_element("b", |w| {
-                            w.put_blob(&Bytes::from("X"))
-                        })
-                    }
+                Some(&[
+                    ("xmlns", "http://ns/"),
+                    ("c", "d")
+                ]),
+                |w| {
+                    w.put_element("b", None, |w| {
+                        w.put_blob(&Bytes::from("X"))
+                    })
+                }
             )
         });
 
         assert_eq!(
             str::from_utf8(&xml).unwrap(),
-            "<a xmlns=\"http://ns/\" c=\"d\">\n  <b>WA==</b>\n</a>");
+            "<a xmlns=\"http://ns/\" c=\"d\">\n  <b>WA==</b>\n</a>"
+        );
     }
 }

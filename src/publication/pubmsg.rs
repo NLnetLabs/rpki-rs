@@ -4,7 +4,6 @@ use std::io;
 use uri;
 use publication::query::Query;
 use remote::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
-use remote::xml::AttributePair;
 
 
 //------------ PublicationMessage --------------------------------------------
@@ -53,15 +52,15 @@ impl PublicationMessage {
             let msg_type = match self {
                 PublicationMessage::Query(_) => "query"
             };
-            let a = vec![
-                AttributePair::from("version", VERSION),
-                AttributePair::from("type", msg_type),
+            let a = [
+                ("xmlns", NS),
+                ("version", VERSION),
+                ("type", msg_type),
             ];
 
-            w.put_first_element_with_attributes(
+            w.put_element(
                 "msg",
-                NS,
-                a,
+                Some(&a),
                 |w| {
                     match self {
                         PublicationMessage::Query(q) => { q.encode_vec(w) }

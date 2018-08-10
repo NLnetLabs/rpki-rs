@@ -10,7 +10,6 @@ use remote::xml::XmlReader;
 use remote::xml::Attributes;
 use remote::xml::XmlWriter;
 use remote::xml::XmlWriterError;
-use remote::xml::AttributePair;
 
 
 //------------ Query ---------------------------------------------------------
@@ -70,7 +69,7 @@ impl Query {
         let mut elements = vec![];
 
         loop {
-            let e = r.take_list_element(|t, mut a, r| {
+            let e = r.take_opt_element(|t, mut a, r| {
                 match t.name.as_ref() {
                     "publish"  => { Ok(Some(Query::decode_publish(&mut a, r)?)) },
                     "withdraw" => { Ok(Some(Query::decode_withdraw(&mut a)?)) },
@@ -107,7 +106,7 @@ impl Query {
 
 
 
-//------------ Query ---------------------------------------------------------
+//------------ QueryElement --------------------------------------------------
 #[derive(Debug, Eq, PartialEq)]
 pub enum QueryElement {
     Publish(Publish),
@@ -130,17 +129,18 @@ impl Update {
         -> Result<(), XmlWriterError> {
 
         let uri = self.uri.to_string();
-        let enc = hex::encode(self.hash.clone());
+        let enc = hex::encode(&self.hash);
 
-        let a = vec![
-            AttributePair::from("tag", self.tag.as_ref()),
-            AttributePair::from("hash", enc.as_ref()),
-            AttributePair::from("uri", uri.as_ref())
+        let a = [
+            ("tag", self.tag.as_ref()),
+            ("hash", enc.as_ref()),
+            ("uri", uri.as_ref())
         ];
 
-        w.put_element_with_attributes(
+
+        w.put_element(
             "publish",
-            a,
+            Some(&a),
             |w| {
                 w.put_blob(&self.object)
             }
@@ -163,14 +163,14 @@ impl Publish {
 
         let uri =  self.uri.to_string();
 
-        let a = vec![
-            AttributePair::from("tag", self.tag.as_ref()),
-            AttributePair::from("uri", uri.as_ref()),
+        let a = [
+            ("tag", self.tag.as_ref()),
+            ("uri", uri.as_ref()),
         ];
 
-        w.put_element_with_attributes(
+        w.put_element(
             "publish",
-            a,
+            Some(&a),
             |w| {
                 w.put_blob(&self.object)
             }
@@ -195,15 +195,15 @@ impl Withdraw {
         let uri =  self.uri.to_string();
         let enc = hex::encode(self.hash.clone());
 
-        let a = vec![
-            AttributePair::from("hash", enc.as_ref()),
-            AttributePair::from("tag", self.tag.as_ref()),
-            AttributePair::from("uri", uri.as_ref())
+        let a = [
+            ("hash", enc.as_ref()),
+            ("tag", self.tag.as_ref()),
+            ("uri", uri.as_ref())
         ];
 
-        w.put_element_with_attributes(
+        w.put_element(
             "withdraw",
-            a,
+            Some(&a),
             |w| {
                 w.empty()
             }
