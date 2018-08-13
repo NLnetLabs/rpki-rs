@@ -5,6 +5,7 @@ use uri;
 use publication::query::PublishQuery;
 use remote::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 use publication::query::ListQuery;
+use publication::reply::SuccessReply;
 
 
 //------------ PublicationMessage --------------------------------------------
@@ -16,7 +17,8 @@ pub const NS: &'static str = "http://www.hactrn.net/uris/rpki/publication-spec/"
 #[derive(Debug, Eq, PartialEq)]
 pub enum Message {
     PublishQuery(PublishQuery),
-    ListQuery(ListQuery)
+    ListQuery(ListQuery),
+    SuccessReply(SuccessReply)
 }
 
 impl Message {
@@ -43,6 +45,9 @@ impl Message {
                             Ok(Message::PublishQuery(PublishQuery::decode(r)?))
                         }
                     },
+                    "reply" => {
+                        Ok(Message::SuccessReply(SuccessReply::decode(r)?))
+                    }
                     _ => {
                         return Err(MessageError::UnknownMessageType)
                     }
@@ -57,7 +62,8 @@ impl Message {
 
             let msg_type = match self {
                 Message::PublishQuery(_) => "query",
-                Message::ListQuery(_) => "query"
+                Message::ListQuery(_) => "query",
+                Message::SuccessReply(_) => "reply"
             };
             let a = [
                 ("xmlns", NS),
@@ -72,6 +78,7 @@ impl Message {
                     match self {
                         Message::PublishQuery(q) => { q.encode_vec(w) }
                         Message::ListQuery(l) => { l.encode_vec(w) }
+                        Message::SuccessReply(s) => { s.encode_vec(w) }
                     }
                 }
             )
@@ -156,6 +163,17 @@ mod tests {
         let xml_enc = str::from_utf8(&vec).unwrap();
         let l_from_enc = Message::decode(xml_enc.as_bytes()).unwrap();
         assert_eq!(l, l_from_enc);
+        assert_eq!(xml, xml_enc);
+    }
+
+    #[test]
+    fn should_parse_success_reply() {
+        let xml = include_str!("../../test/publication/success.xml");
+        let s = Message::decode(xml.as_bytes()).unwrap();
+        let vec = s.encode_vec();
+        let xml_enc = str::from_utf8(&vec).unwrap();
+        let s_from_enc = Message::decode(xml_enc.as_bytes()).unwrap();
+        assert_eq!(s, s_from_enc);
         assert_eq!(xml, xml_enc);
     }
 }
