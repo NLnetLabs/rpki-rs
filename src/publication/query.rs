@@ -63,7 +63,7 @@ impl PublishQuery {
         let tag = a.take_req("tag")?;
         let object = r.take_bytes_characters()?;
 
-        match a.take_opt_hex("hash") {
+        let res = match a.take_opt_hex("hash") {
             Some(hash) => {
                 Ok(PublishElement::Update(Update{
                     hash, tag, uri, object
@@ -74,7 +74,10 @@ impl PublishQuery {
                     tag, uri, object
                 }))
             }
-        }
+        };
+
+        a.exhausted()?;
+        res
     }
 
     fn decode_withdraw(a: &mut Attributes)
@@ -83,6 +86,8 @@ impl PublishQuery {
         let hash = a.take_req_hex("hash")?;
         let uri = uri::Rsync::from_string(a.take_req("uri")?)?;
         let tag = a.take_req("tag")?;
+
+        a.exhausted()?;
 
         Ok(PublishElement::Withdraw(Withdraw {
             hash,

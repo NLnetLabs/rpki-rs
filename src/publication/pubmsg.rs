@@ -2,10 +2,9 @@
 
 use std::io;
 use uri;
-use publication::query::PublishQuery;
+use publication::query::{ListQuery, PublishQuery};
+use publication::reply::{ListReply, SuccessReply};
 use remote::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
-use publication::query::ListQuery;
-use publication::reply::SuccessReply;
 
 
 //------------ PublicationMessage --------------------------------------------
@@ -18,7 +17,8 @@ pub const NS: &'static str = "http://www.hactrn.net/uris/rpki/publication-spec/"
 pub enum Message {
     PublishQuery(PublishQuery),
     ListQuery(ListQuery),
-    SuccessReply(SuccessReply)
+    SuccessReply(SuccessReply),
+    ListReply(ListReply)
 }
 
 impl Message {
@@ -46,7 +46,11 @@ impl Message {
                         }
                     },
                     "reply" => {
-                        Ok(Message::SuccessReply(SuccessReply::decode(r)?))
+                        if r.next_element_name("success") {
+                            Ok(Message::SuccessReply(SuccessReply::decode(r)?))
+                        } else {
+                            Ok(Message::ListReply(ListReply::decode(r)?))
+                        }
                     }
                     _ => {
                         return Err(MessageError::UnknownMessageType)
@@ -63,7 +67,8 @@ impl Message {
             let msg_type = match self {
                 Message::PublishQuery(_) => "query",
                 Message::ListQuery(_) => "query",
-                Message::SuccessReply(_) => "reply"
+                Message::SuccessReply(_) => "reply",
+                Message::ListReply(_) => "reply"
             };
             let a = [
                 ("xmlns", NS),
@@ -79,6 +84,7 @@ impl Message {
                         Message::PublishQuery(q) => { q.encode_vec(w) }
                         Message::ListQuery(l) => { l.encode_vec(w) }
                         Message::SuccessReply(s) => { s.encode_vec(w) }
+                        Message::ListReply(l) => { l.encode_vec(w) }
                     }
                 }
             )
@@ -176,4 +182,16 @@ mod tests {
         assert_eq!(s, s_from_enc);
         assert_eq!(xml, xml_enc);
     }
+
+    #[test]
+    fn should_parse_list_reply() {
+        let xml = include_str!("../../test/publication/list-reply.xml");
+        let r = Message::decode(xml.as_bytes()).unwrap();
+        let vec = r.encode_vec();
+        let xml_enc = str::from_utf8(&vec).unwrap();
+        let r_from_enc = Message::decode(xml_enc.as_bytes()).unwrap();
+        assert_eq!(r, r_from_enc);
+        assert_eq!(xml, xml_enc);
+    }
+
 }
