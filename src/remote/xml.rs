@@ -29,7 +29,10 @@ pub struct XmlReader<R: io::Read> {
     /// Placeholder for an event so that 'peak' can be supported, as
     /// well as temporarily caching a close event in case a list of
     /// inner elements is processed.
-    cached_event: Option<XmlEvent>
+    cached_event: Option<XmlEvent>,
+
+    /// Name of the next start element, if any
+    next_start_name: Option<String>
 }
 
 
@@ -124,7 +127,8 @@ impl <R: io::Read> XmlReader<R> {
 
         let mut xml = XmlReader{
             reader: config.create_reader(source),
-            cached_event: None
+            cached_event: None,
+            next_start_name: None
         };
 
         xml.start_document()?;
@@ -224,24 +228,21 @@ impl <R: io::Read> XmlReader<R> {
     /// Returns the name of the next start element or None if the next
     /// element is not a start element. Also ensures that the next element
     /// is kept in the cache for normal subsequent processing.
-    pub fn next_start_name(&mut self) -> Option<String> {
+    pub fn next_start_name(&mut self) -> Option<&str> {
         match self.next() {
             Err(_) => None,
             Ok(e)  => {
-                let mut res = None;
                 if let XmlEvent::StartElement { ref name, ..} = e {
                     // XXX not the most efficient.. but need a different
                     //     underlying XML parser to get around ownership
                     //     issues.
-                    res = Some(name.local_name.clone())
+                    self.next_start_name = Some(name.local_name.clone())
                 }
                 self.cache(e);
-                res
+                self.next_start_name.as_ref().map(|s| s.as_ref())
             }
         }
     }
-
-
 }
 
 impl XmlReader<fs::File> {

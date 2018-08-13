@@ -27,27 +27,13 @@ impl Message {
     fn decode_query<R>(r: &mut XmlReader<R>) -> Result<Self, MessageError>
     where R: io::Read {
         match r.next_start_name() {
-            Some(n) => {
-                match n.as_ref() {
-                    "list" => {
-                        Ok(Message::ListQuery(
-                            ListQuery::decode(r)?))
-                    },
-                    "publish" | "withdraw" => {
-                        Ok(Message::PublishQuery(
-                            PublishQuery::decode(r)?))
-                    },
-                    _ => {
-                        return Err(
-                            MessageError::UnexpectedStart(n))
-                    }
-                }
+            Some("list") => Ok(Message::ListQuery(ListQuery::decode(r)?)),
+            Some("publish") | Some("withdraw") => {
+                Ok(Message::PublishQuery(PublishQuery::decode(r)?))
             },
-            None => {
-                return Err(
-                    MessageError::ExpectedStart(
-                        "list, publish, or withdraw".to_string())
-                )
+            _ => {
+                Err(MessageError::ExpectedStart(
+                    "list, publish, or withdraw".to_string()))
             }
         }
     }
@@ -55,28 +41,15 @@ impl Message {
     fn decode_reply<R>(r: &mut XmlReader<R>) -> Result<Self, MessageError>
     where R: io::Read {
         match r.next_start_name() {
-            Some(n) => {
-                match n.as_ref() {
-                    "success" => {
-                        Ok(Message::SuccessReply(
-                            SuccessReply::decode(r)?))
-                    },
-                    "list" => {
-                        Ok(Message::ListReply(
-                            ListReply::decode(r)?))
-                    },
-                    "report_error" => unimplemented!(),
-                    _ => return Err(
-                        MessageError::UnexpectedStart(n))
-                }
-
+            Some("success") => {
+                Ok(Message::SuccessReply(SuccessReply::decode(r)?))
             },
-            None => {
-                return Err(
-                    MessageError::ExpectedStart(
-                        "success, list, or report_error".to_string())
-                )
-            }
+            Some("list") => {
+                Ok(Message::ListReply(ListReply::decode(r)?))
+            },
+            Some("report_error") => unimplemented!(),
+            _ => Err(MessageError::ExpectedStart(
+                "success, list or report_error".to_string()))
         }
     }
 
