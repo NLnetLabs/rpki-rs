@@ -221,15 +221,21 @@ impl <R: io::Read> XmlReader<R> {
         Ok(())
     }
 
-    pub fn next_element_name(&mut self, exp_name: &str) -> bool {
+    /// Returns the name of the next start element or None if the next
+    /// element is not a start element. Also ensures that the next element
+    /// is kept in the cache for normal subsequent processing.
+    pub fn next_start_name(&mut self) -> Option<String> {
         match self.next() {
-            Err(_) => false,
-            Ok(n) => {
-                let mut res = false;
-                if let XmlEvent::StartElement { ref name, ..} = n {
-                    res = name.local_name == exp_name;
+            Err(_) => None,
+            Ok(e)  => {
+                let mut res = None;
+                if let XmlEvent::StartElement { ref name, ..} = e {
+                    // XXX not the most efficient.. but need a different
+                    //     underlying XML parser to get around ownership
+                    //     issues.
+                    res = Some(name.local_name.clone())
                 }
-                self.cache(n);
+                self.cache(e);
                 res
             }
         }

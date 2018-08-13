@@ -23,6 +23,63 @@ pub enum Message {
 
 impl Message {
 
+
+    fn decode_query<R>(r: &mut XmlReader<R>) -> Result<Self, MessageError>
+    where R: io::Read {
+        match r.next_start_name() {
+            Some(n) => {
+                match n.as_ref() {
+                    "list" => {
+                        Ok(Message::ListQuery(
+                            ListQuery::decode(r)?))
+                    },
+                    "publish" | "withdraw" => {
+                        Ok(Message::PublishQuery(
+                            PublishQuery::decode(r)?))
+                    },
+                    _ => {
+                        return Err(
+                            MessageError::UnexpectedStart(n))
+                    }
+                }
+            },
+            None => {
+                return Err(
+                    MessageError::ExpectedStart(
+                        "list, publish, or withdraw".to_string())
+                )
+            }
+        }
+    }
+
+    fn decode_reply<R>(r: &mut XmlReader<R>) -> Result<Self, MessageError>
+    where R: io::Read {
+        match r.next_start_name() {
+            Some(n) => {
+                match n.as_ref() {
+                    "success" => {
+                        Ok(Message::SuccessReply(
+                            SuccessReply::decode(r)?))
+                    },
+                    "list" => {
+                        Ok(Message::ListReply(
+                            ListReply::decode(r)?))
+                    },
+                    "report_error" => unimplemented!(),
+                    _ => return Err(
+                        MessageError::UnexpectedStart(n))
+                }
+
+            },
+            None => {
+                return Err(
+                    MessageError::ExpectedStart(
+                        "success, list, or report_error".to_string())
+                )
+            }
+        }
+    }
+
     /// Decodes an XML structure
     pub fn decode<R>(reader: R) -> Result<Self, MessageError>
         where R: io::Read {
@@ -39,18 +96,10 @@ impl Message {
 
                 match msg_type.as_ref() {
                     "query" => {
-                        if r.next_element_name("list") {
-                            Ok(Message::ListQuery(ListQuery::decode(r)?))
-                        } else {
-                            Ok(Message::PublishQuery(PublishQuery::decode(r)?))
-                        }
+                        Message::decode_query(r)
                     },
                     "reply" => {
-                        if r.next_element_name("success") {
-                            Ok(Message::SuccessReply(SuccessReply::decode(r)?))
-                        } else {
-                            Ok(Message::ListReply(ListReply::decode(r)?))
-                        }
+                        Message::decode_reply(r)
                     }
                     _ => {
                         return Err(MessageError::UnknownMessageType)
@@ -106,6 +155,9 @@ pub enum MessageError {
 
     #[fail(display = "Unexpected XML Start Tag: {}", _0)]
     UnexpectedStart(String),
+
+    #[fail(display = "Expected some XML Start Tag: {}", _0)]
+    ExpectedStart(String),
 
     #[fail(display = "Invalid XML file: {}", _0)]
     XmlReadError(XmlReaderErr),
