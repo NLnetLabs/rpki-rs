@@ -12,7 +12,10 @@ use remote::xml::XmlWriter;
 use remote::xml::XmlWriterError;
 
 
-//------------ PublishQuery --------------------------------------------------
+//------------ ListQuery -----------------------------------------------------
+
+/// Type representing the list query as described in
+/// https://tools.ietf.org/html/rfc8181#section-2.3
 #[derive(Debug, Eq, PartialEq)]
 pub struct ListQuery;
 
@@ -40,6 +43,7 @@ impl ListQuery {
 
 
 //------------ PublishQuery --------------------------------------------------
+
 /// Type representing a multi element query as described in
 /// https://tools.ietf.org/html/rfc8181#section-3.7
 #[derive(Debug, Eq, PartialEq)]
@@ -115,6 +119,9 @@ impl PublishQuery {
         Ok(PublishQuery {elements})
     }
 
+    /// Encodes an existing multi-element PublishQuery to XML.
+    /// Note that a PublishQuery should be encoded through the
+    /// PublicationMessage::encode function.
     pub fn encode_vec<W: io::Write>(&self, w: &mut XmlWriter<W>)
         -> Result<(), XmlWriterError> {
 
@@ -132,8 +139,10 @@ impl PublishQuery {
 }
 
 
-
 //------------ PublishElement ------------------------------------------------
+
+/// This type represents the three types of requests that can be included
+/// in a multi-element query.
 #[derive(Debug, Eq, PartialEq)]
 pub enum PublishElement {
     Publish(Publish),
@@ -141,7 +150,11 @@ pub enum PublishElement {
     Withdraw(Withdraw)
 }
 
+
 //------------ Update -------------------------------------------------------
+
+/// Represents a publish element, that updates an existing object
+/// https://tools.ietf.org/html/rfc8181#section-3.2
 #[derive(Debug, Eq, PartialEq)]
 pub struct Update {
     hash: Bytes,
@@ -175,7 +188,11 @@ impl Update {
     }
 }
 
+
 //------------ Publish -------------------------------------------------------
+
+/// Represents a publish element, that does not update any existing object
+/// https://tools.ietf.org/html/rfc8181#section-3.1
 #[derive(Debug, Eq, PartialEq)]
 pub struct Publish {
     tag: String,
@@ -207,6 +224,9 @@ impl Publish {
 
 
 //------------ Withdraw ------------------------------------------------------
+
+/// Represents a withdraw element that removes an object from the repository
+/// https://tools.ietf.org/html/rfc8181#section-3.3
 #[derive(Debug, Eq, PartialEq)]
 pub struct Withdraw {
     hash: Bytes,
