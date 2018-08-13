@@ -5,6 +5,7 @@ use uri;
 use publication::query::{ListQuery, PublishQuery};
 use publication::reply::{ListReply, SuccessReply};
 use remote::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
+use publication::reply::ErrorReply;
 
 
 //------------ PublicationMessage --------------------------------------------
@@ -18,7 +19,8 @@ pub enum Message {
     PublishQuery(PublishQuery),
     ListQuery(ListQuery),
     SuccessReply(SuccessReply),
-    ListReply(ListReply)
+    ListReply(ListReply),
+    ErrorReply(ErrorReply)
 }
 
 impl Message {
@@ -27,7 +29,9 @@ impl Message {
     fn decode_query<R>(r: &mut XmlReader<R>) -> Result<Self, MessageError>
     where R: io::Read {
         match r.next_start_name() {
-            Some("list") => Ok(Message::ListQuery(ListQuery::decode(r)?)),
+            Some("list") =>{
+                Ok(Message::ListQuery(ListQuery::decode(r)?))
+            },
             Some("publish") | Some("withdraw") => {
                 Ok(Message::PublishQuery(PublishQuery::decode(r)?))
             },
@@ -47,7 +51,9 @@ impl Message {
             Some("list") => {
                 Ok(Message::ListReply(ListReply::decode(r)?))
             },
-            Some("report_error") => unimplemented!(),
+            Some("report_error") => {
+                Ok(Message::ErrorReply(ErrorReply::decode(r)?))
+            },
             _ => Err(MessageError::ExpectedStart(
                 "success, list or report_error".to_string()))
         }
@@ -88,9 +94,10 @@ impl Message {
 
             let msg_type = match self {
                 Message::PublishQuery(_) => "query",
-                Message::ListQuery(_) => "query",
+                Message::ListQuery(_)    => "query",
                 Message::SuccessReply(_) => "reply",
-                Message::ListReply(_) => "reply"
+                Message::ListReply(_)    => "reply",
+                Message::ErrorReply(_)   => "reply"
             };
             let a = [
                 ("xmlns", NS),
@@ -104,9 +111,10 @@ impl Message {
                 |w| {
                     match self {
                         Message::PublishQuery(q) => { q.encode_vec(w) }
-                        Message::ListQuery(l) => { l.encode_vec(w) }
+                        Message::ListQuery(l)    => { l.encode_vec(w) }
                         Message::SuccessReply(s) => { s.encode_vec(w) }
-                        Message::ListReply(l) => { l.encode_vec(w) }
+                        Message::ListReply(l)    => { l.encode_vec(w) }
+                        Message::ErrorReply(e)   => { e.encode_vec(w) }
                     }
                 }
             )
@@ -131,6 +139,9 @@ pub enum MessageError {
 
     #[fail(display = "Expected some XML Start Tag: {}", _0)]
     ExpectedStart(String),
+
+    #[fail(display = "Missing content in XML: {}", _0)]
+    MissingContent(String),
 
     #[fail(display = "Invalid XML file: {}", _0)]
     XmlReadError(XmlReaderErr),
@@ -216,6 +227,28 @@ mod tests {
         let xml_enc = str::from_utf8(&vec).unwrap();
         let r_from_enc = Message::decode(xml_enc.as_bytes()).unwrap();
         assert_eq!(r, r_from_enc);
+        assert_eq!(xml, xml_enc);
+    }
+
+    #[test]
+    fn should_parse_minimal_error() {
+        let xml = include_str!("../../test/publication/report_error_minimal.xml");
+        let e = Message::decode(xml.as_bytes()).unwrap();
+        let vec = e.encode_vec();
+        let xml_enc = str::from_utf8(&vec).unwrap();
+        let e_from_enc = Message::decode(xml_enc.as_bytes()).unwrap();
+        assert_eq!(e, e_from_enc);
+        assert_eq!(xml, xml_enc);
+    }
+
+    #[test]
+    fn should_parse_complex_error() {
+        let xml = include_str!("../../test/publication/report_error_complex.xml");
+        let e = Message::decode(xml.as_bytes()).unwrap();
+        let vec = e.encode_vec();
+        let xml_enc = str::from_utf8(&vec).unwrap();
+        let e_from_enc = Message::decode(xml_enc.as_bytes()).unwrap();
+        assert_eq!(e, e_from_enc);
         assert_eq!(xml, xml_enc);
     }
 

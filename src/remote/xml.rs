@@ -210,15 +210,20 @@ impl <R: io::Read> XmlReader<R> {
         }
     }
 
-    /// Takes base64 encoded bytes from the next 'characters' event.
-    pub fn take_bytes_characters(&mut self) -> Result<Bytes, XmlReaderErr> {
+    /// Takes characters
+    pub fn take_chars(&mut self) -> Result<String, XmlReaderErr> {
         match self.next() {
             Ok(reader::XmlEvent::Characters(chars)) => {
-                let decoded = base64::decode_config(&chars, base64::MIME)?;
-                Ok(Bytes::from(decoded))
+                Ok(chars)
             }
             _ => return Err(XmlReaderErr::ExpectedCharacters)
         }
+    }
+
+    /// Takes base64 encoded bytes from the next 'characters' event.
+    pub fn take_bytes_characters(&mut self) -> Result<Bytes, XmlReaderErr> {
+        let b64 = base64::decode_config(&self.take_chars()?, base64::MIME)?;
+        Ok(Bytes::from(b64))
     }
 
     pub fn take_empty(&mut self) -> Result<(), XmlReaderErr> {
@@ -237,6 +242,8 @@ impl <R: io::Read> XmlReader<R> {
                     //     underlying XML parser to get around ownership
                     //     issues.
                     self.next_start_name = Some(name.local_name.clone())
+                } else {
+                    self.next_start_name = None;
                 }
                 self.cache(e);
                 self.next_start_name.as_ref().map(|s| s.as_ref())
@@ -429,14 +436,19 @@ impl <W: io::Write> XmlWriter<W> {
         Ok(())
     }
 
+    /// Puts some String in a characters element
+    pub fn put_text(&mut self, text: &str) -> Result<(), XmlWriterError> {
+        self.writer.write(writer::XmlEvent::Characters(text))?;
+        Ok(())
+    }
+
     /// Converts bytes to base64 encoded Characters as the content. Note
     /// that you cannot have both Characters and other included elements.
     /// This would be valid XML, but it's not used by any of the RPKI XML
     /// structures.
     pub fn put_blob(&mut self, bytes: &Bytes) -> Result<(), XmlWriterError> {
         let b64 = base64::encode(bytes);
-        self.writer.write(writer::XmlEvent::Characters(b64.as_ref()))?;
-        Ok(())
+        self.put_text(b64.as_ref())
     }
 
     /// Use this for convenience where empty content is required

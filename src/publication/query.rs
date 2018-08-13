@@ -105,17 +105,7 @@ impl PublishQuery {
         let mut elements = vec![];
 
         loop {
-            let e = r.take_opt_element(|t, mut a, r| {
-                match t.name.as_ref() {
-                    "publish"  => { Ok(Some(PublishQuery::decode_publish(&mut a, r)?)) },
-                    "withdraw" => { Ok(Some(PublishQuery::decode_withdraw(&mut a)?)) },
-                    _ => {
-                        Err(
-                            MessageError::UnexpectedStart(
-                                t.name.clone()))
-                    }
-                }
-            })?;
+            let e = PublishElement::decode_opt(r)?;
             match e {
                 Some(qe) => elements.push(qe),
                 None => break
@@ -131,13 +121,8 @@ impl PublishQuery {
         -> Result<(), XmlWriterError> {
 
         for e in &self.elements {
-            match e {
-                PublishElement::Publish(p)   => { p.encode_vec(w)?; },
-                PublishElement::Update(u)    => { u.encode_vec(w)?; },
-                PublishElement::Withdraw(wi) => { wi.encode_vec(w)?; }
-            }
+            e.encode_vec(w)?;
         }
-
         Ok(())
     }
 
@@ -153,6 +138,37 @@ pub enum PublishElement {
     Publish(Publish),
     Update(Update),
     Withdraw(Withdraw)
+}
+
+impl PublishElement {
+
+    pub fn decode_opt<R: io::Read>(r: &mut XmlReader<R>)
+        -> Result<Option<Self>, MessageError> {
+
+        r.take_opt_element(|t, mut a, r| {
+            match t.name.as_ref() {
+                "publish"  => {
+                    Ok(Some(PublishQuery::decode_publish(&mut a, r)?)) },
+                "withdraw" => {
+                    Ok(Some(PublishQuery::decode_withdraw(&mut a)?)) },
+                _ => {
+                    Err(MessageError::UnexpectedStart(t.name.clone()))
+                }
+            }
+        })
+    }
+
+    pub fn encode_vec<W: io::Write>(&self, w: &mut XmlWriter<W>)
+        -> Result<(), XmlWriterError> {
+
+        match self {
+            PublishElement::Publish(p)   => { p.encode_vec(w)?; },
+            PublishElement::Update(u)    => { u.encode_vec(w)?; },
+            PublishElement::Withdraw(wi) => { wi.encode_vec(w)?; }
+        }
+        Ok(())
+    }
+
 }
 
 
