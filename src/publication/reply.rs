@@ -11,7 +11,7 @@ use publication::pubmsg::MessageError;
 use remote::xml::{XmlReader, XmlWriter, XmlWriterError};
 use publication::query::PublishElement;
 
-/// This type represents the success reply as desribed in
+/// This type represents the success reply as described in
 /// https://tools.ietf.org/html/rfc8181#section-3.4
 #[derive(Debug, Eq, PartialEq)]
 pub struct SuccessReply;
@@ -40,7 +40,7 @@ impl SuccessReply {
 
 //------------ ListReply -----------------------------------------------------
 
-/// This type represents the list reply as desrcibed in
+/// This type represents the list reply as described in
 /// https://tools.ietf.org/html/rfc8181#section-2.3
 #[derive(Debug, Eq, PartialEq)]
 pub struct ListReply {
@@ -104,7 +104,7 @@ impl ListReply {
 
 //------------ ErrorReply ----------------------------------------------------
 
-/// This type represents the error report as desrcibed in
+/// This type represents the error report as described in
 /// https://tools.ietf.org/html/rfc8181#section-3.5 and 3.6
 #[derive(Debug, Eq, PartialEq)]
 pub struct ErrorReply {
