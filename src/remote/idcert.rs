@@ -1,7 +1,7 @@
 //! Identity Certificates.
 //!
 
-use ber::decode;
+use ber::{decode, encode};
 use ber::{Mode, OctetString, Oid, Tag, Unsigned};
 use cert::{Extensions, SubjectPublicKeyInfo, Validity};
 use cert::oid;
@@ -59,6 +59,33 @@ pub struct IdCert {
     extensions: IdExtensions,
 }
 
+/// # Data Access
+///
+impl IdCert {
+    /// Returns a reference to the certificate’s public key.
+    pub fn public_key(&self) -> &[u8] {
+        self.subject_public_key_info
+            .subject_public_key().octet_slice().unwrap()
+    }
+
+    /// Returns a reference to the subject key identifier.
+    pub fn subject_key_identifier(&self) -> &OctetString {
+        &self.extensions.subject_key_id
+    }
+
+    /// Returns a reference to the entire public key information structure.
+    pub fn subject_public_key_info(&self) -> &SubjectPublicKeyInfo {
+        &self.subject_public_key_info
+    }
+
+    /// Returns a reference to the certificate’s serial number.
+    pub fn serial_number(&self) -> &Unsigned {
+        &self.serial_number
+    }
+}
+
+/// # Decoding and Encoding
+///
 impl IdCert {
     /// Decodes a source as a certificate.
     pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
@@ -78,7 +105,7 @@ impl IdCert {
     ) -> Result<Self, S::Err> {
         let signed_data = SignedData::take_content_from(cons)?;
 
-        Mode::Der.decode(signed_data.data().clone(), |cons| {
+        signed_data.data().clone().decode(|cons| {
             cons.take_sequence(|cons| {
                 // version [0] EXPLICIT Version DEFAULT v1.
                 //  -- we need extensions so apparently, we want v3 which,
@@ -103,25 +130,8 @@ impl IdCert {
         }).map_err(Into::into)
     }
 
-    /// Returns a reference to the certificate’s public key.
-    pub fn public_key(&self) -> &[u8] {
-        self.subject_public_key_info
-            .subject_public_key().octet_slice().unwrap()
-    }
-
-    /// Returns a reference to the subject key identifier.
-    pub fn subject_key_identifier(&self) -> &OctetString {
-        &self.extensions.subject_key_id
-    }
-
-    /// Returns a reference to the entire public key information structure.
-    pub fn subject_public_key_info(&self) -> &SubjectPublicKeyInfo {
-        &self.subject_public_key_info
-    }
-
-    /// Returns a reference to the certificate’s serial number.
-    pub fn serial_number(&self) -> &Unsigned {
-        &self.serial_number
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        self.signed_data.encode()
     }
 
     /// TODO: Encode properly!! Also, give back a ref.
