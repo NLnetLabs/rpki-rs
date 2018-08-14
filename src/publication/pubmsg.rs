@@ -221,76 +221,54 @@ mod tests {
     use super::*;
     use std::str;
 
-    #[test]
-    fn should_parse_multi_element_query() {
-        let xml = include_str!("../../test/publication/publish.xml");
-        Message::decode(xml.as_bytes()).unwrap();
+    fn assert_re_encode_equals(object: Message, xml: &str) {
+        let vec = object.encode_vec();
+        let encoded_xml = str::from_utf8(&vec).unwrap();
+        let object_from_encoded_xml = Message::decode(encoded_xml.as_bytes()).unwrap();
+        assert_eq!(object, object_from_encoded_xml);
+        assert_eq!(xml, encoded_xml);
     }
 
     #[test]
-    fn should_encode_multi_element_query() {
+    fn should_parse_and_encode_multi_element_query() {
         let xml = include_str!("../../test/publication/publish.xml");
         let pm = Message::decode(xml.as_bytes()).unwrap();
-        let vec = pm.encode_vec();
-        let encoded = str::from_utf8(&vec).unwrap();
-        let pm_from_encoded = Message::decode(encoded.as_bytes()).unwrap();
-        assert_eq!(pm, pm_from_encoded);
-        assert_eq!(xml, encoded);
+        assert_re_encode_equals(pm, xml);
     }
 
     #[test]
-    fn should_parse_list_query() {
+    fn should_parse_and_encode_list_query() {
         let xml = include_str!("../../test/publication/list.xml");
         let l = Message::decode(xml.as_bytes()).unwrap();
-        let vec = l.encode_vec();
-        let xml_enc = str::from_utf8(&vec).unwrap();
-        let l_from_enc = Message::decode(xml_enc.as_bytes()).unwrap();
-        assert_eq!(l, l_from_enc);
-        assert_eq!(xml, xml_enc);
+        assert_re_encode_equals(l, xml);
     }
 
     #[test]
-    fn should_parse_success_reply() {
+    fn should_parse_and_encode_success_reply() {
         let xml = include_str!("../../test/publication/success.xml");
         let s = Message::decode(xml.as_bytes()).unwrap();
-        let vec = s.encode_vec();
-        let xml_enc = str::from_utf8(&vec).unwrap();
-        let s_from_enc = Message::decode(xml_enc.as_bytes()).unwrap();
-        assert_eq!(s, s_from_enc);
-        assert_eq!(xml, xml_enc);
+        assert_re_encode_equals(s, xml);
     }
 
     #[test]
-    fn should_parse_list_reply() {
+    fn should_parse_and_encode_list_reply() {
         let xml = include_str!("../../test/publication/list-reply.xml");
         let r = Message::decode(xml.as_bytes()).unwrap();
-        let vec = r.encode_vec();
-        let xml_enc = str::from_utf8(&vec).unwrap();
-        let r_from_enc = Message::decode(xml_enc.as_bytes()).unwrap();
-        assert_eq!(r, r_from_enc);
-        assert_eq!(xml, xml_enc);
+        assert_re_encode_equals(r, xml);
     }
 
     #[test]
-    fn should_parse_minimal_error() {
+    fn should_parse_and_encode_minimal_error() {
         let xml = include_str!("../../test/publication/report_error_minimal.xml");
         let e = Message::decode(xml.as_bytes()).unwrap();
-        let vec = e.encode_vec();
-        let xml_enc = str::from_utf8(&vec).unwrap();
-        let e_from_enc = Message::decode(xml_enc.as_bytes()).unwrap();
-        assert_eq!(e, e_from_enc);
-        assert_eq!(xml, xml_enc);
+        assert_re_encode_equals(e, xml);
     }
 
     #[test]
-    fn should_parse_complex_error() {
+    fn should_parse_and_encode_complex_error() {
         let xml = include_str!("../../test/publication/report_error_complex.xml");
         let e = Message::decode(xml.as_bytes()).unwrap();
-        let vec = e.encode_vec();
-        let xml_enc = str::from_utf8(&vec).unwrap();
-        let e_from_enc = Message::decode(xml_enc.as_bytes()).unwrap();
-        assert_eq!(e, e_from_enc);
-        assert_eq!(xml, xml_enc);
+        assert_re_encode_equals(e, xml);
     }
 
 }
