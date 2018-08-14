@@ -151,7 +151,8 @@ impl ErrorReply {
             let e = r.take_opt_element(|t, mut a, r| {
                 match t.name.as_ref() {
                     "report_error" => {
-                        let error_code = a.take_req("error_code")?;
+                        let error_code = ReportErrorCode::from_str(
+                            a.take_req("error_code")?.as_ref())?;
                         let tag = a.take_req("tag")?;
                         let mut error_text: Option<String> = None;
                         let mut failed_pdu: Option<PublishElement> = None;
@@ -195,8 +196,10 @@ impl ErrorReply {
         -> Result<(), XmlWriterError> {
 
         for e in &self.errors {
+
+            let error_code = format!("{}", e.error_code);
             let a = [
-                ("error_code", e.error_code.as_ref()),
+                ("error_code", error_code.as_ref()),
                 ("tag", e.tag.as_ref())
             ];
 
@@ -238,16 +241,76 @@ impl ErrorReply {
 }
 
 
-
 //------------ ReportError ---------------------------------------------------
-
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ReportError {
-    error_code: String,
+    error_code: ReportErrorCode,
     tag: String,
     error_text: Option<String>,
     failed_pdu: Option<PublishElement>
 }
 
 
+//------------ ReportErrorCodes ----------------------------------------------
+
+/// The allowed error codes defined in RFC8181 section 2.5
+#[derive(Debug, Clone, Eq, Fail, PartialEq)]
+pub enum ReportErrorCode {
+
+    #[fail(display="xml_error")]
+    XmlError,
+
+    #[fail(display="permission_failure")]
+    PermissionFailure,
+
+    #[fail(display="bad_cms_signature")]
+    BadCmsSignature,
+
+    #[fail(display="object_already_present")]
+    ObjectAlreadyPresent,
+
+    #[fail(display="no_object_present")]
+    NoObjectPresent,
+
+    #[fail(display="no_object_matching_hash")]
+    NoObjectMatchingHash,
+
+    #[fail(display="consistency_problem")]
+    ConsistencyProblem,
+
+    #[fail(display="other_error")]
+    OtherError,
+}
+
+impl ReportErrorCode {
+
+    fn from_str(v: &str) -> Result<ReportErrorCode, MessageError> {
+        match v {
+            "xml_error" => Ok(ReportErrorCode::XmlError),
+            "permission_failure" => Ok(ReportErrorCode::PermissionFailure),
+            "bad_cms_signature" => Ok(ReportErrorCode::BadCmsSignature),
+            "object_already_present" => Ok(ReportErrorCode::ObjectAlreadyPresent),
+            "no_object_present" => Ok(ReportErrorCode::NoObjectPresent),
+            "no_object_matching_hash" => Ok(ReportErrorCode::NoObjectMatchingHash),
+            "consistency_problem" => Ok(ReportErrorCode::ConsistencyProblem),
+            "other_error" => Ok(ReportErrorCode::OtherError),
+            _ => Err(MessageError::InvalidErrorCode(v.to_string()))
+        }
+    }
+
+    #[allow(dead_code)]
+    fn to_text(&self) -> String {
+        match self {
+            ReportErrorCode::XmlError => "Encountered an XML problem.",
+            ReportErrorCode::PermissionFailure => "Client does not have permission to update this URI.",
+            ReportErrorCode::BadCmsSignature => "Encountered bad CMS signature.",
+            ReportErrorCode::ObjectAlreadyPresent => "An object is already present at this URI, yet a \"hash\" attribute was not specified.",
+            ReportErrorCode::NoObjectPresent => "There is no object present at this URI, yet a \"hash\" attribute was specified.",
+            ReportErrorCode::NoObjectMatchingHash => "The \"hash\" attribute supplied does not match the \"hash\" attribute of the object at this URI.",
+            ReportErrorCode::ConsistencyProblem => "Server detected an update that looks like it will cause a consistency problem (e.g., an object was deleted, but the manifest was not updated).",
+            ReportErrorCode::OtherError => "Found some other issue."
+        }.to_string()
+    }
+
+}

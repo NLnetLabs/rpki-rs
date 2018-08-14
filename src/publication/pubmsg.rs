@@ -192,6 +192,9 @@ pub enum MessageError {
 
     #[fail(display = "Invalid URI: {}", _0)]
     UriError(uri::Error),
+
+    #[fail(display = "Invalid error code: {}", _0)]
+    InvalidErrorCode(String),
 }
 
 impl From<XmlReaderErr> for MessageError {
