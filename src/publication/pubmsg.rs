@@ -6,34 +6,31 @@ use publication::query::{ListQuery, PublishQuery};
 use publication::reply::{ListReply, SuccessReply};
 use remote::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 use publication::reply::ErrorReply;
-
-
-//------------ PublicationMessage --------------------------------------------
+use remote::xml::XmlWriterError;
 
 pub const VERSION: &'static str = "4";
 pub const NS: &'static str = "http://www.hactrn.net/uris/rpki/publication-spec/";
 
-/// This type represents the Publication Messages defined in RFC8181
+
+//------------ QueryMessage --------------------------------------------------
+
+/// This type represents query type Publication Messages defined in RFC8181
 #[derive(Debug, Eq, PartialEq)]
-pub enum Message {
+pub enum QueryMessage {
     PublishQuery(PublishQuery),
-    ListQuery(ListQuery),
-    SuccessReply(SuccessReply),
-    ListReply(ListReply),
-    ErrorReply(ErrorReply)
+    ListQuery(ListQuery)
 }
 
-impl Message {
+impl QueryMessage {
 
-
-    fn decode_query<R>(r: &mut XmlReader<R>) -> Result<Self, MessageError>
-    where R: io::Read {
+    fn decode<R>(r: &mut XmlReader<R>) -> Result<Self, MessageError>
+        where R: io::Read {
         match r.next_start_name() {
             Some("list") =>{
-                Ok(Message::ListQuery(ListQuery::decode(r)?))
+                Ok(QueryMessage::ListQuery(ListQuery::decode(r)?))
             },
             Some("publish") | Some("withdraw") => {
-                Ok(Message::PublishQuery(PublishQuery::decode(r)?))
+                Ok(QueryMessage::PublishQuery(PublishQuery::decode(r)?))
             },
             _ => {
                 Err(MessageError::ExpectedStart(
@@ -42,22 +39,72 @@ impl Message {
         }
     }
 
-    fn decode_reply<R>(r: &mut XmlReader<R>) -> Result<Self, MessageError>
-    where R: io::Read {
+    pub fn encode_vec<W: io::Write>(&self, w: &mut XmlWriter<W>)
+        -> Result<(), XmlWriterError> {
+
+        match self {
+            QueryMessage::PublishQuery(q) => { q.encode_vec(w)?; }
+            QueryMessage::ListQuery(l)    => { l.encode_vec(w)?; }
+        }
+        Ok(())
+    }
+
+}
+
+
+//------------ ReplyMessage --------------------------------------------------
+
+/// This type represents reply type Publication Messages defined in RFC8181
+#[derive(Debug, Eq, PartialEq)]
+pub enum ReplyMessage {
+    SuccessReply(SuccessReply),
+    ListReply(ListReply),
+    ErrorReply(ErrorReply)
+}
+
+impl ReplyMessage {
+
+    fn decode<R>(r: &mut XmlReader<R>) -> Result<Self, MessageError>
+        where R: io::Read {
         match r.next_start_name() {
             Some("success") => {
-                Ok(Message::SuccessReply(SuccessReply::decode(r)?))
+                Ok(ReplyMessage::SuccessReply(SuccessReply::decode(r)?))
             },
             Some("list") => {
-                Ok(Message::ListReply(ListReply::decode(r)?))
+                Ok(ReplyMessage::ListReply(ListReply::decode(r)?))
             },
             Some("report_error") => {
-                Ok(Message::ErrorReply(ErrorReply::decode(r)?))
+                Ok(ReplyMessage::ErrorReply(ErrorReply::decode(r)?))
             },
             _ => Err(MessageError::ExpectedStart(
                 "success, list or report_error".to_string()))
         }
     }
+
+    pub fn encode_vec<W: io::Write>(&self, w: &mut XmlWriter<W>)
+        -> Result<(), XmlWriterError> {
+
+        match self {
+            ReplyMessage::SuccessReply(s) => { s.encode_vec(w)?; }
+            ReplyMessage::ListReply(l)    => { l.encode_vec(w)?; }
+            ReplyMessage::ErrorReply(e)   => { e.encode_vec(w)?; }
+        }
+        Ok(())
+    }
+
+}
+
+
+//------------ Message -------------------------------------------------------
+
+/// This type represents all Publication Messages defined in RFC8181
+#[derive(Debug, Eq, PartialEq)]
+pub enum Message {
+    QueryMessage(QueryMessage),
+    ReplyMessage(ReplyMessage)
+}
+
+impl Message {
 
     /// Decodes an XML structure
     pub fn decode<R>(reader: R) -> Result<Self, MessageError>
@@ -75,10 +122,10 @@ impl Message {
 
                 match msg_type.as_ref() {
                     "query" => {
-                        Message::decode_query(r)
+                        Ok(Message::QueryMessage(QueryMessage::decode(r)?))
                     },
                     "reply" => {
-                        Message::decode_reply(r)
+                        Ok(Message::ReplyMessage(ReplyMessage::decode(r)?))
                     }
                     _ => {
                         return Err(MessageError::UnknownMessageType)
@@ -93,11 +140,8 @@ impl Message {
         XmlWriter::encode_vec(|w| {
 
             let msg_type = match self {
-                Message::PublishQuery(_) => "query",
-                Message::ListQuery(_)    => "query",
-                Message::SuccessReply(_) => "reply",
-                Message::ListReply(_)    => "reply",
-                Message::ErrorReply(_)   => "reply"
+                Message::QueryMessage(_) => "query",
+                Message::ReplyMessage(_) => "reply"
             };
             let a = [
                 ("xmlns", NS),
@@ -110,11 +154,8 @@ impl Message {
                 Some(&a),
                 |w| {
                     match self {
-                        Message::PublishQuery(q) => { q.encode_vec(w) }
-                        Message::ListQuery(l)    => { l.encode_vec(w) }
-                        Message::SuccessReply(s) => { s.encode_vec(w) }
-                        Message::ListReply(l)    => { l.encode_vec(w) }
-                        Message::ErrorReply(e)   => { e.encode_vec(w) }
+                        Message::ReplyMessage(r) => { r.encode_vec(w) }
+                        Message::QueryMessage(q) => { q.encode_vec(w) }
                     }
                 }
             )
