@@ -2,6 +2,7 @@
 //!
 
 use ber::{decode, encode};
+use ber::encode::Values;
 use ber::{Mode, OctetString, Oid, Tag, Unsigned};
 use cert::{Extensions, SubjectPublicKeyInfo, Validity};
 use cert::oid;
@@ -134,11 +135,10 @@ impl IdCert {
         self.signed_data.encode()
     }
 
-    /// TODO: Encode properly!! Also, give back a ref.
-    /// Did this for now, to allow testing generating XML in exchange.rs
     pub fn to_bytes(&self) -> Bytes {
-        let b = include_bytes!("../../test/oob/id-publisher-ta.cer");
-        Bytes::from_static(b)
+        let mut b = Vec::new();
+        self.encode().write_encoded(Mode::Der, &mut b).unwrap(); // Writing to vec will not fail
+        Bytes::from(b)
     }
 }
 
@@ -352,7 +352,7 @@ pub mod tests {
     // Useful until we can create IdCerts of our own
     pub fn test_id_certificate() -> IdCert {
         let data = include_bytes!("../../test/oob/id-publisher-ta.cer");
-        IdCert::decode(Bytes::from_static(data)).unwrap()
+        IdCert::decode(Bytes::from_static(data)).unwrap();
     }
 
     #[test]
