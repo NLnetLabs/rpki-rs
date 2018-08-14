@@ -6,6 +6,7 @@ use ber::{Mode, OctetString, Oid, Tag, Unsigned};
 use cert::{Extensions, SubjectPublicKeyInfo, Validity};
 use cert::oid;
 use x509::{Name, SignatureAlgorithm, SignedData, ValidationError};
+use bytes::Bytes;
 
 
 //------------ IdCert --------------------------------------------------------
@@ -132,6 +133,13 @@ impl IdCert {
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         self.signed_data.encode()
     }
+
+    /// TODO: Encode properly!! Also, give back a ref.
+    /// Did this for now, to allow testing generating XML in exchange.rs
+    pub fn to_bytes(&self) -> Bytes {
+        let b = include_bytes!("../../test/oob/id-publisher-ta.cer");
+        Bytes::from_static(b)
+    }
 }
 
 /// # Validation
@@ -147,7 +155,7 @@ impl IdCert {
         self.validate_ca_basics()?;
 
         // Authority Key Identifier. May be present, if so, must be
-        // equal to the subject key indentifier.
+        // equal to the subject key identifier.
         if let Some(ref aki) = self.extensions.authority_key_id {
             if *aki != self.extensions.subject_key_id {
                 return Err(ValidationError);
@@ -327,22 +335,31 @@ impl IdExtensions {
 }
 
 
+
+
+
 //------------ Tests ---------------------------------------------------------
 
+// is pub so that we can use a parsed test IdCert for now for testing
 #[cfg(test)]
-mod tests {
+pub mod tests {
 
     use super::*;
     use bytes::Bytes;
     use time;
     use chrono::{TimeZone, Utc};
 
+    // Useful until we can create IdCerts of our own
+    pub fn test_id_certificate() -> IdCert {
+        let data = include_bytes!("../../test/oob/id-publisher-ta.cer");
+        IdCert::decode(Bytes::from_static(data)).unwrap()
+    }
+
     #[test]
-    fn test_parse_id_publisher_ta_cert() {
+    fn should_parse_id_publisher_ta_cert() {
         let d = Utc.ymd(2012, 1, 1).and_hms(0, 0, 0);
         time::with_now(d, || {
-        let data = include_bytes!("../../test/oob/id-publisher-ta.cer");
-        let cert = IdCert::decode(Bytes::from_static(data)).unwrap();
+            let cert = test_id_certificate();
             assert!(cert.validate_ta().is_ok());
         });
     }

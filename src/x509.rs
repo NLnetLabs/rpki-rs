@@ -286,7 +286,7 @@ fn read_four_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Err> {
 
 //------------ ValidationError -----------------------------------------------
 
-#[derive(Clone, Copy, Debug, Fail)]
+#[derive(Clone, Copy, Debug, Eq, Fail, PartialEq)]
 #[fail(display="validation error")]
 pub struct ValidationError;
 
