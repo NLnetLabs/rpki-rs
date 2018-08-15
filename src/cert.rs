@@ -18,16 +18,16 @@
 //! [`ResourceCert`]: struct.ResourceCert.html
 
 use bytes::Bytes;
-use ring::digest::{self, Digest};
-use super::uri;
-use super::asres::{AsBlocks, AsResources};
 use ber::decode;
 use ber::{BitString, Captured, Mode, OctetString, Oid, Tag, Unsigned};
+use ring::digest::{self, Digest};
+use super::asres::{AsBlocks, AsResources};
+use super::uri;
 use super::ipres::{IpAddressBlocks, IpResources};
 use super::x509::{
-    update_once, Name, SignatureAlgorithm, SignedData, Time, ValidationError
+    update_once, Name, SignedData, Time, ValidationError
 };
-
+use signing::{PublicKeyAlgorithm, SignatureAlgorithm};
 
 //------------ Cert ----------------------------------------------------------
 
@@ -577,29 +577,6 @@ impl SubjectPublicKeyInfo {
     }
 }
 
-
-//------------ PublicKeyAlgorithm --------------------------------------------
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PublicKeyAlgorithm {
-    RsaEncryption,
-}
-
-impl PublicKeyAlgorithm {
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_sequence(Self::take_content_from)
-    }
-
-    pub fn take_content_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        oid::RSA_ENCRYPTION.skip_if(cons)?;
-        cons.take_opt_null()?;
-        Ok(PublicKeyAlgorithm::RsaEncryption)
-    }
-}
 
 
 //------------ Extensions ----------------------------------------------------
@@ -1261,9 +1238,6 @@ impl CertificatePolicies {
 #[allow(dead_code)] // XXX
 pub mod oid {
     use ::ber::Oid;
-
-    pub const RSA_ENCRYPTION: Oid<&[u8]>
-        = Oid(&[42, 134, 72, 134, 247, 13, 1, 1, 1]);
 
     pub const AD_CA_ISSUERS: Oid<&[u8]> = Oid(&[43, 6, 1, 5, 5, 7, 48, 2]);
     pub const AD_CA_REPOSITORY: Oid<&[u8]> = Oid(&[43, 6, 1, 5, 5, 7, 48, 5]);

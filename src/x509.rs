@@ -7,6 +7,7 @@ use ber::{BitString, Captured, Mode, Tag};
 use ber::decode::Source;
 use chrono::{DateTime, LocalResult, TimeZone, Utc};
 use super::time;
+use signing::SignatureAlgorithm;
 
 
 //------------ Functions -----------------------------------------------------
@@ -33,37 +34,6 @@ impl Name {
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| cons.capture_all()).map(Name)
-    }
-}
-
-
-//------------ SignatureAlgorithm --------------------------------------------
-
-#[derive(Clone, Debug)]
-pub enum SignatureAlgorithm {
-    Sha256WithRsaEncryption
-}
-
-impl SignatureAlgorithm {
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_sequence(Self::take_content_from)
-    }
-
-    pub fn take_content_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        oid::SHA256_WITH_RSA_ENCRYPTION.skip_if(cons)?;
-        cons.take_opt_null()?;
-        Ok(SignatureAlgorithm::Sha256WithRsaEncryption)
-    }
-
-    pub fn encode(&self) -> impl encode::Values {
-        encode::sequence((
-            oid::SHA256_WITH_RSA_ENCRYPTION.encode(),
-            encode::PrimitiveContent::value(&()),
-        ))
     }
 }
 
@@ -289,16 +259,6 @@ fn read_four_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Err> {
 #[derive(Clone, Copy, Debug, Eq, Fail, PartialEq)]
 #[fail(display="validation error")]
 pub struct ValidationError;
-
-
-//------------ Object Identifiers --------------------------------------------
-
-mod oid {
-    use ::ber::Oid;
-
-    pub const SHA256_WITH_RSA_ENCRYPTION: Oid<&[u8]>
-        = Oid(&[42, 134, 72, 134, 247, 13, 1, 1, 11]);
-}
 
 
 //------------ Testing. One. Two. Three --------------------------------------

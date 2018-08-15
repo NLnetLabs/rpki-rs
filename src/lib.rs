@@ -33,4 +33,6 @@ pub mod x509;
 pub mod oob;
 pub mod publication;
 pub mod remote;
+pub mod signing;
+
 mod time;

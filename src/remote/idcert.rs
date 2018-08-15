@@ -4,10 +4,11 @@
 use ber::{decode, encode};
 use ber::encode::Values;
 use ber::{Mode, OctetString, Oid, Tag, Unsigned};
+use bytes::Bytes;
 use cert::{Extensions, SubjectPublicKeyInfo, Validity};
 use cert::oid;
-use x509::{Name, SignatureAlgorithm, SignedData, ValidationError};
-use bytes::Bytes;
+use signing::SignatureAlgorithm;
+use x509::{Name, SignedData, ValidationError};
 
 
 //------------ IdCert --------------------------------------------------------
@@ -352,7 +353,7 @@ pub mod tests {
     // Useful until we can create IdCerts of our own
     pub fn test_id_certificate() -> IdCert {
         let data = include_bytes!("../../test/oob/id-publisher-ta.cer");
-        IdCert::decode(Bytes::from_static(data)).unwrap();
+        IdCert::decode(Bytes::from_static(data)).unwrap()
     }
 
     #[test]
