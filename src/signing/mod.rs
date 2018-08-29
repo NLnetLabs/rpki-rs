@@ -5,6 +5,11 @@ use ber::{encode, decode};
 use ber::{Oid, Tag};
 
 
+//------------ RPKI Key Size -------------------------------------------------
+
+pub const KEY_SIZE: u32 = 2048;
+
+
 //------------ SignatureAlgorithm --------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -41,7 +46,6 @@ impl SignatureAlgorithm {
 }
 
 
-
 //------------ PublicKeyAlgorithm --------------------------------------------
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -62,6 +66,13 @@ impl PublicKeyAlgorithm {
         oid::RSA_ENCRYPTION.skip_if(cons)?;
         cons.take_opt_null()?;
         Ok(PublicKeyAlgorithm::RsaEncryption)
+    }
+
+    pub fn encode(&self) -> impl encode::Values {
+        encode::sequence((
+            oid::RSA_ENCRYPTION.encode(),
+            encode::PrimitiveContent::value(&())
+        ))
     }
 }
 
@@ -94,7 +105,6 @@ impl DigestAlgorithm {
         cons.take_opt_null()?;
         Ok(DigestAlgorithm::Sha256)
     }
-
 
     /// Parses a SET OF DigestAlgorithmIdentifiers.
     ///
@@ -129,12 +139,7 @@ pub mod oid {
         = Oid(&[42, 134, 72, 134, 247, 13, 1, 1, 11]);
 }
 
+pub mod keys;
 
-
-/*
-If cfg(feature = "signing")
-
-pub mod keygen
-pub mod certgen
-pub mod msggen
-*/
+#[cfg(feature = "softkeys")]
+pub mod softkeys;

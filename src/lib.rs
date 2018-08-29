@@ -15,6 +15,8 @@ extern crate chrono;
 #[macro_use] extern crate failure;
 extern crate hex;
 #[macro_use] extern crate log;
+#[cfg(feature = "softkeys")]
+extern crate openssl;
 extern crate ring;
 extern crate untrusted;
 extern crate xml;
