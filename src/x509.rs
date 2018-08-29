@@ -3,9 +3,14 @@
 use std::str;
 use std::str::FromStr;
 use ber::{decode, encode};
-use ber::{BitString, Captured, Mode, Tag};
+use ber::{BitString, Captured, Mode, OctetString, Tag};
+use ber::cstring::PrintableString;
 use ber::decode::Source;
+use ber::encode::{PrimitiveContent, Values};
+use bytes::Bytes;
+use cert::SubjectPublicKeyInfo;
 use chrono::{DateTime, LocalResult, TimeZone, Utc};
+use hex;
 use super::time;
 use signing::SignatureAlgorithm;
 
@@ -30,10 +35,50 @@ where F: FnOnce() -> Result<T, E>, E: From<decode::Error> {
 pub struct Name(Captured);
 
 impl Name {
+
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| cons.capture_all()).map(Name)
+    }
+
+    /// Derives a name from a public key info.
+    ///
+    /// Derives a name for use as issuer or subject from
+    /// the public key of the issuer, or this certificate,
+    /// respectively.
+    ///
+    /// This MUST be an X.500 Distinguished Name encoded as
+    /// a PrintableString. There are no strong restrictions
+    /// other than this because names in the RPKI are not
+    /// considered important.
+    ///
+    /// Here we will use a simple strategy that guarantees
+    /// uniqueness of these names, by generating them based
+    /// on the hash of the public key. This is in line with
+    /// the recommendations in RFC6487 sections 4.4, 4.5
+    /// and 8.
+    pub fn from_pub_key(key_info: SubjectPublicKeyInfo) -> Self {
+        let ki = key_info.key_identifier();
+        let enc = hex::encode(&ki);
+
+        let ps = PrintableString::new(
+            OctetString::new(Bytes::from(enc))
+        ).unwrap(); // We know these characters are always safe!
+
+        let name = encode::sequence(
+            encode::set(
+                (
+                    oid::ID_AT_COMMON_NAME.value(),
+                    ps.encode()
+                )
+            )
+        );
+
+        let mut v = Vec::new();
+        name.write_encoded(Mode::Der, &mut v).unwrap(); // to vec is safe
+
+        Mode::Der.decode(v.as_ref(), Self::take_from).unwrap()
     }
 }
 
@@ -259,6 +304,16 @@ fn read_four_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Err> {
 #[derive(Clone, Copy, Debug, Eq, Fail, PartialEq)]
 #[fail(display="validation error")]
 pub struct ValidationError;
+
+
+//------------ OIDs ----------------------------------------------------------
+
+pub mod oid {
+    use ::ber::Oid;
+
+    pub const ID_AT_COMMON_NAME: Oid<&[u8]> // 2 5 4 3
+    = Oid(&[85, 4, 3]);
+}
 
 
 //------------ Testing. One. Two. Three --------------------------------------
