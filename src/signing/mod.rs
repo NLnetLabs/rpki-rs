@@ -139,7 +139,7 @@ pub mod oid {
         = Oid(&[42, 134, 72, 134, 247, 13, 1, 1, 11]);
 }
 
-pub mod keys;
+pub mod signer;
 
 #[cfg(feature = "softkeys")]
-pub mod softkeys;
+pub mod softsigner;
