@@ -18,6 +18,7 @@
 //! [`ResourceCert`]: struct.ResourceCert.html
 
 use ber::{decode, encode};
+use ber::encode::PrimitiveContent;
 use ber::{BitString, Mode, OctetString, Tag, Unsigned};
 use cert::ext::{Extensions, UriGeneralName, UriGeneralNames};
 use ring::digest::{self, Digest};
@@ -540,8 +541,8 @@ impl Validity {
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence(
             (
-                self.not_before.encode(),
-                self.not_after.encode(),
+                self.not_before.value(),
+                self.not_after.value(),
             )
         )
     }

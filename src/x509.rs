@@ -272,56 +272,30 @@ impl Time {
             Ok(())
         }
     }
-
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        TimeEncoder::from_date_time(&self.0)
-    }
 }
 
+impl PrimitiveContent for Time {
 
-pub struct TimeEncoder {
-    bytes: Bytes
-}
-
-impl TimeEncoder {
-    fn from_date_time(dt: &DateTime<Utc>) -> Self {
-        let yr = dt.year();
-        let mo = dt.month();
-        let da = dt.day();
-        let h = dt.hour();
-        let m = dt.minute();
-        let s = dt.second();
-
-        let f = format!("{:04}{:02}{:02}{:02}{:02}{:02}Z", yr, mo, da, h, m, s);
-
-        TimeEncoder { bytes: Bytes::from(f)}
-    }
-}
-
-impl encode::Values for TimeEncoder {
+    const TAG: Tag = Tag::GENERALIZED_TIME;
 
     fn encoded_len(&self, _: Mode) -> usize {
-        Tag::GENERALIZED_TIME.encoded_len() + 1 + 15
+        15 // yyyyMMddhhmmssZ
     }
 
-    fn write_encoded<W: io::Write>(&self, mode: Mode, target: &mut W)
+    fn write_encoded<W: io::Write>(&self, _: Mode, target: &mut W)
         -> Result<(), io::Error>
     {
-        match mode {
-            Mode::Ber | Mode::Der => {
-                Tag::GENERALIZED_TIME.write_encoded(false, target)?;
-                // ber::length::Length is private, but this length
-                // can always be encoded as a single byte.
-                target.write(&[15])?;
-                target.write_all(self.bytes.as_ref())
-            }
-            Mode::Cer => {
-                unimplemented!()
-            }
-        }
+        write!(target, "{:04}", self.0.year())?;
+        write!(target, "{:02}", self.0.month())?;
+        write!(target, "{:02}", self.0.day())?;
+        write!(target, "{:02}", self.0.hour())?;
+        write!(target, "{:02}", self.0.minute())?;
+        write!(target, "{:02}", self.0.second())?;
+        write!(target, "Z")?;
+
+        Ok(())
     }
 }
-
 
 fn read_two_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Err> {
     let mut s = [0u8; 2];
