@@ -779,5 +779,3 @@ pub mod oid {
     pub const PE_SUBJECT_INFO_ACCESS: Oid<&[u8]>
         = Oid(&[43, 6, 1, 5, 5, 7, 1, 11]);
 }
-
-

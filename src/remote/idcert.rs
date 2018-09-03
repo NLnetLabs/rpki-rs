@@ -6,13 +6,12 @@ use ber::{Captured, Mode, OctetString, Oid, Tag, Unsigned};
 use ber::{decode, encode};
 use ber::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
-use cert::{SubjectPublicKeyInfo, Validity, ValidityDuration};
-use cert::ext::Extensions;
+use cert::{SubjectPublicKeyInfo, Validity};
+use cert::ext::{BasicCa, Extensions, SubjectKeyIdentifier};
 use cert::ext::oid;
+use chrono::Duration;
 use signing::SignatureAlgorithm;
 use x509::{Name, SignedData, ValidationError};
-use cert::ext::BasicCa;
-use cert::ext::SubjectKeyIdentifier;
 
 
 //------------ IdCert --------------------------------------------------------
@@ -360,7 +359,6 @@ pub struct IdCertSignRequest {
 }
 
 impl IdCertSignRequest {
-
     /// Creates an IdCertSingRequest to be signed with the Signer trait.
     ///
     /// There is some magic here. Since we always use a structure where we
@@ -377,7 +375,7 @@ impl IdCertSignRequest {
     /// the extensions: subject_key_id and authority_key_id, but no basic_ca.
     pub fn new(
         serial_number: u32,
-        duration: ValidityDuration,
+        duration: Duration,
         issuing_key: &SubjectPublicKeyInfo,
         subject_key: &SubjectPublicKeyInfo
     ) -> Self
@@ -443,4 +441,3 @@ pub mod tests {
         });
     }
 }
-

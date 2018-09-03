@@ -513,9 +513,9 @@ impl Validity {
         Validity { not_before, not_after }
     }
 
-    pub fn from_duration(duration: ValidityDuration) -> Self {
+    pub fn from_duration(duration: ::chrono::Duration) -> Self {
         let not_before = Time::new(Utc::now());
-        let not_after = Time::new(Utc::now() + duration.as_chrono());
+        let not_after = Time::new(Utc::now() + duration);
 
         Validity { not_before, not_after }
     }
@@ -544,24 +544,6 @@ impl Validity {
                 self.not_after.encode(),
             )
         )
-    }
-}
-
-pub enum ValidityDuration {
-    OneDay,
-    FourWeeks,
-    OneYear,
-    TenYears
-}
-
-impl ValidityDuration {
-    fn as_chrono(&self) -> ::chrono::Duration {
-        match self {
-            ValidityDuration::OneDay    => ::chrono::Duration::days(1),
-            ValidityDuration::FourWeeks => ::chrono::Duration::weeks(4),
-            ValidityDuration::OneYear   => ::chrono::Duration::days(365),
-            ValidityDuration::TenYears  => ::chrono::Duration::days(3652)
-        }
     }
 }
 
