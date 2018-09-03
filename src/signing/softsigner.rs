@@ -45,7 +45,9 @@ impl Signer for OpenSslSigner {
         Ok(ret)
     }
 
-    fn get_key_info(&self, id: &Self::KeyId) -> Result<SubjectPublicKeyInfo, SignerError> {
+    fn get_key_info(&self, id: &Self::KeyId)
+        -> Result<SubjectPublicKeyInfo, SignerError>
+    {
         match self.keys.get(id) {
             Some(k) => Ok(k.subject_public_key_info()),
             None => Err(SignerError::KeyNotFound)

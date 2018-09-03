@@ -17,6 +17,7 @@
 //! [`Cert`]: struct.Cert.html
 //! [`ResourceCert`]: struct.ResourceCert.html
 
+use std::io;
 use bytes::Bytes;
 use ber::decode;
 use ber::{BitString, Captured, Mode, OctetString, Oid, Tag, Unsigned};
@@ -28,6 +29,8 @@ use super::x509::{
     update_once, Name, SignedData, Time, ValidationError
 };
 use signing::{PublicKeyAlgorithm, SignatureAlgorithm};
+use ber::encode;
+use chrono::Utc;
 
 //------------ Cert ----------------------------------------------------------
 
@@ -522,6 +525,13 @@ impl Validity {
         Validity { not_before, not_after }
     }
 
+    pub fn from_duration(duration: ValidityDuration) -> Self {
+        let not_before = Time::new(Utc::now());
+        let not_after = Time::new(Utc::now() + duration.as_chrono());
+
+        Validity { not_before, not_after }
+    }
+
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
@@ -538,8 +548,34 @@ impl Validity {
         self.not_after.validate_not_after()?;
         Ok(())
     }
+
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence(
+            (
+                self.not_before.encode(),
+                self.not_after.encode(),
+            )
+        )
+    }
 }
 
+pub enum ValidityDuration {
+    OneDay,
+    FourWeeks,
+    OneYear,
+    TenYears
+}
+
+impl ValidityDuration {
+    fn as_chrono(&self) -> ::chrono::Duration {
+        match self {
+            ValidityDuration::OneDay    => ::chrono::Duration::days(1),
+            ValidityDuration::FourWeeks => ::chrono::Duration::weeks(4),
+            ValidityDuration::OneYear   => ::chrono::Duration::days(365),
+            ValidityDuration::TenYears  => ::chrono::Duration::days(3652)
+        }
+    }
+}
 
 //------------ SubjectPublicKeyInfo ------------------------------------------
 
@@ -575,7 +611,27 @@ impl SubjectPublicKeyInfo {
             self.subject_public_key.octet_slice().unwrap()
         )
     }
+
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence(
+            (
+                self.algorithm.encode(),
+                self.subject_public_key.encode()
+             )
+        )
+    }
 }
+
+
+//------------ Extension -----------------------------------------------------
+
+pub trait Extension {
+    const OID: Oid;
+
+    fn is_critical(&self) -> bool;
+    fn content<V: encode::Values>(&self) -> V;
+}
+
 
 
 
