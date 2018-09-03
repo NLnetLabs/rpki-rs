@@ -9,10 +9,11 @@ use ber::decode::Source;
 use ber::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use cert::SubjectPublicKeyInfo;
-use chrono::{DateTime, LocalResult, TimeZone, Utc};
+use chrono::{Datelike, DateTime, LocalResult, Timelike, TimeZone, Utc};
 use hex;
 use super::time;
 use signing::SignatureAlgorithm;
+use std::io;
 
 
 //------------ Functions -----------------------------------------------------
@@ -58,7 +59,7 @@ impl Name {
     /// on the hash of the public key. This is in line with
     /// the recommendations in RFC6487 sections 4.4, 4.5
     /// and 8.
-    pub fn from_pub_key(key_info: SubjectPublicKeyInfo) -> Self {
+    pub fn from_pub_key(key_info: &SubjectPublicKeyInfo) -> Self {
         let ki = key_info.key_identifier();
         let enc = hex::encode(&ki);
 
@@ -79,6 +80,10 @@ impl Name {
         name.write_encoded(Mode::Der, &mut v).unwrap(); // to vec is safe
 
         Mode::Der.decode(v.as_ref(), Self::take_from).unwrap()
+    }
+
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        &self.0
     }
 }
 
@@ -148,6 +153,10 @@ impl SignedData {
 pub struct Time(DateTime<Utc>);
 
 impl Time {
+    pub fn new(dt: DateTime<Utc>) -> Self {
+        Time(dt)
+    }
+
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
@@ -263,7 +272,56 @@ impl Time {
             Ok(())
         }
     }
+
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        TimeEncoder::from_date_time(&self.0)
+    }
 }
+
+
+pub struct TimeEncoder {
+    bytes: Bytes
+}
+
+impl TimeEncoder {
+    fn from_date_time(dt: &DateTime<Utc>) -> Self {
+        let yr = dt.year();
+        let mo = dt.month();
+        let da = dt.day();
+        let h = dt.hour();
+        let m = dt.minute();
+        let s = dt.second();
+
+        let f = format!("{:04}{:02}{:02}{:02}{:02}{:02}Z", yr, mo, da, h, m, s);
+
+        TimeEncoder { bytes: Bytes::from(f)}
+    }
+}
+
+impl encode::Values for TimeEncoder {
+
+    fn encoded_len(&self, _: Mode) -> usize {
+        Tag::GENERALIZED_TIME.encoded_len() + 1 + 15
+    }
+
+    fn write_encoded<W: io::Write>(&self, mode: Mode, target: &mut W)
+        -> Result<(), io::Error>
+    {
+        match mode {
+            Mode::Ber | Mode::Der => {
+                Tag::GENERALIZED_TIME.write_encoded(false, target)?;
+                // ber::length::Length is private, but this length
+                // can always be encoded as a single byte.
+                target.write(&[15])?;
+                target.write_all(self.bytes.as_ref())
+            }
+            Mode::Cer => {
+                unimplemented!()
+            }
+        }
+    }
+}
+
 
 fn read_two_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Err> {
     let mut s = [0u8; 2];
