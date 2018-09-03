@@ -1,14 +1,18 @@
 //! Identity Certificates.
 //!
 
+use std::io;
+use ber::{Captured, Mode, OctetString, Oid, Tag, Unsigned};
 use ber::{decode, encode};
-use ber::encode::Values;
-use ber::{Mode, OctetString, Oid, Tag, Unsigned};
+use ber::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
-use cert::{Extensions, SubjectPublicKeyInfo, Validity};
-use cert::oid;
+use cert::{SubjectPublicKeyInfo, Validity, ValidityDuration};
+use cert::ext::Extensions;
+use cert::ext::oid;
 use signing::SignatureAlgorithm;
 use x509::{Name, SignedData, ValidationError};
+use cert::ext::BasicCa;
+use cert::ext::SubjectKeyIdentifier;
 
 
 //------------ IdCert --------------------------------------------------------
@@ -72,7 +76,7 @@ impl IdCert {
 
     /// Returns a reference to the subject key identifier.
     pub fn subject_key_identifier(&self) -> &OctetString {
-        &self.extensions.subject_key_id
+        &self.extensions.subject_key_id.subject_key_id()
     }
 
     /// Returns a reference to the entire public key information structure.
@@ -158,7 +162,7 @@ impl IdCert {
         // Authority Key Identifier. May be present, if so, must be
         // equal to the subject key identifier.
         if let Some(ref aki) = self.extensions.authority_key_id {
-            if *aki != self.extensions.subject_key_id {
+            if aki != self.extensions.subject_key_id() {
                 return Err(ValidationError);
             }
         }
@@ -207,7 +211,7 @@ impl IdCert {
 
         // Subject Key Identifer. Must be the SHA-1 hash of the octets
         // of the subjectPublicKey.
-        if self.extensions.subject_key_id.as_slice().unwrap()
+        if self.extensions.subject_key_id().as_slice().unwrap()
             != self.subject_public_key_info().key_identifier().as_ref()
         {
             return Err(ValidationError)
@@ -231,7 +235,7 @@ impl IdCert {
         // Authority Key Identifier. Must be present and match the
         // subject key ID of `issuer`.
         if let Some(ref aki) = self.extensions.authority_key_id {
-            if *aki != issuer.extensions.subject_key_id {
+            if aki != issuer.extensions.subject_key_id() {
                 return Err(ValidationError)
             }
         }
@@ -275,18 +279,18 @@ impl AsRef<IdCert> for IdCert {
 }
 
 
-//------------ Extensions ----------------------------------------------------
+//------------ IdExtensions --------------------------------------------------
 
 #[derive(Clone, Debug)]
 pub struct IdExtensions {
-    /// Basic Contraints.
+    /// Basic Constraints.
     ///
     /// The field indicates whether the extension is present and, if so,
     /// whether the "cA" boolean is set. See 4.8.1. of RFC 6487.
     basic_ca: Option<bool>,
 
     /// Subject Key Identifier.
-    subject_key_id: OctetString,
+    subject_key_id: SubjectKeyIdentifier,
 
     /// Authority Key Identifier
     authority_key_id: Option<OctetString>,
@@ -306,10 +310,10 @@ impl IdExtensions {
                 let value = OctetString::take_from(cons)?;
                 Mode::Der.decode(value.to_source(), |content| {
                     if id == oid::CE_BASIC_CONSTRAINTS {
-                        Extensions::take_basic_ca(content, &mut basic_ca)
+                        BasicCa::take(content, critical, &mut basic_ca)
                     } else if id == oid::CE_SUBJECT_KEY_IDENTIFIER {
-                        Extensions::take_subject_key_identifier(
-                            content, &mut subject_key_id
+                        SubjectKeyIdentifier::take(
+                            content, critical, &mut subject_key_id
                         )
                     } else if id == oid::CE_AUTHORITY_KEY_IDENTIFIER {
                         Extensions::take_authority_key_identifier(
@@ -327,15 +331,89 @@ impl IdExtensions {
                 Ok(())
             })? {}
             Ok(IdExtensions {
-                basic_ca,
+                basic_ca: basic_ca.map(|ca| ca.ca()),
                 subject_key_id: subject_key_id.ok_or(decode::Malformed)?,
                 authority_key_id,
             })
         })
     }
+
+    pub fn subject_key_id(&self) -> &OctetString {
+        &self.subject_key_id.subject_key_id()
+    }
+
+    pub fn from_key_infos(
+        _issuer_info: &SubjectPublicKeyInfo,
+        _subject_info: &SubjectPublicKeyInfo
+    ) -> Self {
+        unimplemented!()
+    }
+
 }
 
 
+//------------ IdCertSignRequest ---------------------------------------------
+
+/// An IdCertSignRequest to be used with the Signer trait.
+pub struct IdCertSignRequest {
+    data: Captured
+}
+
+impl IdCertSignRequest {
+
+    /// Creates an IdCertSingRequest to be signed with the Signer trait.
+    ///
+    /// There is some magic here. Since we always use a structure where we
+    /// have one self-signed CA certificate used as identity trust anchors,
+    /// or EE certificates signed directly below this, we can make some
+    /// assumptions and save on method parameters.
+    ///
+    /// If the issuing_key and the subject_key are the same we will assume
+    /// that this is for a self-signed CA (TA even) certificate. So we will
+    /// set the appropriate extensions: basic_ca and subject_key_id, but no
+    /// authority_key_id.
+    ///
+    /// If the issuing_key and the subject_key are different then we will use
+    /// the extensions: subject_key_id and authority_key_id, but no basic_ca.
+    pub fn new(
+        serial_number: u32,
+        duration: ValidityDuration,
+        issuing_key: &SubjectPublicKeyInfo,
+        subject_key: &SubjectPublicKeyInfo
+    ) -> Self
+    {
+        let mut v = Vec::new();
+        let w = &mut v;
+        let m = Mode::Der;
+
+        Self::write(serial_number.value(), m, w);
+        Self::write(SignatureAlgorithm::Sha256WithRsaEncryption.encode(), m, w);
+
+        let issuer = Name::from_pub_key(issuing_key);
+        Self::write(issuer.encode(), m, w);
+
+        let val = Validity::from_duration(duration);
+        Self::write(val.encode(), m, w);
+
+        let subject = Name::from_pub_key(subject_key);
+        Self::write(subject.encode(), m, w);
+
+        Self::write(subject_key.encode(), m, w);
+
+        // Encode extensions!
+
+        unimplemented!()
+    }
+
+    fn write(data: impl Values, mode: Mode, target: &mut impl io::Write) {
+        data.write_encoded(mode, target).unwrap();
+    }
+
+    pub fn get_data(&self) -> &Captured {
+        &self.data
+    }
+
+}
 
 
 
