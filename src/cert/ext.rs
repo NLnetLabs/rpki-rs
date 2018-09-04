@@ -235,115 +235,6 @@ impl ExtensionContent for SubjectKeyIdentifier {
 }
 
 
-//------------ URIGeneralNames -----------------------------------------------
-
-/// A GeneralNames value limited to uniformResourceIdentifier choices.
-#[derive(Clone, Debug)]
-pub struct UriGeneralNames(Captured);
-
-impl<'a> UriGeneralNames {
-    /// ```text
-    /// GeneralNames ::= SEQUENCE SIZE (1..MAX) OF GeneralName
-    ///
-    /// GeneralName ::= CHOICE {
-    ///    ...
-    ///    uniformResourceIdentifier       [6]     IA5String,
-    ///    ... }
-    /// ```
-    fn take_content_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        Ok(UriGeneralNames(cons.capture(|cons| {
-            if let None = UriGeneralName::skip_opt(cons)? {
-                xerr!(return Err(decode::Malformed.into()))
-            }
-            while let Some(()) = UriGeneralName::skip_opt(cons)? { }
-            Ok(())
-        })?))
-    }
-
-    pub fn iter(&self) -> UriGeneralNameIter {
-        UriGeneralNameIter(self.0.clone())
-    }
-}
-
-
-//------------ UriGeneralNameIter --------------------------------------------
-
-// XXX This can be improved quite a bit.
-#[derive(Clone, Debug)]
-pub struct UriGeneralNameIter(Captured);
-
-impl Iterator for UriGeneralNameIter {
-    type Item = UriGeneralName;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.0.is_empty() {
-            None
-        }
-            else {
-                self.0.decode_partial(|cons| {
-                    UriGeneralName::take_opt_from(cons)
-                }).unwrap()
-            }
-    }
-}
-
-
-//------------ UriGeneralName ------------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct UriGeneralName(Bytes);
-
-impl UriGeneralName {
-    fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_primitive_if(Tag::CTX_6, |prim| {
-            let res = prim.take_all()?;
-            if res.is_ascii() {
-                Ok(UriGeneralName(res))
-            }
-                else {
-                    xerr!(Err(decode::Malformed.into()))
-                }
-        })
-    }
-
-    fn take_opt_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Err> {
-        cons.take_opt_primitive_if(Tag::CTX_6, |prim| {
-            let res = prim.take_all()?;
-            if res.is_ascii() {
-                Ok(UriGeneralName(res))
-            }
-                else {
-                    xerr!(Err(decode::Malformed.into()))
-                }
-        })
-    }
-
-    fn skip_opt<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Option<()>, S::Err> {
-        cons.take_opt_primitive_if(Tag::CTX_6, |prim| {
-            if prim.slice_all()?.is_ascii() {
-                prim.skip_all()?;
-                Ok(())
-            }
-                else {
-                    xerr!(Err(decode::Malformed.into()))
-                }
-        })
-    }
-
-    pub fn into_rsync_uri(self) -> Option<uri::Rsync> {
-        uri::Rsync::from_bytes(self.0.clone()).ok()
-    }
-}
-
-
 //------------ SubjectInfoAccess ---------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -429,7 +320,6 @@ impl SiaIter {
     }
 }
 
-
 impl Iterator for SiaIter {
     type Item = (Oid, UriGeneralName);
 
@@ -459,7 +349,6 @@ impl CertificatePolicies {
         cons.take_sequence(|c| c.capture_all()).map(CertificatePolicies)
     }
 }
-
 
 
 //------------ Extensions ----------------------------------------------------
@@ -891,6 +780,116 @@ impl Extensions {
         self.extended_key_usage.as_ref()
     }
 }
+
+
+//------------ URIGeneralNames -----------------------------------------------
+
+/// A GeneralNames value limited to uniformResourceIdentifier choices.
+#[derive(Clone, Debug)]
+pub struct UriGeneralNames(Captured);
+
+impl<'a> UriGeneralNames {
+    /// ```text
+    /// GeneralNames ::= SEQUENCE SIZE (1..MAX) OF GeneralName
+    ///
+    /// GeneralName ::= CHOICE {
+    ///    ...
+    ///    uniformResourceIdentifier       [6]     IA5String,
+    ///    ... }
+    /// ```
+    fn take_content_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        Ok(UriGeneralNames(cons.capture(|cons| {
+            if let None = UriGeneralName::skip_opt(cons)? {
+                xerr!(return Err(decode::Malformed.into()))
+            }
+            while let Some(()) = UriGeneralName::skip_opt(cons)? { }
+            Ok(())
+        })?))
+    }
+
+    pub fn iter(&self) -> UriGeneralNameIter {
+        UriGeneralNameIter(self.0.clone())
+    }
+}
+
+
+//------------ UriGeneralNameIter --------------------------------------------
+
+// XXX This can be improved quite a bit.
+#[derive(Clone, Debug)]
+pub struct UriGeneralNameIter(Captured);
+
+impl Iterator for UriGeneralNameIter {
+    type Item = UriGeneralName;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.0.is_empty() {
+            None
+        }
+            else {
+                self.0.decode_partial(|cons| {
+                    UriGeneralName::take_opt_from(cons)
+                }).unwrap()
+            }
+    }
+}
+
+
+//------------ UriGeneralName ------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct UriGeneralName(Bytes);
+
+impl UriGeneralName {
+    fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        cons.take_primitive_if(Tag::CTX_6, |prim| {
+            let res = prim.take_all()?;
+            if res.is_ascii() {
+                Ok(UriGeneralName(res))
+            }
+                else {
+                    xerr!(Err(decode::Malformed.into()))
+                }
+        })
+    }
+
+    fn take_opt_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Option<Self>, S::Err> {
+        cons.take_opt_primitive_if(Tag::CTX_6, |prim| {
+            let res = prim.take_all()?;
+            if res.is_ascii() {
+                Ok(UriGeneralName(res))
+            }
+                else {
+                    xerr!(Err(decode::Malformed.into()))
+                }
+        })
+    }
+
+    fn skip_opt<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Option<()>, S::Err> {
+        cons.take_opt_primitive_if(Tag::CTX_6, |prim| {
+            if prim.slice_all()?.is_ascii() {
+                prim.skip_all()?;
+                Ok(())
+            }
+                else {
+                    xerr!(Err(decode::Malformed.into()))
+                }
+        })
+    }
+
+    pub fn into_rsync_uri(self) -> Option<uri::Rsync> {
+        uri::Rsync::from_bytes(self.0.clone()).ok()
+    }
+}
+
 
 //------------ OIDs ----------------------------------------------------------
 
