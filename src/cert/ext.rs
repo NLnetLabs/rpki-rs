@@ -112,6 +112,8 @@ pub struct BasicCa {
     ca: bool,
 }
 
+/// # Decoding
+///
 impl BasicCa {
     /// Parses the Basic Constraints Extension.
     ///
@@ -140,7 +142,11 @@ impl BasicCa {
             Ok(Self{critical, ca})
         })
     }
+}
 
+/// # Data Access
+///
+impl BasicCa {
     pub fn ca(&self) -> bool {
         self.ca
     }
@@ -150,6 +156,8 @@ impl BasicCa {
     }
 }
 
+/// # Encoding
+///
 impl ExtensionContent for BasicCa {
     const OID: &'static Oid<&'static [u8]> = &oid::CE_BASIC_CONSTRAINTS;
 
@@ -172,6 +180,7 @@ impl ExtensionContent for BasicCa {
     }
 }
 
+
 //------------ SubjectKeyIdentifier ------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -180,6 +189,8 @@ pub struct SubjectKeyIdentifier {
     subject_key_id: OctetString
 }
 
+/// # Decoding
+///
 impl SubjectKeyIdentifier {
     /// Parses the Subject Key Identifier Extension.
     ///
@@ -205,7 +216,11 @@ impl SubjectKeyIdentifier {
                 }
         })
     }
+}
 
+/// # Data Access
+///
+impl SubjectKeyIdentifier {
     pub fn is_critical(&self) -> bool {
         self.critical
     }
@@ -215,6 +230,8 @@ impl SubjectKeyIdentifier {
     }
 }
 
+/// # Encoding
+///
 impl ExtensionContent for SubjectKeyIdentifier {
     const OID: &'static Oid<&'static [u8]> = &oid::CE_SUBJECT_KEY_IDENTIFIER;
 
@@ -235,6 +252,17 @@ impl ExtensionContent for SubjectKeyIdentifier {
 }
 
 
+//------------ AuthorityKeyIdentifier ----------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct AuthorityKeyIdentifier {
+    critical: bool,
+    authority_key_id: OctetString
+}
+
+
+
+
 //------------ SubjectInfoAccess ---------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -243,15 +271,9 @@ pub struct SubjectInfoAccess {
     ca: bool
 }
 
+/// # Decoding
+///
 impl SubjectInfoAccess {
-    pub fn iter(&self) -> SiaIter {
-        SiaIter { content: self.content.clone() }
-    }
-
-    pub fn ca(&self) -> bool {
-        self.ca
-    }
-
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
@@ -293,6 +315,18 @@ impl SubjectInfoAccess {
                     xerr!(Err(decode::Malformed.into()))
                 }
         })
+    }
+}
+
+/// # Data Access
+///
+impl SubjectInfoAccess {
+    pub fn iter(&self) -> SiaIter {
+        SiaIter { content: self.content.clone() }
+    }
+
+    pub fn ca(&self) -> bool {
+        self.ca
     }
 }
 
@@ -341,6 +375,8 @@ impl Iterator for SiaIter {
 #[derive(Clone, Debug)]
 pub struct CertificatePolicies(Captured);
 
+/// # Decoding
+///
 impl CertificatePolicies {
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
