@@ -1,12 +1,107 @@
 //! X509 Extensions
 
 use ber::{BitString, Captured, Mode, OctetString, Oid, Tag};
-use ber::decode;
+use ber::{decode, encode};
+use ber::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use ipres::IpResources;
 use asres::AsResources;
 use x509::update_once;
 use uri;
+use std::io;
+
+
+//------------ ExtensionContent ----------------------------------------------
+
+/// A type for extensions that we need to encode.
+///
+/// Not required if we only need to parse an extension.
+pub trait ExtensionContent {
+    const OID: &'static Oid<&'static [u8]>;
+
+    fn critical(&self) -> bool;
+
+    fn content_len(&self) -> usize;
+
+    fn write_content<W: io::Write>(
+        &self,
+        target: &mut W
+    ) -> Result<(), io::Error>;
+
+    fn encode<'a>(&'a self) -> ExtensionEncoder<'a, Self> {
+        ExtensionEncoder::new(self)
+    }
+}
+
+
+//------------ ExtensionEncoder ----------------------------------------------
+
+/// Helper Type that can encode and extension.
+#[derive(Debug)]
+pub struct ExtensionEncoder<'a, T: 'a + ?Sized> {
+    content: &'a T,
+}
+
+impl<'a, T: 'a + ?Sized> ExtensionEncoder<'a, T> {
+    pub fn new(content: &'a T) -> Self {
+        ExtensionEncoder { content }
+    }
+}
+
+impl<'a, T: ExtensionContent + 'a + ?Sized> encode::Values for ExtensionEncoder<'a, T> {
+
+    fn encoded_len(&self, _mode: Mode) -> usize {
+        encode::total_encoded_len(Tag::SEQUENCE,
+            encode::total_encoded_len(
+                Tag::OID,
+                T::OID.encoded_len(Mode::Der)) +
+            encode::total_encoded_len(
+                Tag::BOOLEAN,
+                self.content.critical().encoded_len(Mode::Der)
+            ) +
+            encode::total_encoded_len(
+                Tag::OCTET_STRING,
+                self.content.content_len()
+            )
+        )
+    }
+
+    fn write_encoded<W: io::Write>(&self, mode: Mode, target: &mut W)
+        -> Result<(), io::Error>
+    {
+        //  Extension  ::=  SEQUENCE  {
+        //      extnID      OBJECT IDENTIFIER,
+        //      critical    BOOLEAN DEFAULT FALSE,
+        //      extnValue   OCTET STRING
+        //                  -- contains the DER encoding of an ASN.1 value
+        //                  -- corresponding to the extension type identified
+        //                  -- by extnID
+        //      }
+
+        if mode != Mode::Der {
+            unimplemented!()
+        }
+
+        encode::write_header(
+            target,
+            Tag::SEQUENCE,
+            false,
+            self.content.content_len()
+        )?;
+
+        T::OID.write_encoded(mode, target)?;
+        self.content.critical().write_encoded(mode, target)?;
+
+        encode::write_header(
+            target,
+            Tag::OCTET_STRING,
+            false,
+            self.content.content_len()
+        )?;
+
+        self.content.write_content(target) // Mode is implied as Mode::Der
+    }
+}
 
 
 //------------ BasicCa -------------------------------------------------------
@@ -41,6 +136,7 @@ impl BasicCa {
                 Some(res) => res,
                 None => false
             };
+
             Ok(Self{critical, ca})
         })
     }
@@ -51,6 +147,28 @@ impl BasicCa {
 
     pub fn is_critical(&self) -> bool {
         self.critical
+    }
+}
+
+impl ExtensionContent for BasicCa {
+    const OID: &'static Oid<&'static [u8]> = &oid::CE_BASIC_CONSTRAINTS;
+
+    fn critical(&self) -> bool {
+        self.critical
+    }
+
+    fn content_len(&self) -> usize {
+        encode::total_encoded_len(
+            Tag::SEQUENCE,
+            self.ca.encoded_len(Mode::Der)
+        )
+    }
+
+    fn write_content<W: io::Write>(
+        &self,
+        target: &mut W
+    ) -> Result<(), io::Error> {
+        encode::sequence(self.ca.value()).write_encoded(Mode::Der, target)
     }
 }
 
@@ -94,6 +212,25 @@ impl SubjectKeyIdentifier {
 
     pub fn subject_key_id(&self) -> &OctetString {
         &self.subject_key_id
+    }
+}
+
+impl ExtensionContent for SubjectKeyIdentifier {
+    const OID: &'static Oid<&'static [u8]> = &oid::CE_SUBJECT_KEY_IDENTIFIER;
+
+    fn critical(&self) -> bool {
+        self.critical
+    }
+
+    fn content_len(&self) -> usize {
+        self.subject_key_id.encode().encoded_len(Mode::Der)
+    }
+
+    fn write_content<W: io::Write>(
+        &self,
+        target: &mut W
+    ) -> Result<(), io::Error> {
+        self.subject_key_id.encode().write_encoded(Mode::Der, target)
     }
 }
 

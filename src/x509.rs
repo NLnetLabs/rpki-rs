@@ -343,8 +343,7 @@ pub struct ValidationError;
 pub mod oid {
     use ::ber::Oid;
 
-    pub const ID_AT_COMMON_NAME: Oid<&[u8]> // 2 5 4 3
-    = Oid(&[85, 4, 3]);
+    pub const ID_AT_COMMON_NAME: Oid<&[u8]> = Oid(&[85, 4, 3]); // 2 5 4 3
 }
 
 
