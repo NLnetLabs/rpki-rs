@@ -326,6 +326,14 @@ impl ExtensionContent for AuthorityKeyIdentifier {
 }
 
 
+/// # Data Access
+///
+impl AuthorityKeyIdentifier {
+    pub fn authority_key_id(&self) -> &OctetString {
+        &self.authority_key_id
+    }
+}
+
 //------------ SubjectInfoAccess ---------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -464,7 +472,7 @@ pub struct Extensions {
     subject_key_id: SubjectKeyIdentifier,
 
     /// Authority Key Identifier
-    authority_key_id: Option<OctetString>,
+    authority_key_id: Option<AuthorityKeyIdentifier>,
 
     /// Key Usage.
     ///
@@ -532,8 +540,8 @@ impl Extensions {
                             content, critical, &mut subject_key_id
                         )
                     } else if id == oid::CE_AUTHORITY_KEY_IDENTIFIER {
-                        Self::take_authority_key_identifier(
-                            content, &mut authority_key_id
+                        AuthorityKeyIdentifier::take(
+                            content, critical, &mut authority_key_id
                         )
                     } else if id == oid::CE_KEY_USAGE {
                         Self::take_key_usage(
@@ -592,38 +600,6 @@ impl Extensions {
                 ip_resources,
                 as_resources,
             })
-        })
-    }
-
-    /// Parses the Authority Key Identifier Extension.
-    ///
-    /// Must be present except in self-signed CA certificates where it is
-    /// optional.
-    ///
-    /// ```text
-    /// AuthorityKeyIdentifier ::= SEQUENCE {
-    ///   keyIdentifier             [0] KeyIdentifier           OPTIONAL,
-    ///   authorityCertIssuer       [1] GeneralNames            OPTIONAL,
-    ///   authorityCertSerialNumber [2] CertificateSerialNumber OPTIONAL  }
-    ///
-    /// KeyIdentifier ::= OCTET STRING
-    /// ```
-    ///
-    /// Only keyIdentifier must be present.
-    pub fn take_authority_key_identifier<S: decode::Source>(
-        cons: &mut decode::Constructed<S>,
-        authority_key_id: &mut Option<OctetString>
-    ) -> Result<(), S::Err> {
-        update_once(authority_key_id, || {
-            let res = cons.take_sequence(|cons| {
-                cons.take_value_if(Tag::CTX_0, OctetString::take_content_from)
-            })?;
-            if res.len() != 20 {
-                return Err(decode::Malformed.into())
-            }
-                else {
-                    Ok(res)
-                }
         })
     }
 
@@ -837,7 +813,10 @@ impl Extensions {
     }
 
     pub fn authority_key_id(&self) -> Option<&OctetString> {
-        self.authority_key_id.as_ref()
+        match &self.authority_key_id {
+            Some(a) => Some(a.authority_key_id()),
+            None => None
+        }
     }
 
     pub fn authority_info_access(&self) -> Option<&UriGeneralName> {

@@ -7,11 +7,13 @@ use ber::{decode, encode};
 use ber::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use cert::{SubjectPublicKeyInfo, Validity};
-use cert::ext::{BasicCa, Extensions, SubjectKeyIdentifier};
+use cert::ext::{BasicCa, SubjectKeyIdentifier};
 use cert::ext::oid;
 use chrono::Duration;
 use signing::SignatureAlgorithm;
 use x509::{Name, SignedData, ValidationError};
+use cert::ext::AuthorityKeyIdentifier;
+use cert::ext::ExtensionContent;
 
 
 //------------ IdCert --------------------------------------------------------
@@ -160,7 +162,7 @@ impl IdCert {
 
         // Authority Key Identifier. May be present, if so, must be
         // equal to the subject key identifier.
-        if let Some(ref aki) = self.extensions.authority_key_id {
+        if let Some(aki) = self.extensions.authority_key_id() {
             if aki != self.extensions.subject_key_id() {
                 return Err(ValidationError);
             }
@@ -233,7 +235,7 @@ impl IdCert {
     ) -> Result<(), ValidationError> {
         // Authority Key Identifier. Must be present and match the
         // subject key ID of `issuer`.
-        if let Some(ref aki) = self.extensions.authority_key_id {
+        if let Some(aki) = self.extensions.authority_key_id() {
             if aki != issuer.extensions.subject_key_id() {
                 return Err(ValidationError)
             }
@@ -252,11 +254,13 @@ impl IdCert {
     fn validate_ca_basics(&self) -> Result<(), ValidationError> {
         // 4.8.1. Basic Constraints: For a CA it must be present (RFC6487)
         // und the “cA” flag must be set (RFC5280).
-        if self.extensions.basic_ca != Some(true) {
-            return Err(ValidationError)
+        if let Some(ref ca) = self.extensions.basic_ca {
+            if ca.ca() == true {
+                return  Ok(())
+            }
         }
 
-        Ok(())
+        Err(ValidationError)
     }
 
     /// Validates the certificate’s signature.
@@ -286,13 +290,13 @@ pub struct IdExtensions {
     ///
     /// The field indicates whether the extension is present and, if so,
     /// whether the "cA" boolean is set. See 4.8.1. of RFC 6487.
-    basic_ca: Option<bool>,
+    basic_ca: Option<BasicCa>,
 
     /// Subject Key Identifier.
     subject_key_id: SubjectKeyIdentifier,
 
     /// Authority Key Identifier
-    authority_key_id: Option<OctetString>,
+    authority_key_id: Option<AuthorityKeyIdentifier>,
 }
 
 /// # Decoding
@@ -317,8 +321,8 @@ impl IdExtensions {
                             content, critical, &mut subject_key_id
                         )
                     } else if id == oid::CE_AUTHORITY_KEY_IDENTIFIER {
-                        Extensions::take_authority_key_identifier(
-                            content, &mut authority_key_id
+                        AuthorityKeyIdentifier::take(
+                            content, critical, &mut authority_key_id
                         )
                     } else if critical {
                         xerr!(Err(decode::Malformed))
@@ -332,16 +336,58 @@ impl IdExtensions {
                 Ok(())
             })? {}
             Ok(IdExtensions {
-                basic_ca: basic_ca.map(|ca| ca.ca()),
+                basic_ca,
                 subject_key_id: subject_key_id.ok_or(decode::Malformed)?,
                 authority_key_id,
             })
         })
     }
-
-
-
 }
+
+/// # Encoding
+///
+// We have to do this the hard way because some extensions are optional.
+// Therefore we need logic to determine which ones to encode.
+impl encode::Values for IdExtensions {
+
+    fn encoded_len(&self, _: Mode) -> usize {
+        encode::total_encoded_len(Tag::SEQUENCE, self.length_of_extensions())
+    }
+
+    fn write_encoded<W: io::Write>(
+        &self,
+        mode: Mode,
+        target: &mut W
+    ) -> Result<(), io::Error> {
+
+        // RFC 5280, Section 4.1
+        // Extensions  ::=  SEQUENCE SIZE (1..MAX) OF Extension
+        //
+        // Furthermore DER encoding MUST be used
+
+        if mode != Mode::Der {
+            unimplemented!()
+        }
+
+        encode::write_header(
+            target,
+            Tag::SEQUENCE,
+            false,
+            self.length_of_extensions()
+        )?;
+
+        if let Some(ref ca) = self.basic_ca {
+            ca.encode().write_encoded(mode, target)?;
+        }
+
+        if let Some(ref a) = self.authority_key_id {
+            a.encode().write_encoded(mode, target)?;
+        }
+
+        self.subject_key_id.encode().write_encoded(mode, target)
+    }
+}
+
 
 /// # Creating
 ///
@@ -359,6 +405,26 @@ impl IdExtensions {
 impl IdExtensions {
     pub fn subject_key_id(&self) -> &OctetString {
         &self.subject_key_id.subject_key_id()
+    }
+
+    pub fn authority_key_id(&self) -> Option<&OctetString> {
+        match &self.authority_key_id {
+            Some(a) => Some(a.authority_key_id()),
+            None => None
+        }
+    }
+
+    fn length_of_extensions(&self) -> usize {
+        let mut l = 0;
+        if let Some(ref b) = self.basic_ca {
+            l = l + b.encode().encoded_len(Mode::Der)
+        }
+        l = l + self.subject_key_id.encode().encoded_len(Mode::Der);
+
+        if let Some(ref a) = self.authority_key_id {
+            l = l + a.encode().encoded_len(Mode::Der)
+        }
+        l
     }
 }
 
@@ -410,7 +476,8 @@ impl IdCertSignRequest {
 
         Self::write(subject_key.encode(), m, w);
 
-        // Encode extensions!
+        /// Create the right IdExtensions
+        /// and encode it
 
         unimplemented!()
     }
