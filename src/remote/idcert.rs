@@ -295,6 +295,8 @@ pub struct IdExtensions {
     authority_key_id: Option<OctetString>,
 }
 
+/// # Decoding
+///
 impl IdExtensions {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
@@ -337,17 +339,27 @@ impl IdExtensions {
         })
     }
 
-    pub fn subject_key_id(&self) -> &OctetString {
-        &self.subject_key_id.subject_key_id()
-    }
 
+
+}
+
+/// # Creating
+///
+impl IdExtensions {
     pub fn from_key_infos(
         _issuer_info: &SubjectPublicKeyInfo,
         _subject_info: &SubjectPublicKeyInfo
     ) -> Self {
         unimplemented!()
     }
+}
 
+/// # Data Access
+///
+impl IdExtensions {
+    pub fn subject_key_id(&self) -> &OctetString {
+        &self.subject_key_id.subject_key_id()
+    }
 }
 
 

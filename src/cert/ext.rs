@@ -514,6 +514,8 @@ pub struct Extensions {
     as_resources: Option<AsResources>,
 }
 
+/// # Decoding
+///
 impl Extensions {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
@@ -604,66 +606,6 @@ impl Extensions {
             })
         })
     }
-
-    pub fn basic_ca(&self) -> Option<bool> {
-        match &self.basic_ca {
-            Some(ca) => Some(ca.ca),
-            None => None
-        }
-    }
-
-    pub fn subject_key_id(&self) -> &OctetString {
-        &self.subject_key_id.subject_key_id
-    }
-
-    pub fn crl_distribution(&self) -> Option<&UriGeneralNames> {
-        self.crl_distribution.as_ref()
-    }
-
-    pub fn authority_key_id(&self) -> Option<&OctetString> {
-        self.authority_key_id.as_ref()
-    }
-
-    pub fn authority_info_access(&self) -> Option<&UriGeneralName> {
-        self.authority_info_access.as_ref()
-    }
-
-    pub fn ip_resources(&self) -> Option<&IpResources> {
-        self.ip_resources.as_ref()
-    }
-
-    pub fn as_resources(&self) -> Option<&AsResources> {
-        self.as_resources.as_ref()
-    }
-
-    pub fn key_usage_ca(&self) -> bool {
-        self.key_usage_ca
-    }
-
-    pub fn subject_info_access(&self) -> &SubjectInfoAccess {
-        &self.subject_info_access
-    }
-
-    pub fn manifest_uris(&self) -> impl Iterator<Item=UriGeneralName> {
-        self.subject_info_access.iter().filter_oid(oid::AD_RPKI_MANIFEST)
-    }
-
-    pub fn repository_uri(&self) -> Option<uri::Rsync> {
-        for uri in self.subject_info_access
-            .iter().filter_oid(oid::AD_CA_REPOSITORY)
-            {
-                if let Some(mut uri) = uri.into_rsync_uri() {
-                    return Some(uri)
-                }
-            }
-        None
-    }
-
-    pub fn extended_key_usage(&self) -> Option<&Captured> {
-        self.extended_key_usage.as_ref()
-    }
-
-
 
     /// Parses the Authority Key Identifier Extension.
     ///
@@ -888,6 +830,67 @@ impl Extensions {
     }
 }
 
+/// # Data Access
+///
+impl Extensions {
+    pub fn basic_ca(&self) -> Option<bool> {
+        match &self.basic_ca {
+            Some(ca) => Some(ca.ca),
+            None => None
+        }
+    }
+
+    pub fn subject_key_id(&self) -> &OctetString {
+        &self.subject_key_id.subject_key_id
+    }
+
+    pub fn crl_distribution(&self) -> Option<&UriGeneralNames> {
+        self.crl_distribution.as_ref()
+    }
+
+    pub fn authority_key_id(&self) -> Option<&OctetString> {
+        self.authority_key_id.as_ref()
+    }
+
+    pub fn authority_info_access(&self) -> Option<&UriGeneralName> {
+        self.authority_info_access.as_ref()
+    }
+
+    pub fn ip_resources(&self) -> Option<&IpResources> {
+        self.ip_resources.as_ref()
+    }
+
+    pub fn as_resources(&self) -> Option<&AsResources> {
+        self.as_resources.as_ref()
+    }
+
+    pub fn key_usage_ca(&self) -> bool {
+        self.key_usage_ca
+    }
+
+    pub fn subject_info_access(&self) -> &SubjectInfoAccess {
+        &self.subject_info_access
+    }
+
+    pub fn manifest_uris(&self) -> impl Iterator<Item=UriGeneralName> {
+        self.subject_info_access.iter().filter_oid(oid::AD_RPKI_MANIFEST)
+    }
+
+    pub fn repository_uri(&self) -> Option<uri::Rsync> {
+        for uri in self.subject_info_access
+            .iter().filter_oid(oid::AD_CA_REPOSITORY)
+            {
+                if let Some(mut uri) = uri.into_rsync_uri() {
+                    return Some(uri)
+                }
+            }
+        None
+    }
+
+    pub fn extended_key_usage(&self) -> Option<&Captured> {
+        self.extended_key_usage.as_ref()
+    }
+}
 
 //------------ OIDs ----------------------------------------------------------
 
