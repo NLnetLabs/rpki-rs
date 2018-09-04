@@ -108,6 +108,7 @@ impl<'a, T: ExtensionContent + 'a + ?Sized> encode::Values for ExtensionEncoder<
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BasicCa {
+    // RFC5280 section 4.2.1.9 MAY appear as critical or non-critical
     critical: bool,
     ca: bool,
 }
@@ -185,7 +186,6 @@ impl ExtensionContent for BasicCa {
 
 #[derive(Clone, Debug)]
 pub struct SubjectKeyIdentifier {
-    critical: bool,
     subject_key_id: OctetString
 }
 
@@ -208,12 +208,16 @@ impl SubjectKeyIdentifier {
     ) -> Result<(), S::Err> {
         update_once(subject_key_id, || {
             let subject_key_id = OctetString::take_from(cons)?;
-            if subject_key_id.len() != 20 {
+            if critical == true {
+                // RFC5280: Conforming CAs MUST mark this extension as non-critical.
                 xerr!(Err(decode::Malformed.into()))
             }
-                else {
-                    Ok(Self{critical, subject_key_id} )
-                }
+            else if subject_key_id.len() != 20 {
+                xerr!(Err(decode::Malformed.into()))
+            }
+            else {
+                Ok(Self{subject_key_id} )
+            }
         })
     }
 }
@@ -221,10 +225,6 @@ impl SubjectKeyIdentifier {
 /// # Data Access
 ///
 impl SubjectKeyIdentifier {
-    pub fn is_critical(&self) -> bool {
-        self.critical
-    }
-
     pub fn subject_key_id(&self) -> &OctetString {
         &self.subject_key_id
     }
@@ -236,7 +236,7 @@ impl ExtensionContent for SubjectKeyIdentifier {
     const OID: &'static Oid<&'static [u8]> = &oid::CE_SUBJECT_KEY_IDENTIFIER;
 
     fn critical(&self) -> bool {
-        self.critical
+        false
     }
 
     fn content_len(&self) -> usize {
@@ -256,11 +256,74 @@ impl ExtensionContent for SubjectKeyIdentifier {
 
 #[derive(Clone, Debug)]
 pub struct AuthorityKeyIdentifier {
-    critical: bool,
     authority_key_id: OctetString
 }
 
+/// # Decoding
+///
+impl AuthorityKeyIdentifier {
+    /// Parses the Authority Key Identifier Extension.
+    ///
+    /// Must be present except in self-signed CA certificates where it is
+    /// optional.
+    ///
+    /// ```text
+    /// AuthorityKeyIdentifier ::= SEQUENCE {
+    ///   keyIdentifier             [0] KeyIdentifier           OPTIONAL,
+    ///   authorityCertIssuer       [1] GeneralNames            OPTIONAL,
+    ///   authorityCertSerialNumber [2] CertificateSerialNumber OPTIONAL  }
+    ///
+    /// KeyIdentifier ::= OCTET STRING
+    /// ```
+    ///
+    /// Only keyIdentifier MUST be present.
+    pub fn take<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+        critical: bool,
+        authority_key_id: &mut Option<Self>
+    ) -> Result<(), S::Err> {
+        update_once(authority_key_id, || {
+            let authority_key_id = cons.take_sequence(|cons| {
+                cons.take_value_if(Tag::CTX_0, OctetString::take_content_from)
+            })?;
+            if critical == true {
+                // RFC5280: Conforming CAs MUST mark this extension as non-critical.
+                return Err(decode::Malformed.into())
+            }
+            else if authority_key_id.len() != 20 {
+                return Err(decode::Malformed.into())
+            }
+            else {
+                Ok(AuthorityKeyIdentifier{authority_key_id})
+            }
+        })
+    }
+}
 
+/// # Encoding
+///
+impl ExtensionContent for AuthorityKeyIdentifier {
+    const OID: &'static Oid<&'static [u8]> = &oid::CE_AUTHORITY_KEY_IDENTIFIER;
+
+    fn critical(&self) -> bool {
+        false
+    }
+
+    fn content_len(&self) -> usize {
+        encode::total_encoded_len(
+            Tag::SEQUENCE,
+            self.authority_key_id.encode().encoded_len(Mode::Der)
+        )
+    }
+
+    fn write_content<W: io::Write>(
+        &self,
+        target: &mut W
+    ) -> Result<(), io::Error> {
+        encode::sequence(
+            self.authority_key_id.encode()).write_encoded(Mode::Der, target)
+    }
+}
 
 
 //------------ SubjectInfoAccess ---------------------------------------------
