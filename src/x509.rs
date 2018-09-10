@@ -3,10 +3,19 @@
 use std::str;
 use std::str::FromStr;
 use ber::{decode, encode};
-use ber::{BitString, Captured, Mode, Tag};
+use ber::{BitString, Captured, Mode, OctetString, Tag};
+use ber::cstring::PrintableString;
 use ber::decode::Source;
-use chrono::{DateTime, LocalResult, TimeZone, Utc};
+use ber::encode::PrimitiveContent;
+use bytes::Bytes;
+use cert::SubjectPublicKeyInfo;
+use chrono::{Datelike, DateTime, LocalResult, Timelike, TimeZone, Utc};
+use hex;
 use super::time;
+use signing::SignatureAlgorithm;
+use std::io;
+use ber::Oid;
+use std::result::Result::Err;
 
 
 //------------ Functions -----------------------------------------------------
@@ -26,44 +35,86 @@ where F: FnOnce() -> Result<T, E>, E: From<decode::Error> {
 //------------ Name ----------------------------------------------------------
 
 #[derive(Clone, Debug)]
-pub struct Name(Captured);
+pub struct Name {
+    common_name: PrintableString,
+    serial: Option<PrintableString>
+}
 
 impl Name {
+
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        cons.take_sequence(|cons| cons.capture_all()).map(Name)
+
+        cons.take_sequence(|cons| {
+            cons.take_set(|cons| {
+                cons.take_sequence(|cons| {
+                    let mut name_option = None;
+                    let mut serial = None;
+
+                    let oid = Oid::take_from(cons)?;
+
+                    if oid == oid::ID_AT_COMMON_NAME {
+                        name_option = Some(PrintableString::take_from(cons)?);
+                    } else if oid == oid::ID_AT_COMMON_NAME {
+                        serial = Some(PrintableString::take_from(cons)?);
+                    }
+
+                    if let Some(oid) = Oid::take_opt_from(cons)? {
+                        if oid == oid::ID_AT_COMMON_NAME {
+                            name_option = Some(PrintableString::take_from(cons)?);
+                        } else if oid == oid::ID_AT_COMMON_NAME {
+                            serial = Some(PrintableString::take_from(cons)?);
+                        }
+                    }
+
+                    match name_option {
+                        None =>  Err(decode::Malformed.into()),
+                        Some(common_name) => Ok(Self{common_name, serial})
+                    }
+                })
+            })
+        })
+
     }
-}
 
+    /// Derives a name from a public key info.
+    ///
+    /// Derives a name for use as issuer or subject from
+    /// the public key of the issuer, or this certificate,
+    /// respectively.
+    ///
+    /// This MUST be an X.500 Distinguished Name encoded as
+    /// a PrintableString. There are no strong restrictions
+    /// other than this because names in the RPKI are not
+    /// considered important.
+    ///
+    /// Here we will use a simple strategy that guarantees
+    /// uniqueness of these names, by generating them based
+    /// on the hash of the public key. This is in line with
+    /// the recommendations in RFC6487 sections 4.4, 4.5
+    /// and 8.
+    pub fn from_pub_key(key_info: &SubjectPublicKeyInfo) -> Self {
+        let ki = key_info.key_identifier();
+        let enc = hex::encode(&ki);
 
-//------------ SignatureAlgorithm --------------------------------------------
-
-#[derive(Clone, Debug)]
-pub enum SignatureAlgorithm {
-    Sha256WithRsaEncryption
-}
-
-impl SignatureAlgorithm {
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_sequence(Self::take_content_from)
+        let common_name = PrintableString::new(
+            OctetString::new(Bytes::from(enc))
+        ).unwrap(); // We know these characters are always safe!
+        Self { common_name, serial: None }
     }
 
-    pub fn take_content_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        oid::SHA256_WITH_RSA_ENCRYPTION.skip_if(cons)?;
-        cons.take_opt_null()?;
-        Ok(SignatureAlgorithm::Sha256WithRsaEncryption)
-    }
-
-    pub fn encode(&self) -> impl encode::Values {
-        encode::sequence((
-            oid::SHA256_WITH_RSA_ENCRYPTION.encode(),
-            encode::PrimitiveContent::value(&()),
-        ))
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence(
+            encode::set(
+                encode::sequence(
+                    (
+                        oid::ID_AT_COMMON_NAME.value(),
+                        self.common_name.encode()
+                    )
+                )
+            )
+        )
     }
 }
 
@@ -133,6 +184,10 @@ impl SignedData {
 pub struct Time(DateTime<Utc>);
 
 impl Time {
+    pub fn new(dt: DateTime<Utc>) -> Self {
+        Time(dt)
+    }
+
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
@@ -250,6 +305,29 @@ impl Time {
     }
 }
 
+impl PrimitiveContent for Time {
+
+    const TAG: Tag = Tag::GENERALIZED_TIME;
+
+    fn encoded_len(&self, _: Mode) -> usize {
+        15 // yyyyMMddhhmmssZ
+    }
+
+    fn write_encoded<W: io::Write>(&self, _: Mode, target: &mut W)
+        -> Result<(), io::Error>
+    {
+        write!(target, "{:04}", self.0.year())?;
+        write!(target, "{:02}", self.0.month())?;
+        write!(target, "{:02}", self.0.day())?;
+        write!(target, "{:02}", self.0.hour())?;
+        write!(target, "{:02}", self.0.minute())?;
+        write!(target, "{:02}", self.0.second())?;
+        write!(target, "Z")?;
+
+        Ok(())
+    }
+}
+
 fn read_two_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Err> {
     let mut s = [0u8; 2];
     s[0] = source.take_u8()?;
@@ -291,13 +369,17 @@ fn read_four_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Err> {
 pub struct ValidationError;
 
 
-//------------ Object Identifiers --------------------------------------------
+//------------ OIDs ----------------------------------------------------------
 
-mod oid {
+pub mod oid {
     use ::ber::Oid;
 
-    pub const SHA256_WITH_RSA_ENCRYPTION: Oid<&[u8]>
-        = Oid(&[42, 134, 72, 134, 247, 13, 1, 1, 11]);
+    // https://www.itu.int/ITU-T/formal-language/itu-t/x/x520/2012/SelectedAttributeTypes.html#SelectedAttributeTypes.id-at-commonName
+    pub const ID_AT_COMMON_NAME: Oid<&[u8]> = Oid(&[85, 4, 3]); // 2 5 4 3
+
+    // https://www.itu.int/ITU-T/formal-language/itu-t/x/x520/2012/SelectedAttributeTypes.html#SelectedAttributeTypes.id-at-serialNumber
+    pub const ID_AT_SERIAL_NUMBER: Oid<&[u8]> = Oid(&[85, 4, 5]); // 2 5 4 5
+
 }
 
 

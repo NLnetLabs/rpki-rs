@@ -2,17 +2,17 @@
 //! messages.
 
 use ber::decode;
-use ber::{Mode, Oid, Tag};
+use ber::{Captured, Mode, Oid, Tag};
 use ber::ostring::OctetString;
 use bytes::Bytes;
 use ring::digest;
 use untrusted::Input;
 
 use sigobj::oid;
-use sigobj::{DigestAlgorithm, SignedObject, SignerInfo};
+use sigobj::{SignedObject, SignerInfo};
 use super::idcert::IdCert;
 use x509::ValidationError;
-use ber::Captured;
+use signing::DigestAlgorithm;
 
 //------------ Cms -----------------------------------------------------------
 

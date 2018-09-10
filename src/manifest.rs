@@ -14,8 +14,9 @@ use ber::decode;
 use ber::{BitString, Captured, OctetString, Tag, Unsigned};
 use super::uri;
 use super::cert::{ResourceCert};
-use super::sigobj::{self, SignedObject};
+use super::sigobj::SignedObject;
 use super::x509::{Time, ValidationError};
+use signing;
 
 
 //------------ Manifest ------------------------------------------------------
@@ -102,7 +103,7 @@ impl ManifestContent {
             if this_update > next_update {
                 xerr!(return Err(decode::Malformed.into()));
             }
-            sigobj::oid::SHA256.skip_if(cons)?;
+            signing::oid::SHA256.skip_if(cons)?;
             let file_list = cons.take_sequence(|cons| {
                 cons.capture(|cons| {
                     while let Some(()) = FileAndHash::skip_opt_in(cons)? {

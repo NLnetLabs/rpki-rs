@@ -1,0 +1,602 @@
+//! RPKI Certificates.
+//!
+//! For its certificates, RPKI defines a profile for X.509 certificates. That
+//! is, while it uses the format defined for X.509 certificates, it limits
+//! the allowed values for various fields, making the overall structure more
+//! simple and predictable.
+//!
+//! This module implements the raw certificates in the type [`Cert`] and
+//! validated certificates in the type [`ResourceCert`]. The latter are used
+//! as the issuer certificates when validating other certificates.
+//!
+//! In addition, there are several types for the components of a certificate.
+//!
+//! RPKI resource certificates are defined in RFC 6487 based on the Internet
+//! PKIX profile defined in RFC 5280.
+//!
+//! [`Cert`]: struct.Cert.html
+//! [`ResourceCert`]: struct.ResourceCert.html
+
+use ber::{decode, encode};
+use ber::encode::PrimitiveContent;
+use ber::{BitString, Mode, OctetString, Tag, Unsigned};
+use cert::ext::{Extensions, UriGeneralName, UriGeneralNames};
+use ring::digest::{self, Digest};
+use super::asres::AsBlocks;
+use super::uri;
+use super::ipres::IpAddressBlocks;
+use super::x509::{Name, SignedData, Time, ValidationError};
+use signing::{PublicKeyAlgorithm, SignatureAlgorithm};
+use chrono::Utc;
+
+//------------ Cert ----------------------------------------------------------
+
+/// An RPKI resource certificate.
+///
+/// A value of this type is the result of parsing a resource certificate. It
+/// can be one of three different variants: A CA certificate appears in its
+/// own file in the repository. It main use is to sign other certificates.
+/// An EE certificate is used to sign other objects in the repository, such
+/// as manifests or ROAs. In RPKI, EE certificates are used only once.
+/// Whenever a new such object is created, a new EE certificate is created,
+/// signed by its CA, used to sign the object, and then the private key is
+/// thrown away. Thus, EE certificates only appear inside these signed
+/// objects.
+/// Finally, TA certificates are the installed trust anchors. These are
+/// self-signed.
+/// 
+/// If a certificate is stored in a file, you can use the `decode` function
+/// to parse the entire file. If the certificate is part of some other
+/// structure, the `take_from` and `take_content_from` function can be used
+/// during parsing of that structure.
+///
+/// Once parsing succeeded, the three methods `validate_ta`, `validate_ca`,
+/// and `validate_ee` can be used to validate the certificate and turn it
+/// into a [`ResourceCert`] so it can be used for further processing.
+///
+/// [`ResourceCert`]: struct.ResourceCert.html
+#[derive(Clone, Debug)]
+pub struct Cert {
+    /// The outer structure of the certificate.
+    signed_data: SignedData,
+
+    /// The serial number.
+    serial_number: Unsigned,
+
+    /// The algorithm used for signing the certificate.
+    signature: SignatureAlgorithm,
+
+    /// The name of the issuer.
+    ///
+    /// It isn’t really relevant in RPKI.
+    issuer: Name,
+
+    /// The validity of the certificate.
+    validity: Validity,
+
+    /// The name of the subject of this certificate.
+    ///
+    /// This isn’t really relevant in RPKI.
+    subject: Name,
+
+    /// Information about the public key of this certificate.
+    subject_public_key_info: SubjectPublicKeyInfo,
+
+    /// The optional Issuer Unique ID.
+    issuer_unique_id: Option<BitString>,
+
+    /// The optional Subject Unique ID.
+    subject_unique_id: Option<BitString>,
+
+    /// The certificate extensions.
+    extensions: Extensions,
+}
+
+impl Cert {
+    /// Decodes a source as a certificate.
+    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
+        Mode::Der.decode(source, Self::take_from)
+    }
+
+    /// Takes an encoded certificate from the beginning of a value.
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        cons.take_sequence(Self::take_content_from)
+    }
+
+    /// Parses the content of a Certificate sequence.
+    pub fn take_content_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        let signed_data = SignedData::take_content_from(cons)?;
+
+        signed_data.data().clone().decode(|cons| {
+            cons.take_sequence(|cons| {
+                // version [0] EXPLICIT Version DEFAULT v1.
+                //  -- we need extensions so apparently, we want v3 which,
+                //     confusingly, is 2.
+                cons.take_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(2))?;
+
+                Ok(Cert {
+                    signed_data,
+                    serial_number: Unsigned::take_from(cons)?,
+                    signature: SignatureAlgorithm::take_from(cons)?,
+                    issuer: Name::take_from(cons)?,
+                    validity: Validity::take_from(cons)?,
+                    subject: Name::take_from(cons)?,
+                    subject_public_key_info: 
+                        SubjectPublicKeyInfo::take_from(cons)?,
+                    issuer_unique_id: cons.take_opt_value_if(
+                        Tag::CTX_1,
+                        |c| BitString::parse_content(c)
+                    )?,
+                    subject_unique_id: cons.take_opt_value_if(
+                        Tag::CTX_2,
+                        |c| BitString::parse_content(c)
+                    )?,
+                    extensions: cons.take_constructed_if(
+                        Tag::CTX_3,
+                        Extensions::take_from
+                    )?,
+                })
+            })
+        }).map_err(Into::into)
+    }
+
+    /// Returns a reference to the certificate’s public key.
+    pub fn public_key(&self) -> &[u8] {
+        self.subject_public_key_info
+            .subject_public_key.octet_slice().unwrap()
+    }
+
+    /// Returns a reference to the subject key identifier.
+    pub fn subject_key_identifier(&self) -> &OctetString {
+        &self.extensions.subject_key_id()
+    }
+
+    /// Returns a reference to the entire public key information structure.
+    pub fn subject_public_key_info(&self) -> &SubjectPublicKeyInfo {
+        &self.subject_public_key_info
+    }
+
+    /// Returns a reference to the certificate’s CRL distributionb point.
+    ///
+    /// If present, this will be an `rsync` URI. 
+    pub fn crl_distribution(&self) -> Option<&UriGeneralNames> {
+        self.extensions.crl_distribution()
+    }
+
+    /// Returns a reference to the certificate’s serial number.
+    pub fn serial_number(&self) -> &Unsigned {
+        &self.serial_number
+    }
+}
+
+/// # Validation
+///
+impl Cert {
+    /// Validates the certificate as a trust anchor.
+    ///
+    /// This validates that the certificate “is a current, self-signed RPKI
+    /// CA certificate that conforms to the profile as specified in
+    /// RFC6487” (RFC7730, section 3, step 2).
+    pub fn validate_ta(self) -> Result<ResourceCert, ValidationError> {
+        self.validate_basics()?;
+        self.validate_ca_basics()?;
+
+        // 4.8.3. Authority Key Identifier. May be present, if so, must be
+        // equal to the subject key indentifier.
+        if let Some(ref aki) = self.extensions.authority_key_id() {
+            if *aki != self.extensions.subject_key_id() {
+                return Err(ValidationError);
+            }
+        }
+
+        // 4.8.6. CRL Distribution Points. There musn’t be one.
+        if self.extensions.crl_distribution().is_some() {
+            return Err(ValidationError)
+        }
+
+        // 4.8.7. Authority Information Access. Must not be present.
+        if self.extensions.authority_info_access().is_some() {
+            return Err(ValidationError)
+        }
+
+        // 4.8.10.  IP Resources. If present, musn’t be "inherit".
+        let ip_resources = IpAddressBlocks::from_resources(
+            self.extensions.ip_resources()
+        )?;
+ 
+        // 4.8.11.  AS Resources. If present, musn’t be "inherit". That
+        // IP resources (logical) or AS resources are present has already
+        // been checked during parsing.
+        let as_resources = AsBlocks::from_resources(
+            self.extensions.as_resources()
+        )?;
+
+        self.signed_data.verify_signature(
+            self.subject_public_key_info
+                .subject_public_key.octet_slice().unwrap()
+        )?;
+
+        Ok(ResourceCert {
+            cert: self,
+            ip_resources,
+            as_resources,
+        })
+    }
+
+    /// Validates the certificate as a CA certificate.
+    ///
+    /// For validation to succeed, the certificate needs to have been signed
+    /// by the provided `issuer` certificate.
+    ///
+    /// Note that this does _not_ check the CRL.
+    pub fn validate_ca(
+        self,
+        issuer: &ResourceCert
+    ) -> Result<ResourceCert, ValidationError> {
+        self.validate_basics()?;
+        self.validate_ca_basics()?;
+        self.validate_issued(issuer)?;
+        self.validate_signature(issuer)?;
+        self.validate_resources(issuer)
+    }
+
+    /// Validates the certificate as an EE certificate.
+    ///
+    /// For validation to succeed, the certificate needs to have been signed
+    /// by the provided `issuer` certificate.
+    ///
+    /// Note that this does _not_ check the CRL.
+    pub fn validate_ee(
+        self,
+        issuer: &ResourceCert,
+    ) -> Result<ResourceCert, ValidationError>  {
+        self.validate_basics()?;
+        self.validate_issued(issuer)?;
+
+        // 4.8.1. Basic Constraints: Must not be present.
+        if self.extensions.basic_ca().is_some(){
+            return Err(ValidationError)
+        }
+
+        // 4.8.4. Key Usage. Bits for CA or not CA have been checked during
+        // parsing already.
+        if self.extensions.key_usage_ca() {
+            return Err(ValidationError)
+        }
+
+        // 4.8.8.  Subject Information Access.
+        if self.extensions.subject_info_access().ca() {
+            return Err(ValidationError)
+        }
+
+        self.validate_signature(issuer)?;
+        self.validate_resources(issuer)
+    }
+
+
+    //--- Validation Components
+
+    /// Validates basic compliance with section 4 of RFC 6487.
+    fn validate_basics(&self) -> Result<(), ValidationError> {
+        // The following lists all such constraints in the RFC, noting those
+        // that we cannot check here.
+
+        // 4.2 Serial Number: must be unique over the CA. We cannot check
+        // here, and -- XXX --- probably don’t care?
+
+        // 4.3 Signature Algorithm: limited to those in RFC 6485. Already
+        // checked in parsing.
+
+        // 4.4 Issuer: must have certain format. Since it is not intended to
+        // be descriptive, we simply ignore it.
+
+        // 4.5 Subject: same as 4.4.
+        
+        // 4.6 Validity. Check according to RFC 5280.
+        self.validity.validate()?;
+
+        // 4.7 Subject Public Key Info: limited algorithms. Already checked
+        // during parsing.
+
+        // 4.8.1. Basic Constraints. Differing requirements for CA and EE
+        // certificates.
+        
+        // 4.8.2. Subject Key Identifer. Must be the SHA-1 hash of the octets
+        // of the subjectPublicKey.
+        if self.extensions.subject_key_id().as_slice().unwrap()
+                != self.subject_public_key_info().key_identifier().as_ref()
+        {
+            return Err(ValidationError)
+        }
+
+        // 4.8.3. Authority Key Identifier. Differing requirements of TA and
+        // other certificates.
+
+        // 4.8.4. Key Usage. Differs between CA and EE certificates.
+
+        // 4.8.5. Extended Key Usage. Must not be present for the kind of
+        // certificates we use here.
+        if self.extensions.extended_key_usage().is_some() {
+            return Err(ValidationError)
+        }
+
+        // 4.8.6. CRL Distribution Points. Differs between TA and other
+        // certificates.
+
+        // 4.8.7. Authority Information Access. Differs between TA and other
+        // certificates.
+
+        // 4.8.8.  Subject Information Access. Differs between CA and EE
+        // certificates.
+
+        // 4.8.9.  Certificate Policies. XXX I think this can be ignored.
+        // At least for now.
+
+        // 4.8.10.  IP Resources. Differs between trust anchor and issued
+        // certificates.
+        
+        // 4.8.11.  AS Resources. Differs between trust anchor and issued
+        // certificates.
+
+        Ok(())
+    }
+
+    /// Validates that the certificate is a correctly issued certificate.
+    fn validate_issued(
+        &self,
+        issuer: &ResourceCert,
+    ) -> Result<(), ValidationError> {
+        // 4.8.3. Authority Key Identifier. Must be present and match the
+        // subject key ID of `issuer`.
+        if let Some(ref aki) = self.extensions.authority_key_id() {
+            if *aki != issuer.cert.extensions.subject_key_id() {
+                return Err(ValidationError)
+            }
+        }
+        else {
+            return Err(ValidationError);
+        }
+
+        // 4.8.6. CRL Distribution Points. There must be one. There’s a rule
+        // that there must be at least one rsync URI. This will be implicitely
+        // checked when verifying the CRL later.
+        if self.extensions.crl_distribution().is_none() {
+            return Err(ValidationError)
+        }
+
+        // 4.8.7. Authority Information Access. Must be present and contain
+        // the URI of the issuer certificate. Since we do top-down validation,
+        // we don’t really need that URI so – XXX – leave it unchecked for
+        // now.
+        if self.extensions.authority_info_access().is_none() {
+            return Err(ValidationError);
+        }
+
+        Ok(())
+    }
+
+    /// Validates that the certificate is a valid CA certificate.
+    ///
+    /// Checks the parts that are common in normal and trust anchor CA
+    /// certificates.
+    fn validate_ca_basics(&self) -> Result<(), ValidationError> {
+        // 4.8.1. Basic Constraints: For a CA it must be present (RFC6487)
+        // und the “cA” flag must be set (RFC5280).
+        if self.extensions.basic_ca() != Some(true) {
+            return Err(ValidationError)
+        }
+
+        // 4.8.4. Key Usage. Bits for CA or not CA have been checked during
+        // parsing already.
+        if !self.extensions.key_usage_ca() {
+            return Err(ValidationError)
+        }
+
+        // 4.8.8.  Subject Information Access.
+        if !self.extensions.subject_info_access().ca() {
+            return Err(ValidationError)
+        }
+        
+        Ok(())
+    }
+
+    /// Validates the certificate’s signature.
+    fn validate_signature(
+        &self,
+        issuer: &ResourceCert
+    ) -> Result<(), ValidationError> {
+        self.signed_data.verify_signature(issuer.cert.public_key())
+    }
+
+    /// Validates and extracts the IP and AS resources.
+    ///
+    /// Upon success, this converts the certificate into a `ResourceCert`.
+    fn validate_resources(
+        self,
+        issuer: &ResourceCert
+    ) -> Result<ResourceCert, ValidationError> {
+        // 4.8.10.  IP Resources. If present, must be encompassed by issuer.
+        // certificates.
+        let ip_resources = issuer.ip_resources.encompasses(
+            self.extensions.ip_resources()
+        )?;
+        
+        // 4.8.11.  AS Resources. If present, must be encompassed by issuer.
+        // That IP or AS resources need to be present has been
+        // checked during parsing.
+        let as_resources = issuer.as_resources.encompasses(
+            self.extensions.as_resources()
+        )?;
+
+        Ok(ResourceCert {
+            cert: self,
+            ip_resources,
+            as_resources,
+        })
+    }
+}
+
+
+//--- AsRef
+
+impl AsRef<Cert> for Cert {
+    fn as_ref(&self) -> &Self {
+        self
+    }
+}
+
+
+
+//------------ ResourceCert --------------------------------------------------
+
+/// A validated resource certificate.
+///
+/// This differs from a normal [`Cert`] in that its IP and AS resources are
+/// resolved into concrete values.
+#[derive(Clone, Debug)]
+pub struct ResourceCert {
+    /// The underlying resource certificate.
+    cert: Cert,
+
+    /// The resolved IP resources.
+    ip_resources: IpAddressBlocks,
+
+    /// The resolved AS resources.
+    as_resources: AsBlocks,
+}
+
+impl ResourceCert {
+    /// Returns a reference to the IP resources of this certificate.
+    pub fn ip_resources(&self) -> &IpAddressBlocks {
+        &self.ip_resources
+    }
+
+    /// Returns a reference to the AS resources of this certificate.
+    pub fn as_resources(&self) -> &AsBlocks {
+        &self.as_resources
+    }
+
+    /// Returns an iterator over the manifest URIs of this certificate.
+    pub fn manifest_uris(&self) -> impl Iterator<Item=UriGeneralName> {
+        self.cert.extensions.manifest_uris()
+    }
+
+    /// Returns the repository rsync URI of this certificate if available.
+    pub fn repository_uri(&self) -> Option<uri::Rsync> {
+        self.cert.extensions.repository_uri()
+    }
+}
+
+
+//--- AsRef
+
+impl AsRef<Cert> for ResourceCert {
+    fn as_ref(&self) -> &Cert {
+        &self.cert
+    }
+}
+
+
+//------------ Validity ------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct Validity {
+    not_before: Time,
+    not_after: Time,
+}
+
+impl Validity {
+    pub fn new(not_before: Time, not_after: Time) -> Self {
+        Validity { not_before, not_after }
+    }
+
+    pub fn from_duration(duration: ::chrono::Duration) -> Self {
+        let not_before = Time::new(Utc::now());
+        let not_after = Time::new(Utc::now() + duration);
+
+        Validity { not_before, not_after }
+    }
+
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        cons.take_sequence(|cons| {
+            Ok(Validity::new(
+                Time::take_from(cons)?,
+                Time::take_from(cons)?,
+            ))
+        })
+    }
+
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        self.not_before.validate_not_before()?;
+        self.not_after.validate_not_after()?;
+        Ok(())
+    }
+
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence(
+            (
+                self.not_before.value(),
+                self.not_after.value(),
+            )
+        )
+    }
+}
+
+
+//------------ SubjectPublicKeyInfo ------------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubjectPublicKeyInfo {
+    algorithm: PublicKeyAlgorithm,
+    subject_public_key: BitString,
+}
+
+impl SubjectPublicKeyInfo {
+    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
+        Mode::Der.decode(source, Self::take_from)
+    }
+
+    pub fn subject_public_key(&self) -> &BitString {
+        &self.subject_public_key
+    }
+
+    pub fn algorithm(&self) -> &PublicKeyAlgorithm {
+        &self.algorithm
+    }
+
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        cons.take_sequence(|cons| {
+            Ok(SubjectPublicKeyInfo {
+                algorithm: PublicKeyAlgorithm::take_from(cons)?,
+                subject_public_key: BitString::take_from(cons)?
+            })
+        })
+    }
+
+    pub fn key_identifier(&self) -> Digest {
+        digest::digest(
+            &digest::SHA1,
+            self.subject_public_key.octet_slice().unwrap()
+        )
+    }
+
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence(
+            (
+                self.algorithm.encode(),
+                self.subject_public_key.encode()
+            )
+        )
+    }
+}
+
+//--- Modules
+pub mod ext;

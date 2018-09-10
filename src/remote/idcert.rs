@@ -1,12 +1,17 @@
 //! Identity Certificates.
 //!
 
-use ber::{decode, encode};
 use ber::{Mode, OctetString, Oid, Tag, Unsigned};
-use cert::{Extensions, SubjectPublicKeyInfo, Validity};
-use cert::oid;
-use x509::{Name, SignatureAlgorithm, SignedData, ValidationError};
+use ber::{decode, encode};
+use ber::encode::Values;
 use bytes::Bytes;
+use cert::{SubjectPublicKeyInfo, Validity};
+use cert::ext::{BasicCa, SubjectKeyIdentifier};
+use cert::ext::oid;
+use signing::SignatureAlgorithm;
+use x509::{Name, SignedData, ValidationError};
+use cert::ext::AuthorityKeyIdentifier;
+use ber::encode::Constructed;
 
 
 //------------ IdCert --------------------------------------------------------
@@ -70,7 +75,7 @@ impl IdCert {
 
     /// Returns a reference to the subject key identifier.
     pub fn subject_key_identifier(&self) -> &OctetString {
-        &self.extensions.subject_key_id
+        &self.extensions.subject_key_id.subject_key_id()
     }
 
     /// Returns a reference to the entire public key information structure.
@@ -134,11 +139,10 @@ impl IdCert {
         self.signed_data.encode()
     }
 
-    /// TODO: Encode properly!! Also, give back a ref.
-    /// Did this for now, to allow testing generating XML in exchange.rs
     pub fn to_bytes(&self) -> Bytes {
-        let b = include_bytes!("../../test/oob/id-publisher-ta.cer");
-        Bytes::from_static(b)
+        let mut b = Vec::new();
+        self.encode().write_encoded(Mode::Der, &mut b).unwrap(); // Writing to vec will not fail
+        Bytes::from(b)
     }
 }
 
@@ -156,8 +160,8 @@ impl IdCert {
 
         // Authority Key Identifier. May be present, if so, must be
         // equal to the subject key identifier.
-        if let Some(ref aki) = self.extensions.authority_key_id {
-            if *aki != self.extensions.subject_key_id {
+        if let Some(aki) = self.extensions.authority_key_id() {
+            if aki != self.extensions.subject_key_id() {
                 return Err(ValidationError);
             }
         }
@@ -206,7 +210,7 @@ impl IdCert {
 
         // Subject Key Identifer. Must be the SHA-1 hash of the octets
         // of the subjectPublicKey.
-        if self.extensions.subject_key_id.as_slice().unwrap()
+        if self.extensions.subject_key_id().as_slice().unwrap()
             != self.subject_public_key_info().key_identifier().as_ref()
         {
             return Err(ValidationError)
@@ -229,8 +233,8 @@ impl IdCert {
     ) -> Result<(), ValidationError> {
         // Authority Key Identifier. Must be present and match the
         // subject key ID of `issuer`.
-        if let Some(ref aki) = self.extensions.authority_key_id {
-            if *aki != issuer.extensions.subject_key_id {
+        if let Some(aki) = self.extensions.authority_key_id() {
+            if aki != issuer.extensions.subject_key_id() {
                 return Err(ValidationError)
             }
         }
@@ -248,11 +252,13 @@ impl IdCert {
     fn validate_ca_basics(&self) -> Result<(), ValidationError> {
         // 4.8.1. Basic Constraints: For a CA it must be present (RFC6487)
         // und the “cA” flag must be set (RFC5280).
-        if self.extensions.basic_ca != Some(true) {
-            return Err(ValidationError)
+        if let Some(ref ca) = self.extensions.basic_ca {
+            if ca.ca() == true {
+                return  Ok(())
+            }
         }
 
-        Ok(())
+        Err(ValidationError)
     }
 
     /// Validates the certificate’s signature.
@@ -274,23 +280,25 @@ impl AsRef<IdCert> for IdCert {
 }
 
 
-//------------ Extensions ----------------------------------------------------
+//------------ IdExtensions --------------------------------------------------
 
 #[derive(Clone, Debug)]
 pub struct IdExtensions {
-    /// Basic Contraints.
+    /// Basic Constraints.
     ///
     /// The field indicates whether the extension is present and, if so,
     /// whether the "cA" boolean is set. See 4.8.1. of RFC 6487.
-    basic_ca: Option<bool>,
+    basic_ca: Option<BasicCa>,
 
     /// Subject Key Identifier.
-    subject_key_id: OctetString,
+    subject_key_id: SubjectKeyIdentifier,
 
     /// Authority Key Identifier
-    authority_key_id: Option<OctetString>,
+    authority_key_id: Option<AuthorityKeyIdentifier>,
 }
 
+/// # Decoding
+///
 impl IdExtensions {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
@@ -305,14 +313,14 @@ impl IdExtensions {
                 let value = OctetString::take_from(cons)?;
                 Mode::Der.decode(value.to_source(), |content| {
                     if id == oid::CE_BASIC_CONSTRAINTS {
-                        Extensions::take_basic_ca(content, &mut basic_ca)
+                        BasicCa::take(content, critical, &mut basic_ca)
                     } else if id == oid::CE_SUBJECT_KEY_IDENTIFIER {
-                        Extensions::take_subject_key_identifier(
-                            content, &mut subject_key_id
+                        SubjectKeyIdentifier::take(
+                            content, critical, &mut subject_key_id
                         )
                     } else if id == oid::CE_AUTHORITY_KEY_IDENTIFIER {
-                        Extensions::take_authority_key_identifier(
-                            content, &mut authority_key_id
+                        AuthorityKeyIdentifier::take(
+                            content, critical, &mut authority_key_id
                         )
                     } else if critical {
                         xerr!(Err(decode::Malformed))
@@ -334,8 +342,68 @@ impl IdExtensions {
     }
 }
 
+/// # Encoding
+///
+// We have to do this the hard way because some extensions are optional.
+// Therefore we need logic to determine which ones to encode.
+impl IdExtensions {
+
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        Constructed::new(
+            Tag::CTX_3,
+            encode::sequence(
+                (
+                    self.basic_ca.as_ref().map(|s| s.encode()),
+                    self.subject_key_id.encode(),
+                    self.authority_key_id.as_ref().map(|s| s.encode())
+                )
+            )
+        )
+    }
+
+}
 
 
+/// # Creating
+///
+impl IdExtensions {
+
+    /// Creates extensions to be used on a self-signed TA IdCert
+    pub fn for_id_ta_cert(key: &SubjectPublicKeyInfo) -> Self {
+        IdExtensions{
+            basic_ca: Some(BasicCa::new(true, true)),
+            subject_key_id: SubjectKeyIdentifier::new(key),
+            authority_key_id: Some(AuthorityKeyIdentifier::new(key))
+        }
+    }
+
+    /// Creates extensions to be used on an EE IdCert in a protocol CMS
+    pub fn for_id_ee_cert(
+        subject_key: &SubjectPublicKeyInfo,
+        authority_key: &SubjectPublicKeyInfo
+    ) -> Self {
+        IdExtensions{
+            basic_ca: None,
+            subject_key_id: SubjectKeyIdentifier::new(subject_key),
+            authority_key_id: Some(AuthorityKeyIdentifier::new(authority_key))
+        }
+    }
+}
+
+/// # Data Access
+///
+impl IdExtensions {
+    pub fn subject_key_id(&self) -> &OctetString {
+        &self.subject_key_id.subject_key_id()
+    }
+
+    pub fn authority_key_id(&self) -> Option<&OctetString> {
+        match &self.authority_key_id {
+            Some(a) => Some(a.authority_key_id()),
+            None => None
+        }
+    }
+}
 
 
 //------------ Tests ---------------------------------------------------------
@@ -346,6 +414,7 @@ pub mod tests {
 
     use super::*;
     use bytes::Bytes;
+
     use time;
     use chrono::{TimeZone, Utc};
 
@@ -363,5 +432,24 @@ pub mod tests {
             assert!(cert.validate_ta().is_ok());
         });
     }
-}
 
+    #[test]
+    fn should_encode_basic_ca() {
+        let ba = BasicCa::new(true, true);
+        let mut v = Vec::new();
+        ba.encode().write_encoded(Mode::Der, &mut v).unwrap();
+
+        // 48 15            Sequence with length 15
+        //  6 3 85 29 19       OID 2.5.29.19 basicConstraints
+        //  1 1 255              Boolean true
+        //  4 5                OctetString of length 5
+        //     48 3               Sequence with length 3
+        //        1 1 255           Boolean true
+
+        assert_eq!(
+            vec![48, 15, 6, 3, 85, 29, 19, 1, 1, 255, 4, 5, 48, 3, 1, 1, 255 ],
+            v
+        );
+
+    }
+}

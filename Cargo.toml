@@ -14,9 +14,11 @@ chrono          = "^0.4"
 failure         = "^0.1"
 hex             = "^0.3"
 log             = "^0.4"
+openssl         = { version = "^0.10", optional = true }
+ring            = "^0.13"
 untrusted       = "^0.6"
 xml-rs          = "^0.8"
 
-[dependencies.ring]
-version  = "^0.13"
-features = ["rsa_signing"]
+[features]
+default = []
+softkeys = [ "openssl" ]

@@ -19,8 +19,9 @@ use ber::{Captured, Mode, OctetString, Oid, Tag, Unsigned};
 use super::uri;
 use super::cert::Cert;
 use super::x509::{
-    update_once, Name, SignatureAlgorithm, SignedData, Time, ValidationError
+    update_once, Name, SignedData, Time, ValidationError
 };
+use super::signing::SignatureAlgorithm;
 
 
 //------------ Crl -----------------------------------------------------------
