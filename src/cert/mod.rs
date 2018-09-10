@@ -566,6 +566,10 @@ impl SubjectPublicKeyInfo {
         &self.subject_public_key
     }
 
+    pub fn algorithm(&self) -> &PublicKeyAlgorithm {
+        &self.algorithm
+    }
+
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {

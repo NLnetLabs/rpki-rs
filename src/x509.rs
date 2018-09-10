@@ -6,7 +6,7 @@ use ber::{decode, encode};
 use ber::{BitString, Captured, Mode, OctetString, Tag};
 use ber::cstring::PrintableString;
 use ber::decode::Source;
-use ber::encode::{PrimitiveContent, Values};
+use ber::encode::PrimitiveContent;
 use bytes::Bytes;
 use cert::SubjectPublicKeyInfo;
 use chrono::{Datelike, DateTime, LocalResult, Timelike, TimeZone, Utc};
@@ -14,6 +14,8 @@ use hex;
 use super::time;
 use signing::SignatureAlgorithm;
 use std::io;
+use ber::Oid;
+use std::result::Result::Err;
 
 
 //------------ Functions -----------------------------------------------------
@@ -33,14 +35,47 @@ where F: FnOnce() -> Result<T, E>, E: From<decode::Error> {
 //------------ Name ----------------------------------------------------------
 
 #[derive(Clone, Debug)]
-pub struct Name(Captured);
+pub struct Name {
+    common_name: PrintableString,
+    serial: Option<PrintableString>
+}
 
 impl Name {
 
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        cons.take_sequence(|cons| cons.capture_all()).map(Name)
+
+        cons.take_sequence(|cons| {
+            cons.take_set(|cons| {
+                cons.take_sequence(|cons| {
+                    let mut name_option = None;
+                    let mut serial = None;
+
+                    let oid = Oid::take_from(cons)?;
+
+                    if oid == oid::ID_AT_COMMON_NAME {
+                        name_option = Some(PrintableString::take_from(cons)?);
+                    } else if oid == oid::ID_AT_COMMON_NAME {
+                        serial = Some(PrintableString::take_from(cons)?);
+                    }
+
+                    if let Some(oid) = Oid::take_opt_from(cons)? {
+                        if oid == oid::ID_AT_COMMON_NAME {
+                            name_option = Some(PrintableString::take_from(cons)?);
+                        } else if oid == oid::ID_AT_COMMON_NAME {
+                            serial = Some(PrintableString::take_from(cons)?);
+                        }
+                    }
+
+                    match name_option {
+                        None =>  Err(decode::Malformed.into()),
+                        Some(common_name) => Ok(Self{common_name, serial})
+                    }
+                })
+            })
+        })
+
     }
 
     /// Derives a name from a public key info.
@@ -63,27 +98,23 @@ impl Name {
         let ki = key_info.key_identifier();
         let enc = hex::encode(&ki);
 
-        let ps = PrintableString::new(
+        let common_name = PrintableString::new(
             OctetString::new(Bytes::from(enc))
         ).unwrap(); // We know these characters are always safe!
-
-        let name = encode::sequence(
-            encode::set(
-                (
-                    oid::ID_AT_COMMON_NAME.value(),
-                    ps.encode()
-                )
-            )
-        );
-
-        let mut v = Vec::new();
-        name.write_encoded(Mode::Der, &mut v).unwrap(); // to vec is safe
-
-        Mode::Der.decode(v.as_ref(), Self::take_from).unwrap()
+        Self { common_name, serial: None }
     }
 
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        &self.0
+        encode::sequence(
+            encode::set(
+                encode::sequence(
+                    (
+                        oid::ID_AT_COMMON_NAME.value(),
+                        self.common_name.encode()
+                    )
+                )
+            )
+        )
     }
 }
 
@@ -343,7 +374,12 @@ pub struct ValidationError;
 pub mod oid {
     use ::ber::Oid;
 
+    // https://www.itu.int/ITU-T/formal-language/itu-t/x/x520/2012/SelectedAttributeTypes.html#SelectedAttributeTypes.id-at-commonName
     pub const ID_AT_COMMON_NAME: Oid<&[u8]> = Oid(&[85, 4, 3]); // 2 5 4 3
+
+    // https://www.itu.int/ITU-T/formal-language/itu-t/x/x520/2012/SelectedAttributeTypes.html#SelectedAttributeTypes.id-at-serialNumber
+    pub const ID_AT_SERIAL_NUMBER: Oid<&[u8]> = Oid(&[85, 4, 5]); // 2 5 4 5
+
 }
 
 

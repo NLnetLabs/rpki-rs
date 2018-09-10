@@ -2,105 +2,38 @@
 
 use ber::{BitString, Captured, Mode, OctetString, Oid, Tag};
 use ber::{decode, encode};
-use ber::encode::{PrimitiveContent, Values};
+use ber::encode::PrimitiveContent;
 use bytes::Bytes;
 use ipres::IpResources;
 use asres::AsResources;
 use x509::update_once;
 use uri;
-use std::io;
+use cert::SubjectPublicKeyInfo;
 
 
-//------------ ExtensionContent ----------------------------------------------
+//------------ Encoding ------------------------------------------------------
 
-/// A type for extensions that we need to encode.
-///
-/// Not required if we only need to parse an extension.
-pub trait ExtensionContent {
-    const OID: &'static Oid<&'static [u8]>;
+pub fn encode_extension<'a, V: encode::Values + 'a>(
+    oid: &'static Oid<&'static [u8]>,
+    critical: &'a bool,
+    content: V
+) -> impl encode::Values + 'a {
+    //  Extension  ::=  SEQUENCE  {
+    //      extnID      OBJECT IDENTIFIER,
+    //      critical    BOOLEAN DEFAULT FALSE,
+    //      extnValue   OCTET STRING
+    //                  -- contains the DER encoding of an ASN.1 value
+    //                  -- corresponding to the extension type identified
+    //                  -- by extnID
+    //      }
 
-    fn critical(&self) -> bool;
-
-    fn content_len(&self) -> usize;
-
-    fn write_content<W: io::Write>(
-        &self,
-        target: &mut W
-    ) -> Result<(), io::Error>;
-
-    fn encode<'a>(&'a self) -> ExtensionEncoder<'a, Self> {
-        ExtensionEncoder::new(self)
-    }
-}
-
-
-//------------ ExtensionEncoder ----------------------------------------------
-
-/// Helper Type that can encode and extension.
-#[derive(Debug)]
-pub struct ExtensionEncoder<'a, T: 'a + ?Sized> {
-    content: &'a T,
-}
-
-impl<'a, T: 'a + ?Sized> ExtensionEncoder<'a, T> {
-    pub fn new(content: &'a T) -> Self {
-        ExtensionEncoder { content }
-    }
-}
-
-impl<'a, T: ExtensionContent + 'a + ?Sized> encode::Values for ExtensionEncoder<'a, T> {
-
-    fn encoded_len(&self, _mode: Mode) -> usize {
-        encode::total_encoded_len(Tag::SEQUENCE,
-            encode::total_encoded_len(
-                Tag::OID,
-                T::OID.encoded_len(Mode::Der)) +
-            encode::total_encoded_len(
-                Tag::BOOLEAN,
-                self.content.critical().encoded_len(Mode::Der)
-            ) +
-            encode::total_encoded_len(
-                Tag::OCTET_STRING,
-                self.content.content_len()
-            )
+    encode::sequence(
+        (
+            oid.encode(),
+            critical.value(),
+            OctetString::encode_into_der(content)
         )
-    }
-
-    fn write_encoded<W: io::Write>(&self, mode: Mode, target: &mut W)
-        -> Result<(), io::Error>
-    {
-        //  Extension  ::=  SEQUENCE  {
-        //      extnID      OBJECT IDENTIFIER,
-        //      critical    BOOLEAN DEFAULT FALSE,
-        //      extnValue   OCTET STRING
-        //                  -- contains the DER encoding of an ASN.1 value
-        //                  -- corresponding to the extension type identified
-        //                  -- by extnID
-        //      }
-
-        if mode != Mode::Der {
-            unimplemented!()
-        }
-
-        encode::write_header(
-            target,
-            Tag::SEQUENCE,
-            false,
-            self.content.content_len()
-        )?;
-
-        T::OID.write_encoded(mode, target)?;
-        self.content.critical().write_encoded(mode, target)?;
-
-        encode::write_header(
-            target,
-            Tag::OCTET_STRING,
-            false,
-            self.content.content_len()
-        )?;
-
-        self.content.write_content(target) // Mode is implied as Mode::Der
-    }
+    )
 }
 
 
@@ -111,6 +44,14 @@ pub struct BasicCa {
     // RFC5280 section 4.2.1.9 MAY appear as critical or non-critical
     critical: bool,
     ca: bool,
+}
+
+/// # Creating
+///
+impl BasicCa {
+    pub fn new(critical: bool, ca: bool) -> Self {
+        Self { critical, ca }
+    }
 }
 
 /// # Decoding
@@ -145,6 +86,7 @@ impl BasicCa {
     }
 }
 
+
 /// # Data Access
 ///
 impl BasicCa {
@@ -159,25 +101,15 @@ impl BasicCa {
 
 /// # Encoding
 ///
-impl ExtensionContent for BasicCa {
-    const OID: &'static Oid<&'static [u8]> = &oid::CE_BASIC_CONSTRAINTS;
-
-    fn critical(&self) -> bool {
-        self.critical
-    }
-
-    fn content_len(&self) -> usize {
-        encode::total_encoded_len(
-            Tag::SEQUENCE,
-            self.ca.encoded_len(Mode::Der)
+impl BasicCa {
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        encode_extension(
+            &oid::CE_BASIC_CONSTRAINTS,
+            &self.critical,
+            encode::sequence(
+                self.ca.value()
+            )
         )
-    }
-
-    fn write_content<W: io::Write>(
-        &self,
-        target: &mut W
-    ) -> Result<(), io::Error> {
-        encode::sequence(self.ca.value()).write_encoded(Mode::Der, target)
     }
 }
 
@@ -187,6 +119,17 @@ impl ExtensionContent for BasicCa {
 #[derive(Clone, Debug)]
 pub struct SubjectKeyIdentifier {
     subject_key_id: OctetString
+}
+
+/// # Creating
+///
+impl SubjectKeyIdentifier {
+    pub fn new(key_info: &SubjectPublicKeyInfo) -> Self {
+        let ki = key_info.key_identifier();
+        let b = Bytes::from(ki.as_ref());
+
+        Self{subject_key_id: OctetString::new(b)}
+    }
 }
 
 /// # Decoding
@@ -201,6 +144,8 @@ impl SubjectKeyIdentifier {
     /// SubjectKeyIdentifier ::= KeyIdentifier
     /// KeyIdentifier        ::= OCTET STRING
     /// ```
+    ///
+    /// Conforming CAs MUST mark this extension as non-critical.
     pub fn take<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         critical: bool,
@@ -232,22 +177,14 @@ impl SubjectKeyIdentifier {
 
 /// # Encoding
 ///
-impl ExtensionContent for SubjectKeyIdentifier {
-    const OID: &'static Oid<&'static [u8]> = &oid::CE_SUBJECT_KEY_IDENTIFIER;
+impl SubjectKeyIdentifier {
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
 
-    fn critical(&self) -> bool {
-        false
-    }
-
-    fn content_len(&self) -> usize {
-        self.subject_key_id.encode().encoded_len(Mode::Der)
-    }
-
-    fn write_content<W: io::Write>(
-        &self,
-        target: &mut W
-    ) -> Result<(), io::Error> {
-        self.subject_key_id.encode().write_encoded(Mode::Der, target)
+        encode_extension(
+            &oid::CE_SUBJECT_KEY_IDENTIFIER,
+            &false,
+            self.subject_key_id.encode()
+        )
     }
 }
 
@@ -257,6 +194,17 @@ impl ExtensionContent for SubjectKeyIdentifier {
 #[derive(Clone, Debug)]
 pub struct AuthorityKeyIdentifier {
     authority_key_id: OctetString
+}
+
+/// # Creating
+///
+impl AuthorityKeyIdentifier {
+    pub fn new(key_info: &SubjectPublicKeyInfo) -> Self {
+        let ki = key_info.key_identifier();
+        let b = Bytes::from(ki.as_ref());
+
+        Self{authority_key_id: OctetString::new(b)}
+    }
 }
 
 /// # Decoding
@@ -302,27 +250,19 @@ impl AuthorityKeyIdentifier {
 
 /// # Encoding
 ///
-impl ExtensionContent for AuthorityKeyIdentifier {
-    const OID: &'static Oid<&'static [u8]> = &oid::CE_AUTHORITY_KEY_IDENTIFIER;
+impl AuthorityKeyIdentifier {
+//    const OID: &'static Oid<&'static [u8]> = &oid::CE_AUTHORITY_KEY_IDENTIFIER;
 
-    fn critical(&self) -> bool {
-        false
-    }
-
-    fn content_len(&self) -> usize {
-        encode::total_encoded_len(
-            Tag::SEQUENCE,
-            self.authority_key_id.encode().encoded_len(Mode::Der)
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        encode_extension(
+            &oid::CE_AUTHORITY_KEY_IDENTIFIER,
+            &false,
+            encode::sequence(
+                 self.authority_key_id.encode_as(Tag::CTX_0)
+            )
         )
     }
 
-    fn write_content<W: io::Write>(
-        &self,
-        target: &mut W
-    ) -> Result<(), io::Error> {
-        encode::sequence(
-            self.authority_key_id.encode()).write_encoded(Mode::Der, target)
-    }
 }
 
 

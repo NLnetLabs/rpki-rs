@@ -143,3 +143,4 @@ pub mod signer;
 
 #[cfg(feature = "softkeys")]
 pub mod softsigner;
+pub mod builder;

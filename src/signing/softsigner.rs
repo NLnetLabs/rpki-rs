@@ -5,15 +5,26 @@
 //! software keys to sign things, such as an RPKI Certificate Authority or
 //! Publication Server. In particular, this is not required when validating.
 
+// XXX TODO Check security of keys in memory
+
 use std::collections::HashMap;
+use ber::decode;
 use bytes::Bytes;
 use cert::SubjectPublicKeyInfo;
 use hex;
-use super::KEY_SIZE;
-use openssl::pkey::Private;
+use signing::KEY_SIZE;
+use signing::PublicKeyAlgorithm;
+use signing::signer::{
+    CreateKeyError,
+    KeyId,
+    KeyUseError,
+    Signature,
+    Signer};
 use openssl::rsa::Rsa;
-use signing::signer::Signer;
-use signing::signer::SignerError;
+use openssl::pkey::PKey;
+use openssl::hash::MessageDigest;
+use openssl::error::ErrorStack;
+use openssl::pkey::Private;
 
 
 //------------ OpenSslSigner -------------------------------------------------
@@ -22,7 +33,7 @@ use signing::signer::SignerError;
 ///
 /// Keeps the keys in memory (for now).
 pub struct OpenSslSigner {
-    keys: HashMap<String, OpenSslKeyPair>
+    keys: HashMap<KeyId, OpenSslKeyPair>
 }
 
 impl OpenSslSigner {
@@ -33,32 +44,65 @@ impl OpenSslSigner {
 
 impl Signer for OpenSslSigner {
 
-    type KeyId = String;
+    fn create_key(
+        &mut self,
+        algorithm: &PublicKeyAlgorithm
+    ) -> Result<KeyId, CreateKeyError> {
 
-    fn create_key(&mut self) -> Result<Self::KeyId, SignerError> {
-        let kp = OpenSslKeyPair::new();
-        let info = kp.subject_public_key_info().key_identifier();
+        if *algorithm != PublicKeyAlgorithm::RsaEncryption {
+            return Err(CreateKeyError::UnsupportedAlgorithm)
+        }
+
+        let kp = OpenSslKeyPair::new()?;
+        let info = kp.subject_public_key_info()?.key_identifier();
+
         let enc = hex::encode(&info);
         let ret = enc.clone();
 
-        self.keys.entry(enc).or_insert(kp);
-        Ok(ret)
+        self.keys.entry(KeyId::new(enc)).or_insert(kp);
+        Ok(KeyId::new(ret))
     }
 
-    fn get_key_info(&self, id: &Self::KeyId)
-        -> Result<SubjectPublicKeyInfo, SignerError>
+    fn get_key_info(&self, id: &KeyId)
+        -> Result<SubjectPublicKeyInfo, KeyUseError>
     {
         match self.keys.get(id) {
-            Some(k) => Ok(k.subject_public_key_info()),
-            None => Err(SignerError::KeyNotFound)
+            Some(k) => Ok(k.subject_public_key_info()?),
+            None => Err(KeyUseError::KeyNotFound)
         }
     }
 
-    fn destroy_key(&mut self, id: Self::KeyId) -> Result<(), SignerError> {
-        match &self.keys.remove(&id) {
+    fn destroy_key(&mut self, id: &KeyId) -> Result<(), KeyUseError> {
+        match &self.keys.remove(id) {
             Some(_) => Ok(()),
-            None => Err(SignerError::KeyNotFound)
+            None => Err(KeyUseError::KeyNotFound)
         }
+    }
+
+    fn sign<D: AsRef<[u8]>>(
+        &self,
+        id: &KeyId,
+        data: &D
+    ) -> Result<Signature, KeyUseError> {
+
+        match self.keys.get(id) {
+            None => Err(KeyUseError::KeyNotFound),
+            Some(k) => {
+                match self.get_key_info(id)?.algorithm() {
+                    PublicKeyAlgorithm::RsaEncryption => {
+                        let mut signer = ::openssl::sign::Signer::new(
+                            MessageDigest::sha256(),
+                            k.pkey.as_ref()
+                        )?;
+                        signer.update(data.as_ref())?;
+
+                        Ok(Signature::new(Bytes::from(signer.sign_to_vec()?)))
+                    }
+                }
+            }
+        }
+
+
     }
 }
 
@@ -67,22 +111,50 @@ impl Signer for OpenSslSigner {
 
 /// An openssl based RSA key pair
 pub struct OpenSslKeyPair {
-    private: Rsa<Private>
+    pkey: PKey<Private>
 }
 
 impl OpenSslKeyPair {
-    fn new() -> OpenSslKeyPair {
+    fn new() -> Result<OpenSslKeyPair, OpenSslKeyError> {
         // Issues unwrapping this indicate a bug in the openssl library.
         // So, there is no way to recover.
-        let private = Rsa::generate(KEY_SIZE).unwrap();
-        OpenSslKeyPair{ private }
+        let rsa = Rsa::generate(KEY_SIZE)?;
+        let pkey = PKey::from_rsa(rsa)?;
+        Ok(OpenSslKeyPair{ pkey })
     }
 
-    fn subject_public_key_info(&self) -> SubjectPublicKeyInfo {
+    fn subject_public_key_info(&self)
+        -> Result<SubjectPublicKeyInfo, OpenSslKeyError>
+    {
         // Issues unwrapping this indicate a bug in the openssl library.
         // So, there is no way to recover.
-        let mut b = Bytes::from(self.private.public_key_to_der().unwrap());
-        SubjectPublicKeyInfo::decode(&mut b).unwrap()
+        let mut b = Bytes::from(self.pkey.rsa().unwrap().public_key_to_der()?);
+        Ok(SubjectPublicKeyInfo::decode(&mut b)?)
+    }
+}
+
+
+//------------ OpenSslKeyError -----------------------------------------------
+
+#[derive(Debug, Fail)]
+pub enum OpenSslKeyError {
+
+    #[fail(display = "OpenSsl Error: {}", _0)]
+    OpenSslError(ErrorStack),
+
+    #[fail(display = "Could not decode public key info: {}", _0)]
+    DecodeError(decode::Error)
+}
+
+impl From<ErrorStack> for OpenSslKeyError {
+    fn from(e: ErrorStack) -> Self {
+        OpenSslKeyError::OpenSslError(e)
+    }
+}
+
+impl From<decode::Error> for OpenSslKeyError {
+    fn from(e: decode::Error) -> Self {
+        OpenSslKeyError::DecodeError(e)
     }
 }
 
@@ -97,8 +169,8 @@ pub mod tests {
     #[test]
     fn should_return_subject_public_key_info() {
         let mut s = OpenSslSigner::new();
-        let ki = s.create_key().unwrap();
+        let ki = s.create_key(&PublicKeyAlgorithm::RsaEncryption).unwrap();
         s.get_key_info(&ki).unwrap();
-        s.destroy_key(ki).unwrap();
+        s.destroy_key(&ki).unwrap();
     }
 }

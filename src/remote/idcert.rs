@@ -1,19 +1,17 @@
 //! Identity Certificates.
 //!
 
-use std::io;
-use ber::{Captured, Mode, OctetString, Oid, Tag, Unsigned};
+use ber::{Mode, OctetString, Oid, Tag, Unsigned};
 use ber::{decode, encode};
-use ber::encode::{PrimitiveContent, Values};
+use ber::encode::Values;
 use bytes::Bytes;
 use cert::{SubjectPublicKeyInfo, Validity};
 use cert::ext::{BasicCa, SubjectKeyIdentifier};
 use cert::ext::oid;
-use chrono::Duration;
 use signing::SignatureAlgorithm;
 use x509::{Name, SignedData, ValidationError};
 use cert::ext::AuthorityKeyIdentifier;
-use cert::ext::ExtensionContent;
+use ber::encode::Constructed;
 
 
 //------------ IdCert --------------------------------------------------------
@@ -348,55 +346,47 @@ impl IdExtensions {
 ///
 // We have to do this the hard way because some extensions are optional.
 // Therefore we need logic to determine which ones to encode.
-impl encode::Values for IdExtensions {
+impl IdExtensions {
 
-    fn encoded_len(&self, _: Mode) -> usize {
-        encode::total_encoded_len(Tag::SEQUENCE, self.length_of_extensions())
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        Constructed::new(
+            Tag::CTX_3,
+            encode::sequence(
+                (
+                    self.basic_ca.as_ref().map(|s| s.encode()),
+                    self.subject_key_id.encode(),
+                    self.authority_key_id.as_ref().map(|s| s.encode())
+                )
+            )
+        )
     }
 
-    fn write_encoded<W: io::Write>(
-        &self,
-        mode: Mode,
-        target: &mut W
-    ) -> Result<(), io::Error> {
-
-        // RFC 5280, Section 4.1
-        // Extensions  ::=  SEQUENCE SIZE (1..MAX) OF Extension
-        //
-        // Furthermore DER encoding MUST be used
-
-        if mode != Mode::Der {
-            unimplemented!()
-        }
-
-        encode::write_header(
-            target,
-            Tag::SEQUENCE,
-            false,
-            self.length_of_extensions()
-        )?;
-
-        if let Some(ref ca) = self.basic_ca {
-            ca.encode().write_encoded(mode, target)?;
-        }
-
-        if let Some(ref a) = self.authority_key_id {
-            a.encode().write_encoded(mode, target)?;
-        }
-
-        self.subject_key_id.encode().write_encoded(mode, target)
-    }
 }
 
 
 /// # Creating
 ///
 impl IdExtensions {
-    pub fn from_key_infos(
-        _issuer_info: &SubjectPublicKeyInfo,
-        _subject_info: &SubjectPublicKeyInfo
+
+    /// Creates extensions to be used on a self-signed TA IdCert
+    pub fn for_id_ta_cert(key: &SubjectPublicKeyInfo) -> Self {
+        IdExtensions{
+            basic_ca: Some(BasicCa::new(true, true)),
+            subject_key_id: SubjectKeyIdentifier::new(key),
+            authority_key_id: Some(AuthorityKeyIdentifier::new(key))
+        }
+    }
+
+    /// Creates extensions to be used on an EE IdCert in a protocol CMS
+    pub fn for_id_ee_cert(
+        subject_key: &SubjectPublicKeyInfo,
+        authority_key: &SubjectPublicKeyInfo
     ) -> Self {
-        unimplemented!()
+        IdExtensions{
+            basic_ca: None,
+            subject_key_id: SubjectKeyIdentifier::new(subject_key),
+            authority_key_id: Some(AuthorityKeyIdentifier::new(authority_key))
+        }
     }
 }
 
@@ -413,85 +403,7 @@ impl IdExtensions {
             None => None
         }
     }
-
-    fn length_of_extensions(&self) -> usize {
-        let mut l = 0;
-        if let Some(ref b) = self.basic_ca {
-            l = l + b.encode().encoded_len(Mode::Der)
-        }
-        l = l + self.subject_key_id.encode().encoded_len(Mode::Der);
-
-        if let Some(ref a) = self.authority_key_id {
-            l = l + a.encode().encoded_len(Mode::Der)
-        }
-        l
-    }
 }
-
-
-//------------ IdCertSignRequest ---------------------------------------------
-
-/// An IdCertSignRequest to be used with the Signer trait.
-pub struct IdCertSignRequest {
-    data: Captured
-}
-
-impl IdCertSignRequest {
-    /// Creates an IdCertSingRequest to be signed with the Signer trait.
-    ///
-    /// There is some magic here. Since we always use a structure where we
-    /// have one self-signed CA certificate used as identity trust anchors,
-    /// or EE certificates signed directly below this, we can make some
-    /// assumptions and save on method parameters.
-    ///
-    /// If the issuing_key and the subject_key are the same we will assume
-    /// that this is for a self-signed CA (TA even) certificate. So we will
-    /// set the appropriate extensions: basic_ca and subject_key_id, but no
-    /// authority_key_id.
-    ///
-    /// If the issuing_key and the subject_key are different then we will use
-    /// the extensions: subject_key_id and authority_key_id, but no basic_ca.
-    pub fn new(
-        serial_number: u32,
-        duration: Duration,
-        issuing_key: &SubjectPublicKeyInfo,
-        subject_key: &SubjectPublicKeyInfo
-    ) -> Self
-    {
-        let mut v = Vec::new();
-        let w = &mut v;
-        let m = Mode::Der;
-
-        Self::write(serial_number.value(), m, w);
-        Self::write(SignatureAlgorithm::Sha256WithRsaEncryption.encode(), m, w);
-
-        let issuer = Name::from_pub_key(issuing_key);
-        Self::write(issuer.encode(), m, w);
-
-        let val = Validity::from_duration(duration);
-        Self::write(val.encode(), m, w);
-
-        let subject = Name::from_pub_key(subject_key);
-        Self::write(subject.encode(), m, w);
-
-        Self::write(subject_key.encode(), m, w);
-
-        /// Create the right IdExtensions
-        /// and encode it
-
-        unimplemented!()
-    }
-
-    fn write(data: impl Values, mode: Mode, target: &mut impl io::Write) {
-        data.write_encoded(mode, target).unwrap();
-    }
-
-    pub fn get_data(&self) -> &Captured {
-        &self.data
-    }
-
-}
-
 
 
 //------------ Tests ---------------------------------------------------------
@@ -502,6 +414,7 @@ pub mod tests {
 
     use super::*;
     use bytes::Bytes;
+
     use time;
     use chrono::{TimeZone, Utc};
 
@@ -518,5 +431,25 @@ pub mod tests {
             let cert = test_id_certificate();
             assert!(cert.validate_ta().is_ok());
         });
+    }
+
+    #[test]
+    fn should_encode_basic_ca() {
+        let ba = BasicCa::new(true, true);
+        let mut v = Vec::new();
+        ba.encode().write_encoded(Mode::Der, &mut v).unwrap();
+
+        // 48 15            Sequence with length 15
+        //  6 3 85 29 19       OID 2.5.29.19 basicConstraints
+        //  1 1 255              Boolean true
+        //  4 5                OctetString of length 5
+        //     48 3               Sequence with length 3
+        //        1 1 255           Boolean true
+
+        assert_eq!(
+            vec![48, 15, 6, 3, 85, 29, 19, 1, 1, 255, 4, 5, 48, 3, 1, 1, 255 ],
+            v
+        );
+
     }
 }
