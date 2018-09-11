@@ -384,6 +384,12 @@ impl AsId {
     }
 }
 
+impl From<u32> for AsId {
+    fn from(id: u32) -> Self {
+        AsId(id)
+    }
+}
+
 impl ops::Add<u32> for AsId {
     type Output = Self;
 
