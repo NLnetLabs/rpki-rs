@@ -414,13 +414,32 @@ pub struct XmlWriter<W> {
 /// Generate the XML.
 impl <W: io::Write> XmlWriter<W> {
 
+
+    fn unwrap_emitter_error<T>(r: Result<T, writer::Error>) -> Result<T, io::Error> {
+        match r {
+            Ok(t) => Ok(t),
+            Err(e) => {
+                match e {
+                    writer::Error::Io(io) => Err(io),
+                    _ => {
+                        // The other errors can only happen for stuff like
+                        // not closing tags, starting a doc twice etc. But
+                        // the XmlWriter lib already ensures that these things
+                        // do not happen. They are not dependent on input.
+                        panic!("XmlWriter library error: {:?}", e)
+                    }
+                }
+            }
+        }
+    }
+
     /// Adds an element
     pub fn put_element<F>(
         &mut self,
         name: &str,
         attr: Option<&[(&str, &str)]>,
-        op: F) -> Result<(), XmlWriterError>
-    where F: FnOnce(&mut Self) -> Result<(), XmlWriterError> {
+        op: F) -> Result<(), io::Error>
+    where F: FnOnce(&mut Self) -> Result<(), io::Error> {
         let mut start = writer::XmlEvent::start_element(name);
 
         if let Some(v) = attr {
@@ -429,16 +448,20 @@ impl <W: io::Write> XmlWriter<W> {
             }
         }
 
-        self.writer.write(start)?;
+        Self::unwrap_emitter_error(self.writer.write(start))?;
         op(self)?;
-        self.writer.write(writer::XmlEvent::end_element())?;
+        Self::unwrap_emitter_error(
+            self.writer.write(writer::XmlEvent::end_element())
+        )?;
 
         Ok(())
     }
 
     /// Puts some String in a characters element
-    pub fn put_text(&mut self, text: &str) -> Result<(), XmlWriterError> {
-        self.writer.write(writer::XmlEvent::Characters(text))?;
+    pub fn put_text(&mut self, text: &str) -> Result<(), io::Error> {
+        Self::unwrap_emitter_error(
+            self.writer.write(writer::XmlEvent::Characters(text))
+        )?;
         Ok(())
     }
 
@@ -446,13 +469,13 @@ impl <W: io::Write> XmlWriter<W> {
     /// that you cannot have both Characters and other included elements.
     /// This would be valid XML, but it's not used by any of the RPKI XML
     /// structures.
-    pub fn put_blob(&mut self, bytes: &Bytes) -> Result<(), XmlWriterError> {
+    pub fn put_blob(&mut self, bytes: &Bytes) -> Result<(), io::Error> {
         let b64 = base64::encode(bytes);
         self.put_text(b64.as_ref())
     }
 
     /// Use this for convenience where empty content is required
-    pub fn empty(&mut self) -> Result<(), XmlWriterError> {
+    pub fn empty(&mut self) -> Result<(), io::Error> {
         Ok(())
     }
 
@@ -462,8 +485,8 @@ impl <W: io::Write> XmlWriter<W> {
     /// This method is private because one should use the pub encode_vec
     /// method, and in future others like it, to set up the writer for a
     /// specific type (Vec<u8>, File, etc.).
-    fn encode<F>(w: W, op: F) -> Result<(), XmlWriterError>
-    where F: FnOnce(&mut Self) -> Result<(), XmlWriterError> {
+    fn encode<F>(w: W, op: F) -> Result<(), io::Error>
+    where F: FnOnce(&mut Self) -> Result<(), io::Error> {
 
         let writer = EmitterConfig::new()
             .write_document_declaration(false)
@@ -477,44 +500,21 @@ impl <W: io::Write> XmlWriter<W> {
     }
 }
 
-
 impl XmlWriter<()> {
 
     /// Call this to encode XML into a Vec<u8>
     pub fn encode_vec<F>(op: F) -> Vec<u8>
-        where F: FnOnce(&mut XmlWriter<&mut Vec<u8>>) -> Result<(), XmlWriterError> {
+    where F: FnOnce(&mut XmlWriter<&mut Vec<u8>>)
+        -> Result<(), io::Error>
+    {
         let mut b = Vec::new();
-        XmlWriter::encode(&mut b, op).unwrap();
+        XmlWriter::encode(&mut b, op).unwrap(); // IO error impossible for vec
         b
     }
 }
 
 
-//------------ XmlWriterError ------------------------------------------------
-
-#[derive(Debug, Fail)]
-pub enum XmlWriterError {
-    #[fail(display = "I/O Error: {}", _0)]
-    IoError(io::Error),
-
-    #[fail(display = "Writer (emitter) error: {}", _0)]
-    EmitterError(writer::Error),
-}
-
-impl From<io::Error> for XmlWriterError {
-    fn from(e: io::Error) -> XmlWriterError {
-        XmlWriterError::IoError(e)
-    }
-}
-
-impl From<writer::Error> for XmlWriterError {
-    fn from(e: writer::Error) -> XmlWriterError {
-        XmlWriterError::EmitterError(e)
-    }
-}
-
 //------------ Tests ---------------------------------------------------------
-
 
 #[cfg(test)]
 mod tests {

@@ -155,8 +155,9 @@ impl SignedData {
 
     pub fn verify_signature(
         &self,
-        public_key: &[u8]
+        public_key: &SubjectPublicKeyInfo
     ) -> Result<(), ValidationError> {
+        let public_key = public_key.subject_public_key().octet_slice().unwrap();
         ::ring::signature::verify(
             &::ring::signature::RSA_PKCS1_2048_8192_SHA256,
             ::untrusted::Input::from(public_key),
@@ -186,6 +187,10 @@ pub struct Time(DateTime<Utc>);
 impl Time {
     pub fn new(dt: DateTime<Utc>) -> Self {
         Time(dt)
+    }
+
+    pub fn now() -> Self {
+        Self::new(Utc::now())
     }
 
     pub fn take_from<S: decode::Source>(

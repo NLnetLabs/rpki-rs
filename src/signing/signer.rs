@@ -29,11 +29,22 @@ pub trait Signer {
     ) -> Result<(), KeyUseError>;
 
     /// Signs data
-    fn sign<D: AsRef<[u8]>>(
+    fn sign<D: AsRef<[u8]> + ?Sized>(
         &self,
         id: &KeyId,
         data: &D
     ) -> Result<Signature, KeyUseError>;
+
+    /// Signs data using a one time use keypair
+    ///
+    /// Returns both the signature and the public key of the key pair,
+    /// but will not store this key pair.
+    fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+        &self,
+        data: &D
+    ) -> Result<OneOffSignature, KeyUseError>;
+
+
 }
 
 
@@ -47,7 +58,34 @@ impl KeyId {
 }
 
 
-//------------ SignResult ----------------------------------------------------
+//------------ OneOffSignature -----------------------------------------------
+
+pub struct OneOffSignature {
+    key: SubjectPublicKeyInfo,
+    signature: Signature
+}
+
+impl OneOffSignature {
+    pub fn new(key: SubjectPublicKeyInfo, signature: Signature) -> Self {
+        OneOffSignature{key, signature }
+    }
+
+    pub fn get_key_info(&self) -> &SubjectPublicKeyInfo {
+        &self.key
+    }
+
+    pub fn get_signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    // Consumes this and returns the composite values.
+    pub fn into_parts(self) -> (SubjectPublicKeyInfo, Signature) {
+        (self.key, self.signature)
+    }
+}
+
+
+//------------ Signature -----------------------------------------------------
 
 pub struct Signature(Bytes);
 
@@ -56,9 +94,10 @@ impl Signature {
         Signature(bytes)
     }
 
-    pub fn to_bytes(self) -> Bytes {
+    pub fn into_bytes(self) -> Bytes {
         self.0
     }
+
 }
 
 

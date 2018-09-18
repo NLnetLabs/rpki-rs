@@ -17,11 +17,13 @@
 use ber::decode;
 use ber::{Captured, Mode, OctetString, Oid, Tag, Unsigned};
 use super::uri;
-use super::cert::Cert;
 use super::x509::{
     update_once, Name, SignedData, Time, ValidationError
 };
 use super::signing::SignatureAlgorithm;
+use cert::ext::AuthorityKeyIdentifier;
+use cert::SubjectPublicKeyInfo;
+use ber::encode;
 
 
 //------------ Crl -----------------------------------------------------------
@@ -97,18 +99,21 @@ impl Crl {
 
     /// Validates the certificate revocation list.
     ///
-    /// The list’s signature is validated against the certificate provided
-    /// via `issuer`.
-    pub fn validate<C: AsRef<Cert>>(
+    /// The list’s signature is validated against the provided public key.
+    pub fn validate(
         &self,
-        issuer: C
+        public_key: &SubjectPublicKeyInfo
     ) -> Result<(), ValidationError> {
-        self.signed_data.verify_signature(issuer.as_ref().public_key())
+        self.signed_data.verify_signature(public_key)
     }
 
     /// Returns whether the given serial number is on this revocation list.
     pub fn contains(&self, serial: &Unsigned) -> bool {
         self.revoked_certs.contains(serial)
+    }
+
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        self.signed_data.encode()
     }
 }
 
@@ -208,7 +213,8 @@ impl CrlEntry {
 #[derive(Clone, Debug)]
 pub struct Extensions {
     /// Authority Key Identifier
-    authority_key_id: OctetString,
+    // May be omitted in CRLs included in protocol messages.
+    authority_key_id: Option<AuthorityKeyIdentifier>,
 
     /// CRL Number
     crl_number: Unsigned,
@@ -224,12 +230,14 @@ impl Extensions {
             let mut crl_number = None;
             while let Some(()) = cons.take_opt_sequence(|cons| {
                 let id = Oid::take_from(cons)?;
-                let _critical = cons.take_opt_bool()?.unwrap_or(false);
+                let critical = cons.take_opt_bool()?.unwrap_or(false);
                 let value = OctetString::take_from(cons)?;
                 Mode::Der.decode(value.to_source(), |cons| {
                     if id == oid::CE_AUTHORITY_KEY_IDENTIFIER {
-                        Self::take_authority_key_identifier(
-                            cons, &mut authority_key_id
+                        AuthorityKeyIdentifier::take(
+                            cons,
+                            critical,
+                            & mut authority_key_id
                         )
                     }
                     else if id == oid::CE_CRL_NUMBER {
@@ -243,10 +251,6 @@ impl Extensions {
                     }
                 }).map_err(Into::into)
             })? { }
-            let authority_key_id = match authority_key_id {
-                Some(some) => some,
-                None => return Err(decode::Malformed.into())
-            };
             let crl_number = match crl_number {
                 Some(some) => some,
                 None => return Err(decode::Malformed.into())
@@ -255,38 +259,6 @@ impl Extensions {
                 authority_key_id,
                 crl_number
             })
-        })
-    }
-
-    /// Parses the Authority Key Identifier Extension.
-    ///
-    /// Must be present.
-    ///
-    /// ```text
-    /// AuthorityKeyIdentifier ::= SEQUENCE {
-    ///   keyIdentifier             [0] KeyIdentifier           OPTIONAL,
-    ///   authorityCertIssuer       [1] GeneralNames            OPTIONAL,
-    ///   authorityCertSerialNumber [2] CertificateSerialNumber OPTIONAL  }
-    ///
-    /// KeyIdentifier ::= OCTET STRING
-    /// ```
-    ///
-    /// For certificates, only keyIdentifier must be present. Let’s assume
-    /// the same is true for CRLs.
-    fn take_authority_key_identifier<S: decode::Source>(
-        cons: &mut decode::Constructed<S>,
-        authority_key_id: &mut Option<OctetString>
-    ) -> Result<(), S::Err> {
-        update_once(authority_key_id, || {
-            let res = cons.take_sequence(|cons| {
-                cons.take_value_if(Tag::CTX_0, OctetString::take_content_from)
-            })?;
-            if res.len() != 20 {
-                return Err(decode::Malformed.into())
-            }
-            else {
-                Ok(res)
-            }
         })
     }
 
@@ -349,7 +321,7 @@ impl CrlStore {
 
 //------------ OIDs ----------------------------------------------------------
 
-mod oid {
+pub mod oid {
     use ::ber::Oid;
 
     pub const CE_CRL_NUMBER: Oid<&[u8]> = Oid(&[85, 29, 20]);

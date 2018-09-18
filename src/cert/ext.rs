@@ -3,12 +3,14 @@
 use ber::{BitString, Captured, Mode, OctetString, Oid, Tag};
 use ber::{decode, encode};
 use ber::encode::PrimitiveContent;
+use crl;
 use bytes::Bytes;
 use ipres::IpResources;
 use asres::AsResources;
 use x509::update_once;
 use uri;
 use cert::SubjectPublicKeyInfo;
+use ber::Unsigned;
 
 
 //------------ Encoding ------------------------------------------------------
@@ -114,21 +116,51 @@ impl BasicCa {
 }
 
 
+//------------ KeyIdentifier -------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct KeyIdentifier(OctetString);
+
+impl KeyIdentifier {
+    pub fn new(key_info: &SubjectPublicKeyInfo) -> Self {
+        let ki = key_info.key_identifier();
+        let b = Bytes::from(ki.as_ref());
+        KeyIdentifier(OctetString::new(b))
+    }
+
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        self.0.encode()
+    }
+
+    pub fn encode_as<'a>(&'a self, tag: Tag) -> impl encode::Values + 'a {
+        self.0.encode_as(tag)
+    }
+
+    pub fn key_id(&self) -> &OctetString {
+        &self.0
+    }
+}
+
+impl From<OctetString> for KeyIdentifier {
+    fn from(o: OctetString) -> Self {
+        KeyIdentifier(o)
+    }
+}
+
+
+
 //------------ SubjectKeyIdentifier ------------------------------------------
 
 #[derive(Clone, Debug)]
 pub struct SubjectKeyIdentifier {
-    subject_key_id: OctetString
+    subject_key_id: KeyIdentifier
 }
 
 /// # Creating
 ///
 impl SubjectKeyIdentifier {
     pub fn new(key_info: &SubjectPublicKeyInfo) -> Self {
-        let ki = key_info.key_identifier();
-        let b = Bytes::from(ki.as_ref());
-
-        Self{subject_key_id: OctetString::new(b)}
+        Self{subject_key_id: KeyIdentifier::new(key_info)}
     }
 }
 
@@ -161,7 +193,7 @@ impl SubjectKeyIdentifier {
                 xerr!(Err(decode::Malformed.into()))
             }
             else {
-                Ok(Self{subject_key_id} )
+                Ok(Self{subject_key_id: subject_key_id.into()} )
             }
         })
     }
@@ -171,7 +203,7 @@ impl SubjectKeyIdentifier {
 ///
 impl SubjectKeyIdentifier {
     pub fn subject_key_id(&self) -> &OctetString {
-        &self.subject_key_id
+        self.subject_key_id.key_id()
     }
 }
 
@@ -398,8 +430,55 @@ impl CertificatePolicies {
 }
 
 
+//------------ CrlNumber -----------------------------------------------------
+
+/// This extension is used in CRLs.
+#[derive(Clone, Debug)]
+pub struct CrlNumber {
+    number: Unsigned
+}
+
+/// # Create
+impl CrlNumber {
+    pub fn new(number: u32) -> Self { CrlNumber{ number: number.into() } }
+}
+
+/// # Decoding
+impl CrlNumber {
+    /// Parses the CRL Number Extension.
+    ///
+    /// Must be present
+    ///
+    /// ```text
+    /// CRLNumber ::= INTEGER (0..MAX)
+    /// ```
+    pub fn take<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+        _critical: bool,
+        crl_number: &mut Option<Self>
+    ) -> Result<(), S::Err> {
+        update_once(crl_number, || {
+            Ok(CrlNumber { number: Unsigned::take_from(cons)? })
+        })
+    }
+}
+
+/// # Encoding
+impl CrlNumber {
+    pub fn encode<'a>(& 'a self) -> impl encode::Values + 'a {
+        encode::sequence(
+            (
+                crl::oid::CE_CRL_NUMBER.encode(),
+                OctetString::encode_into_der(self.number.value())
+            )
+        )
+    }
+}
+
+
 //------------ Extensions ----------------------------------------------------
 
+/// Extensions used in RPKI Certificates.
 #[derive(Clone, Debug)]
 pub struct Extensions {
     /// Basic Contraints.
@@ -745,7 +824,7 @@ impl Extensions {
     }
 
     pub fn subject_key_id(&self) -> &OctetString {
-        &self.subject_key_id.subject_key_id
+        &self.subject_key_id.subject_key_id()
     }
 
     pub fn crl_distribution(&self) -> Option<&UriGeneralNames> {

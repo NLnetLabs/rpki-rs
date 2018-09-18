@@ -167,10 +167,7 @@ impl IdCert {
         }
 
         // Verify that this is self signed
-        self.signed_data.verify_signature(
-            self.subject_public_key_info
-                .subject_public_key().octet_slice().unwrap()
-        )?;
+        self.signed_data.verify_signature(&self.subject_public_key_info)?;
 
         Ok(self)
     }
@@ -266,7 +263,7 @@ impl IdCert {
         &self,
         issuer: &IdCert
     ) -> Result<(), ValidationError> {
-        self.signed_data.verify_signature(issuer.public_key())
+        self.signed_data.verify_signature(issuer.subject_public_key_info())
     }
 }
 
@@ -380,12 +377,12 @@ impl IdExtensions {
     /// Creates extensions to be used on an EE IdCert in a protocol CMS
     pub fn for_id_ee_cert(
         subject_key: &SubjectPublicKeyInfo,
-        authority_key: &SubjectPublicKeyInfo
+        issuing_key: &SubjectPublicKeyInfo
     ) -> Self {
         IdExtensions{
             basic_ca: None,
             subject_key_id: SubjectKeyIdentifier::new(subject_key),
-            authority_key_id: Some(AuthorityKeyIdentifier::new(authority_key))
+            authority_key_id: Some(AuthorityKeyIdentifier::new(issuing_key))
         }
     }
 }

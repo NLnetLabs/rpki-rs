@@ -9,7 +9,6 @@ use publication::pubmsg::MessageError;
 use remote::xml::XmlReader;
 use remote::xml::Attributes;
 use remote::xml::XmlWriter;
-use remote::xml::XmlWriterError;
 
 
 //------------ ListQuery -----------------------------------------------------
@@ -27,8 +26,8 @@ impl ListQuery {
         Ok(ListQuery)
     }
 
-    pub fn encode_vec<W: io::Write>(&self, w: &mut XmlWriter<W>)
-        -> Result<(), XmlWriterError> {
+    pub fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
+        -> Result<(), io::Error> {
 
         w.put_element(
             "list",
@@ -117,11 +116,11 @@ impl PublishQuery {
     /// Encodes an existing multi-element PublishQuery to XML.
     /// Note that a PublishQuery should be encoded through the
     /// PublicationMessage::encode function.
-    pub fn encode_vec<W: io::Write>(&self, w: &mut XmlWriter<W>)
-        -> Result<(), XmlWriterError> {
+    pub fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
+        -> Result<(), io::Error> {
 
         for e in &self.elements {
-            e.encode_vec(w)?;
+            e.encode(w)?;
         }
         Ok(())
     }
@@ -158,13 +157,13 @@ impl PublishElement {
         })
     }
 
-    pub fn encode_vec<W: io::Write>(&self, w: &mut XmlWriter<W>)
-        -> Result<(), XmlWriterError> {
+    pub fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
+        -> Result<(), io::Error> {
 
         match self {
-            PublishElement::Publish(p)   => { p.encode_vec(w)?; },
-            PublishElement::Update(u)    => { u.encode_vec(w)?; },
-            PublishElement::Withdraw(wi) => { wi.encode_vec(w)?; }
+            PublishElement::Publish(p)   => { p.encode(w)?; },
+            PublishElement::Update(u)    => { u.encode(w)?; },
+            PublishElement::Withdraw(wi) => { wi.encode(w)?; }
         }
         Ok(())
     }
@@ -186,8 +185,8 @@ pub struct Update {
 
 impl Update {
 
-    fn encode_vec<W: io::Write>(&self, w: &mut XmlWriter<W>)
-        -> Result<(), XmlWriterError> {
+    fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
+        -> Result<(), io::Error> {
 
         let uri = self.uri.to_string();
         let enc = hex::encode(&self.hash);
@@ -223,8 +222,8 @@ pub struct Publish {
 
 impl Publish {
 
-    fn encode_vec<W: io::Write>(&self, w: &mut XmlWriter<W>)
-        -> Result<(), XmlWriterError> {
+    fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
+        -> Result<(), io::Error> {
 
         let uri =  self.uri.to_string();
 
@@ -257,8 +256,8 @@ pub struct Withdraw {
 
 impl Withdraw {
 
-    fn encode_vec<W: io::Write>(&self, w: &mut XmlWriter<W>)
-        -> Result<(), XmlWriterError> {
+    fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
+        -> Result<(), io::Error> {
 
         let uri =  self.uri.to_string();
         let enc = hex::encode(self.hash.clone());

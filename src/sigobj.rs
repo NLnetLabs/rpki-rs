@@ -247,6 +247,18 @@ impl SignerInfo {
         cons.take_set(Self::take_from)
     }
 
+    /// Parses a SignerInfo.
+    ///
+    /// ```text
+    /// SignerInfo ::= SEQUENCE {
+    ///     version CMSVersion,
+    ///     sid SignerIdentifier,
+    ///     digestAlgorithm DigestAlgorithmIdentifier,
+    ///     signedAttrs [0] IMPLICIT SignedAttributes OPTIONAL,
+    ///     signatureAlgorithm SignatureAlgorithmIdentifier,
+    ///     signature SignatureValue,
+    ///     unsignedAttrs [1] IMPLICIT UnsignedAttributes OPTIONAL }
+    /// ```
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
@@ -282,6 +294,24 @@ pub struct SignedAttributes {
 }
 
 impl SignedAttributes {
+    /// Parses Signed Attributes.
+    ///
+    /// ```text
+    /// This appears in the SignerInfo as:
+    ///    signedAttrs [0] IMPLICIT SignedAttributes OPTIONAL,
+    ///
+    /// Where:
+    ///
+    ///         SignedAttributes ::= SET SIZE (1..MAX) OF Attribute
+    ///
+    ///         Attribute ::= SEQUENCE {
+    ///           attrType OBJECT IDENTIFIER,
+    ///           attrValues SET OF AttributeValue }
+    ///
+    ///         AttributeValue ::= ANY
+    ///
+    /// See section 2.1.6.4 of RFC 6488 for specifications.
+    /// ```
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
@@ -401,6 +431,8 @@ pub mod oid {
         = Oid(&[42, 134, 72, 134, 247, 13, 1, 7, 2]);
     pub const CONTENT_TYPE: Oid<&[u8]>
         = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 3]);
+    pub const PROTOCOL_CONTENT_TYPE: Oid<&[u8]>
+        = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 16, 1, 28]);
     pub const MESSAGE_DIGEST: Oid<&[u8]>
         = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 4]);
     pub const SIGNING_TIME: Oid<&[u8]>

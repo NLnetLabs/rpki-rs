@@ -216,8 +216,7 @@ impl Cert {
         )?;
 
         self.signed_data.verify_signature(
-            self.subject_public_key_info
-                .subject_public_key.octet_slice().unwrap()
+            &self.subject_public_key_info
         )?;
 
         Ok(ResourceCert {
@@ -409,7 +408,7 @@ impl Cert {
         &self,
         issuer: &ResourceCert
     ) -> Result<(), ValidationError> {
-        self.signed_data.verify_signature(issuer.cert.public_key())
+        self.signed_data.verify_signature(issuer.cert.subject_public_key_info())
     }
 
     /// Validates and extracts the IP and AS resources.
@@ -515,7 +514,7 @@ impl Validity {
     }
 
     pub fn from_duration(duration: ::chrono::Duration) -> Self {
-        let not_before = Time::new(Utc::now());
+        let not_before = Time::now();
         let not_after = Time::new(Utc::now() + duration);
 
         Validity { not_before, not_after }

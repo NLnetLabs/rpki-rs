@@ -8,7 +8,7 @@ use bytes::Bytes;
 use hex;
 use uri;
 use publication::pubmsg::MessageError;
-use remote::xml::{XmlReader, XmlWriter, XmlWriterError};
+use remote::xml::{XmlReader, XmlWriter};
 use publication::query::PublishElement;
 
 /// This type represents the success reply as described in
@@ -24,8 +24,8 @@ impl SuccessReply {
         Ok(SuccessReply)
     }
 
-    pub fn encode_vec<W: io::Write>(&self, w: &mut XmlWriter<W>)
-        -> Result<(), XmlWriterError> {
+    pub fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
+        -> Result<(), io::Error> {
 
         w.put_element(
             "success",
@@ -83,8 +83,8 @@ impl ListReply {
         Ok(ListReply{elements})
     }
 
-    pub fn encode_vec<W: io::Write>(&self, w: &mut XmlWriter<W>)
-        -> Result<(), XmlWriterError> {
+    pub fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
+        -> Result<(), io::Error> {
 
         for l in &self.elements {
             let hash = hex::encode(&l.hash);
@@ -192,8 +192,8 @@ impl ErrorReply {
         Ok(ErrorReply{errors})
     }
 
-    pub fn encode_vec<W: io::Write>(&self, w: &mut XmlWriter<W>)
-        -> Result<(), XmlWriterError> {
+    pub fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
+        -> Result<(), io::Error> {
 
         for e in &self.errors {
 
@@ -225,7 +225,7 @@ impl ErrorReply {
                             w.put_element(
                                 "failed_pdu",
                                 None,
-                                |w| { p.encode_vec(w) }
+                                |w| { p.encode(w) }
                             )?;
                         }
                     }

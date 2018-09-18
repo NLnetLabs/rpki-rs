@@ -2,9 +2,10 @@
 //! messages.
 
 use ber::decode;
-use ber::{Captured, Mode, Oid, Tag};
+use ber::{Mode, Oid, Tag};
 use ber::ostring::OctetString;
 use bytes::Bytes;
+use crl::Crl;
 use ring::digest;
 use untrusted::Input;
 
@@ -25,7 +26,8 @@ use signing::DigestAlgorithm;
 pub struct SignedMessage {
     content_type: Oid<Bytes>,
     content: OctetString,
-    idcert: IdCert,
+    id_cert: IdCert,
+    crl: Crl,
     signer_info: SignerInfo,
 }
 
@@ -42,7 +44,8 @@ impl SignedMessage {
 
 }
 
-/// Cms parsing
+/// # Parsing
+///
 impl SignedMessage {
 
     pub fn take_from<S: decode::Source>(
@@ -62,12 +65,22 @@ impl SignedMessage {
             DigestAlgorithm::skip_set(cons)?; // digestAlgorithms
             let (content_type, content)
             = SignedObject::take_encap_content_info(cons)?;
-            let idcert = Self::take_certificates(cons)?;
-            let _crl_bytes = Self::take_crls(cons)?;
+
+            if content_type != oid::PROTOCOL_CONTENT_TYPE {
+                return xerr!(Err(decode::Malformed.into()))
+            }
+
+            let id_cert = Self::take_certificates(cons)?;
+            let crl = Self::take_crls(cons)?;
+
             let signer_info = cons.take_set(SignerInfo::take_from)?;
 
             Ok(SignedMessage {
-                content_type, content, idcert, signer_info
+                content_type,
+                content,
+                id_cert,
+                crl,
+                signer_info
             })
         })
     }
@@ -90,21 +103,16 @@ impl SignedMessage {
 
     fn take_crls<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Captured, S::Err> {
+    ) -> Result<Crl, S::Err> {
         cons.take_constructed_if(Tag::CTX_1, |cons| {
-            // XXX: To do: capture the CRL so we can check that there is no
-            //             no regression, and someone is doing a replay attack
-            //             using a multi-use EE keypair that is now revoked.
-            //
-            //             or? Get the WG to mandate single-use EE, and
-            //             drop these CRLs altogether?
-            cons.capture_all()
+            Crl::take_from(cons)
         })
     }
 }
 
 
-/// Cms validation
+/// # Validation
+///
 impl SignedMessage {
 
     /// Validates the signed object.
@@ -119,7 +127,7 @@ impl SignedMessage {
         issuer: &IdCert
     ) -> Result<IdCert, ValidationError> {
         self.verify_signature()?;
-        self.idcert.validate_ee(issuer)
+        self.id_cert.validate_ee(issuer)
     }
 
     /// Verifies the signature of the object against contained certificate.
@@ -137,7 +145,7 @@ impl SignedMessage {
         let msg = self.signer_info.signed_attrs().encode_verify();
         ::ring::signature::verify(
             &::ring::signature::RSA_PKCS1_2048_8192_SHA256,
-            Input::from(self.idcert.public_key().as_ref()),
+            Input::from(self.id_cert.public_key().as_ref()),
             Input::from(&msg),
             Input::from(self.signer_info.signature_value().to_bytes().as_ref())
         ).map_err(|_| ValidationError)

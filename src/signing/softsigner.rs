@@ -22,9 +22,11 @@ use signing::signer::{
     Signer};
 use openssl::rsa::Rsa;
 use openssl::pkey::PKey;
+use openssl::pkey::PKeyRef;
 use openssl::hash::MessageDigest;
 use openssl::error::ErrorStack;
 use openssl::pkey::Private;
+use signing::signer::OneOffSignature;
 
 
 //------------ OpenSslSigner -------------------------------------------------
@@ -40,6 +42,24 @@ impl OpenSslSigner {
     pub fn new() -> OpenSslSigner {
         OpenSslSigner {keys: HashMap::new()}
     }
+}
+
+impl OpenSslSigner {
+
+    fn sign_with_key<D: AsRef<[u8]> + ?Sized>(
+        pkey: &PKeyRef<Private>,
+        data: &D
+    ) -> Result<Signature, KeyUseError>
+    {
+        let mut signer = ::openssl::sign::Signer::new(
+            MessageDigest::sha256(),
+            pkey
+        )?;
+        signer.update(data.as_ref())?;
+
+        Ok(Signature::new(Bytes::from(signer.sign_to_vec()?)))
+    }
+
 }
 
 impl Signer for OpenSslSigner {
@@ -79,7 +99,7 @@ impl Signer for OpenSslSigner {
         }
     }
 
-    fn sign<D: AsRef<[u8]>>(
+    fn sign<D: AsRef<[u8]> + ?Sized>(
         &self,
         id: &KeyId,
         data: &D
@@ -90,19 +110,27 @@ impl Signer for OpenSslSigner {
             Some(k) => {
                 match self.get_key_info(id)?.algorithm() {
                     PublicKeyAlgorithm::RsaEncryption => {
-                        let mut signer = ::openssl::sign::Signer::new(
-                            MessageDigest::sha256(),
-                            k.pkey.as_ref()
-                        )?;
-                        signer.update(data.as_ref())?;
-
-                        Ok(Signature::new(Bytes::from(signer.sign_to_vec()?)))
+                        Self::sign_with_key(k.pkey.as_ref(), data)
                     }
                 }
             }
         }
+    }
 
+    fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+        &self,
+        data: &D
+    ) -> Result<OneOffSignature, KeyUseError> {
+        let kp = OpenSslKeyPair::new()?;
 
+        let signature = Self::sign_with_key(
+            kp.pkey.as_ref(),
+            data
+        )?;
+
+        let key = kp.subject_public_key_info()?;
+
+        Ok(OneOffSignature::new(key, signature))
     }
 }
 

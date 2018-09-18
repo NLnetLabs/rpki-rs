@@ -6,7 +6,7 @@ use publication::query::{ListQuery, PublishQuery};
 use publication::reply::{ListReply, SuccessReply};
 use remote::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 use publication::reply::ErrorReply;
-use remote::xml::XmlWriterError;
+use bytes::Bytes;
 
 pub const VERSION: &'static str = "4";
 pub const NS: &'static str = "http://www.hactrn.net/uris/rpki/publication-spec/";
@@ -21,8 +21,9 @@ pub enum QueryMessage {
     ListQuery(ListQuery)
 }
 
+/// # Decoding and Encoding
+///
 impl QueryMessage {
-
     fn decode<R>(r: &mut XmlReader<R>) -> Result<Self, MessageError>
         where R: io::Read {
         match r.next_start_name() {
@@ -39,18 +40,24 @@ impl QueryMessage {
         }
     }
 
-    pub fn encode_vec<W: io::Write>(&self, w: &mut XmlWriter<W>)
-        -> Result<(), XmlWriterError> {
+    pub fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
+        -> Result<(), io::Error> {
 
         match self {
-            QueryMessage::PublishQuery(q) => { q.encode_vec(w)?; }
-            QueryMessage::ListQuery(l)    => { l.encode_vec(w)?; }
+            QueryMessage::PublishQuery(q) => { q.encode(w)?; }
+            QueryMessage::ListQuery(l)    => { l.encode(w)?; }
         }
         Ok(())
     }
-
 }
 
+/// # Create
+///
+impl QueryMessage {
+    pub fn new() -> Self {
+        QueryMessage::ListQuery(ListQuery)
+    }
+}
 
 //------------ ReplyMessage --------------------------------------------------
 
@@ -62,8 +69,9 @@ pub enum ReplyMessage {
     ErrorReply(ErrorReply)
 }
 
+/// # Decoding and Encoding
+///
 impl ReplyMessage {
-
     fn decode<R>(r: &mut XmlReader<R>) -> Result<Self, MessageError>
         where R: io::Read {
         match r.next_start_name() {
@@ -81,13 +89,13 @@ impl ReplyMessage {
         }
     }
 
-    pub fn encode_vec<W: io::Write>(&self, w: &mut XmlWriter<W>)
-        -> Result<(), XmlWriterError> {
+    pub fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
+        -> Result<(), io::Error> {
 
         match self {
-            ReplyMessage::SuccessReply(s) => { s.encode_vec(w)?; }
-            ReplyMessage::ListReply(l)    => { l.encode_vec(w)?; }
-            ReplyMessage::ErrorReply(e)   => { e.encode_vec(w)?; }
+            ReplyMessage::SuccessReply(s) => { s.encode(w)?; }
+            ReplyMessage::ListReply(l)    => { l.encode(w)?; }
+            ReplyMessage::ErrorReply(e)   => { e.encode(w)?; }
         }
         Ok(())
     }
@@ -104,7 +112,14 @@ pub enum Message {
     ReplyMessage(ReplyMessage)
 }
 
+/// # Decoding and Encoding
+///
 impl Message {
+
+    // XXX TODO: Make builders for this, for now just one message type for testing.
+    pub fn new() -> Self {
+        Message::QueryMessage(QueryMessage::new())
+    }
 
     /// Decodes an XML structure
     pub fn decode<R>(reader: R) -> Result<Self, MessageError>
@@ -135,33 +150,42 @@ impl Message {
         })
     }
 
+    pub fn encode<W: io::Write>(&self, target: &mut XmlWriter<W>)
+        -> Result<(), io::Error> {
+
+        let msg_type = match self {
+            Message::QueryMessage(_) => "query",
+            Message::ReplyMessage(_) => "reply"
+        };
+        let a = [
+            ("xmlns", NS),
+            ("version", VERSION),
+            ("type", msg_type),
+        ];
+
+        target.put_element(
+            "msg",
+            Some(&a),
+            |w| {
+                match self {
+                    Message::ReplyMessage(r) => { r.encode(w) }
+                    Message::QueryMessage(q) => { q.encode(w) }
+                }
+            }
+        )
+    }
+
     /// Encodes to a Vec
     pub fn encode_vec(&self) -> Vec<u8> {
         XmlWriter::encode_vec(|w| {
-
-            let msg_type = match self {
-                Message::QueryMessage(_) => "query",
-                Message::ReplyMessage(_) => "reply"
-            };
-            let a = [
-                ("xmlns", NS),
-                ("version", VERSION),
-                ("type", msg_type),
-            ];
-
-            w.put_element(
-                "msg",
-                Some(&a),
-                |w| {
-                    match self {
-                        Message::ReplyMessage(r) => { r.encode_vec(w) }
-                        Message::QueryMessage(q) => { q.encode_vec(w) }
-                    }
-                }
-            )
+            self.encode(w)
         })
     }
 
+    /// Consumes the message and turns it into bytes
+    pub fn into_bytes(self) -> Bytes {
+        Bytes::from(self.encode_vec())
+    }
 }
 
 //------------ PublicationMessageError ---------------------------------------
