@@ -116,9 +116,14 @@ pub enum Message {
 ///
 impl Message {
 
-    // XXX TODO: Make builders for this, for now just one message type for testing.
-    pub fn new() -> Self {
-        Message::QueryMessage(QueryMessage::new())
+    /// Creates a message for queries.
+    pub fn new_query(q: QueryMessage) -> Self {
+        Message::QueryMessage(q)
+    }
+
+    /// Creates a message for replies.
+    pub fn new_reply(r: ReplyMessage) -> Self {
+        Message::ReplyMessage(r)
     }
 
     /// Decodes an XML structure

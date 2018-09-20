@@ -9,6 +9,9 @@ use publication::pubmsg::MessageError;
 use remote::xml::XmlReader;
 use remote::xml::Attributes;
 use remote::xml::XmlWriter;
+use publication::pubmsg::Message;
+use publication::pubmsg::QueryMessage;
+use ring::digest;
 
 
 //------------ ListQuery -----------------------------------------------------
@@ -19,16 +22,14 @@ use remote::xml::XmlWriter;
 pub struct ListQuery;
 
 impl ListQuery {
-
     pub fn decode<R: io::Read>(r: &mut XmlReader<R>)
         -> Result<Self, MessageError> {
-        r.take_named_element("list", |_, r| { r.take_empty()})?;
+        r.take_named_element("list", |_, r| { r.take_empty() })?;
         Ok(ListQuery)
     }
 
     pub fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
         -> Result<(), io::Error> {
-
         w.put_element(
             "list",
             None,
@@ -38,6 +39,13 @@ impl ListQuery {
         Ok(())
     }
 
+    /// Creates a ListQuery inside a full Message enum type.
+    ///
+    /// The `Message` type is used because it's this outer type that needs
+    /// to be encoded and included in protocol messages.
+    pub fn new_message() -> Message {
+        Message::QueryMessage(QueryMessage::ListQuery(ListQuery))
+    }
 }
 
 
@@ -206,6 +214,12 @@ impl Update {
             }
         )
     }
+
+    pub fn publish(old: &Bytes, new: &Bytes, uri: uri::Rsync) -> PublishElement {
+        let tag  = hex::encode(hash(new));
+        let hash = hash(old);
+        PublishElement::Update(Update { hash, tag, uri, object: new.clone() })
+    }
 }
 
 
@@ -239,6 +253,12 @@ impl Publish {
                 w.put_blob(&self.object)
             }
         )
+    }
+
+    pub fn publish(object: &Bytes, uri: uri::Rsync) -> PublishElement {
+        let hash = hash(object);
+        let tag  = hex::encode(&hash);
+        PublishElement::Publish(Publish { tag, uri, object: object.clone() })
     }
 }
 
@@ -276,9 +296,94 @@ impl Withdraw {
             }
         )
     }
+
+    pub fn publish(object: &Bytes, uri: uri::Rsync) -> PublishElement {
+        let hash = hash(object);
+        let tag  = hex::encode(&hash);
+        PublishElement::Withdraw(Withdraw { hash, tag, uri })
+    }
+
+}
+
+fn hash(object: &Bytes) -> Bytes {
+    Bytes::from(digest::digest(
+        &digest::SHA256,
+        object.as_ref()
+    ).as_ref())
+}
+
+
+pub struct PublishQueryBuilder {
+    elements: Vec<PublishElement>
+}
+
+impl PublishQueryBuilder {
+    pub fn add(&mut self, e: PublishElement) {
+        self.elements.push(e)
+    }
+
+    pub fn new() -> Self {
+        PublishQueryBuilder { elements: Vec::new() }
+    }
+
+    pub fn with_capacity(n: usize) -> Self {
+        PublishQueryBuilder { elements: Vec::with_capacity(n)}
+    }
+
+    pub fn build(self) -> QueryMessage {
+        QueryMessage::PublishQuery(PublishQuery { elements: self.elements })
+    }
 }
 
 
 
+
+//------------ Tests ---------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use std::str;
+    use uri::Rsync;
+
+    fn rsync_uri(s: &str) -> Rsync {
+        Rsync::from_str(s).unwrap()
+    }
+
+
+    #[test]
+    fn should_create_list_query() {
+        match ListQuery::new_message() {
+            Message::QueryMessage(QueryMessage::ListQuery(_)) => {
+                // ListQuery has no content, nothing to check here.
+            }
+            _ => panic!("Got the wrong return value")
+        }
+    }
+
+    #[test]
+    fn should_create_publish_query() {
+        let object = Bytes::from_static(include_bytes!("../../test/remote/cms-ta.cer"));
+        let object2 = Bytes::from_static(include_bytes!("../../test/remote/pdu.200.der"));
+        let w = Withdraw::publish(&object, rsync_uri("rsync://host/path/cms-ta.cer"));
+        let p = Publish::publish(&object, rsync_uri("rsync://host/path/cms-ta.cer"));
+        let u = Update::publish(&object, &object2, rsync_uri("rsync://host/path/cms-ta.cer"));
+
+        let mut b = PublishQueryBuilder::with_capacity(3);
+        b.add(w);
+        b.add(p);
+        b.add(u);
+        let pq = b.build();
+        let m = Message::new_query(pq);
+        let vec = m.encode_vec();
+        let produced_xml = str::from_utf8(&vec).unwrap();
+        let expected_xml = include_str!("../../test/publication/generated/publish-builder-result.xml");
+
+        assert_eq!(produced_xml, expected_xml);
+    }
+
+
+}
 
 
