@@ -429,24 +429,4 @@ pub mod tests {
             assert!(cert.validate_ta().is_ok());
         });
     }
-
-    #[test]
-    fn should_encode_basic_ca() {
-        let ba = BasicCa::new(true, true);
-        let mut v = Vec::new();
-        ba.encode().write_encoded(Mode::Der, &mut v).unwrap();
-
-        // 48 15            Sequence with length 15
-        //  6 3 85 29 19       OID 2.5.29.19 basicConstraints
-        //  1 1 255              Boolean true
-        //  4 5                OctetString of length 5
-        //     48 3               Sequence with length 3
-        //        1 1 255           Boolean true
-
-        assert_eq!(
-            vec![48, 15, 6, 3, 85, 29, 19, 1, 1, 255, 4, 5, 48, 3, 1, 1, 255 ],
-            v
-        );
-
-    }
 }
