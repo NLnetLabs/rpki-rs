@@ -155,6 +155,8 @@ impl ListReplyBuilder {
         self.elements.push(e);
     }
 
+    /// Creates a ListReply wrapped in a Message for inclusion in a publication
+    /// protocol CMS message.
     pub fn build_message(self) -> Message {
         Message::ReplyMessage(
             ReplyMessage::ListReply(
@@ -177,7 +179,6 @@ pub struct ErrorReply {
 }
 
 impl ErrorReply {
-
     fn decode_error_text<R: io::Read>(r: &mut XmlReader<R>)
         -> Result<Option<String>, MessageError> {
 
@@ -208,6 +209,7 @@ impl ErrorReply {
         )?))
     }
 
+    /// Decodes XML into an ErrorReport.
     pub fn decode<R: io::Read>(r: &mut XmlReader<R>)
         -> Result<Self, MessageError> {
 
@@ -257,6 +259,7 @@ impl ErrorReply {
         Ok(ErrorReply{errors})
     }
 
+    /// Encodes an ErrorReport into XML.
     pub fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
         -> Result<(), io::Error> {
 
@@ -302,9 +305,54 @@ impl ErrorReply {
 
         Ok(())
     }
-
 }
 
+impl ErrorReply {
+    /// Creates an ErrorReplyBuilder, to which ErrorReply-s can be added.
+    pub fn build() -> ErrorReplyBuilder {
+        ErrorReplyBuilder::new()
+    }
+
+    /// Creates an ErrorReplyBuilder, to which an expect number of ErrorReply-s
+    /// can be added. More, or less elements can be added, but suggesting the
+    /// right capacity will make things more efficient as vec growth is
+    /// avoided.
+    pub fn build_with_capacity(n: usize) -> ErrorReplyBuilder {
+        ErrorReplyBuilder::with_capacity(n)
+    }
+}
+
+
+//------------ ErrorReplyBuilder ---------------------------------------------
+
+pub struct ErrorReplyBuilder {
+    errors: Vec<ReportError>
+}
+
+impl ErrorReplyBuilder {
+    fn new() -> Self {
+        ErrorReplyBuilder { errors: Vec::new() }
+    }
+
+    fn with_capacity(n: usize) -> Self {
+        ErrorReplyBuilder { errors: Vec::with_capacity(n) }
+    }
+
+    /// Adds a ReportError to the ErrorReply. Multiple allowed.
+    pub fn add(&mut self, e: ReportError) {
+        self.errors.push(e);
+    }
+
+    /// Creates an ErrorReply wrapped in a Message for inclusion in a publication
+    /// protocol CMS message.
+    pub fn build_message(self) -> Message {
+        Message::ReplyMessage(
+            ReplyMessage::ErrorReply(
+                ErrorReply { errors: self.errors }
+            )
+        )
+    }
+}
 
 //------------ ReportError ---------------------------------------------------
 
@@ -314,6 +362,29 @@ pub struct ReportError {
     tag: String,
     error_text: Option<String>,
     failed_pdu: Option<PublishElement>
+}
+
+impl ReportError {
+    /// Creates an entry to include in an ErrorReply. Multiple entries may be
+    /// included.
+    pub fn reply(
+        error_code: ReportErrorCode,
+        failed_pdu: Option<PublishElement>
+    ) -> Self {
+        let tag = match failed_pdu {
+            None => "".to_string(),
+            Some(ref pdu) => match pdu {
+                PublishElement::Publish(p)  => p.tag().clone(),
+                PublishElement::Update(u)   => u.tag().clone(),
+                PublishElement::Withdraw(w) => w.tag().clone()
+            }
+        };
+        let error_text = Some(error_code.to_text());
+
+        ReportError {
+            error_code, tag, error_text, failed_pdu
+        }
+    }
 }
 
 
@@ -350,6 +421,7 @@ pub enum ReportErrorCode {
 
 impl ReportErrorCode {
 
+    /// Resolves the error type strings used in XML to the correct types.
     fn from_str(v: &str) -> Result<ReportErrorCode, MessageError> {
         match v {
             "xml_error" => Ok(ReportErrorCode::XmlError),
@@ -364,6 +436,7 @@ impl ReportErrorCode {
         }
     }
 
+    /// Provides default texts for error codes.
     #[allow(dead_code)]
     fn to_text(&self) -> String {
         match self {
@@ -388,6 +461,7 @@ mod tests {
     use super::*;
     use std::str;
     use uri::Rsync;
+    use publication::query::Publish;
 
     fn rsync_uri(s: &str) -> Rsync {
         Rsync::from_str(s).unwrap()
@@ -418,6 +492,26 @@ mod tests {
 
         assert_eq!(produced_xml, expected_xml);
     }
+
+    #[test]
+    fn should_create_error_reply() {
+        let object = Bytes::from_static(include_bytes!("../../test/remote/cms_ta.cer"));
+        let error_pdu = Publish::publish(&object, rsync_uri("rsync://host/path/cms-ta.cer"));
+
+        let mut b = ErrorReply::build_with_capacity(2);
+        b.add(ReportError::reply(ReportErrorCode::ObjectAlreadyPresent, Some(error_pdu)));
+        b.add(ReportError::reply(ReportErrorCode::OtherError, None));
+        let m = b.build_message();
+
+        let v = m.encode_vec();
+        let produced_xml = str::from_utf8(&v).unwrap();
+        let expected_xml = include_str!("../../test/publication/generated/error_reply_result.xml");
+
+        assert_eq!(produced_xml, expected_xml);
+    }
+
+
+
 
 
 

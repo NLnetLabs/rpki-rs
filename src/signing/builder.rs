@@ -653,6 +653,7 @@ pub mod tests {
     use signing::softsigner::OpenSslSigner;
     use signing::PublicKeyAlgorithm;
     use remote::sigmsg::SignedMessage;
+    use publication::query::ListQuery;
 
     #[test]
     fn should_create_self_signed_ta_id_cert() {
@@ -679,7 +680,7 @@ pub mod tests {
         let key_id = s.create_key(&PublicKeyAlgorithm::RsaEncryption).unwrap();
         let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, & mut s).unwrap();
 
-        let message = Message::new();
+        let message = ListQuery::build_message();
 
         let builder = SignedMessageBuilder::new(&key_id, &mut s, message).unwrap();
         let encoded_cms = builder.encode().to_captured(Mode::Der);

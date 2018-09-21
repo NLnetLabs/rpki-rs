@@ -206,6 +206,12 @@ pub struct Update {
 }
 
 impl Update {
+    pub fn tag(&self) -> &String {
+        &self.tag
+    }
+}
+
+impl Update {
     /// Encodes this into an XML element.
     fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
         -> Result<(), io::Error> {
@@ -250,6 +256,12 @@ pub struct Publish {
 }
 
 impl Publish {
+    pub fn tag(&self) -> &String {
+        &self.tag
+    }
+}
+
+impl Publish {
     /// Encodes this into an XML element.
     fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
         -> Result<(), io::Error> {
@@ -288,6 +300,12 @@ pub struct Withdraw {
     hash: Bytes,
     tag: String,
     uri: uri::Rsync
+}
+
+impl Withdraw {
+    pub fn tag(&self) -> &String {
+        &self.tag
+    }
 }
 
 impl Withdraw {
