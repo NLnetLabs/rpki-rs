@@ -135,10 +135,15 @@ impl PublishQuery {
 }
 
 impl PublishQuery {
+    /// Produces a PublishQueryBuilder, to which PublishElements can be added.
     pub fn build() -> PublishQueryBuilder {
         PublishQueryBuilder::new()
     }
 
+    /// Produces a PublishQueryBuilder, to which an expect number of
+    /// PublishElements can be added. More, or less elements can be added, but
+    /// suggesting the right capacity will make things more efficient as vec
+    /// growth is avoided.
     pub fn build_with_capacity(n: usize) -> PublishQueryBuilder {
         PublishQueryBuilder::with_capacity(n)
     }
@@ -157,7 +162,8 @@ pub enum PublishElement {
 }
 
 impl PublishElement {
-
+    /// Decodes from an XML input. Used for processing a list of elements.
+    /// Will return None when there is no (more) applicable element.
     pub fn decode_opt<R: io::Read>(r: &mut XmlReader<R>)
         -> Result<Option<Self>, MessageError> {
 
@@ -174,6 +180,7 @@ impl PublishElement {
         })
     }
 
+    /// Encodes the contained Publish, Update or Withdraw element to XML.
     pub fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
         -> Result<(), io::Error> {
 
@@ -184,7 +191,6 @@ impl PublishElement {
         }
         Ok(())
     }
-
 }
 
 
@@ -201,7 +207,7 @@ pub struct Update {
 }
 
 impl Update {
-
+    /// Encodes this into an XML element.
     fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
         -> Result<(), io::Error> {
 
@@ -224,6 +230,7 @@ impl Update {
         )
     }
 
+    /// Produces a PublishElement for inclusion in a PublishRequest.
     pub fn publish(old: &Bytes, new: &Bytes, uri: uri::Rsync) -> PublishElement {
         let tag  = hex::encode(hash(new));
         let hash = hash(old);
@@ -244,7 +251,7 @@ pub struct Publish {
 }
 
 impl Publish {
-
+    /// Encodes this into an XML element.
     fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
         -> Result<(), io::Error> {
 
@@ -264,6 +271,7 @@ impl Publish {
         )
     }
 
+    /// Produces a PublishElement for inclusion in a PublishRequest.
     pub fn publish(object: &Bytes, uri: uri::Rsync) -> PublishElement {
         let hash = hash(object);
         let tag  = hex::encode(&hash);
@@ -284,7 +292,7 @@ pub struct Withdraw {
 }
 
 impl Withdraw {
-
+    /// Encodes this into an XML element.
     fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
         -> Result<(), io::Error> {
 
@@ -306,6 +314,7 @@ impl Withdraw {
         )
     }
 
+    /// Produces a PublishElement for inclusion in a PublishRequest.
     pub fn publish(object: &Bytes, uri: uri::Rsync) -> PublishElement {
         let hash = hash(object);
         let tag  = hex::encode(&hash);
@@ -321,7 +330,8 @@ fn hash(object: &Bytes) -> Bytes {
     ).as_ref())
 }
 
-
+/// This type builds a PublishQuery wrapped in a Message for inclusion in a
+/// publication protocol message.
 pub struct PublishQueryBuilder {
     elements: Vec<PublishElement>
 }
@@ -337,11 +347,14 @@ impl PublishQueryBuilder {
         PublishQueryBuilder { elements: Vec::with_capacity(n)}
     }
 
+    /// Add a PublishElement, i.e. Publish, Withdraw or Update to this
+    /// PublishQuery. See: Publish::publish(), Withdraw::publish() and
+    /// Update::publish() to produce PublishElements.
     pub fn add(&mut self, e: PublishElement) {
         self.elements.push(e)
     }
 
-
+    /// Produces a Message containing the PublishQuery
     pub fn build_message(self) -> Message {
         Message::QueryMessage(
             QueryMessage::PublishQuery(
