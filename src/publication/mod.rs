@@ -1,3 +1,13 @@
+use bytes::Bytes;
+use ring::digest;
+
 pub mod pubmsg;
 pub mod query;
 pub mod reply;
+
+fn hash(object: &Bytes) -> Bytes {
+    Bytes::from(digest::digest(
+        &digest::SHA256,
+        object.as_ref()
+    ).as_ref())
+}

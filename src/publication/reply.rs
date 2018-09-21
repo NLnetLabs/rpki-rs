@@ -12,6 +12,7 @@ use remote::xml::{XmlReader, XmlWriter};
 use publication::query::PublishElement;
 use publication::pubmsg::Message;
 use publication::pubmsg::ReplyMessage;
+use publication::hash;
 
 /// This type represents the success reply as described in
 /// https://tools.ietf.org/html/rfc8181#section-3.4
@@ -58,6 +59,8 @@ pub struct ListReply {
     elements: Vec<ListElement>
 }
 
+/// This type represents a single object that is published at a publication
+/// server.
 #[derive(Debug, Eq, PartialEq)]
 pub struct ListElement {
     hash: Bytes,
@@ -65,7 +68,7 @@ pub struct ListElement {
 }
 
 impl ListReply {
-
+    /// Decodes XML to a ListReply.
     pub fn decode<R: io::Read>(r: &mut XmlReader<R>) -> Result<Self, MessageError> {
 
         let mut elements = vec![];
@@ -94,6 +97,7 @@ impl ListReply {
         Ok(ListReply{elements})
     }
 
+    /// Encodes a ListReply to XML.
     pub fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
         -> Result<(), io::Error> {
 
@@ -110,7 +114,57 @@ impl ListReply {
 
         Ok(())
     }
+
+    /// Creates a ListReplyBuilder, to which ListElements can be added.
+    pub fn build() -> ListReplyBuilder {
+        ListReplyBuilder::new()
+    }
+
+    /// Creates a ListReplyBuilder, to which an expect number of ListElements
+    /// can be added. More, or less elements can be added, but suggesting the
+    /// right capacity will make things more efficient as vec growth is
+    /// avoided.
+    pub fn build_with_capacity(n: usize) -> ListReplyBuilder {
+        ListReplyBuilder::with_capacity(n)
+    }
 }
+
+impl ListElement {
+    /// Creates an element for an object to be included in a ListReply.
+    pub fn reply(object: &Bytes, uri: uri::Rsync) -> Self {
+        let hash = hash(object);
+        ListElement { hash, uri}
+    }
+}
+
+
+pub struct ListReplyBuilder {
+    elements: Vec<ListElement>
+}
+
+impl ListReplyBuilder {
+    fn new() -> ListReplyBuilder {
+        ListReplyBuilder { elements: Vec::new() }
+    }
+
+    fn with_capacity(n: usize) -> ListReplyBuilder {
+        ListReplyBuilder { elements: Vec::with_capacity(n) }
+    }
+
+    pub fn add(&mut self, e: ListElement) {
+        self.elements.push(e);
+    }
+
+    pub fn build_message(self) -> Message {
+        Message::ReplyMessage(
+            ReplyMessage::ListReply(
+                ListReply { elements: self.elements }
+            )
+        )
+    }
+
+}
+
 
 
 //------------ ErrorReply ----------------------------------------------------
@@ -333,6 +387,11 @@ mod tests {
 
     use super::*;
     use std::str;
+    use uri::Rsync;
+
+    fn rsync_uri(s: &str) -> Rsync {
+        Rsync::from_str(s).unwrap()
+    }
 
     #[test]
     fn should_create_success_reply() {
@@ -343,5 +402,23 @@ mod tests {
 
         assert_eq!(produced_xml, expected_xml);
     }
+
+    #[test]
+    fn should_create_list_reply() {
+        let object = Bytes::from_static(include_bytes!("../../test/remote/cms-ta.cer"));
+        let object2 = Bytes::from_static(include_bytes!("../../test/remote/pdu.200.der"));
+        let mut b = ListReply::build_with_capacity(2);
+        b.add(ListElement::reply(&object, rsync_uri("rsync://host/path/cms-ta.cer")));
+        b.add(ListElement::reply(&object2, rsync_uri("rsync://host/path/pdu.200.der")));
+        let m = b.build_message();
+
+        let v = m.encode_vec();
+        let produced_xml = str::from_utf8(&v).unwrap();
+        let expected_xml = include_str!("../../test/publication/generated/list_reply_result.xml");
+
+        assert_eq!(produced_xml, expected_xml);
+    }
+
+
 
 }

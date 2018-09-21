@@ -11,7 +11,7 @@ use remote::xml::Attributes;
 use remote::xml::XmlWriter;
 use publication::pubmsg::Message;
 use publication::pubmsg::QueryMessage;
-use ring::digest;
+use publication::hash;
 
 
 //------------ ListQuery -----------------------------------------------------
@@ -134,12 +134,12 @@ impl PublishQuery {
 }
 
 impl PublishQuery {
-    /// Produces a PublishQueryBuilder, to which PublishElements can be added.
+    /// Creates a PublishQueryBuilder, to which PublishElements can be added.
     pub fn build() -> PublishQueryBuilder {
         PublishQueryBuilder::new()
     }
 
-    /// Produces a PublishQueryBuilder, to which an expect number of
+    /// Creates a PublishQueryBuilder, to which an expect number of
     /// PublishElements can be added. More, or less elements can be added, but
     /// suggesting the right capacity will make things more efficient as vec
     /// growth is avoided.
@@ -320,13 +320,6 @@ impl Withdraw {
         PublishElement::Withdraw(Withdraw { hash, tag, uri })
     }
 
-}
-
-fn hash(object: &Bytes) -> Bytes {
-    Bytes::from(digest::digest(
-        &digest::SHA256,
-        object.as_ref()
-    ).as_ref())
 }
 
 /// This type builds a PublishQuery wrapped in a Message for inclusion in a
