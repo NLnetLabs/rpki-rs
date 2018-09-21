@@ -115,17 +115,6 @@ pub enum Message {
 /// # Decoding and Encoding
 ///
 impl Message {
-
-    /// Creates a message for queries.
-    pub fn new_query(q: QueryMessage) -> Self {
-        Message::QueryMessage(q)
-    }
-
-    /// Creates a message for replies.
-    pub fn new_reply(r: ReplyMessage) -> Self {
-        Message::ReplyMessage(r)
-    }
-
     /// Decodes an XML structure
     pub fn decode<R>(reader: R) -> Result<Self, MessageError>
         where R: io::Read {

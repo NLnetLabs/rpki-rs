@@ -43,7 +43,7 @@ impl ListQuery {
     ///
     /// The `Message` type is used because it's this outer type that needs
     /// to be encoded and included in protocol messages.
-    pub fn new_message() -> Message {
+    pub fn build_message() -> Message {
         Message::QueryMessage(QueryMessage::ListQuery(ListQuery))
     }
 }
@@ -132,7 +132,16 @@ impl PublishQuery {
         }
         Ok(())
     }
+}
 
+impl PublishQuery {
+    pub fn build() -> PublishQueryBuilder {
+        PublishQueryBuilder::new()
+    }
+
+    pub fn build_with_capacity(n: usize) -> PublishQueryBuilder {
+        PublishQueryBuilder::with_capacity(n)
+    }
 }
 
 
@@ -318,20 +327,27 @@ pub struct PublishQueryBuilder {
 }
 
 impl PublishQueryBuilder {
+    /// Exposed through PublishQuery::build()
+    fn new() -> Self {
+        PublishQueryBuilder { elements: Vec::new() }
+    }
+
+    /// Exposed through PublishQuery::build_with_capacity()
+    fn with_capacity(n: usize) -> Self {
+        PublishQueryBuilder { elements: Vec::with_capacity(n)}
+    }
+
     pub fn add(&mut self, e: PublishElement) {
         self.elements.push(e)
     }
 
-    pub fn new() -> Self {
-        PublishQueryBuilder { elements: Vec::new() }
-    }
 
-    pub fn with_capacity(n: usize) -> Self {
-        PublishQueryBuilder { elements: Vec::with_capacity(n)}
-    }
-
-    pub fn build(self) -> QueryMessage {
-        QueryMessage::PublishQuery(PublishQuery { elements: self.elements })
+    pub fn build_message(self) -> Message {
+        Message::QueryMessage(
+            QueryMessage::PublishQuery(
+                PublishQuery { elements: self.elements }
+            )
+        )
     }
 }
 
@@ -354,12 +370,12 @@ mod tests {
 
     #[test]
     fn should_create_list_query() {
-        match ListQuery::new_message() {
-            Message::QueryMessage(QueryMessage::ListQuery(_)) => {
-                // ListQuery has no content, nothing to check here.
-            }
-            _ => panic!("Got the wrong return value")
-        }
+        let lq = ListQuery::build_message();
+        let vec = lq.encode_vec();
+        let produced_xml = str::from_utf8(&vec).unwrap();
+        let expected_xml = include_str!("../../test/publication/generated/list-query-result.xml");
+
+        assert_eq!(produced_xml, expected_xml);
     }
 
     #[test]
@@ -370,15 +386,14 @@ mod tests {
         let p = Publish::publish(&object, rsync_uri("rsync://host/path/cms-ta.cer"));
         let u = Update::publish(&object, &object2, rsync_uri("rsync://host/path/cms-ta.cer"));
 
-        let mut b = PublishQueryBuilder::with_capacity(3);
+        let mut b = PublishQuery::build_with_capacity(3);
         b.add(w);
         b.add(p);
         b.add(u);
-        let pq = b.build();
-        let m = Message::new_query(pq);
+        let m = b.build_message();
         let vec = m.encode_vec();
         let produced_xml = str::from_utf8(&vec).unwrap();
-        let expected_xml = include_str!("../../test/publication/generated/publish-builder-result.xml");
+        let expected_xml = include_str!("../../test/publication/generated/publish-query-result.xml");
 
         assert_eq!(produced_xml, expected_xml);
     }
