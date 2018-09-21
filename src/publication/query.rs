@@ -22,6 +22,7 @@ use ring::digest;
 pub struct ListQuery;
 
 impl ListQuery {
+    /// Decodes a ListQuery from XML.
     pub fn decode<R: io::Read>(r: &mut XmlReader<R>)
         -> Result<Self, MessageError> {
         r.take_named_element("list", |_, r| { r.take_empty() })?;
@@ -60,7 +61,8 @@ pub struct PublishQuery {
 
 
 impl PublishQuery {
-
+    /// Decodes a <publish> element from XML, producing either a simple, new,
+    /// Publish element, or an Update - wrapped in a PublishElement.
     fn decode_publish<R: io::Read>(
         a: &mut Attributes,
         r: &mut XmlReader<R>
@@ -76,17 +78,14 @@ impl PublishQuery {
                     hash, tag, uri, object
                 }))
             },
-            None => {
-                Ok(PublishElement::Publish(Publish{
-                    tag, uri, object
-                }))
-            }
+            None => Ok(PublishElement::Publish( Publish { tag, uri, object }))
         };
 
         a.exhausted()?;
         res
     }
 
+    /// Decodes a <withdraw/> XML element.
     fn decode_withdraw(a: &mut Attributes)
         -> Result<PublishElement, MessageError> {
 
@@ -363,8 +362,6 @@ impl PublishQueryBuilder {
         )
     }
 }
-
-
 
 
 //------------ Tests ---------------------------------------------------------

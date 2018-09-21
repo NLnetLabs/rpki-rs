@@ -10,6 +10,8 @@ use uri;
 use publication::pubmsg::MessageError;
 use remote::xml::{XmlReader, XmlWriter};
 use publication::query::PublishElement;
+use publication::pubmsg::Message;
+use publication::pubmsg::ReplyMessage;
 
 /// This type represents the success reply as described in
 /// https://tools.ietf.org/html/rfc8181#section-3.4
@@ -17,13 +19,14 @@ use publication::query::PublishElement;
 pub struct SuccessReply;
 
 impl SuccessReply {
-
+    /// Decodes a <success/> reply from XML.
     pub fn decode<R: io::Read>(r: &mut XmlReader<R>)
         -> Result<Self, MessageError> {
         r.take_named_element("success", |_, r| { r.take_empty() })?;
         Ok(SuccessReply)
     }
 
+    /// Encodes a SuccessReply to XML.
     pub fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
         -> Result<(), io::Error> {
 
@@ -34,6 +37,14 @@ impl SuccessReply {
         )?;
 
         Ok(())
+    }
+}
+
+impl SuccessReply {
+    /// Builds a SuccessReply wrapped in a Message for inclusion in a
+    /// publication protocol CMS object.
+    pub fn build_message() -> Message {
+        Message::ReplyMessage(ReplyMessage::SuccessReply(SuccessReply))
     }
 }
 
@@ -311,6 +322,26 @@ impl ReportErrorCode {
             ReportErrorCode::ConsistencyProblem => "Server detected an update that looks like it will cause a consistency problem (e.g., an object was deleted, but the manifest was not updated).",
             ReportErrorCode::OtherError => "Found some other issue."
         }.to_string()
+    }
+}
+
+
+//------------ Tests ---------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use std::str;
+
+    #[test]
+    fn should_create_success_reply() {
+        let m = SuccessReply::build_message();
+        let v = m.encode_vec();
+        let produced_xml = str::from_utf8(&v).unwrap();
+        let expected_xml = include_str!("../../test/publication/generated/success_reply_result.xml");
+
+        assert_eq!(produced_xml, expected_xml);
     }
 
 }
