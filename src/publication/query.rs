@@ -376,15 +376,15 @@ mod tests {
         let lq = ListQuery::build_message();
         let vec = lq.encode_vec();
         let produced_xml = str::from_utf8(&vec).unwrap();
-        let expected_xml = include_str!("../../test/publication/generated/list-query-result.xml");
+        let expected_xml = include_str!("../../test/publication/generated/list_query_result.xml");
 
         assert_eq!(produced_xml, expected_xml);
     }
 
     #[test]
     fn should_create_publish_query() {
-        let object = Bytes::from_static(include_bytes!("../../test/remote/cms-ta.cer"));
-        let object2 = Bytes::from_static(include_bytes!("../../test/remote/pdu.200.der"));
+        let object = Bytes::from_static(include_bytes!("../../test/remote/cms_ta.cer"));
+        let object2 = Bytes::from_static(include_bytes!("../../test/remote/pdu_200.der"));
         let w = Withdraw::publish(&object, rsync_uri("rsync://host/path/cms-ta.cer"));
         let p = Publish::publish(&object, rsync_uri("rsync://host/path/cms-ta.cer"));
         let u = Update::publish(&object, &object2, rsync_uri("rsync://host/path/cms-ta.cer"));
@@ -396,7 +396,7 @@ mod tests {
         let m = b.build_message();
         let vec = m.encode_vec();
         let produced_xml = str::from_utf8(&vec).unwrap();
-        let expected_xml = include_str!("../../test/publication/generated/publish-query-result.xml");
+        let expected_xml = include_str!("../../test/publication/generated/publish_query_result.xml");
 
         assert_eq!(produced_xml, expected_xml);
     }

@@ -273,7 +273,7 @@ mod tests {
 
     #[test]
     fn should_parse_and_encode_list_reply() {
-        let xml = include_str!("../../test/publication/list-reply.xml");
+        let xml = include_str!("../../test/publication/list_reply.xml");
         let r = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(r, xml);
     }

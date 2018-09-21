@@ -417,7 +417,7 @@ pub mod tests {
 
     // Useful until we can create IdCerts of our own
     pub fn test_id_certificate() -> IdCert {
-        let data = include_bytes!("../../test/oob/id-publisher-ta.cer");
+        let data = include_bytes!("../../test/oob/id_publisher_ta.cer");
         IdCert::decode(Bytes::from_static(data)).unwrap()
     }
 

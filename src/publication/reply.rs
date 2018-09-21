@@ -405,8 +405,8 @@ mod tests {
 
     #[test]
     fn should_create_list_reply() {
-        let object = Bytes::from_static(include_bytes!("../../test/remote/cms-ta.cer"));
-        let object2 = Bytes::from_static(include_bytes!("../../test/remote/pdu.200.der"));
+        let object = Bytes::from_static(include_bytes!("../../test/remote/cms_ta.cer"));
+        let object2 = Bytes::from_static(include_bytes!("../../test/remote/pdu_200.der"));
         let mut b = ListReply::build_with_capacity(2);
         b.add(ListElement::reply(&object, rsync_uri("rsync://host/path/cms-ta.cer")));
         b.add(ListElement::reply(&object2, rsync_uri("rsync://host/path/pdu.200.der")));

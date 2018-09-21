@@ -165,10 +165,10 @@ mod tests {
     fn should_parse_and_validate_signed_message() {
         let d = Utc.ymd(2012, 1, 1).and_hms(0, 0, 0);
         time::with_now(d, || {
-            let der = include_bytes!("../../test/remote/pdu.200.der");
+            let der = include_bytes!("../../test/remote/pdu_200.der");
             let msg = SignedMessage::decode(Bytes::from_static(der), false).unwrap();
 
-            let b = include_bytes!("../../test/remote/cms-ta.cer");
+            let b = include_bytes!("../../test/remote/cms_ta.cer");
             let id_cert = IdCert::decode(Bytes::from_static(b)).unwrap();
 
             msg.validate(&id_cert).unwrap();
@@ -180,10 +180,10 @@ mod tests {
     fn should_reject_invalid_signed_message() {
         let d = Utc.ymd(2012, 1, 1).and_hms(0, 0, 0);
         time::with_now(d, || {
-            let der = include_bytes!("../../test/remote/pdu.200.der");
+            let der = include_bytes!("../../test/remote/pdu_200.der");
             let msg = SignedMessage::decode(Bytes::from_static(der), false).unwrap();
 
-            let b = include_bytes!("../../test/oob/id-publisher-ta.cer");
+            let b = include_bytes!("../../test/oob/id_publisher_ta.cer");
             let id_cert = IdCert::decode(Bytes::from_static(b)).unwrap();
 
             assert_eq!(ValidationError, msg.validate(&id_cert).unwrap_err());
