@@ -53,8 +53,9 @@ impl Manifest {
     pub fn validate(
         self,
         cert: &ResourceCert,
+        strict: bool,
     ) -> Result<(ResourceCert, ManifestContent), ValidationError> {
-        let cert = self.signed.validate(cert)?;
+        let cert = self.signed.validate(cert, strict)?;
         Ok((cert, self.content))
     }
 }

@@ -3,11 +3,10 @@
 use std::str;
 use std::str::FromStr;
 use ber::{decode, encode};
-use ber::{BitString, Captured, Mode, OctetString, Tag};
+use ber::{BitString, Captured, Mode, Tag};
 use ber::cstring::PrintableString;
 use ber::decode::Source;
 use ber::encode::PrimitiveContent;
-use bytes::Bytes;
 use cert::SubjectPublicKeyInfo;
 use chrono::{Datelike, DateTime, LocalResult, Timelike, TimeZone, Utc};
 use hex;
@@ -35,47 +34,65 @@ where F: FnOnce() -> Result<T, E>, E: From<decode::Error> {
 //------------ Name ----------------------------------------------------------
 
 #[derive(Clone, Debug)]
-pub struct Name {
-    common_name: PrintableString,
-    serial: Option<PrintableString>
-}
+pub struct Name(Captured);
 
 impl Name {
-
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-
-        cons.take_sequence(|cons| {
-            cons.take_set(|cons| {
-                cons.take_sequence(|cons| {
-                    let mut name_option = None;
-                    let mut serial = None;
-
-                    let oid = Oid::take_from(cons)?;
-
-                    if oid == oid::ID_AT_COMMON_NAME {
-                        name_option = Some(PrintableString::take_from(cons)?);
-                    } else if oid == oid::ID_AT_COMMON_NAME {
-                        serial = Some(PrintableString::take_from(cons)?);
-                    }
-
-                    if let Some(oid) = Oid::take_opt_from(cons)? {
-                        if oid == oid::ID_AT_COMMON_NAME {
-                            name_option = Some(PrintableString::take_from(cons)?);
-                        } else if oid == oid::ID_AT_COMMON_NAME {
-                            serial = Some(PrintableString::take_from(cons)?);
+        cons.capture(|cons| {
+            cons.take_sequence(|cons| { // RDNSequence
+                cons.take_set(|cons| { // RelativeDistinguishedName
+                    while let Some(()) = cons.take_opt_sequence(|cons| {
+                        Oid::skip_in(cons)?;
+                        if cons.skip_one()?.is_none() {
+                            xerr!(
+                                return Err(decode::Error::Malformed.into())
+                            );
                         }
-                    }
-
-                    match name_option {
-                        None =>  Err(decode::Malformed.into()),
-                        Some(common_name) => Ok(Self{common_name, serial})
-                    }
+                        Ok(())
+                    })? { }
+                    Ok(())
                 })
             })
-        })
+        }).map(Name)
+    }
 
+    pub fn validate_rpki(&self, strict: bool) -> Result<(), ValidationError> {
+        if strict {
+            self.0.clone().decode(|cons| {
+                cons.take_sequence(|cons| { // RDNSequence
+                    let mut cn = false;
+                    let mut sn = false;
+                    cons.take_set(|cons| { // RelativeDistinguishedName
+                        while let Some(()) = cons.take_opt_sequence(|cons| {
+                            let id = Oid::take_from(cons)?;
+                            if id == oid::ID_AT_COMMON_NAME {
+                                if cn {
+                                    xerr!(
+                                        return Err(decode::Error::Malformed)
+                                    )
+                                }
+                                let _ = PrintableString::take_from(cons)?;
+                                cn = true;
+                            }
+                            else if id == oid::ID_AT_SERIAL_NUMBER {
+                                if sn {
+                                    xerr!(
+                                        return Err(decode::Error::Malformed)
+                                    )
+                                }
+                                let _ = PrintableString::take_from(cons)?;
+                                sn = true;
+                            }
+                            Ok(())
+                        })? { }
+                        Ok(())
+                    })
+                })
+            })?
+        }
+        Ok(())
     }
 
     /// Derives a name from a public key info.
@@ -96,25 +113,22 @@ impl Name {
     /// and 8.
     pub fn from_pub_key(key_info: &SubjectPublicKeyInfo) -> Self {
         let ki = key_info.key_identifier();
+        // Borrow checker shenanigans ...
         let enc = hex::encode(&ki);
-
-        let common_name = PrintableString::new(
-            OctetString::new(Bytes::from(enc))
-        ).unwrap(); // We know these characters are always safe!
-        Self { common_name, serial: None }
+        let enc = enc.as_bytes();
+        let values = encode::sequence(
+            encode::set(
+                encode::sequence((
+                    oid::ID_AT_COMMON_NAME.value(),
+                    enc.tagged(Tag::PRINTABLE_STRING),
+                ))
+            )
+        );
+        Name(Captured::from_values(Mode::Der, values))
     }
 
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        encode::sequence(
-            encode::set(
-                encode::sequence(
-                    (
-                        oid::ID_AT_COMMON_NAME.value(),
-                        self.common_name.encode()
-                    )
-                )
-            )
-        )
+        &self.0
     }
 }
 
@@ -367,6 +381,12 @@ fn read_four_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Err> {
 #[derive(Clone, Copy, Debug, Eq, Fail, PartialEq)]
 #[fail(display="validation error")]
 pub struct ValidationError;
+
+impl From<decode::Error> for ValidationError {
+    fn from(_: decode::Error) -> ValidationError {
+        ValidationError
+    }
+}
 
 
 //------------ OIDs ----------------------------------------------------------
