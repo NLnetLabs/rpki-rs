@@ -36,8 +36,8 @@ impl Roa {
     pub fn process<F>(
         self,
         issuer: &ResourceCert,
-        check_crl: F,
-        strict: bool
+        strict: bool,
+        check_crl: F
     ) -> Result<RouteOriginAttestation, ValidationError>
     where F: FnOnce(&Cert) -> Result<(), ValidationError> {
         let cert = self.signed.validate(issuer, strict)?;
