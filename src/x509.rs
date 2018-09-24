@@ -42,7 +42,7 @@ impl Name {
     ) -> Result<Self, S::Err> {
         cons.capture(|cons| {
             cons.take_sequence(|cons| { // RDNSequence
-                cons.take_set(|cons| { // RelativeDistinguishedName
+                while let Some(()) = cons.take_opt_set(|cons| {
                     while let Some(()) = cons.take_opt_sequence(|cons| {
                         Oid::skip_in(cons)?;
                         if cons.skip_one()?.is_none() {
@@ -53,7 +53,8 @@ impl Name {
                         Ok(())
                     })? { }
                     Ok(())
-                })
+                })? { }
+                Ok(())
             })
         }).map(Name)
     }
@@ -61,10 +62,10 @@ impl Name {
     pub fn validate_rpki(&self, strict: bool) -> Result<(), ValidationError> {
         if strict {
             self.0.clone().decode(|cons| {
-                cons.take_sequence(|cons| { // RDNSequence
-                    let mut cn = false;
-                    let mut sn = false;
-                    cons.take_set(|cons| { // RelativeDistinguishedName
+                let mut cn = false;
+                let mut sn = false;
+                cons.take_sequence(|cons| {
+                    while let Some(()) = cons.take_opt_set(|cons| {
                         while let Some(()) = cons.take_opt_sequence(|cons| {
                             let id = Oid::take_from(cons)?;
                             if id == oid::ID_AT_COMMON_NAME {
@@ -88,7 +89,8 @@ impl Name {
                             Ok(())
                         })? { }
                         Ok(())
-                    })
+                    })? {}
+                    Ok(())
                 })
             })?
         }

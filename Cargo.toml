@@ -8,7 +8,6 @@ authors = [
 
 [dependencies]
 base64          = "^0.9"
-ber             = { git="https://github.com/NLnetLabs/ber-rs.git" }
 bytes           = "^0.4"
 chrono          = "^0.4"
 failure         = "^0.1"
@@ -19,6 +18,10 @@ ring            = "^0.13"
 untrusted       = "^0.6"
 xml-rs          = "^0.8"
 
+[dependencies.ber]
+git = "https://github.com/NLnetLabs/ber-rs.git"
+
 [features]
 default = []
 softkeys = [ "openssl" ]
+extra-debug = [ "ber/extra-debug" ]
