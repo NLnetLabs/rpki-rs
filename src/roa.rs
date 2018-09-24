@@ -37,9 +37,10 @@ impl Roa {
         self,
         issuer: &ResourceCert,
         check_crl: F,
+        strict: bool
     ) -> Result<RouteOriginAttestation, ValidationError>
     where F: FnOnce(&Cert) -> Result<(), ValidationError> {
-        let cert = self.signed.validate(issuer)?;
+        let cert = self.signed.validate(issuer, strict)?;
         self.content.validate(&cert)?;
         check_crl(cert.as_ref())?;
         Ok(self.content)

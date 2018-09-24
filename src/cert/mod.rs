@@ -181,9 +181,12 @@ impl Cert {
     /// This validates that the certificate “is a current, self-signed RPKI
     /// CA certificate that conforms to the profile as specified in
     /// RFC6487” (RFC7730, section 3, step 2).
-    pub fn validate_ta(self) -> Result<ResourceCert, ValidationError> {
-        self.validate_basics()?;
-        self.validate_ca_basics()?;
+    pub fn validate_ta(
+        self,
+        strict: bool
+    ) -> Result<ResourceCert, ValidationError> {
+        self.validate_basics(strict)?;
+        self.validate_ca_basics(strict)?;
 
         // 4.8.3. Authority Key Identifier. May be present, if so, must be
         // equal to the subject key indentifier.
@@ -235,13 +238,14 @@ impl Cert {
     /// Note that this does _not_ check the CRL.
     pub fn validate_ca(
         self,
-        issuer: &ResourceCert
+        issuer: &ResourceCert,
+        strict: bool
     ) -> Result<ResourceCert, ValidationError> {
-        self.validate_basics()?;
-        self.validate_ca_basics()?;
-        self.validate_issued(issuer)?;
-        self.validate_signature(issuer)?;
-        self.validate_resources(issuer)
+        self.validate_basics(strict)?;
+        self.validate_ca_basics(strict)?;
+        self.validate_issued(issuer, strict)?;
+        self.validate_signature(issuer, strict)?;
+        self.validate_resources(issuer, strict)
     }
 
     /// Validates the certificate as an EE certificate.
@@ -253,9 +257,10 @@ impl Cert {
     pub fn validate_ee(
         self,
         issuer: &ResourceCert,
+        strict: bool
     ) -> Result<ResourceCert, ValidationError>  {
-        self.validate_basics()?;
-        self.validate_issued(issuer)?;
+        self.validate_basics(strict)?;
+        self.validate_issued(issuer, strict)?;
 
         // 4.8.1. Basic Constraints: Must not be present.
         if self.extensions.basic_ca().is_some(){
@@ -273,15 +278,15 @@ impl Cert {
             return Err(ValidationError)
         }
 
-        self.validate_signature(issuer)?;
-        self.validate_resources(issuer)
+        self.validate_signature(issuer, strict)?;
+        self.validate_resources(issuer, strict)
     }
 
 
     //--- Validation Components
 
     /// Validates basic compliance with section 4 of RFC 6487.
-    fn validate_basics(&self) -> Result<(), ValidationError> {
+    fn validate_basics(&self, strict: bool) -> Result<(), ValidationError> {
         // The following lists all such constraints in the RFC, noting those
         // that we cannot check here.
 
@@ -291,10 +296,11 @@ impl Cert {
         // 4.3 Signature Algorithm: limited to those in RFC 6485. Already
         // checked in parsing.
 
-        // 4.4 Issuer: must have certain format. Since it is not intended to
-        // be descriptive, we simply ignore it.
+        // 4.4 Issuer: must have certain format. 
+        Name::validate_rpki(&self.issuer, strict)?;
 
         // 4.5 Subject: same as 4.4.
+        Name::validate_rpki(&self.subject, strict)?;
         
         // 4.6 Validity. Check according to RFC 5280.
         self.validity.validate()?;
@@ -349,6 +355,7 @@ impl Cert {
     fn validate_issued(
         &self,
         issuer: &ResourceCert,
+        _strict: bool,
     ) -> Result<(), ValidationError> {
         // 4.8.3. Authority Key Identifier. Must be present and match the
         // subject key ID of `issuer`.
@@ -383,7 +390,10 @@ impl Cert {
     ///
     /// Checks the parts that are common in normal and trust anchor CA
     /// certificates.
-    fn validate_ca_basics(&self) -> Result<(), ValidationError> {
+    fn validate_ca_basics(
+        &self,
+        _strict: bool
+    ) -> Result<(), ValidationError> {
         // 4.8.1. Basic Constraints: For a CA it must be present (RFC6487)
         // und the “cA” flag must be set (RFC5280).
         if self.extensions.basic_ca() != Some(true) {
@@ -407,7 +417,8 @@ impl Cert {
     /// Validates the certificate’s signature.
     fn validate_signature(
         &self,
-        issuer: &ResourceCert
+        issuer: &ResourceCert,
+        _strict: bool
     ) -> Result<(), ValidationError> {
         self.signed_data.verify_signature(issuer.cert.public_key())
     }
@@ -417,7 +428,8 @@ impl Cert {
     /// Upon success, this converts the certificate into a `ResourceCert`.
     fn validate_resources(
         self,
-        issuer: &ResourceCert
+        issuer: &ResourceCert,
+        _strict: bool
     ) -> Result<ResourceCert, ValidationError> {
         // 4.8.10.  IP Resources. If present, must be encompassed by issuer.
         // certificates.
