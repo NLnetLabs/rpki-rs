@@ -40,7 +40,7 @@ Signed objects are defined as a profile on CMS messages defined in RFC
 5652.
 
 
-## DER Encoding
+### DER Encoding
 
 RFC 6488 demands all signed objects to be DER encoded while the more
 general CMS format allows any BER encoding – DER is a stricter subset of
