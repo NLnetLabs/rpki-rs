@@ -502,7 +502,7 @@ impl AsRef<Cert> for ResourceCert {
 
 //------------ Validity ------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Validity {
     not_before: Time,
     not_after: Time,

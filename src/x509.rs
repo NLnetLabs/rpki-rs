@@ -34,7 +34,7 @@ where F: FnOnce() -> Result<T, E>, E: From<decode::Error> {
 
 //------------ Name ----------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Name {
     common_name: PrintableString,
     serial: Option<PrintableString>
@@ -121,7 +121,7 @@ impl Name {
 
 //------------ SignedData ----------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SignedData {
     data: Captured,
     signature_algorithm: SignatureAlgorithm,

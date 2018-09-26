@@ -12,7 +12,7 @@ pub const KEY_SIZE: u32 = 2048;
 
 //------------ SignatureAlgorithm --------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SignatureAlgorithm {
     Sha256WithRsaEncryption
 }

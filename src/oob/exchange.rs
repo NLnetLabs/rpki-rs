@@ -107,6 +107,19 @@ impl PublisherRequest {
             )
         })
     }
+
+    pub fn new(tag: Option<&str>, publisher_handle: &str, id_cert: IdCert) -> Self {
+        PublisherRequest {
+            tag: tag.map(|s| { s.to_string() }),
+            publisher_handle: publisher_handle.to_string(),
+            id_cert
+        }
+    }
+
+    /// Consumes this object so its values can be re-used.
+    pub fn into_parts(self) -> (Option<String>, String, IdCert) {
+        (self.tag, self.publisher_handle, self.id_cert)
+    }
 }
 
 

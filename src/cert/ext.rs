@@ -118,7 +118,7 @@ impl BasicCa {
 
 //------------ KeyIdentifier -------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct KeyIdentifier(OctetString);
 
 impl KeyIdentifier {
@@ -151,7 +151,7 @@ impl From<OctetString> for KeyIdentifier {
 
 //------------ SubjectKeyIdentifier ------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SubjectKeyIdentifier {
     subject_key_id: KeyIdentifier
 }
@@ -223,7 +223,7 @@ impl SubjectKeyIdentifier {
 
 //------------ AuthorityKeyIdentifier ----------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthorityKeyIdentifier {
     authority_key_id: OctetString
 }

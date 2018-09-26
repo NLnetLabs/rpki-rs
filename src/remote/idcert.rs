@@ -33,7 +33,7 @@ use ber::encode::Constructed;
 /// matches the issuer's SKI. Maybe we should take this out... and just care
 /// that things are validly signed, or only check AKI/SKI if it's version 3,
 /// but skip this for lower versions.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IdCert {
     /// The outer structure of the certificate.
     signed_data: SignedData,
@@ -140,9 +140,7 @@ impl IdCert {
     }
 
     pub fn to_bytes(&self) -> Bytes {
-        let mut b = Vec::new();
-        self.encode().write_encoded(Mode::Der, &mut b).unwrap(); // Writing to vec will not fail
-        Bytes::from(b)
+        self.encode().to_captured(Mode::Der).into_bytes()
     }
 }
 
@@ -279,7 +277,7 @@ impl AsRef<IdCert> for IdCert {
 
 //------------ IdExtensions --------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IdExtensions {
     /// Basic Constraints.
     ///
