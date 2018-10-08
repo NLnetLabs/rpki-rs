@@ -390,6 +390,12 @@ impl From<u32> for AsId {
     }
 }
 
+impl From<AsId> for u32 {
+    fn from(id: AsId) -> Self {
+        id.0
+    }
+}
+
 impl ops::Add<u32> for AsId {
     type Output = Self;
 
