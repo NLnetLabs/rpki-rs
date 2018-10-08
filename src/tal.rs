@@ -42,7 +42,7 @@ impl Tal {
                         file\n\n   {}\n\nhas not been installed. \
                         Please go to\n\n   {}\n\nand download the TAL \
                         in RFC 7730 format. Place the downloaded file \
-                        at\n\n   {}.\n\n\
+                        at\n\n   {}\n\n\
                         Routinator will refuse to run until you have done \
                         that.",
                         path, uri, path
