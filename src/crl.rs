@@ -136,7 +136,7 @@ impl RevokedCertificates {
         })?;
         Ok(RevokedCertificates(match res {
             Some(res) => res,
-            None => Captured::empty()
+            None => Captured::empty(Mode::Der)
         }))
     }
 

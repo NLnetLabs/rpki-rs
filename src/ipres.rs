@@ -426,7 +426,7 @@ impl AddressRange {
     fn parse_address_content<S: decode::Source>(
         content: &mut decode::Content<S>
     ) -> Result<Self, S::Err> {
-        let bs = BitString::parse_content(content)?;
+        let bs = BitString::take_content_from(content)?;
         Ok(AddressRange {
             min: Self::min_from_bits(&bs)?,
             max: Self::max_from_bits(&bs)?,

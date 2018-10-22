@@ -129,11 +129,11 @@ impl Cert {
                         SubjectPublicKeyInfo::take_from(cons)?,
                     issuer_unique_id: cons.take_opt_value_if(
                         Tag::CTX_1,
-                        |c| BitString::parse_content(c)
+                        |c| BitString::take_content_from(c)
                     )?,
                     subject_unique_id: cons.take_opt_value_if(
                         Tag::CTX_2,
-                        |c| BitString::parse_content(c)
+                        |c| BitString::take_content_from(c)
                     )?,
                     extensions: cons.take_constructed_if(
                         Tag::CTX_3,
@@ -553,8 +553,8 @@ impl Validity {
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence(
             (
-                self.not_before.value(),
-                self.not_after.value(),
+                self.not_before.encode(),
+                self.not_after.encode(),
             )
         )
     }

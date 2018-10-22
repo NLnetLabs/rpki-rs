@@ -4,7 +4,7 @@ use std::str;
 use std::str::FromStr;
 use ber::{decode, encode};
 use ber::{BitString, Captured, Mode, Tag};
-use ber::cstring::PrintableString;
+use ber::string::PrintableString;
 use ber::decode::Source;
 use ber::encode::PrimitiveContent;
 use cert::SubjectPublicKeyInfo;
@@ -121,8 +121,8 @@ impl Name {
         let values = encode::sequence(
             encode::set(
                 encode::sequence((
-                    oid::ID_AT_COMMON_NAME.value(),
-                    enc.tagged(Tag::PRINTABLE_STRING),
+                    oid::ID_AT_COMMON_NAME.encode(),
+                    enc.encode_as(Tag::PRINTABLE_STRING),
                 ))
             )
         );

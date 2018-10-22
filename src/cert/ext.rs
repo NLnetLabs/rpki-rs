@@ -30,8 +30,8 @@ pub fn encode_extension<'a, V: encode::Values + 'a>(
     encode::sequence(
         (
             oid.encode(),
-            critical.value(),
-            OctetString::encode_into_der(content)
+            critical.encode(),
+            OctetString::encode_wrapped(Mode::Der, content)
         )
     )
 }
@@ -107,7 +107,7 @@ impl BasicCa {
             &oid::CE_BASIC_CONSTRAINTS,
             &self.critical,
             encode::sequence(
-                self.ca.value()
+                self.ca.encode()
             )
         )
     }

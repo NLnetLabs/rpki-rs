@@ -2,7 +2,7 @@
 
 use ber::decode;
 use ber::{Captured, Mode, Oid, Tag};
-use ber::ostring::{OctetString, OctetStringSource};
+use ber::string::{OctetString, OctetStringSource};
 use bytes::Bytes;
 use ring::digest;
 use untrusted::Input;

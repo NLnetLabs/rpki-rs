@@ -121,11 +121,11 @@ impl RouteOriginAttestation {
                 as_id,
                 v4_addrs: match v4 {
                     Some(addrs) => addrs,
-                    None => RoaIpAddresses(Captured::empty())
+                    None => RoaIpAddresses(Captured::empty(Mode::Der))
                 },
                 v6_addrs: match v6 {
                     Some(addrs) => addrs,
-                    None => RoaIpAddresses(Captured::empty())
+                    None => RoaIpAddresses(Captured::empty(Mode::Der))
                 }
             })
         })

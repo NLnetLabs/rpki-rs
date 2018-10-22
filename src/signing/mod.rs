@@ -40,7 +40,7 @@ impl SignatureAlgorithm {
     pub fn encode(&self) -> impl encode::Values {
         encode::sequence((
             oid::SHA256_WITH_RSA_ENCRYPTION.encode(),
-            encode::PrimitiveContent::value(&()),
+            encode::PrimitiveContent::encode(&()),
         ))
     }
 }
@@ -71,7 +71,7 @@ impl PublicKeyAlgorithm {
     pub fn encode(&self) -> impl encode::Values {
         encode::sequence((
             oid::RSA_ENCRYPTION.encode(),
-            encode::PrimitiveContent::value(&())
+            encode::PrimitiveContent::encode(&())
         ))
     }
 }
