@@ -1,8 +1,8 @@
 //! Support for building RPKI Certificates and Objects
 
-use ber::{BitString, Mode, Tag};
-use ber::encode;
-use ber::encode::{Constructed, PrimitiveContent, Values};
+use bcder::{BitString, Mode, Tag};
+use bcder::encode;
+use bcder::encode::{Constructed, PrimitiveContent, Values};
 use bytes::Bytes;
 use cert::{SubjectPublicKeyInfo, Validity};
 use cert::ext::Extensions;
@@ -67,22 +67,23 @@ impl RpkiTbsCertificate {
 
         match self.extensions {
             RpkiTbsExtension::IdExtensions(ref id_ext) => {
-                encode::sequence(
+                encode::sequence((
                     (
-                        (
-                            Constructed::new(Tag::CTX_0, 2.value()), // Version 3 is encoded as 2
-                            self.serial_number.value(),
-                            SignatureAlgorithm::Sha256WithRsaEncryption.encode(),
-                            self.issuer.encode(),
+                        Constructed::new(
+                            Tag::CTX_0,
+                            2.encode() // Version 3 is encoded as 2
                         ),
-                        (
-                            self.validity.encode(),
-                            self.subject.encode(),
-                            self.subject_public_key_info.encode(),
-                            id_ext.encode()
-                        )
+                        self.serial_number.encode(),
+                        SignatureAlgorithm::Sha256WithRsaEncryption.encode(),
+                        self.issuer.encode(),
+                    ),
+                    (
+                        self.validity.encode(),
+                        self.subject.encode(),
+                        self.subject_public_key_info.encode(),
+                        id_ext.encode()
                     )
-                )
+                ))
             },
             RpkiTbsExtension::ResourceExtensions(ref _ext) => {
                 unimplemented!()

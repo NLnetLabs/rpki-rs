@@ -14,8 +14,8 @@
 //! [`Crl`]: struct.Crl.html
 //! [`CrlStore`]: struct.CrlStore.html
 
-use ber::decode;
-use ber::{Captured, Mode, OctetString, Oid, Tag, Unsigned};
+use bcder::decode;
+use bcder::{Captured, Mode, OctetString, Oid, Tag, Unsigned};
 use super::uri;
 use super::cert::Cert;
 use super::x509::{
@@ -136,7 +136,7 @@ impl RevokedCertificates {
         })?;
         Ok(RevokedCertificates(match res {
             Some(res) => res,
-            None => Captured::empty()
+            None => Captured::empty(Mode::Der)
         }))
     }
 
@@ -279,7 +279,7 @@ impl Extensions {
     ) -> Result<(), S::Err> {
         update_once(authority_key_id, || {
             let res = cons.take_sequence(|cons| {
-                cons.take_value_if(Tag::CTX_0, OctetString::take_content_from)
+                cons.take_value_if(Tag::CTX_0, OctetString::from_content)
             })?;
             if res.len() != 20 {
                 return Err(decode::Malformed.into())
@@ -350,7 +350,7 @@ impl CrlStore {
 //------------ OIDs ----------------------------------------------------------
 
 mod oid {
-    use ::ber::Oid;
+    use bcder::Oid;
 
     pub const CE_CRL_NUMBER: Oid<&[u8]> = Oid(&[85, 29, 20]);
     pub const CE_AUTHORITY_KEY_IDENTIFIER: Oid<&[u8]> = Oid(&[85, 29, 35]);

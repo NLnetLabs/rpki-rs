@@ -4,7 +4,7 @@ use std::fs::{read_dir, DirEntry, File, ReadDir};
 use std::io::{self, Read};
 use std::path::Path;
 use base64;
-use ber::decode;
+use bcder::decode;
 use super::cert::SubjectPublicKeyInfo;
 use super::uri;
 

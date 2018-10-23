@@ -1,8 +1,8 @@
 //! Signing related implementations.
 //!
 
-use ber::{encode, decode};
-use ber::{Oid, Tag};
+use bcder::{encode, decode};
+use bcder::{Oid, Tag};
 
 
 //------------ RPKI Key Size -------------------------------------------------
@@ -40,7 +40,7 @@ impl SignatureAlgorithm {
     pub fn encode(&self) -> impl encode::Values {
         encode::sequence((
             oid::SHA256_WITH_RSA_ENCRYPTION.encode(),
-            encode::PrimitiveContent::value(&()),
+            encode::PrimitiveContent::encode(&()),
         ))
     }
 }
@@ -71,7 +71,7 @@ impl PublicKeyAlgorithm {
     pub fn encode(&self) -> impl encode::Values {
         encode::sequence((
             oid::RSA_ENCRYPTION.encode(),
-            encode::PrimitiveContent::value(&())
+            encode::PrimitiveContent::encode(&())
         ))
     }
 }
@@ -129,7 +129,7 @@ impl DigestAlgorithm {
 //------------ OIDs ----------------------------------------------------------
 
 pub mod oid {
-    use ::ber::Oid;
+    use bcder::Oid;
 
     pub const SHA256: Oid<&[u8]>
         = Oid(&[96, 134, 72, 1, 101, 3, 4, 2, 1]);

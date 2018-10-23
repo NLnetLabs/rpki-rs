@@ -6,9 +6,9 @@
 //! "inherit" value is not used, the set of identifiers must be non-empty.
 
 use std::{fmt, ops};
-use ber::{decode, encode};
-use ber::{Captured, Mode, Tag};
-use ber::encode::PrimitiveContent;
+use bcder::{decode, encode};
+use bcder::{Captured, Mode, Tag};
+use bcder::encode::PrimitiveContent;
 use super::x509::ValidationError;
 
 
@@ -139,7 +139,7 @@ pub struct AsIdBlocks(Captured);
 impl AsIdBlocks {
     /// Creates a new, empty value.
     pub fn new() -> Self {
-        AsIdBlocks(Captured::empty())
+        AsIdBlocks(Captured::empty(Mode::Der))
     }
 
     /// Pushes a new block to the end of the value.
@@ -380,7 +380,7 @@ impl AsId {
     }
 
     fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        self.0.value()
+        self.0.encode()
     }
 }
 
