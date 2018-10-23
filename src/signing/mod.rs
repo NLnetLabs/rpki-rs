@@ -1,8 +1,8 @@
 //! Signing related implementations.
 //!
 
-use ber::{encode, decode};
-use ber::{Oid, Tag};
+use bcder::{encode, decode};
+use bcder::{Oid, Tag};
 
 
 //------------ RPKI Key Size -------------------------------------------------
@@ -129,7 +129,7 @@ impl DigestAlgorithm {
 //------------ OIDs ----------------------------------------------------------
 
 pub mod oid {
-    use ::ber::Oid;
+    use bcder::Oid;
 
     pub const SHA256: Oid<&[u8]>
         = Oid(&[96, 134, 72, 1, 101, 3, 4, 2, 1]);

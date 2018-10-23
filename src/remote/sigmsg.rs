@@ -1,9 +1,9 @@
 //! CMS structure that is used to encompass publication and provisioning
 //! messages.
 
-use ber::decode;
-use ber::{Captured, Mode, Oid, Tag};
-use ber::string::OctetString;
+use bcder::decode;
+use bcder::{Captured, Mode, Oid, Tag};
+use bcder::string::OctetString;
 use bytes::Bytes;
 use ring::digest;
 use untrusted::Input;

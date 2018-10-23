@@ -1,8 +1,8 @@
 //! Support for building RPKI Certificates and Objects
 
-use ber::{BitString, Mode, Tag};
-use ber::encode;
-use ber::encode::{Constructed, PrimitiveContent, Values};
+use bcder::{BitString, Mode, Tag};
+use bcder::encode;
+use bcder::encode::{Constructed, PrimitiveContent, Values};
 use bytes::Bytes;
 use cert::{SubjectPublicKeyInfo, Validity};
 use cert::ext::Extensions;

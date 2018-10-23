@@ -3,9 +3,9 @@
 //! For details, see RFC 6482.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use ber::decode;
-use ber::{BitString, Captured, Mode, Tag};
-use ber::decode::Source;
+use bcder::decode;
+use bcder::{BitString, Captured, Mode, Tag};
+use bcder::decode::Source;
 use super::asres::AsId;
 use super::cert::{Cert, ResourceCert};
 use super::ipres::AddressFamily;

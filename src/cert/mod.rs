@@ -17,9 +17,9 @@
 //! [`Cert`]: struct.Cert.html
 //! [`ResourceCert`]: struct.ResourceCert.html
 
-use ber::{decode, encode};
-use ber::encode::PrimitiveContent;
-use ber::{BitString, Mode, OctetString, Tag, Unsigned};
+use bcder::{decode, encode};
+use bcder::encode::PrimitiveContent;
+use bcder::{BitString, Mode, OctetString, Tag, Unsigned};
 use cert::ext::{Extensions, UriGeneralName, UriGeneralNames};
 use ring::digest::{self, Digest};
 use super::asres::AsBlocks;
@@ -129,11 +129,11 @@ impl Cert {
                         SubjectPublicKeyInfo::take_from(cons)?,
                     issuer_unique_id: cons.take_opt_value_if(
                         Tag::CTX_1,
-                        |c| BitString::take_content_from(c)
+                        |c| BitString::from_content(c)
                     )?,
                     subject_unique_id: cons.take_opt_value_if(
                         Tag::CTX_2,
-                        |c| BitString::take_content_from(c)
+                        |c| BitString::from_content(c)
                     )?,
                     extensions: cons.take_constructed_if(
                         Tag::CTX_3,

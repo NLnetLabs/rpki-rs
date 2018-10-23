@@ -9,7 +9,7 @@
 //! This crate contains types and functionality useful for building RPKI
 //! applications.
 extern crate base64;
-#[macro_use] extern crate ber;
+#[macro_use] extern crate bcder;
 extern crate bytes;
 extern crate chrono;
 #[macro_use] extern crate failure;

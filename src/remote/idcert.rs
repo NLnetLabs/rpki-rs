@@ -1,9 +1,10 @@
 //! Identity Certificates.
 //!
 
-use ber::{Mode, OctetString, Oid, Tag, Unsigned};
-use ber::{decode, encode};
-use ber::encode::Values;
+use bcder::{Mode, OctetString, Oid, Tag, Unsigned};
+use bcder::{decode, encode};
+use bcder::encode::Values;
+use bcder::encode::Constructed;
 use bytes::Bytes;
 use cert::{SubjectPublicKeyInfo, Validity};
 use cert::ext::{BasicCa, SubjectKeyIdentifier};
@@ -11,7 +12,6 @@ use cert::ext::oid;
 use signing::SignatureAlgorithm;
 use x509::{Name, SignedData, ValidationError};
 use cert::ext::AuthorityKeyIdentifier;
-use ber::encode::Constructed;
 
 
 //------------ IdCert --------------------------------------------------------

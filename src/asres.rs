@@ -6,9 +6,9 @@
 //! "inherit" value is not used, the set of identifiers must be non-empty.
 
 use std::{fmt, ops};
-use ber::{decode, encode};
-use ber::{Captured, Mode, Tag};
-use ber::encode::PrimitiveContent;
+use bcder::{decode, encode};
+use bcder::{Captured, Mode, Tag};
+use bcder::encode::PrimitiveContent;
 use super::x509::ValidationError;
 
 

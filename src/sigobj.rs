@@ -1,8 +1,8 @@
 //! Signed Objects
 
-use ber::decode;
-use ber::{Captured, Mode, Oid, Tag};
-use ber::string::{OctetString, OctetStringSource};
+use bcder::decode;
+use bcder::{Captured, Mode, Oid, Tag};
+use bcder::string::{OctetString, OctetStringSource};
 use bytes::Bytes;
 use ring::digest;
 use untrusted::Input;
@@ -258,7 +258,7 @@ impl SignerInfo {
             cons.skip_u8_if(3)?;
             Ok(SignerInfo {
                 sid: cons.take_value_if(Tag::CTX_0, |content| {
-                    OctetString::take_content_from(content)
+                    OctetString::from_content(content)
                 })?,
                 digest_algorithm: DigestAlgorithm::take_from(cons)?,
                 signed_attrs: SignedAttributes::take_from(cons)?,
@@ -399,7 +399,7 @@ impl SignedAttributes {
 //------------ OIDs ----------------------------------------------------------
 
 pub mod oid {
-    use ::ber::Oid;
+    use bcder::Oid;
 
     pub const SIGNED_DATA: Oid<&[u8]>
         = Oid(&[42, 134, 72, 134, 247, 13, 1, 7, 2]);

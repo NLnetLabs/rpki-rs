@@ -2,18 +2,18 @@
 
 use std::str;
 use std::str::FromStr;
-use ber::{decode, encode};
-use ber::{BitString, Captured, Mode, Tag};
-use ber::string::PrintableString;
-use ber::decode::Source;
-use ber::encode::PrimitiveContent;
+use bcder::{decode, encode};
+use bcder::{BitString, Captured, Mode, Tag};
+use bcder::string::PrintableString;
+use bcder::decode::Source;
+use bcder::encode::PrimitiveContent;
 use cert::SubjectPublicKeyInfo;
 use chrono::{Datelike, DateTime, LocalResult, Timelike, TimeZone, Utc};
 use hex;
 use super::time;
 use signing::SignatureAlgorithm;
 use std::io;
-use ber::Oid;
+use bcder::Oid;
 use std::result::Result::Err;
 
 
@@ -394,7 +394,7 @@ impl From<decode::Error> for ValidationError {
 //------------ OIDs ----------------------------------------------------------
 
 pub mod oid {
-    use ::ber::Oid;
+    use bcder::Oid;
 
     // https://www.itu.int/ITU-T/formal-language/itu-t/x/x520/2012/SelectedAttributeTypes.html#SelectedAttributeTypes.id-at-commonName
     pub const ID_AT_COMMON_NAME: Oid<&[u8]> = Oid(&[85, 4, 3]); // 2 5 4 3
@@ -410,7 +410,7 @@ pub mod oid {
 #[cfg(test)]
 mod test {
     use super::*;
-    use ber::encode::Values;
+    use bcder::encode::Values;
 
     #[test]
     fn signed_data_decode_then_encode() {
