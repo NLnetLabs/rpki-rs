@@ -67,14 +67,14 @@ impl Crl {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        cons.take_sequence(Self::take_content_from)
+        cons.take_sequence(Self::from_constructed)
     }
 
     /// Parses the content of a certificate revocation list.
-    pub fn take_content_from<S: decode::Source>(
+    pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        let signed_data = SignedData::take_content_from(cons)?;
+        let signed_data = SignedData::from_constructed(cons)?;
 
         signed_data.data().clone().decode(|cons| {
             cons.take_sequence(|cons| {
@@ -174,18 +174,18 @@ impl CrlEntry {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        cons.take_sequence(Self::take_content_from)
+        cons.take_sequence(Self::from_constructed)
     }
 
     /// Takes an optional CRL entry from the beginning of a contructed value.
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, S::Err> {
-        cons.take_opt_sequence(Self::take_content_from)
+        cons.take_opt_sequence(Self::from_constructed)
     }
 
     /// Parses the content of a CRL entry.
-    pub fn take_content_from<S: decode::Source>(
+    pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         Ok(CrlEntry {

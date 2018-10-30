@@ -1,21 +1,21 @@
-//! RPKI Certificates.
+//! Resource certificates.
 //!
-//! For its certificates, RPKI defines a profile for X.509 certificates. That
-//! is, while it uses the format defined for X.509 certificates, it limits
-//! the allowed values for various fields, making the overall structure more
-//! simple and predictable.
+//! The certificates used in RPKI are called _resource certificates._ They
+//! are defined in [RFC 6487] as a profile on regular Internet PKI
+//! certificates defined in [RFC 5280]. While they use the format defined
+//! for X.509 certificates, the allowed vales for various fields are limited
+//! making the overall structure more simple and predictable.
 //!
-//! This module implements the raw certificates in the type [`Cert`] and
-//! validated certificates in the type [`ResourceCert`]. The latter are used
-//! as the issuer certificates when validating other certificates.
+//! This module implements raw resource certificates in the type [`Cert`] and
+//! validated certificates in the type [`ResourceCert`]. The latter type is
+//! used for issuer certificates when validating other certificates.
 //!
 //! In addition, there are several types for the components of a certificate.
 //!
-//! RPKI resource certificates are defined in RFC 6487 based on the Internet
-//! PKIX profile defined in RFC 5280.
-//!
 //! [`Cert`]: struct.Cert.html
 //! [`ResourceCert`]: struct.ResourceCert.html
+//! [RFC 5280]: https://tools.ietf.org/html/rfc5280
+//! [RFC 6487]: https://tools.ietf.org/html/rfc5487
 
 use bcder::{decode, encode};
 use bcder::encode::PrimitiveContent;
@@ -29,32 +29,47 @@ use super::x509::{Name, SignedData, Time, ValidationError};
 use signing::{PublicKeyAlgorithm, SignatureAlgorithm};
 use chrono::Utc;
 
+
+pub mod ext;
+
+
 //------------ Cert ----------------------------------------------------------
 
-/// An RPKI resource certificate.
+/// A resource certificate.
 ///
-/// A value of this type is the result of parsing a resource certificate. It
-/// can be one of three different variants: A CA certificate appears in its
-/// own file in the repository. It main use is to sign other certificates.
-/// An EE certificate is used to sign other objects in the repository, such
-/// as manifests or ROAs. In RPKI, EE certificates are used only once.
-/// Whenever a new such object is created, a new EE certificate is created,
-/// signed by its CA, used to sign the object, and then the private key is
-/// thrown away. Thus, EE certificates only appear inside these signed
-/// objects.
-/// Finally, TA certificates are the installed trust anchors. These are
+/// A value of this type represents a resource certificate. It can be one of
+/// three different variants.
+///
+/// A _CA certificate_ appears in its own file in the repository. Its main
+/// use is to sign other certificates.
+///
+/// An _EE certificate_ is used to sign other objects in the repository, such
+/// as manifests or ROAs and is included in the file of these objects. In
+/// RPKI, EE certificates are used only once.  Whenever a new object is
+/// created, a new EE certificate is created, signed by its CA, used to sign
+/// the object, and then the private key is thrown away.
+///
+/// Finally, _TA certificates_ are the installed trust anchors. These are
 /// self-signed.
 /// 
-/// If a certificate is stored in a file, you can use the `decode` function
+/// If a certificate is stored in a file, you can use the [`decode`] function
 /// to parse the entire file. If the certificate is part of some other
-/// structure, the `take_from` and `take_content_from` function can be used
-/// during parsing of that structure.
+/// structure, the [`take_from`] and [`from_constructed`] functions can be
+/// used during parsing of that structure.
 ///
-/// Once parsing succeeded, the three methods `validate_ta`, `validate_ca`,
-/// and `validate_ee` can be used to validate the certificate and turn it
-/// into a [`ResourceCert`] so it can be used for further processing.
+/// Once parsing succeeded, the three methods [`validate_ca`],
+/// [`validate_ee`], and [`validate_ta`] can be used to validate the
+/// certificate and turn it into a [`ResourceCert`] so it can be used for
+/// further processing. In addition, various methods exist to access
+/// information contained in the certificate.
 ///
 /// [`ResourceCert`]: struct.ResourceCert.html
+/// [`decode`]: #method.decode
+/// [`take_from`]: #method.take_from
+/// [`from_constructed`]: #method.from_constructed
+/// [`validate_ca`]: #method.validate_ca
+/// [`validate_ee`]: #method.validate_ee
+/// [`validate_ta`]: #method.validate_ta
 #[derive(Clone, Debug)]
 pub struct Cert {
     /// The outer structure of the certificate.
@@ -99,17 +114,20 @@ impl Cert {
     }
 
     /// Takes an encoded certificate from the beginning of a value.
+    ///
+    /// This function assumes that the certificate is encoded in the next
+    /// constructed value tagged as a sequence.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        cons.take_sequence(Self::take_content_from)
+        cons.take_sequence(Self::from_constructed)
     }
 
     /// Parses the content of a Certificate sequence.
-    pub fn take_content_from<S: decode::Source>(
+    pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        let signed_data = SignedData::take_content_from(cons)?;
+        let signed_data = SignedData::from_constructed(cons)?;
 
         signed_data.data().clone().decode(|cons| {
             cons.take_sequence(|cons| {
@@ -610,5 +628,3 @@ impl SubjectPublicKeyInfo {
     }
 }
 
-//--- Modules
-pub mod ext;

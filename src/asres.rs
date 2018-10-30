@@ -1,9 +1,17 @@
-//! IP Resources for use with RPKI certificates.
+//! Autonomous System identifier resources.
 //!
-//! The types herein are defined in RFC 3779 for use with certificates in
+//! The types herein are defined in [RFC 3779] for use with certificates in
 //! general. RFC 6487 specifies how to use them with RPKI certificates. In
 //! particular, it prohibits the use of RDI values. Additionally, if the
 //! "inherit" value is not used, the set of identifiers must be non-empty.
+//!
+//! AS resources are represented in a certificate by an extension. The data
+//! in this extension is represented by the [AsResources] enum which
+//! decomposes into all the other types in this module.
+//!
+//! [AsResources]: enum.AsResources.html
+//! [RFC 3779]: https://tools.ietf.org/html/rfc3779
+//! [RFC 6487]: https://tools.ietf.org/html/rfc6487
 
 use std::{fmt, ops};
 use bcder::{decode, encode};
@@ -16,17 +24,20 @@ use super::x509::ValidationError;
 
 /// The AS Resources of an RPKI Certificate.
 ///
-/// This type contains the resources as parsed from the certificate. There are
-/// two options: there can be an actual list of AS numbers associated with the
-/// certificate – this is the `AsResources::Ids` variant –, or the AS
-/// resources of the issuer can be inherited – the `AsResources::Inherit`
-/// variant.
+/// This type contains the resources as represented in an RPKI certificates
+/// AS resources extension. This extension provides two options: there can
+/// be an actual set of AS numbers associated with the certificate – this is
+/// the `AsResources::Ids` variant –, or the AS resources of the issuer can
+/// be inherited – the `AsResources::Inherit` variant.
 #[derive(Clone, Debug)]
 pub enum AsResources {
     /// AS resources are to be inherited from the issuer.
     Inherit,
 
-    /// The AS resources are provided as a sequence of AS numbers.
+    /// The AS resources are provided as a set of AS numbers.
+    ///
+    /// This set is represented as a sequence of consecutive blocks of AS
+    /// numbers.
     Ids(AsIdBlocks),
 }
 
@@ -51,6 +62,40 @@ impl AsResources {
     }
 
     /// Takes the AS resources from the beginning of an encoded value.
+    ///
+    /// The ASN.1 specification for the `ASIdentifiers` types parsed here is
+    /// given in section 3.2.3 of [RFC 3779] as follows:
+    ///
+    /// ```text
+    /// ASIdentifiers      ::= SEQUENCE {
+    ///     asnum              [0] EXPLICIT AsIdentifierChoice OPTIONAL,
+    ///     rdi                [1] EXPLICIT AsIdentifierChoice OPTIONAL }
+    ///
+    /// AsIdentifierChoice ::= CHOICE {
+    ///     inherit            NULL,
+    ///     asIdsOrRanges      SEQUENCE OF ASIdOrRange }
+    ///
+    /// ASIdOrRange        ::= CHOICE {
+    ///     id                 ASId,
+    ///     range              ASRange }
+    ///
+    /// ASRange            ::= SEQUENCE {
+    ///     min                ASId,
+    ///     max                ASId }
+    ///
+    /// ASId               ::= INTEGER
+    /// ```
+    ///
+    /// Section 4.8.11 of [RFC 6487] limits the `ASIdentifiers` to the
+    /// `asnum` choice. If `asIdsOrRanges` is chosen, it must include a
+    /// non-empty set of AS numbers.
+    ///
+    /// This function implements these limitations. It maps the `id` choice
+    /// of `AsIdOrRange` to a range covering one number in order to keep
+    /// things simpler.
+    ///
+    /// [RFC 3779]: https://tools.ietf.org/html/rfc3779
+    /// [RFC 6487]: https://tools.ietf.org/html/rfc6487
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
@@ -77,7 +122,7 @@ impl AsResources {
 
 //------------ AsBlocks ------------------------------------------------------
 
-/// A possibly empty sequence of consecutive AS numbers.
+/// A possibly empty sequence of consecutive sets of AS numbers.
 #[derive(Clone, Debug)]
 pub struct AsBlocks(Option<AsIdBlocks>);
 

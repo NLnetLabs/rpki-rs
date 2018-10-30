@@ -78,7 +78,7 @@ impl SignedMessage {
         cons.take_constructed_if(Tag::CTX_0, |cons| {
             cons.take_constructed(|tag, cons| {
                 match tag {
-                    Tag::SEQUENCE => IdCert::take_content_from(cons),
+                    Tag::SEQUENCE => IdCert::from_constructed(cons),
                     _ => {
                         xerr!(Err(decode::Unimplemented.into()))
                     }
