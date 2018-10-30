@@ -1,8 +1,8 @@
 //! Signing related implementations.
 //!
 
-use ber::{encode, decode};
-use ber::{Oid, Tag};
+use bcder::{encode, decode};
+use bcder::{Oid, Tag};
 
 
 //------------ RPKI Key Size -------------------------------------------------
@@ -21,10 +21,10 @@ impl SignatureAlgorithm {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        cons.take_sequence(Self::take_content_from)
+        cons.take_sequence(Self::from_constructed)
     }
 
-    pub fn take_content_from<S: decode::Source>(
+    pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         let oid = Oid::take_from(cons)?;
@@ -40,7 +40,7 @@ impl SignatureAlgorithm {
     pub fn encode(&self) -> impl encode::Values {
         encode::sequence((
             oid::SHA256_WITH_RSA_ENCRYPTION.encode(),
-            encode::PrimitiveContent::value(&()),
+            encode::PrimitiveContent::encode(&()),
         ))
     }
 }
@@ -57,10 +57,10 @@ impl PublicKeyAlgorithm {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        cons.take_sequence(Self::take_content_from)
+        cons.take_sequence(Self::from_constructed)
     }
 
-    pub fn take_content_from<S: decode::Source>(
+    pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         oid::RSA_ENCRYPTION.skip_if(cons)?;
@@ -71,7 +71,7 @@ impl PublicKeyAlgorithm {
     pub fn encode(&self) -> impl encode::Values {
         encode::sequence((
             oid::RSA_ENCRYPTION.encode(),
-            encode::PrimitiveContent::value(&())
+            encode::PrimitiveContent::encode(&())
         ))
     }
 }
@@ -89,16 +89,16 @@ impl DigestAlgorithm {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        cons.take_sequence(Self::take_content_from)
+        cons.take_sequence(Self::from_constructed)
     }
 
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, S::Err> {
-        cons.take_opt_sequence(Self::take_content_from)
+        cons.take_opt_sequence(Self::from_constructed)
     }
 
-    fn take_content_from<S: decode::Source>(
+    fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         oid::SHA256.skip_if(cons)?;
@@ -129,7 +129,7 @@ impl DigestAlgorithm {
 //------------ OIDs ----------------------------------------------------------
 
 pub mod oid {
-    use ::ber::Oid;
+    use bcder::Oid;
 
     pub const SHA256: Oid<&[u8]>
         = Oid(&[96, 134, 72, 1, 101, 3, 4, 2, 1]);

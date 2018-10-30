@@ -1,16 +1,15 @@
 //! X509 Extensions
 
-use ber::{BitString, Captured, Mode, OctetString, Oid, Tag};
-use ber::{decode, encode};
-use ber::encode::PrimitiveContent;
-use crl;
-use bytes::Bytes;
-use ipres::IpResources;
 use asres::AsResources;
-use x509::update_once;
-use uri;
+use bcder::{BitString, Captured, Mode, OctetString, Oid, Tag, Unsigned};
+use bcder::{decode, encode};
+use bcder::encode::PrimitiveContent;
+use bytes::Bytes;
 use cert::SubjectPublicKeyInfo;
-use ber::Unsigned;
+use crl;
+use ipres::IpResources;
+use uri;
+use x509::update_once;
 
 
 //------------ Encoding ------------------------------------------------------
@@ -32,8 +31,8 @@ pub fn encode_extension<'a, V: encode::Values + 'a>(
     encode::sequence(
         (
             oid.encode(),
-            critical.value(),
-            OctetString::encode_into_der(content)
+            critical.encode(),
+            OctetString::encode_wrapped(Mode::Der, content)
         )
     )
 }
@@ -109,7 +108,7 @@ impl BasicCa {
             &oid::CE_BASIC_CONSTRAINTS,
             &self.critical,
             encode::sequence(
-                self.ca.value()
+                self.ca.encode()
             )
         )
     }
@@ -264,7 +263,7 @@ impl AuthorityKeyIdentifier {
     ) -> Result<(), S::Err> {
         update_once(authority_key_id, || {
             let authority_key_id = cons.take_sequence(|cons| {
-                cons.take_value_if(Tag::CTX_0, OctetString::take_content_from)
+                cons.take_value_if(Tag::CTX_0, OctetString::from_content)
             })?;
             if critical == true {
                 // RFC5280: Conforming CAs MUST mark this extension as non-critical.
@@ -469,7 +468,7 @@ impl CrlNumber {
         encode::sequence(
             (
                 crl::oid::CE_CRL_NUMBER.encode(),
-                OctetString::encode_into_der(self.number.value())
+                OctetString::encode_wrapped(Mode::Der, self.number.encode())
             )
         )
     }
@@ -992,7 +991,7 @@ impl UriGeneralName {
 
 #[allow(dead_code)] // XXX
 pub mod oid {
-    use ::ber::Oid;
+    use bcder::Oid;
 
     pub const AD_CA_ISSUERS: Oid<&[u8]> = Oid(&[43, 6, 1, 5, 5, 7, 48, 2]);
     pub const AD_CA_REPOSITORY: Oid<&[u8]> = Oid(&[43, 6, 1, 5, 5, 7, 48, 5]);
@@ -1024,7 +1023,7 @@ pub mod oid {
 pub mod tests {
 
     use super::*;
-    use ber::encode::Values;
+    use bcder::encode::Values;
 
     #[test]
     fn should_encode_basic_ca() {

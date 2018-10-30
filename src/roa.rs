@@ -3,9 +3,9 @@
 //! For details, see RFC 6482.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use ber::decode;
-use ber::{BitString, Captured, Mode, Tag};
-use ber::decode::Source;
+use bcder::decode;
+use bcder::{BitString, Captured, Mode, Tag};
+use bcder::decode::Source;
 use super::asres::AsId;
 use super::cert::{Cert, ResourceCert};
 use super::ipres::AddressFamily;
@@ -36,10 +36,11 @@ impl Roa {
     pub fn process<F>(
         self,
         issuer: &ResourceCert,
-        check_crl: F,
+        strict: bool,
+        check_crl: F
     ) -> Result<RouteOriginAttestation, ValidationError>
     where F: FnOnce(&Cert) -> Result<(), ValidationError> {
-        let cert = self.signed.validate(issuer)?;
+        let cert = self.signed.validate(issuer, strict)?;
         self.content.validate(&cert)?;
         check_crl(cert.as_ref())?;
         Ok(self.content)
@@ -120,11 +121,11 @@ impl RouteOriginAttestation {
                 as_id,
                 v4_addrs: match v4 {
                     Some(addrs) => addrs,
-                    None => RoaIpAddresses(Captured::empty())
+                    None => RoaIpAddresses(Captured::empty(Mode::Der))
                 },
                 v6_addrs: match v6 {
                     Some(addrs) => addrs,
-                    None => RoaIpAddresses(Captured::empty())
+                    None => RoaIpAddresses(Captured::empty(Mode::Der))
                 }
             })
         })

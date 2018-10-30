@@ -10,8 +10,8 @@
 //! [`Manifest`]: struct.Manifest.html
 //! [`ManifestContent`]: struct.ManifestContent.html
 
-use ber::decode;
-use ber::{BitString, Captured, OctetString, Tag, Unsigned};
+use bcder::decode;
+use bcder::{BitString, Captured, OctetString, Tag, Unsigned};
 use super::uri;
 use super::cert::{ResourceCert};
 use super::sigobj::SignedObject;
@@ -53,8 +53,9 @@ impl Manifest {
     pub fn validate(
         self,
         cert: &ResourceCert,
+        strict: bool,
     ) -> Result<(ResourceCert, ManifestContent), ValidationError> {
-        let cert = self.signed.validate(cert)?;
+        let cert = self.signed.validate(cert, strict)?;
         Ok((cert, self.content))
     }
 }
@@ -180,7 +181,7 @@ impl FileAndHash {
         cons.take_opt_sequence(|cons| {
             cons.take_value_if(
                 Tag::IA5_STRING,
-                OctetString::take_content_from
+                OctetString::from_content
             )?;
             BitString::skip_in(cons)?;
             Ok(())
@@ -195,7 +196,7 @@ impl FileAndHash {
             Ok(FileAndHash {
                 file: cons.take_value_if(
                     Tag::IA5_STRING,
-                    OctetString::take_content_from
+                    OctetString::from_content
                 )?,
                 hash: ManifestHash(BitString::take_from(cons)?)
             })

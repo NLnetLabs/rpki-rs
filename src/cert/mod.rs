@@ -1,25 +1,25 @@
-//! RPKI Certificates.
+//! Resource certificates.
 //!
-//! For its certificates, RPKI defines a profile for X.509 certificates. That
-//! is, while it uses the format defined for X.509 certificates, it limits
-//! the allowed values for various fields, making the overall structure more
-//! simple and predictable.
+//! The certificates used in RPKI are called _resource certificates._ They
+//! are defined in [RFC 6487] as a profile on regular Internet PKI
+//! certificates defined in [RFC 5280]. While they use the format defined
+//! for X.509 certificates, the allowed vales for various fields are limited
+//! making the overall structure more simple and predictable.
 //!
-//! This module implements the raw certificates in the type [`Cert`] and
-//! validated certificates in the type [`ResourceCert`]. The latter are used
-//! as the issuer certificates when validating other certificates.
+//! This module implements raw resource certificates in the type [`Cert`] and
+//! validated certificates in the type [`ResourceCert`]. The latter type is
+//! used for issuer certificates when validating other certificates.
 //!
 //! In addition, there are several types for the components of a certificate.
 //!
-//! RPKI resource certificates are defined in RFC 6487 based on the Internet
-//! PKIX profile defined in RFC 5280.
-//!
 //! [`Cert`]: struct.Cert.html
 //! [`ResourceCert`]: struct.ResourceCert.html
+//! [RFC 5280]: https://tools.ietf.org/html/rfc5280
+//! [RFC 6487]: https://tools.ietf.org/html/rfc5487
 
-use ber::{decode, encode};
-use ber::encode::PrimitiveContent;
-use ber::{BitString, Mode, OctetString, Tag, Unsigned};
+use bcder::{decode, encode};
+use bcder::encode::PrimitiveContent;
+use bcder::{BitString, Mode, OctetString, Tag, Unsigned};
 use cert::ext::{Extensions, UriGeneralName, UriGeneralNames};
 use ring::digest::{self, Digest};
 use super::asres::AsBlocks;
@@ -29,32 +29,47 @@ use super::x509::{Name, SignedData, Time, ValidationError};
 use signing::{PublicKeyAlgorithm, SignatureAlgorithm};
 use chrono::Utc;
 
+
+pub mod ext;
+
+
 //------------ Cert ----------------------------------------------------------
 
-/// An RPKI resource certificate.
+/// A resource certificate.
 ///
-/// A value of this type is the result of parsing a resource certificate. It
-/// can be one of three different variants: A CA certificate appears in its
-/// own file in the repository. It main use is to sign other certificates.
-/// An EE certificate is used to sign other objects in the repository, such
-/// as manifests or ROAs. In RPKI, EE certificates are used only once.
-/// Whenever a new such object is created, a new EE certificate is created,
-/// signed by its CA, used to sign the object, and then the private key is
-/// thrown away. Thus, EE certificates only appear inside these signed
-/// objects.
-/// Finally, TA certificates are the installed trust anchors. These are
+/// A value of this type represents a resource certificate. It can be one of
+/// three different variants.
+///
+/// A _CA certificate_ appears in its own file in the repository. Its main
+/// use is to sign other certificates.
+///
+/// An _EE certificate_ is used to sign other objects in the repository, such
+/// as manifests or ROAs and is included in the file of these objects. In
+/// RPKI, EE certificates are used only once.  Whenever a new object is
+/// created, a new EE certificate is created, signed by its CA, used to sign
+/// the object, and then the private key is thrown away.
+///
+/// Finally, _TA certificates_ are the installed trust anchors. These are
 /// self-signed.
 /// 
-/// If a certificate is stored in a file, you can use the `decode` function
+/// If a certificate is stored in a file, you can use the [`decode`] function
 /// to parse the entire file. If the certificate is part of some other
-/// structure, the `take_from` and `take_content_from` function can be used
-/// during parsing of that structure.
+/// structure, the [`take_from`] and [`from_constructed`] functions can be
+/// used during parsing of that structure.
 ///
-/// Once parsing succeeded, the three methods `validate_ta`, `validate_ca`,
-/// and `validate_ee` can be used to validate the certificate and turn it
-/// into a [`ResourceCert`] so it can be used for further processing.
+/// Once parsing succeeded, the three methods [`validate_ca`],
+/// [`validate_ee`], and [`validate_ta`] can be used to validate the
+/// certificate and turn it into a [`ResourceCert`] so it can be used for
+/// further processing. In addition, various methods exist to access
+/// information contained in the certificate.
 ///
 /// [`ResourceCert`]: struct.ResourceCert.html
+/// [`decode`]: #method.decode
+/// [`take_from`]: #method.take_from
+/// [`from_constructed`]: #method.from_constructed
+/// [`validate_ca`]: #method.validate_ca
+/// [`validate_ee`]: #method.validate_ee
+/// [`validate_ta`]: #method.validate_ta
 #[derive(Clone, Debug)]
 pub struct Cert {
     /// The outer structure of the certificate.
@@ -99,17 +114,20 @@ impl Cert {
     }
 
     /// Takes an encoded certificate from the beginning of a value.
+    ///
+    /// This function assumes that the certificate is encoded in the next
+    /// constructed value tagged as a sequence.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        cons.take_sequence(Self::take_content_from)
+        cons.take_sequence(Self::from_constructed)
     }
 
     /// Parses the content of a Certificate sequence.
-    pub fn take_content_from<S: decode::Source>(
+    pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        let signed_data = SignedData::take_content_from(cons)?;
+        let signed_data = SignedData::from_constructed(cons)?;
 
         signed_data.data().clone().decode(|cons| {
             cons.take_sequence(|cons| {
@@ -129,11 +147,11 @@ impl Cert {
                         SubjectPublicKeyInfo::take_from(cons)?,
                     issuer_unique_id: cons.take_opt_value_if(
                         Tag::CTX_1,
-                        |c| BitString::parse_content(c)
+                        |c| BitString::from_content(c)
                     )?,
                     subject_unique_id: cons.take_opt_value_if(
                         Tag::CTX_2,
-                        |c| BitString::parse_content(c)
+                        |c| BitString::from_content(c)
                     )?,
                     extensions: cons.take_constructed_if(
                         Tag::CTX_3,
@@ -181,9 +199,12 @@ impl Cert {
     /// This validates that the certificate “is a current, self-signed RPKI
     /// CA certificate that conforms to the profile as specified in
     /// RFC6487” (RFC7730, section 3, step 2).
-    pub fn validate_ta(self) -> Result<ResourceCert, ValidationError> {
-        self.validate_basics()?;
-        self.validate_ca_basics()?;
+    pub fn validate_ta(
+        self,
+        strict: bool
+    ) -> Result<ResourceCert, ValidationError> {
+        self.validate_basics(strict)?;
+        self.validate_ca_basics(strict)?;
 
         // 4.8.3. Authority Key Identifier. May be present, if so, must be
         // equal to the subject key indentifier.
@@ -234,13 +255,14 @@ impl Cert {
     /// Note that this does _not_ check the CRL.
     pub fn validate_ca(
         self,
-        issuer: &ResourceCert
+        issuer: &ResourceCert,
+        strict: bool
     ) -> Result<ResourceCert, ValidationError> {
-        self.validate_basics()?;
-        self.validate_ca_basics()?;
-        self.validate_issued(issuer)?;
-        self.validate_signature(issuer)?;
-        self.validate_resources(issuer)
+        self.validate_basics(strict)?;
+        self.validate_ca_basics(strict)?;
+        self.validate_issued(issuer, strict)?;
+        self.validate_signature(issuer, strict)?;
+        self.validate_resources(issuer, strict)
     }
 
     /// Validates the certificate as an EE certificate.
@@ -252,9 +274,10 @@ impl Cert {
     pub fn validate_ee(
         self,
         issuer: &ResourceCert,
+        strict: bool
     ) -> Result<ResourceCert, ValidationError>  {
-        self.validate_basics()?;
-        self.validate_issued(issuer)?;
+        self.validate_basics(strict)?;
+        self.validate_issued(issuer, strict)?;
 
         // 4.8.1. Basic Constraints: Must not be present.
         if self.extensions.basic_ca().is_some(){
@@ -272,15 +295,15 @@ impl Cert {
             return Err(ValidationError)
         }
 
-        self.validate_signature(issuer)?;
-        self.validate_resources(issuer)
+        self.validate_signature(issuer, strict)?;
+        self.validate_resources(issuer, strict)
     }
 
 
     //--- Validation Components
 
     /// Validates basic compliance with section 4 of RFC 6487.
-    fn validate_basics(&self) -> Result<(), ValidationError> {
+    fn validate_basics(&self, strict: bool) -> Result<(), ValidationError> {
         // The following lists all such constraints in the RFC, noting those
         // that we cannot check here.
 
@@ -290,10 +313,11 @@ impl Cert {
         // 4.3 Signature Algorithm: limited to those in RFC 6485. Already
         // checked in parsing.
 
-        // 4.4 Issuer: must have certain format. Since it is not intended to
-        // be descriptive, we simply ignore it.
+        // 4.4 Issuer: must have certain format. 
+        Name::validate_rpki(&self.issuer, strict)?;
 
         // 4.5 Subject: same as 4.4.
+        Name::validate_rpki(&self.subject, strict)?;
         
         // 4.6 Validity. Check according to RFC 5280.
         self.validity.validate()?;
@@ -348,6 +372,7 @@ impl Cert {
     fn validate_issued(
         &self,
         issuer: &ResourceCert,
+        _strict: bool,
     ) -> Result<(), ValidationError> {
         // 4.8.3. Authority Key Identifier. Must be present and match the
         // subject key ID of `issuer`.
@@ -382,7 +407,10 @@ impl Cert {
     ///
     /// Checks the parts that are common in normal and trust anchor CA
     /// certificates.
-    fn validate_ca_basics(&self) -> Result<(), ValidationError> {
+    fn validate_ca_basics(
+        &self,
+        _strict: bool
+    ) -> Result<(), ValidationError> {
         // 4.8.1. Basic Constraints: For a CA it must be present (RFC6487)
         // und the “cA” flag must be set (RFC5280).
         if self.extensions.basic_ca() != Some(true) {
@@ -406,7 +434,8 @@ impl Cert {
     /// Validates the certificate’s signature.
     fn validate_signature(
         &self,
-        issuer: &ResourceCert
+        issuer: &ResourceCert,
+        _strict: bool
     ) -> Result<(), ValidationError> {
         self.signed_data.verify_signature(issuer.cert.subject_public_key_info())
     }
@@ -416,7 +445,8 @@ impl Cert {
     /// Upon success, this converts the certificate into a `ResourceCert`.
     fn validate_resources(
         self,
-        issuer: &ResourceCert
+        issuer: &ResourceCert,
+        _strict: bool
     ) -> Result<ResourceCert, ValidationError> {
         // 4.8.10.  IP Resources. If present, must be encompassed by issuer.
         // certificates.
@@ -540,8 +570,8 @@ impl Validity {
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence(
             (
-                self.not_before.value(),
-                self.not_after.value(),
+                self.not_before.encode(),
+                self.not_after.encode(),
             )
         )
     }
@@ -597,5 +627,3 @@ impl SubjectPublicKeyInfo {
     }
 }
 
-//--- Modules
-pub mod ext;

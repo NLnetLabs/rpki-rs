@@ -8,7 +8,7 @@
 // XXX TODO Check security of keys in memory
 
 use std::collections::HashMap;
-use ber::decode;
+use bcder::decode;
 use bytes::Bytes;
 use cert::SubjectPublicKeyInfo;
 use hex;

@@ -1,8 +1,8 @@
 //! Signed Objects
 
-use ber::decode;
-use ber::{Captured, Mode, Oid, Tag};
-use ber::ostring::{OctetString, OctetStringSource};
+use bcder::decode;
+use bcder::{Captured, Mode, Oid, Tag};
+use bcder::string::{OctetString, OctetStringSource};
 use bytes::Bytes;
 use ring::digest;
 use untrusted::Input;
@@ -152,7 +152,7 @@ impl SignedObject {
         cons.take_constructed_if(Tag::CTX_0, |cons| {
             cons.take_constructed(|tag, cons| {
                 match tag {
-                    Tag::SEQUENCE =>  Cert::take_content_from(cons),
+                    Tag::SEQUENCE =>  Cert::from_constructed(cons),
                     _ => {
                         xerr!(Err(decode::Unimplemented.into()))
                     }
@@ -170,17 +170,21 @@ impl SignedObject {
     /// content.
     pub fn validate(
         self,
-        issuer: &ResourceCert
+        issuer: &ResourceCert,
+        strict: bool,
     ) -> Result<ResourceCert, ValidationError> {
-        self.verify_compliance()?;
-        self.verify_signature()?;
-        self.cert.validate_ee(issuer)
+        self.verify_compliance(strict)?;
+        self.verify_signature(strict)?;
+        self.cert.validate_ee(issuer, strict)
     }
 
     /// Validates that the signed object complies with the specification.
     ///
     /// This is item 1 of [RFC 6488]`s section 3.
-    fn verify_compliance(&self) -> Result<(), ValidationError> {
+    fn verify_compliance(
+        &self,
+        _strict: bool
+    ) -> Result<(), ValidationError> {
         // Sub-items a, b, d, e, f, g, i, j, k, l have been validated while
         // parsing. This leaves these:
         //
@@ -200,7 +204,7 @@ impl SignedObject {
     /// Verifies the signature of the object against contained certificate.
     ///
     /// This is item 2 of [RFC 6488]’s section 3.
-    fn verify_signature(&self) -> Result<(), ValidationError> {
+    fn verify_signature(&self, _strict: bool) -> Result<(), ValidationError> {
         let digest = {
             let mut context = digest::Context::new(&digest::SHA256);
             self.content.iter().for_each(|x| context.update(x));
@@ -266,7 +270,7 @@ impl SignerInfo {
             cons.skip_u8_if(3)?;
             Ok(SignerInfo {
                 sid: cons.take_value_if(Tag::CTX_0, |content| {
-                    OctetString::take_content_from(content)
+                    OctetString::from_content(content)
                 })?,
                 digest_algorithm: DigestAlgorithm::take_from(cons)?,
                 signed_attrs: SignedAttributes::take_from(cons)?,
@@ -425,7 +429,7 @@ impl SignedAttributes {
 //------------ OIDs ----------------------------------------------------------
 
 pub mod oid {
-    use ::ber::Oid;
+    use bcder::Oid;
 
     pub const SIGNED_DATA: Oid<&[u8]>
         = Oid(&[42, 134, 72, 134, 247, 13, 1, 7, 2]);

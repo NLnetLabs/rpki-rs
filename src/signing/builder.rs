@@ -1,10 +1,8 @@
 //! Support for building RPKI Certificates and Objects
 
-use ber::{BitString, Mode, Tag};
-use ber::Oid;
-use ber::OctetString;
-use ber::encode;
-use ber::encode::{Constructed, PrimitiveContent, Values};
+use bcder::{BitString, Mode, OctetString, Oid, Tag};
+use bcder::encode;
+use bcder::encode::{Constructed, PrimitiveContent, Values};
 use bytes::Bytes;
 use cert::{SubjectPublicKeyInfo, Validity};
 use cert::ext::AuthorityKeyIdentifier;
@@ -80,22 +78,23 @@ impl RpkiTbsCertificate {
 
         match self.extensions {
             RpkiTbsExtension::IdExtensions(ref id_ext) => {
-                encode::sequence(
+                encode::sequence((
                     (
-                        (
-                            Constructed::new(Tag::CTX_0, 2.value()), // Version 3 is encoded as 2
-                            self.serial_number.value(),
-                            SignatureAlgorithm::Sha256WithRsaEncryption.encode(),
-                            self.issuer.encode(),
+                        Constructed::new(
+                            Tag::CTX_0,
+                            2.encode() // Version 3 is encoded as 2
                         ),
-                        (
-                            self.validity.encode(),
-                            self.subject.encode(),
-                            self.subject_public_key_info.encode(),
-                            id_ext.encode()
-                        )
+                        self.serial_number.encode(),
+                        SignatureAlgorithm::Sha256WithRsaEncryption.encode(),
+                        self.issuer.encode(),
+                    ),
+                    (
+                        self.validity.encode(),
+                        self.subject.encode(),
+                        self.subject_public_key_info.encode(),
+                        id_ext.encode()
                     )
-                )
+                ))
             },
             RpkiTbsExtension::ResourceExtensions(ref _ext) => {
                 unimplemented!()
@@ -342,7 +341,7 @@ impl SignedMessageBuilder {
                     encode::sequence(
                         (
                             (
-                                3.value(),
+                                3.encode(),
                                 digest_algorithms,
                                 encap_content_info
                             ),
@@ -439,7 +438,7 @@ impl SignedAttributes {
                     // was created.
                     sigobj::oid::SIGNING_TIME.encode(),
                     encode::set(
-                        self.signing_time.value()
+                        self.signing_time.encode()
                     )
                 )
             )
@@ -480,7 +479,7 @@ impl SignedSignerInfo {
         //      signature SignatureValue,
         //      unsignedAttrs [1] IMPLICIT UnsignedAttributes OPTIONAL }
 
-        let version = 3.value();
+        let version = 3.encode();
 
         // The sid is defined as:
         //      SignerIdentifier ::= CHOICE {
@@ -607,13 +606,13 @@ impl CrlBuilder {
         let crl_data = encode::sequence(
             (
                 (
-                    1.value(),
+                    1.encode(),
                     SignatureAlgorithm::Sha256WithRsaEncryption.encode(),
                     name.encode()
                 ),
                 (
-                    now.value(),
-                    eternity.value(),
+                    now.encode(),
+                    eternity.encode(),
                     // Real revocations go here
                     extensions
                 )

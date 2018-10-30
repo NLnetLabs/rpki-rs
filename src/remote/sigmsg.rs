@@ -1,9 +1,9 @@
 //! CMS structure that is used to encompass publication and provisioning
 //! messages.
 
-use ber::decode;
-use ber::{Mode, Oid, Tag};
-use ber::ostring::OctetString;
+use bcder::decode;
+use bcder::{Mode, Oid, Tag};
+use bcder::string::OctetString;
 use bytes::Bytes;
 use crl::Crl;
 use ring::digest;
@@ -91,7 +91,7 @@ impl SignedMessage {
         cons.take_constructed_if(Tag::CTX_0, |cons| {
             cons.take_constructed(|tag, cons| {
                 match tag {
-                    Tag::SEQUENCE => IdCert::take_content_from(cons),
+                    Tag::SEQUENCE => IdCert::from_constructed(cons),
                     _ => {
                         xerr!(Err(decode::Unimplemented.into()))
                     }

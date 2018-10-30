@@ -14,8 +14,8 @@
 //! [`Crl`]: struct.Crl.html
 //! [`CrlStore`]: struct.CrlStore.html
 
-use ber::decode;
-use ber::{Captured, Mode, OctetString, Oid, Tag, Unsigned};
+use bcder::{decode, encode};
+use bcder::{Captured, Mode, OctetString, Oid, Tag, Unsigned};
 use super::uri;
 use super::x509::{
     update_once, Name, SignedData, Time, ValidationError
@@ -23,7 +23,6 @@ use super::x509::{
 use super::signing::SignatureAlgorithm;
 use cert::ext::AuthorityKeyIdentifier;
 use cert::SubjectPublicKeyInfo;
-use ber::encode;
 
 
 //------------ Crl -----------------------------------------------------------
@@ -69,14 +68,14 @@ impl Crl {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        cons.take_sequence(Self::take_content_from)
+        cons.take_sequence(Self::from_constructed)
     }
 
     /// Parses the content of a certificate revocation list.
-    pub fn take_content_from<S: decode::Source>(
+    pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        let signed_data = SignedData::take_content_from(cons)?;
+        let signed_data = SignedData::from_constructed(cons)?;
 
         signed_data.data().clone().decode(|cons| {
             cons.take_sequence(|cons| {
@@ -118,6 +117,7 @@ impl Crl {
 }
 
 
+
 //------------ RevokedCertificates ------------------------------------------
 
 /// The list of revoked certificates.
@@ -141,7 +141,7 @@ impl RevokedCertificates {
         })?;
         Ok(RevokedCertificates(match res {
             Some(res) => res,
-            None => Captured::empty()
+            None => Captured::empty(Mode::Der)
         }))
     }
 
@@ -179,18 +179,18 @@ impl CrlEntry {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        cons.take_sequence(Self::take_content_from)
+        cons.take_sequence(Self::from_constructed)
     }
 
     /// Takes an optional CRL entry from the beginning of a contructed value.
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, S::Err> {
-        cons.take_opt_sequence(Self::take_content_from)
+        cons.take_opt_sequence(Self::from_constructed)
     }
 
     /// Parses the content of a CRL entry.
-    pub fn take_content_from<S: decode::Source>(
+    pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         Ok(CrlEntry {
@@ -262,6 +262,38 @@ impl Extensions {
         })
     }
 
+    /// Parses the Authority Key Identifier Extension.
+    ///
+    /// Must be present.
+    ///
+    /// ```text
+    /// AuthorityKeyIdentifier ::= SEQUENCE {
+    ///   keyIdentifier             [0] KeyIdentifier           OPTIONAL,
+    ///   authorityCertIssuer       [1] GeneralNames            OPTIONAL,
+    ///   authorityCertSerialNumber [2] CertificateSerialNumber OPTIONAL  }
+    ///
+    /// KeyIdentifier ::= OCTET STRING
+    /// ```
+    ///
+    /// For certificates, only keyIdentifier must be present. Let’s assume
+    /// the same is true for CRLs.
+    fn take_authority_key_identifier<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+        authority_key_id: &mut Option<OctetString>
+    ) -> Result<(), S::Err> {
+        update_once(authority_key_id, || {
+            let res = cons.take_sequence(|cons| {
+                cons.take_value_if(Tag::CTX_0, OctetString::from_content)
+            })?;
+            if res.len() != 20 {
+                return Err(decode::Malformed.into())
+            }
+            else {
+                Ok(res)
+            }
+        })
+    }
+
     /// Parses the CRL Number Extension.
     ///
     /// Must be present
@@ -322,7 +354,7 @@ impl CrlStore {
 //------------ OIDs ----------------------------------------------------------
 
 pub mod oid {
-    use ::ber::Oid;
+    use bcder::Oid;
 
     pub const CE_CRL_NUMBER: Oid<&[u8]> = Oid(&[85, 29, 20]);
     pub const CE_AUTHORITY_KEY_IDENTIFIER: Oid<&[u8]> = Oid(&[85, 29, 35]);

@@ -6,7 +6,7 @@
 
 use std::io;
 use base64::DecodeError;
-use ber::decode;
+use bcder::decode;
 use uri;
 use x509;
 use remote::idcert::IdCert;

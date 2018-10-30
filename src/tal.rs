@@ -4,7 +4,7 @@ use std::fs::{read_dir, DirEntry, File, ReadDir};
 use std::io::{self, Read};
 use std::path::Path;
 use base64;
-use ber::decode;
+use bcder::decode;
 use super::cert::SubjectPublicKeyInfo;
 use super::uri;
 
@@ -22,9 +22,47 @@ impl Tal {
         read_dir(path).map(TalIter)
     }
 
-    pub fn read<R: Read>(reader: &mut R) -> Result<Self, ReadError> {
+    pub fn read<P: AsRef<Path>, R: Read>(
+        path: P,
+        reader: &mut R
+    ) -> Result<Self, ReadError> {
         let mut data = Vec::new();
         reader.read_to_end(&mut data)?;
+
+        if let Some(&b'#') = data.first() {
+            // Workaround for ARIN: If the TAL starts with a hash, it is
+            // followed by a URI where to go to get it. We print out a
+            // text and terminate.
+            let data = String::from_utf8_lossy(&data[1..]);
+            let path = path.as_ref().display();
+            match data.lines().next().map(|s| s.trim()) {
+                Some(uri) => {
+                    error!("MISSING TRUST ANCHOR LOCATOR\n\n\
+                        The trust anchor locator (TAL) in \
+                        file\n\n   {}\n\nhas not been installed. \
+                        Please go to\n\n   {}\n\nand download the TAL \
+                        in RFC 7730 format. Place the downloaded file \
+                        at\n\n   {}\n\n\
+                        Routinator will refuse to run until you have done \
+                        that.",
+                        path, uri, path
+                    );
+                }
+                None => {
+                    error!("MISSING TRUST ANCHOR LOCATOR\
+                        The trust anchor locator (TAL) in file {} has not\
+                        been installed.\n\
+                        Unfortunately, the file is malformed and we cannot \
+                        tell you where to get it.\n
+                        The file will have to contain a valid TAL in RFC \
+                        7730 format.\n\n
+                        Routinator will refuse to run until it does. Sorry.",
+                        path
+                    );
+                }
+            }
+            ::std::process::exit(1);
+        }
         
         let mut data = data.as_ref();
         let mut uris = Vec::new();
@@ -96,7 +134,7 @@ fn next_entry(entry: DirEntry) -> Result<Option<Tal>, ReadError> {
     }
     let path = entry.path();
     debug!("Processing TAL {}", path.display());
-    Tal::read(&mut File::open(path)?).map(Some)
+    Tal::read(&path, &mut File::open(&path)?).map(Some)
 }
 
 

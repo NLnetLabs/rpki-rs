@@ -1,9 +1,10 @@
 //! Identity Certificates.
 //!
 
-use ber::{Mode, OctetString, Oid, Tag, Unsigned};
-use ber::{decode, encode};
-use ber::encode::Values;
+use bcder::{Mode, OctetString, Oid, Tag, Unsigned};
+use bcder::{decode, encode};
+use bcder::encode::Values;
+use bcder::encode::Constructed;
 use bytes::Bytes;
 use cert::{SubjectPublicKeyInfo, Validity};
 use cert::ext::{BasicCa, SubjectKeyIdentifier};
@@ -11,7 +12,6 @@ use cert::ext::oid;
 use signing::SignatureAlgorithm;
 use x509::{Name, SignedData, ValidationError};
 use cert::ext::AuthorityKeyIdentifier;
-use ber::encode::Constructed;
 
 
 //------------ IdCert --------------------------------------------------------
@@ -33,7 +33,7 @@ use ber::encode::Constructed;
 /// matches the issuer's SKI. Maybe we should take this out... and just care
 /// that things are validly signed, or only check AKI/SKI if it's version 3,
 /// but skip this for lower versions.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct IdCert {
     /// The outer structure of the certificate.
     signed_data: SignedData,
@@ -101,14 +101,14 @@ impl IdCert {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        cons.take_sequence(Self::take_content_from)
+        cons.take_sequence(Self::from_constructed)
     }
 
     /// Parses the content of a Certificate sequence.
-    pub fn take_content_from<S: decode::Source>(
+    pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        let signed_data = SignedData::take_content_from(cons)?;
+        let signed_data = SignedData::from_constructed(cons)?;
 
         signed_data.data().clone().decode(|cons| {
             cons.take_sequence(|cons| {

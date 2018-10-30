@@ -2,19 +2,18 @@
 
 use std::str;
 use std::str::FromStr;
-use ber::{decode, encode};
-use ber::{BitString, Captured, Mode, OctetString, Tag};
-use ber::cstring::PrintableString;
-use ber::decode::Source;
-use ber::encode::PrimitiveContent;
-use bytes::Bytes;
+use bcder::{decode, encode};
+use bcder::{BitString, Captured, Mode, Tag};
+use bcder::string::PrintableString;
+use bcder::decode::Source;
+use bcder::encode::PrimitiveContent;
 use cert::SubjectPublicKeyInfo;
 use chrono::{Datelike, DateTime, LocalResult, Timelike, TimeZone, Utc};
 use hex;
 use super::time;
 use signing::SignatureAlgorithm;
 use std::io;
-use ber::Oid;
+use bcder::Oid;
 use std::result::Result::Err;
 
 
@@ -34,48 +33,68 @@ where F: FnOnce() -> Result<T, E>, E: From<decode::Error> {
 
 //------------ Name ----------------------------------------------------------
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Name {
-    common_name: PrintableString,
-    serial: Option<PrintableString>
-}
+#[derive(Clone, Debug)]
+pub struct Name(Captured);
 
 impl Name {
-
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-
-        cons.take_sequence(|cons| {
-            cons.take_set(|cons| {
-                cons.take_sequence(|cons| {
-                    let mut name_option = None;
-                    let mut serial = None;
-
-                    let oid = Oid::take_from(cons)?;
-
-                    if oid == oid::ID_AT_COMMON_NAME {
-                        name_option = Some(PrintableString::take_from(cons)?);
-                    } else if oid == oid::ID_AT_COMMON_NAME {
-                        serial = Some(PrintableString::take_from(cons)?);
-                    }
-
-                    if let Some(oid) = Oid::take_opt_from(cons)? {
-                        if oid == oid::ID_AT_COMMON_NAME {
-                            name_option = Some(PrintableString::take_from(cons)?);
-                        } else if oid == oid::ID_AT_COMMON_NAME {
-                            serial = Some(PrintableString::take_from(cons)?);
+        cons.capture(|cons| {
+            cons.take_sequence(|cons| { // RDNSequence
+                while let Some(()) = cons.take_opt_set(|cons| {
+                    while let Some(()) = cons.take_opt_sequence(|cons| {
+                        Oid::skip_in(cons)?;
+                        if cons.skip_one()?.is_none() {
+                            xerr!(
+                                return Err(decode::Error::Malformed.into())
+                            );
                         }
-                    }
-
-                    match name_option {
-                        None =>  Err(decode::Malformed.into()),
-                        Some(common_name) => Ok(Self{common_name, serial})
-                    }
-                })
+                        Ok(())
+                    })? { }
+                    Ok(())
+                })? { }
+                Ok(())
             })
-        })
+        }).map(Name)
+    }
 
+    pub fn validate_rpki(&self, strict: bool) -> Result<(), ValidationError> {
+        if strict {
+            self.0.clone().decode(|cons| {
+                let mut cn = false;
+                let mut sn = false;
+                cons.take_sequence(|cons| {
+                    while let Some(()) = cons.take_opt_set(|cons| {
+                        while let Some(()) = cons.take_opt_sequence(|cons| {
+                            let id = Oid::take_from(cons)?;
+                            if id == oid::ID_AT_COMMON_NAME {
+                                if cn {
+                                    xerr!(
+                                        return Err(decode::Error::Malformed)
+                                    )
+                                }
+                                let _ = PrintableString::take_from(cons)?;
+                                cn = true;
+                            }
+                            else if id == oid::ID_AT_SERIAL_NUMBER {
+                                if sn {
+                                    xerr!(
+                                        return Err(decode::Error::Malformed)
+                                    )
+                                }
+                                let _ = PrintableString::take_from(cons)?;
+                                sn = true;
+                            }
+                            Ok(())
+                        })? { }
+                        Ok(())
+                    })? {}
+                    Ok(())
+                })
+            })?
+        }
+        Ok(())
     }
 
     /// Derives a name from a public key info.
@@ -96,37 +115,35 @@ impl Name {
     /// and 8.
     pub fn from_pub_key(key_info: &SubjectPublicKeyInfo) -> Self {
         let ki = key_info.key_identifier();
+        // Borrow checker shenanigans ...
         let enc = hex::encode(&ki);
-
-        let common_name = PrintableString::new(
-            OctetString::new(Bytes::from(enc))
-        ).unwrap(); // We know these characters are always safe!
-        Self { common_name, serial: None }
+        let enc = enc.as_bytes();
+        let values = encode::sequence(
+            encode::set(
+                encode::sequence((
+                    oid::ID_AT_COMMON_NAME.encode(),
+                    enc.encode_as(Tag::PRINTABLE_STRING),
+                ))
+            )
+        );
+        Name(Captured::from_values(Mode::Der, values))
     }
 
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        encode::sequence(
-            encode::set(
-                encode::sequence(
-                    (
-                        oid::ID_AT_COMMON_NAME.value(),
-                        self.common_name.encode()
-                    )
-                )
-            )
-        )
+        &self.0
     }
 }
 
 
 //------------ SignedData ----------------------------------------------------
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct SignedData {
     data: Captured,
     signature_algorithm: SignatureAlgorithm,
     signature_value: BitString,
 }
+
 
 impl SignedData {
     pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
@@ -136,10 +153,10 @@ impl SignedData {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        cons.take_sequence(Self::take_content_from)
+        cons.take_sequence(Self::from_constructed)
     }
 
-    pub fn take_content_from<S: decode::Source>(
+    pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         Ok(SignedData {
@@ -373,11 +390,17 @@ fn read_four_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Err> {
 #[fail(display="validation error")]
 pub struct ValidationError;
 
+impl From<decode::Error> for ValidationError {
+    fn from(_: decode::Error) -> ValidationError {
+        ValidationError
+    }
+}
+
 
 //------------ OIDs ----------------------------------------------------------
 
 pub mod oid {
-    use ::ber::Oid;
+    use bcder::Oid;
 
     // https://www.itu.int/ITU-T/formal-language/itu-t/x/x520/2012/SelectedAttributeTypes.html#SelectedAttributeTypes.id-at-commonName
     pub const ID_AT_COMMON_NAME: Oid<&[u8]> = Oid(&[85, 4, 3]); // 2 5 4 3
@@ -393,7 +416,7 @@ pub mod oid {
 #[cfg(test)]
 mod test {
     use super::*;
-    use ber::encode::Values;
+    use bcder::encode::Values;
 
     #[test]
     fn signed_data_decode_then_encode() {
