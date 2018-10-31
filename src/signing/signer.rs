@@ -55,6 +55,10 @@ pub struct KeyId(String);
 
 impl KeyId {
     pub fn new(s: String) -> Self { KeyId(s) }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
 }
 
 

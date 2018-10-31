@@ -120,6 +120,14 @@ impl PublisherRequest {
     pub fn into_parts(self) -> (Option<String>, String, IdCert) {
         (self.tag, self.publisher_handle, self.id_cert)
     }
+
+    pub fn id_cert(&self) -> &IdCert {
+        &self.id_cert
+    }
+
+    pub fn handle(&self) -> &String {
+        &self.publisher_handle
+    }
 }
 
 
