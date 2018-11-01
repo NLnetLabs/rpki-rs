@@ -116,7 +116,7 @@ impl Cert {
     /// Takes an encoded certificate from the beginning of a value.
     ///
     /// This function assumes that the certificate is encoded in the next
-    /// constructed value tagged as a sequence.
+    /// constructed value in `cons` tagged as a sequence.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
