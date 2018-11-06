@@ -529,8 +529,8 @@ impl ResourceCert {
     }
 
     /// Returns information about the TAL this certificate is based on.
-    pub fn tal(&self) -> &TalInfo {
-        self.tal.as_ref()
+    pub fn tal(&self) -> &Arc<TalInfo> {
+        &self.tal
     }
 }
 

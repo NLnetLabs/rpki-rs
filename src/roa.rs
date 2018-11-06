@@ -3,6 +3,7 @@
 //! For details, see RFC 6482.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::sync::Arc;
 use bcder::decode;
 use bcder::{BitString, Captured, Mode, Tag};
 use bcder::decode::Source;
@@ -10,6 +11,7 @@ use super::asres::AsId;
 use super::cert::{Cert, ResourceCert};
 use super::ipres::AddressFamily;
 use super::sigobj::SignedObject;
+use super::tal::TalInfo;
 use super::x509::ValidationError;
 
 
@@ -34,7 +36,7 @@ impl Roa {
     }
 
     pub fn process<F>(
-        self,
+        mut self,
         issuer: &ResourceCert,
         strict: bool,
         check_crl: F
@@ -55,6 +57,7 @@ pub struct RouteOriginAttestation {
     as_id: AsId,
     v4_addrs: RoaIpAddresses,
     v6_addrs: RoaIpAddresses,
+    status: RoaStatus,
 }
 
 impl RouteOriginAttestation {
@@ -68,6 +71,10 @@ impl RouteOriginAttestation {
 
     pub fn v6_addrs(&self) -> &RoaIpAddresses {
         &self.v6_addrs
+    }
+
+    pub fn status(&self) -> &RoaStatus {
+        &self.status
     }
 
     pub fn iter<'a>(
@@ -126,12 +133,16 @@ impl RouteOriginAttestation {
                 v6_addrs: match v6 {
                     Some(addrs) => addrs,
                     None => RoaIpAddresses(Captured::empty(Mode::Der))
-                }
+                },
+                status: RoaStatus::Unknown,
             })
         })
     }
 
-    fn validate(&self, cert: &ResourceCert) -> Result<(), ValidationError> {
+    fn validate(
+        &mut self,
+        cert: &ResourceCert
+    ) -> Result<(), ValidationError> {
         if !self.v4_addrs.is_empty() {
             let blocks = match cert.ip_resources().v4() {
                 Some(blocks) => blocks,
@@ -154,6 +165,7 @@ impl RouteOriginAttestation {
                 }
             }
         }
+        self.status = RoaStatus::Valid { tal: cert.tal().clone() };
         Ok(())
     }
 }
@@ -311,5 +323,19 @@ impl FriendlyRoaIpAddress {
     pub fn max_length(&self) -> u8 {
         self.addr.max_length.unwrap_or(self.addr.address_length)
     }
+}
+
+
+//------------ RoaStatus -----------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub enum RoaStatus {
+    Valid {
+        tal: Arc<TalInfo>,
+    },
+    Invalid {
+        // XXX Add information for why this is invalid.
+    },
+    Unknown
 }
 

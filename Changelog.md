@@ -15,6 +15,10 @@ New
 
   The name will be based on the stem of the file name of the TAL file.
 
+* `roa::RouteOriginAttestation`` now has a `status` function that returns
+  a reference to a `RoaStatus` enum with information about the ROA’s
+  status.
+
 Bug Fixes
 
 Dependencies
