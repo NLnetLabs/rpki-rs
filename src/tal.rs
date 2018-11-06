@@ -3,6 +3,7 @@
 use std::fs::{read_dir, DirEntry, File, ReadDir};
 use std::io::{self, Read};
 use std::path::Path;
+use std::sync::Arc;
 use base64;
 use bcder::decode;
 use super::cert::SubjectPublicKeyInfo;
@@ -15,6 +16,7 @@ use super::uri;
 pub struct Tal {
     uris: Vec<uri::Rsync>,
     key_info: SubjectPublicKeyInfo,
+    info: Arc<TalInfo>,
 }
 
 impl Tal {
@@ -71,7 +73,11 @@ impl Tal {
         }
         let key_info = base64::decode_config(data, base64::MIME)?;
         let key_info = SubjectPublicKeyInfo::decode(key_info.as_ref())?;
-        Ok(Tal { uris, key_info })
+        Ok(Tal {
+            uris,
+            key_info,
+            info: Arc::new(TalInfo::from_path(path))
+        })
     }
 
     fn take_uri(data: &mut &[u8]) -> Result<Option<uri::Rsync>, ReadError> {
@@ -97,6 +103,10 @@ impl Tal {
 
     pub fn key_info(&self) -> &SubjectPublicKeyInfo {
         &self.key_info
+    }
+
+    pub fn info(&self) -> &Arc<TalInfo> {
+        &self.info
     }
 }
 
@@ -135,6 +145,30 @@ fn next_entry(entry: DirEntry) -> Result<Option<Tal>, ReadError> {
     let path = entry.path();
     debug!("Processing TAL {}", path.display());
     Tal::read(&path, &mut File::open(&path)?).map(Some)
+}
+
+
+//------------ TalInfo -------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct TalInfo {
+    name: String,
+}
+
+impl TalInfo {
+    fn from_path<P: AsRef<Path>>(path: P) -> Self {
+        TalInfo {
+            name: {
+                path.as_ref().file_stem()
+                    .expect("TAL path needs to have a file name")
+                    .to_string_lossy().into_owned()
+            }
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.as_ref()
+    }
 }
 
 

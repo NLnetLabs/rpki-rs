@@ -17,17 +17,19 @@
 //! [RFC 5280]: https://tools.ietf.org/html/rfc5280
 //! [RFC 6487]: https://tools.ietf.org/html/rfc5487
 
+use std::sync::Arc;
 use bcder::{decode, encode};
 use bcder::encode::PrimitiveContent;
 use bcder::{BitString, Mode, OctetString, Tag, Unsigned};
-use cert::ext::{Extensions, UriGeneralName, UriGeneralNames};
+use chrono::Utc;
 use ring::digest::{self, Digest};
 use super::asres::AsBlocks;
 use super::uri;
 use super::ipres::IpAddressBlocks;
+use super::tal::TalInfo;
 use super::x509::{Name, SignedData, Time, ValidationError};
 use signing::{PublicKeyAlgorithm, SignatureAlgorithm};
-use chrono::Utc;
+use self::ext::{Extensions, UriGeneralName, UriGeneralNames};
 
 
 pub mod ext;
@@ -201,6 +203,7 @@ impl Cert {
     /// RFC6487” (RFC7730, section 3, step 2).
     pub fn validate_ta(
         self,
+        tal: Arc<TalInfo>,
         strict: bool
     ) -> Result<ResourceCert, ValidationError> {
         self.validate_basics(strict)?;
@@ -245,6 +248,7 @@ impl Cert {
             cert: self,
             ip_resources,
             as_resources,
+            tal
         })
     }
 
@@ -466,6 +470,7 @@ impl Cert {
             cert: self,
             ip_resources,
             as_resources,
+            tal: issuer.tal.clone(),
         })
     }
 }
@@ -497,6 +502,9 @@ pub struct ResourceCert {
 
     /// The resolved AS resources.
     as_resources: AsBlocks,
+
+    /// The TAL this is based on.
+    tal: Arc<TalInfo>,
 }
 
 impl ResourceCert {
@@ -518,6 +526,11 @@ impl ResourceCert {
     /// Returns the repository rsync URI of this certificate if available.
     pub fn repository_uri(&self) -> Option<uri::Rsync> {
         self.cert.extensions.repository_uri()
+    }
+
+    /// Returns information about the TAL this certificate is based on.
+    pub fn tal(&self) -> &TalInfo {
+        self.tal.as_ref()
     }
 }
 
