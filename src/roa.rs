@@ -339,3 +339,12 @@ pub enum RoaStatus {
     Unknown
 }
 
+impl RoaStatus {
+    pub fn tal(&self) -> Option<&Arc<TalInfo>> {
+        match *self {
+            RoaStatus::Valid { ref tal, .. } => Some(tal),
+            _ => None
+        }
+    }
+}
+
