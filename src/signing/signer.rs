@@ -1,7 +1,8 @@
 //! Support for generating keys, and using them to sign things
 
-use cert::SubjectPublicKeyInfo;
+use base64;
 use bytes::Bytes;
+use cert::SubjectPublicKeyInfo;
 use failure::Fail;
 use signing::PublicKeyAlgorithm;
 
@@ -58,6 +59,11 @@ impl KeyId {
 
     pub fn as_str(&self) -> &str {
         self.0.as_str()
+    }
+
+    pub fn from_spki(spki: &SubjectPublicKeyInfo) -> Self {
+        let hash = base64::encode(&spki.key_identifier());
+        KeyId(hash)
     }
 }
 
