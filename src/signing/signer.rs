@@ -62,7 +62,10 @@ impl KeyId {
     }
 
     pub fn from_spki(spki: &SubjectPublicKeyInfo) -> Self {
-        let hash = base64::encode(&spki.key_identifier());
+        let hash = base64::encode_config(
+            &spki.key_identifier(),
+            base64::URL_SAFE
+        );
         KeyId(hash)
     }
 }
