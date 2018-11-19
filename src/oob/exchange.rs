@@ -219,6 +219,25 @@ pub struct RepositoryResponse {
 
 impl RepositoryResponse {
 
+    /// Creates a new response.
+    pub fn new(
+        tag: Option<String>,
+        publisher_handle: String,
+        id_cert: IdCert,
+        service_uri: uri::Http,
+        sia_base: uri::Rsync,
+        rrdp_notification_uri: uri::Http
+    ) -> Self {
+        RepositoryResponse {
+            tag,
+            publisher_handle,
+            id_cert,
+            service_uri,
+            sia_base,
+            rrdp_notification_uri
+        }
+    }
+
     /// Parses a <repository_response /> message.
     pub fn decode<R>(reader: R) -> Result<Self, RepositoryResponseError>
         where R: io::Read {
@@ -298,6 +317,33 @@ impl RepositoryResponse {
 
             )
         })
+    }
+}
+
+/// # Accessors
+impl RepositoryResponse {
+    pub fn tag(&self) -> &Option<String> {
+        &self.tag
+    }
+
+    pub fn publisher_handle(&self) -> &String {
+        &self.publisher_handle
+    }
+
+    pub fn id_cert(&self) -> &IdCert {
+        &self.id_cert
+    }
+
+    pub fn service_uri(&self) -> &uri::Http {
+        &self.service_uri
+    }
+
+    pub fn sia_base(&self) -> &uri::Rsync {
+        &self.sia_base
+    }
+
+    pub fn rrdp_notification_uri(&self) -> &uri::Http {
+        &self.rrdp_notification_uri
     }
 }
 
