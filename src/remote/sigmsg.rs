@@ -31,6 +31,8 @@ pub struct SignedMessage {
     signer_info: SignerInfo,
 }
 
+/// # Decoding
+///
 impl SignedMessage {
 
     pub fn decode<S: decode::Source>(
@@ -42,6 +44,14 @@ impl SignedMessage {
             .decode(source, Self::take_from)
     }
 
+}
+
+/// # Accessors
+///
+impl SignedMessage {
+    pub fn content(&self) -> &OctetString {
+        &self.content
+    }
 }
 
 /// # Parsing
@@ -114,20 +124,17 @@ impl SignedMessage {
 /// # Validation
 ///
 impl SignedMessage {
-
-    /// Validates the signed object.
+    /// Consumes the signed message, validates it, and returns the content.
     ///
     /// The requirements for an object to be valid are given in section 3
     /// of [RFC 6488].
-    ///
-    /// Upon success, the method returns the validated certificate and the
-    /// content.
     pub fn validate(
         self,
         issuer: &IdCert
-    ) -> Result<IdCert, ValidationError> {
+    ) -> Result<Bytes, ValidationError> {
         self.verify_signature()?;
-        self.id_cert.validate_ee(issuer)
+        self.id_cert.validate_ee(issuer)?;
+        Ok(self.content.to_bytes())
     }
 
     /// Verifies the signature of the object against contained certificate.

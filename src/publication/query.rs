@@ -18,7 +18,7 @@ use publication::hash;
 
 /// Type representing the list query as described in
 /// https://tools.ietf.org/html/rfc8181#section-2.3
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ListQuery;
 
 impl ListQuery {
@@ -54,11 +54,18 @@ impl ListQuery {
 
 /// Type representing a multi element query as described in
 /// https://tools.ietf.org/html/rfc8181#section-3.7
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PublishQuery {
     elements: Vec<PublishElement>
 }
 
+/// # Access
+///
+impl PublishQuery {
+    pub fn elements(&self) -> &Vec<PublishElement> {
+        &self.elements
+    }
+}
 
 impl PublishQuery {
     /// Decodes a <publish> element from XML, producing either a simple, new,
@@ -153,7 +160,7 @@ impl PublishQuery {
 
 /// This type represents the three types of requests that can be included
 /// in a multi-element query.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PublishElement {
     Publish(Publish),
     Update(Update),
@@ -197,7 +204,7 @@ impl PublishElement {
 
 /// Represents a publish element, that updates an existing object
 /// https://tools.ietf.org/html/rfc8181#section-3.2
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Update {
     hash: Bytes,
     tag: String,
@@ -206,8 +213,20 @@ pub struct Update {
 }
 
 impl Update {
+    pub fn hash(&self) -> &Bytes {
+        &self.hash
+    }
+
     pub fn tag(&self) -> &String {
         &self.tag
+    }
+
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+
+    pub fn object(&self) -> &Bytes {
+        &self.object
     }
 }
 
@@ -248,7 +267,7 @@ impl Update {
 
 /// Represents a publish element, that does not update any existing object
 /// https://tools.ietf.org/html/rfc8181#section-3.1
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Publish {
     tag: String,
     uri: uri::Rsync,
@@ -258,6 +277,14 @@ pub struct Publish {
 impl Publish {
     pub fn tag(&self) -> &String {
         &self.tag
+    }
+
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+
+    pub fn object(&self) -> &Bytes {
+        &self.object
     }
 }
 
@@ -295,7 +322,7 @@ impl Publish {
 
 /// Represents a withdraw element that removes an object from the repository
 /// https://tools.ietf.org/html/rfc8181#section-3.3
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Withdraw {
     hash: Bytes,
     tag: String,
@@ -303,8 +330,16 @@ pub struct Withdraw {
 }
 
 impl Withdraw {
+    pub fn hash(&self) -> &Bytes {
+        &self.hash
+    }
+
     pub fn tag(&self) -> &String {
         &self.tag
+    }
+
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
     }
 }
 

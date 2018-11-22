@@ -16,7 +16,7 @@ use publication::hash;
 
 /// This type represents the success reply as described in
 /// https://tools.ietf.org/html/rfc8181#section-3.4
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SuccessReply;
 
 impl SuccessReply {
@@ -54,14 +54,14 @@ impl SuccessReply {
 
 /// This type represents the list reply as described in
 /// https://tools.ietf.org/html/rfc8181#section-2.3
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ListReply {
     elements: Vec<ListElement>
 }
 
 /// This type represents a single object that is published at a publication
 /// server.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ListElement {
     hash: Bytes,
     uri: uri::Rsync
@@ -173,7 +173,7 @@ impl ListReplyBuilder {
 
 /// This type represents the error report as described in
 /// https://tools.ietf.org/html/rfc8181#section-3.5 and 3.6
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ErrorReply {
     errors: Vec<ReportError>
 }
@@ -356,7 +356,7 @@ impl ErrorReplyBuilder {
 
 //------------ ReportError ---------------------------------------------------
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReportError {
     error_code: ReportErrorCode,
     tag: String,

@@ -681,11 +681,22 @@ pub mod tests {
 
         let message = ListQuery::build_message();
 
-        let builder = SignedMessageBuilder::new(&key_id, &mut s, message).unwrap();
+        let builder = SignedMessageBuilder::new(
+            &key_id,
+            &mut s,
+            message.clone()
+        ).unwrap();
+
         let encoded_cms = builder.encode().to_captured(Mode::Der);
 
-        let message = SignedMessage::decode(encoded_cms.as_ref(), true).unwrap();
-        message.validate(&id_cert).unwrap();
+        let signed_message = SignedMessage::decode(encoded_cms.as_ref(), true).unwrap();
+
+        let parsed_message = Message::from_signed_message(
+            signed_message,
+            &id_cert
+        ).unwrap();
+
+        assert_eq!(message, parsed_message);
     }
 
 

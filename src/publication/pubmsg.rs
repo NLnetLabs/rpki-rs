@@ -7,6 +7,8 @@ use publication::reply::{ListReply, SuccessReply};
 use remote::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 use publication::reply::ErrorReply;
 use bytes::Bytes;
+use remote::sigmsg::SignedMessage;
+use remote::idcert::IdCert;
 
 pub const VERSION: &'static str = "4";
 pub const NS: &'static str = "http://www.hactrn.net/uris/rpki/publication-spec/";
@@ -15,7 +17,7 @@ pub const NS: &'static str = "http://www.hactrn.net/uris/rpki/publication-spec/"
 //------------ QueryMessage --------------------------------------------------
 
 /// This type represents query type Publication Messages defined in RFC8181
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum QueryMessage {
     PublishQuery(PublishQuery),
     ListQuery(ListQuery)
@@ -49,6 +51,24 @@ impl QueryMessage {
         }
         Ok(())
     }
+
+    /// Consumes this and returns the embedded publish query, or
+    /// throws an error if a list query was contained.
+    pub fn as_publish(self) -> Result<PublishQuery, MessageError> {
+        match self {
+            QueryMessage::PublishQuery(p) => Ok(p),
+            _ => Err(MessageError::WrongMessageType)
+        }
+    }
+
+    /// Consumes this and returns the embedded list query, or
+    /// throws an error if a list query was contained.
+    pub fn as_list(self) -> Result<ListQuery, MessageError> {
+        match self {
+            QueryMessage::ListQuery(l) => Ok(l),
+            _ => Err(MessageError::WrongMessageType)
+        }
+    }
 }
 
 /// # Create
@@ -62,7 +82,7 @@ impl QueryMessage {
 //------------ ReplyMessage --------------------------------------------------
 
 /// This type represents reply type Publication Messages defined in RFC8181
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReplyMessage {
     SuccessReply(SuccessReply),
     ListReply(ListReply),
@@ -106,7 +126,7 @@ impl ReplyMessage {
 //------------ Message -------------------------------------------------------
 
 /// This type represents all Publication Messages defined in RFC8181
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Message {
     QueryMessage(QueryMessage),
     ReplyMessage(ReplyMessage)
@@ -180,12 +200,40 @@ impl Message {
     pub fn into_bytes(self) -> Bytes {
         Bytes::from(self.encode_vec())
     }
+
+    /// Consumes a SignedMessage, validates it, and parses the content
+    /// into a Message. Returns validation and/or parse errors when
+    /// appropriate.
+    pub fn from_signed_message(
+        signed_message: SignedMessage,
+        issuer_cert: &IdCert
+    ) -> Result<Message, MessageError> {
+
+        let content = signed_message
+            .validate(issuer_cert)
+            .map_err(|_| {MessageError::ValidationError})?;
+
+        Message::decode(content.as_ref())
+    }
+
+    /// Consumes this message and returns the contained query, or
+    /// an error if you tried this on a reply.
+    pub fn as_query(self) -> Result<QueryMessage, MessageError> {
+        match self {
+            Message::QueryMessage(q) => Ok(q),
+            _ => Err(MessageError::WrongMessageType)
+        }
+    }
+
 }
 
 //------------ PublicationMessageError ---------------------------------------
 
 #[derive(Debug, Fail)]
 pub enum MessageError {
+
+    #[fail(display = "Signed message does not validate")]
+    ValidationError,
 
     #[fail(display = "Invalid version")]
     InvalidVersion,
@@ -213,6 +261,10 @@ pub enum MessageError {
 
     #[fail(display = "Invalid error code: {}", _0)]
     InvalidErrorCode(String),
+
+    #[fail(display = "Wrong message type.")]
+    WrongMessageType,
+
 }
 
 impl From<XmlReaderErr> for MessageError {
