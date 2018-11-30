@@ -177,9 +177,9 @@ impl IdCert {
     ///
     /// Note that this does _not_ check the CRL.
     pub fn validate_ee(
-        self,
+        &self,
         issuer: &IdCert,
-    ) -> Result<Self, ValidationError> {
+    ) -> Result<(), ValidationError> {
         self.validate_basics()?;
         self.validate_issued(issuer)?;
 
@@ -190,7 +190,7 @@ impl IdCert {
 
         // Verify that this is signed by the issuer
         self.validate_signature(issuer)?;
-        Ok(self)
+        Ok(())
     }
 
 

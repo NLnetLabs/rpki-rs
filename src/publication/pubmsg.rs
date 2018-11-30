@@ -8,7 +8,6 @@ use remote::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 use publication::reply::ErrorReply;
 use bytes::Bytes;
 use remote::sigmsg::SignedMessage;
-use remote::idcert::IdCert;
 
 pub const VERSION: &'static str = "4";
 pub const NS: &'static str = "http://www.hactrn.net/uris/rpki/publication-spec/";
@@ -201,19 +200,11 @@ impl Message {
         Bytes::from(self.encode_vec())
     }
 
-    /// Consumes a SignedMessage, validates it, and parses the content
-    /// into a Message. Returns validation and/or parse errors when
-    /// appropriate.
+    /// Parses the content of a SignedMessage as a Message.
     pub fn from_signed_message(
-        signed_message: SignedMessage,
-        issuer_cert: &IdCert
+        msg: &SignedMessage
     ) -> Result<Message, MessageError> {
-
-        let content = signed_message
-            .validate(issuer_cert)
-            .map_err(|_| {MessageError::ValidationError})?;
-
-        Message::decode(content.as_ref())
+        Message::decode(msg.content().to_bytes().as_ref())
     }
 
     /// Consumes this message and returns the contained query, or
@@ -231,10 +222,6 @@ impl Message {
 
 #[derive(Debug, Fail)]
 pub enum MessageError {
-
-    #[fail(display = "Signed message does not validate")]
-    ValidationError,
-
     #[fail(display = "Invalid version")]
     InvalidVersion,
 

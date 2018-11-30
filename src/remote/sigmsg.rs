@@ -124,17 +124,14 @@ impl SignedMessage {
 /// # Validation
 ///
 impl SignedMessage {
-    /// Consumes the signed message, validates it, and returns the content.
+    /// Validates the signed message.
     ///
     /// The requirements for an object to be valid are given in section 3
     /// of [RFC 6488].
-    pub fn validate(
-        self,
-        issuer: &IdCert
-    ) -> Result<Bytes, ValidationError> {
+    pub fn validate(&self, issuer: &IdCert) -> Result<(), ValidationError> {
         self.verify_signature()?;
         self.id_cert.validate_ee(issuer)?;
-        Ok(self.content.to_bytes())
+        Ok(())
     }
 
     /// Verifies the signature of the object against contained certificate.

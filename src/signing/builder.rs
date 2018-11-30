@@ -689,12 +689,10 @@ pub mod tests {
 
         let encoded_cms = builder.encode().to_captured(Mode::Der);
 
-        let signed_message = SignedMessage::decode(encoded_cms.as_ref(), true).unwrap();
+        let msg = SignedMessage::decode(encoded_cms.as_ref(), true).unwrap();
+        msg.validate(&id_cert).unwrap();
 
-        let parsed_message = Message::from_signed_message(
-            signed_message,
-            &id_cert
-        ).unwrap();
+        let parsed_message = Message::from_signed_message(&msg).unwrap();
 
         assert_eq!(message, parsed_message);
     }
