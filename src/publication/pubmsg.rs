@@ -97,11 +97,15 @@ impl ReplyMessage {
             Some("success") => {
                 Ok(ReplyMessage::SuccessReply(SuccessReply::decode(r)?))
             },
+            Some("report_error") => {
+                Ok(ReplyMessage::ErrorReply(ErrorReply::decode(r)?))
+            },
             Some("list") => {
                 Ok(ReplyMessage::ListReply(ListReply::decode(r)?))
             },
-            Some("report_error") => {
-                Ok(ReplyMessage::ErrorReply(ErrorReply::decode(r)?))
+            None => {
+                // An empty list response
+                Ok(ReplyMessage::ListReply(ListReply::decode(r)?))
             },
             _ => Err(MessageError::ExpectedStart(
                 "success, list or report_error".to_string()))
@@ -118,7 +122,6 @@ impl ReplyMessage {
         }
         Ok(())
     }
-
 }
 
 
@@ -212,6 +215,15 @@ impl Message {
     pub fn as_query(self) -> Result<QueryMessage, MessageError> {
         match self {
             Message::QueryMessage(q) => Ok(q),
+            _ => Err(MessageError::WrongMessageType)
+        }
+    }
+
+    /// Consumes this message and returns the contained query, or
+    /// an error if you tried this on a reply.
+    pub fn as_reply(self) -> Result<ReplyMessage, MessageError> {
+        match self {
+            Message::ReplyMessage(r) => Ok(r),
             _ => Err(MessageError::WrongMessageType)
         }
     }
@@ -329,6 +341,12 @@ mod tests {
         let xml = include_str!("../../test/publication/report_error_complex.xml");
         let e = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(e, xml);
+    }
+
+    #[test]
+    fn should_parse_empty_list_reply() {
+        let xml = include_str!("../../test/publication/list_reply_empty.xml");
+        let _ = Message::decode(xml.as_bytes()).unwrap();
     }
 
 }
