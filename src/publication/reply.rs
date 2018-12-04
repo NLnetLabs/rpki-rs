@@ -61,7 +61,7 @@ pub struct ListReply {
 
 /// This type represents a single object that is published at a publication
 /// server.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ListElement {
     hash: Bytes,
     uri: uri::Rsync
@@ -127,6 +127,10 @@ impl ListReply {
     pub fn build_with_capacity(n: usize) -> ListReplyBuilder {
         ListReplyBuilder::with_capacity(n)
     }
+
+    pub fn elements(&self) -> &Vec<ListElement> {
+        &self.elements
+    }
 }
 
 impl ListElement {
@@ -134,6 +138,14 @@ impl ListElement {
     pub fn reply(object: &Bytes, uri: uri::Rsync) -> Self {
         let hash = hash(object);
         ListElement { hash, uri}
+    }
+
+    pub fn hash(&self) -> &Bytes {
+        &self.hash
+    }
+
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
     }
 }
 
@@ -509,10 +521,4 @@ mod tests {
 
         assert_eq!(produced_xml, expected_xml);
     }
-
-
-
-
-
-
 }

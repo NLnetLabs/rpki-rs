@@ -12,6 +12,7 @@ use remote::xml::XmlWriter;
 use publication::pubmsg::Message;
 use publication::pubmsg::QueryMessage;
 use publication::hash;
+use publication::reply::ListElement;
 
 
 //------------ ListQuery -----------------------------------------------------
@@ -367,10 +368,21 @@ impl Withdraw {
     }
 
     /// Produces a PublishElement for inclusion in a PublishRequest.
-    pub fn publish(object: &Bytes, uri: uri::Rsync) -> PublishElement {
+    pub fn for_known_file(object: &Bytes, uri: uri::Rsync) -> PublishElement {
         let hash = hash(object);
         let tag  = hex::encode(&hash);
         PublishElement::Withdraw(Withdraw { hash, tag, uri })
+    }
+
+    /// Produces a PublishElement for withdrawing an existing ListElement
+    /// as part of a PublishRequest.
+    pub fn publish(list_element: &ListElement) -> PublishElement {
+        let tag  = hex::encode(&list_element.hash());
+        PublishElement::Withdraw(Withdraw {
+            hash: list_element.hash().clone(),
+            tag,
+            uri: list_element.uri().clone()
+        })
     }
 
 }
@@ -438,7 +450,7 @@ mod tests {
     fn should_create_publish_query() {
         let object = Bytes::from_static(include_bytes!("../../test/remote/cms_ta.cer"));
         let object2 = Bytes::from_static(include_bytes!("../../test/remote/pdu_200.der"));
-        let w = Withdraw::publish(&object, rsync_uri("rsync://host/path/cms-ta.cer"));
+        let w = Withdraw::for_known_file(&object, rsync_uri("rsync://host/path/cms-ta.cer"));
         let p = Publish::publish(&object, rsync_uri("rsync://host/path/cms-ta.cer"));
         let u = Update::publish(&object, &object2, rsync_uri("rsync://host/path/cms-ta.cer"));
 

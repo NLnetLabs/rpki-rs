@@ -19,7 +19,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 //
 //     SPACE CONTROL " # < > ? [ \\ ] ^ ` { | }
 //
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Rsync {
     module: RsyncModule,
     path: Bytes
