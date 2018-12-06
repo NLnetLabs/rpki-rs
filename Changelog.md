@@ -19,6 +19,11 @@ New
   a reference to a `RoaStatus` enum with information about the ROA’s
   status.
 
+* `Crl` can now cache the list of serials speeding up its `contain`
+  function from O(n) to O(1)~ at the price of preparing a hash set.
+
+* `Manifest` can now tell you how many files there are.
+
 Bug Fixes
 
 Dependencies

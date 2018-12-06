@@ -82,6 +82,9 @@ pub struct ManifestContent {
 
     /// The list of files in its encoded form.
     file_list: Captured,
+
+    /// The number of entries in the file list.
+    len: usize,
 }
 
 impl ManifestContent {
@@ -105,15 +108,17 @@ impl ManifestContent {
                 xerr!(return Err(decode::Malformed.into()));
             }
             signing::oid::SHA256.skip_if(cons)?;
+            let mut len = 0;
             let file_list = cons.take_sequence(|cons| {
                 cons.capture(|cons| {
                     while let Some(()) = FileAndHash::skip_opt_in(cons)? {
+                        len += 1;
                     }
                     Ok(())
                 })
             })?;
             Ok(ManifestContent {
-                manifest_number, this_update, next_update, file_list
+                manifest_number, this_update, next_update, file_list, len
             })
         })
     }
@@ -127,6 +132,11 @@ impl ManifestContent {
     /// hash of the file.
     pub fn iter_uris(&self, base: uri::Rsync) -> ManifestIter {
         ManifestIter { base, file_list: self.file_list.clone() }
+    }
+
+    /// Returns the number of entries in the file list.
+    pub fn len(&self) -> usize {
+        self.len
     }
 }
 
