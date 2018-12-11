@@ -24,6 +24,8 @@ New
 
 * `Manifest` can now tell you how many files there are.
 
+* `cert::ext::UriGeneralName` now implements `Display`.
+
 Bug Fixes
 
 Dependencies
