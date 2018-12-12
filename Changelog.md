@@ -26,10 +26,6 @@ New
 
 * `cert::ext::UriGeneralName` now implements `Display`.
 
-Bug Fixes
-
-Dependencies
-
 
 ## 0.1.0
 
