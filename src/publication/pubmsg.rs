@@ -34,6 +34,10 @@ impl QueryMessage {
             Some("publish") | Some("withdraw") => {
                 Ok(QueryMessage::PublishQuery(PublishQuery::decode(r)?))
             },
+            None => {
+                // empty publish query
+                Ok(QueryMessage::PublishQuery(PublishQuery::decode(r)?))
+            },
             _ => {
                 Err(MessageError::ExpectedStart(
                     "list, publish, or withdraw".to_string()))
