@@ -15,6 +15,7 @@ use xml::EmitterConfig;
 use xml::reader::XmlEvent;
 use base64::DecodeError;
 use hex::FromHexError;
+use std::fs::File;
 
 
 //------------ XmlReader -----------------------------------------------------
@@ -510,6 +511,11 @@ impl XmlWriter<()> {
         let mut b = Vec::new();
         XmlWriter::encode(&mut b, op).unwrap(); // IO error impossible for vec
         b
+    }
+
+    pub fn encode_to_file<F>(file: &mut File, op: F) -> Result<(), io::Error>
+    where F: FnOnce(&mut XmlWriter<&mut File>) -> Result<(), io::Error> {
+        XmlWriter::encode(file, op)
     }
 }
 
