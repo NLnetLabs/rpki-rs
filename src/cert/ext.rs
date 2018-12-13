@@ -1,8 +1,9 @@
 //! X509 Extensions
 
+use std::fmt;
 use asres::AsResources;
-use bcder::{BitString, Captured, Mode, OctetString, Oid, Tag, Unsigned};
 use bcder::{decode, encode};
+use bcder::{BitString, Captured, Mode, OctetString, Oid, Tag, Unsigned};
 use bcder::encode::PrimitiveContent;
 use bytes::Bytes;
 use cert::SubjectPublicKeyInfo;
@@ -983,6 +984,15 @@ impl UriGeneralName {
 
     pub fn into_rsync_uri(self) -> Option<uri::Rsync> {
         uri::Rsync::from_bytes(self.0.clone()).ok()
+    }
+}
+
+
+//--- Display
+
+impl fmt::Display for UriGeneralName {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", String::from_utf8_lossy(&self.0))
     }
 }
 

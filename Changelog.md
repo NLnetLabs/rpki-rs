@@ -1,5 +1,17 @@
 # Change Log
 
+
+## Unrelease next version
+
+Breaking Changes
+
+New
+
+Bug Fixes
+
+Dependencies
+
+
 ## 0.2.0
 
 Breaking Changes
@@ -19,9 +31,12 @@ New
   a reference to a `RoaStatus` enum with information about the ROA’s
   status.
 
-Bug Fixes
+* `Crl` can now cache the list of serials speeding up its `contain`
+  function from O(n) to O(1)~ at the price of preparing a hash set.
 
-Dependencies
+* `Manifest` can now tell you how many files there are.
+
+* `cert::ext::UriGeneralName` now implements `Display`.
 
 
 ## 0.1.0

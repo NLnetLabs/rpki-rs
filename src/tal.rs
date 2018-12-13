@@ -39,7 +39,7 @@ impl Tal {
             let path = path.as_ref().display();
             match data.lines().next().map(|s| s.trim()) {
                 Some(uri) => {
-                    error!("MISSING TRUST ANCHOR LOCATOR\n\n\
+                    eprintln!("MISSING TRUST ANCHOR LOCATOR\n\n\
                         The trust anchor locator (TAL) in \
                         file\n\n   {}\n\nhas not been installed. \
                         Please go to\n\n   {}\n\nand download the TAL \
@@ -51,7 +51,7 @@ impl Tal {
                     );
                 }
                 None => {
-                    error!("MISSING TRUST ANCHOR LOCATOR\
+                    eprintln!("MISSING TRUST ANCHOR LOCATOR\
                         The trust anchor locator (TAL) in file {} has not\
                         been installed.\n\
                         Unfortunately, the file is malformed and we cannot \

@@ -14,6 +14,7 @@
 //! [`Crl`]: struct.Crl.html
 //! [`CrlStore`]: struct.CrlStore.html
 
+use std::collections::HashSet;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Oid, Tag, Unsigned};
 use super::uri;
@@ -55,7 +56,10 @@ pub struct Crl {
     revoked_certs: RevokedCertificates,
 
     /// The CRL extensions.
-    extensions: Extensions
+    extensions: Extensions,
+
+    /// An optional cache of the serial numbers in the CRL.
+    serials: Option<HashSet<Unsigned>>,
 }
 
 impl Crl {
@@ -90,7 +94,8 @@ impl Crl {
                     extensions: cons.take_constructed_if(
                         Tag::CTX_0,
                         Extensions::take_from
-                    )?
+                    )?,
+                    serials: None,
                 })
             })
         }).map_err(Into::into)
@@ -106,9 +111,25 @@ impl Crl {
         self.signed_data.verify_signature(public_key)
     }
 
+    /// Caches the serial numbers in the CRL.
+    ///
+    /// Doing this will speed up calls to `contains` later on at the price
+    /// of additional memory consumption.
+    pub fn cache_serials(&mut self) {
+        self.serials = Some(
+            self.revoked_certs.iter().map(|entry| entry.user_certificate)
+                .collect()
+        );
+    }
+
     /// Returns whether the given serial number is on this revocation list.
     pub fn contains(&self, serial: &Unsigned) -> bool {
-        self.revoked_certs.contains(serial)
+        match self.serials {
+            Some(ref set) => {
+                set.contains(serial)
+            }
+            None => self.revoked_certs.contains(serial)
+        }
     }
 
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
@@ -158,6 +179,26 @@ impl RevokedCertificates {
             }
             Ok(false)
         }).unwrap()
+    }
+
+    /// Returns an iterator over the entries in the list.
+    pub fn iter(&self) -> RevokedCertificatesIter {
+        RevokedCertificatesIter(self.0.clone())
+    }
+}
+
+
+//------------ RevokedCertificatesIter ---------------------------------------
+
+/// An iterator over the entries in the list of revoked certificates.
+#[derive(Clone, Debug)]
+pub struct RevokedCertificatesIter(Captured);
+
+impl Iterator for RevokedCertificatesIter {
+    type Item = CrlEntry;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.decode_partial(|cons| CrlEntry::take_opt_from(cons)).unwrap()
     }
 }
 
@@ -321,20 +362,36 @@ impl Extensions {
 /// they likely all refer to the same CRL, so keeping it around makes sense.
 #[derive(Clone, Debug)]
 pub struct CrlStore {
-    // This is a simple vector because most likely we’ll only ever have one.
-    crls: Vec<(uri::Rsync, Crl)>
+    /// The CRLs in the store.
+    ///
+    /// This is a simple vector because most likely we’ll only ever have one.
+    crls: Vec<(uri::Rsync, Crl)>,
+
+    /// Should we cache the serials in our CRLs?
+    cache_serials: bool,
 }
 
 impl CrlStore {
     /// Creates a new CRL store.
     pub fn new() -> Self {
-        CrlStore { crls: Vec::new() }
+        CrlStore {
+            crls: Vec::new(),
+            cache_serials: false,
+        }
+    }
+
+    /// Enables caching of serial numbers in the stored CRLs.
+    pub fn enable_serial_caching(&mut self) {
+        self.cache_serials = true
     }
 
     /// Adds an entry to the CRL store.
     ///
     /// The CRL is keyed by its rsync `uri`.
-    pub fn push(&mut self, uri: uri::Rsync, crl: Crl) {
+    pub fn push(&mut self, uri: uri::Rsync, mut crl: Crl) {
+        if self.cache_serials {
+            crl.cache_serials()
+        }
         self.crls.push((uri, crl))
     }
 
@@ -348,7 +405,6 @@ impl CrlStore {
         None
     }
 }
-
 
 
 //------------ OIDs ----------------------------------------------------------
