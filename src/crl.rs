@@ -17,13 +17,12 @@
 use std::collections::HashSet;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Oid, Tag, Unsigned};
-use super::uri;
-use super::x509::{
-    update_once, Name, SignedData, Time, ValidationError
-};
-use super::signing::SignatureAlgorithm;
-use cert::ext::AuthorityKeyIdentifier;
-use cert::SubjectPublicKeyInfo;
+use crate::uri;
+use crate::x509::{Name, SignedData, Time, ValidationError};
+use crate::signing::SignatureAlgorithm;
+use crate::cert::ext::{AuthorityKeyIdentifier, CrlNumber};
+use crate::cert::ext::oid;
+use crate::cert::SubjectPublicKeyInfo;
 
 
 //------------ Crl -----------------------------------------------------------
@@ -133,6 +132,8 @@ impl Crl {
     }
 
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        // This relies on signed_data always being in sync with the other
+        // elements!
         self.signed_data.encode()
     }
 }
@@ -254,11 +255,12 @@ impl CrlEntry {
 #[derive(Clone, Debug)]
 pub struct Extensions {
     /// Authority Key Identifier
-    // May be omitted in CRLs included in protocol messages.
+    ///
+    /// May be omitted in CRLs included in protocol messages.
     authority_key_id: Option<AuthorityKeyIdentifier>,
 
     /// CRL Number
-    crl_number: Unsigned,
+    crl_number: CrlNumber,
 }
 
 impl Extensions {
@@ -276,13 +278,11 @@ impl Extensions {
                 Mode::Der.decode(value.to_source(), |cons| {
                     if id == oid::CE_AUTHORITY_KEY_IDENTIFIER {
                         AuthorityKeyIdentifier::take(
-                            cons,
-                            critical,
-                            & mut authority_key_id
+                            cons, critical, &mut authority_key_id
                         )
                     }
                     else if id == oid::CE_CRL_NUMBER {
-                        Self::take_crl_number(cons, &mut crl_number)
+                        CrlNumber::take(cons, critical, &mut crl_number)
                     }
                     else {
                         // RFC 6487 says that no other extensions are
@@ -300,54 +300,6 @@ impl Extensions {
                 authority_key_id,
                 crl_number
             })
-        })
-    }
-
-    /// Parses the Authority Key Identifier Extension.
-    ///
-    /// Must be present.
-    ///
-    /// ```text
-    /// AuthorityKeyIdentifier ::= SEQUENCE {
-    ///   keyIdentifier             [0] KeyIdentifier           OPTIONAL,
-    ///   authorityCertIssuer       [1] GeneralNames            OPTIONAL,
-    ///   authorityCertSerialNumber [2] CertificateSerialNumber OPTIONAL  }
-    ///
-    /// KeyIdentifier ::= OCTET STRING
-    /// ```
-    ///
-    /// For certificates, only keyIdentifier must be present. Let’s assume
-    /// the same is true for CRLs.
-    fn take_authority_key_identifier<S: decode::Source>(
-        cons: &mut decode::Constructed<S>,
-        authority_key_id: &mut Option<OctetString>
-    ) -> Result<(), S::Err> {
-        update_once(authority_key_id, || {
-            let res = cons.take_sequence(|cons| {
-                cons.take_value_if(Tag::CTX_0, OctetString::from_content)
-            })?;
-            if res.len() != 20 {
-                return Err(decode::Malformed.into())
-            }
-            else {
-                Ok(res)
-            }
-        })
-    }
-
-    /// Parses the CRL Number Extension.
-    ///
-    /// Must be present
-    ///
-    /// ```text
-    /// CRLNumber ::= INTEGER (0..MAX)
-    /// ```
-    fn take_crl_number<S: decode::Source>(
-        cons: &mut decode::Constructed<S>,
-        crl_number: &mut Option<Unsigned>
-    ) -> Result<(), S::Err> {
-        update_once(crl_number, || {
-            Unsigned::take_from(cons)
         })
     }
 }
@@ -404,15 +356,5 @@ impl CrlStore {
         }
         None
     }
-}
-
-
-//------------ OIDs ----------------------------------------------------------
-
-pub mod oid {
-    use bcder::Oid;
-
-    pub const CE_CRL_NUMBER: Oid<&[u8]> = Oid(&[85, 29, 20]);
-    pub const CE_AUTHORITY_KEY_IDENTIFIER: Oid<&[u8]> = Oid(&[85, 29, 35]);
 }
 

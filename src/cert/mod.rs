@@ -23,12 +23,12 @@ use bcder::encode::PrimitiveContent;
 use bcder::{BitString, Mode, OctetString, Tag, Unsigned};
 use chrono::Utc;
 use ring::digest::{self, Digest};
-use super::asres::AsBlocks;
-use super::uri;
-use super::ipres::IpAddressBlocks;
-use super::tal::TalInfo;
-use super::x509::{Name, SignedData, Time, ValidationError};
-use signing::{PublicKeyAlgorithm, SignatureAlgorithm};
+use crate::asres::AsBlocks;
+use crate::uri;
+use crate::ipres::IpAddressBlocks;
+use crate::tal::TalInfo;
+use crate::x509::{Name, SignedData, Time, ValidationError};
+use crate::signing::{PublicKeyAlgorithm, SignatureAlgorithm};
 use self::ext::{Extensions, UriGeneralName, UriGeneralNames};
 
 
@@ -109,6 +109,42 @@ pub struct Cert {
     extensions: Extensions,
 }
 
+
+/// # Data Access
+///
+impl Cert {
+    /// Returns a reference to the certificate’s public key.
+    pub fn public_key(&self) -> &[u8] {
+        self.subject_public_key_info
+            .subject_public_key.octet_slice().unwrap()
+    }
+
+    /// Returns a reference to the subject key identifier.
+    pub fn subject_key_identifier(&self) -> &OctetString {
+        &self.extensions.subject_key_id()
+    }
+
+    /// Returns a reference to the entire public key information structure.
+    pub fn subject_public_key_info(&self) -> &SubjectPublicKeyInfo {
+        &self.subject_public_key_info
+    }
+
+    /// Returns a reference to the certificate’s CRL distributionb point.
+    ///
+    /// If present, this will be an `rsync` URI. 
+    pub fn crl_distribution(&self) -> Option<&UriGeneralNames> {
+        self.extensions.crl_distribution()
+    }
+
+    /// Returns a reference to the certificate’s serial number.
+    pub fn serial_number(&self) -> &Unsigned {
+        &self.serial_number
+    }
+}
+
+
+/// # Decoding
+///
 impl Cert {
     /// Decodes a source as a certificate.
     pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
@@ -162,34 +198,6 @@ impl Cert {
                 })
             })
         }).map_err(Into::into)
-    }
-
-    /// Returns a reference to the certificate’s public key.
-    pub fn public_key(&self) -> &[u8] {
-        self.subject_public_key_info
-            .subject_public_key.octet_slice().unwrap()
-    }
-
-    /// Returns a reference to the subject key identifier.
-    pub fn subject_key_identifier(&self) -> &OctetString {
-        &self.extensions.subject_key_id()
-    }
-
-    /// Returns a reference to the entire public key information structure.
-    pub fn subject_public_key_info(&self) -> &SubjectPublicKeyInfo {
-        &self.subject_public_key_info
-    }
-
-    /// Returns a reference to the certificate’s CRL distributionb point.
-    ///
-    /// If present, this will be an `rsync` URI. 
-    pub fn crl_distribution(&self) -> Option<&UriGeneralNames> {
-        self.extensions.crl_distribution()
-    }
-
-    /// Returns a reference to the certificate’s serial number.
-    pub fn serial_number(&self) -> &Unsigned {
-        &self.serial_number
     }
 }
 
@@ -545,7 +553,7 @@ impl AsRef<Cert> for ResourceCert {
 
 //------------ Validity ------------------------------------------------------
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Validity {
     not_before: Time,
     not_after: Time,
@@ -581,12 +589,10 @@ impl Validity {
     }
 
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        encode::sequence(
-            (
-                self.not_before.encode(),
-                self.not_after.encode(),
-            )
-        )
+        encode::sequence((
+            self.not_before.encode(),
+            self.not_after.encode(),
+        ))
     }
 }
 
@@ -631,12 +637,10 @@ impl SubjectPublicKeyInfo {
     }
 
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        encode::sequence(
-            (
-                self.algorithm.encode(),
-                self.subject_public_key.encode()
-            )
-        )
+        encode::sequence((
+            self.algorithm.encode(),
+            self.subject_public_key.encode()
+        ))
     }
 }
 

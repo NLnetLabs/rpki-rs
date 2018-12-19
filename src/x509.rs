@@ -198,7 +198,7 @@ impl SignedData {
 
 //------------ Time ----------------------------------------------------------
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Time(DateTime<Utc>);
 
 impl Time {
