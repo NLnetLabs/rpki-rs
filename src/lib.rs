@@ -37,9 +37,6 @@ pub mod sigobj;
 pub mod tal;
 pub mod x509;
 
-pub mod oob;
-pub mod publication;
-pub mod remote;
 pub mod signing;
 
 pub mod time;
