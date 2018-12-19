@@ -209,6 +209,12 @@ impl Time {
         Self::new(Utc::now())
     }
 
+    pub fn utc(
+        year: i32, month: u32, day: u32, hour: u32, min: u32, sec: u32
+    ) -> Self {
+        Utc.ymd(year, month, day).and_hms(hour, min, sec)
+    }
+
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
