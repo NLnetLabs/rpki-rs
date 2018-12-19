@@ -425,7 +425,7 @@ mod test {
 
     #[test]
     fn signed_data_decode_then_encode() {
-        let data = include_bytes!("../test/oob/id_publisher_ta.cer");
+        let data = include_bytes!("../test/id_publisher_ta.cer");
         let obj = SignedData::decode(data.as_ref()).unwrap();
         let mut encoded = Vec::new();
         obj.encode().write_encoded(Mode::Der, &mut encoded).unwrap();
@@ -433,3 +433,4 @@ mod test {
         assert_eq!(data.as_ref(), AsRef::<[u8]>::as_ref(&encoded));
     }
 }
+
