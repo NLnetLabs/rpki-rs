@@ -4,6 +4,7 @@
 use bcder::{encode, decode};
 use bcder::{Oid, Tag};
 
+pub use ring::digest; // XXX This is only temporary.
 
 //------------ RPKI Key Size -------------------------------------------------
 
