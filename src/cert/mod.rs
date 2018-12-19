@@ -214,7 +214,16 @@ impl Cert {
         tal: Arc<TalInfo>,
         strict: bool
     ) -> Result<ResourceCert, ValidationError> {
-        self.validate_basics(strict)?;
+        self.validate_ta_at(tal, strict, Time::now())
+    }
+
+    pub fn validate_ta_at(
+        self,
+        tal: Arc<TalInfo>,
+        strict: bool,
+        now: Time,
+    ) -> Result<ResourceCert, ValidationError> {
+        self.validate_basics(strict, now)?;
         self.validate_ca_basics(strict)?;
 
         // 4.8.3. Authority Key Identifier. May be present, if so, must be
@@ -270,7 +279,16 @@ impl Cert {
         issuer: &ResourceCert,
         strict: bool
     ) -> Result<ResourceCert, ValidationError> {
-        self.validate_basics(strict)?;
+        self.validate_ca_at(issuer, strict, Time::now())
+    }
+
+    pub fn validate_ca_at(
+        self,
+        issuer: &ResourceCert,
+        strict: bool,
+        now: Time,
+    ) -> Result<ResourceCert, ValidationError> {
+        self.validate_basics(strict, now)?;
         self.validate_ca_basics(strict)?;
         self.validate_issued(issuer, strict)?;
         self.validate_signature(issuer, strict)?;
@@ -288,7 +306,16 @@ impl Cert {
         issuer: &ResourceCert,
         strict: bool
     ) -> Result<ResourceCert, ValidationError>  {
-        self.validate_basics(strict)?;
+        self.validate_ee_at(issuer, strict, Time::now())
+    }
+
+    pub fn validate_ee_at(
+        self,
+        issuer: &ResourceCert,
+        strict: bool,
+        now: Time,
+    ) -> Result<ResourceCert, ValidationError>  {
+        self.validate_basics(strict, now)?;
         self.validate_issued(issuer, strict)?;
 
         // 4.8.1. Basic Constraints: Must not be present.
@@ -315,7 +342,11 @@ impl Cert {
     //--- Validation Components
 
     /// Validates basic compliance with section 4 of RFC 6487.
-    fn validate_basics(&self, strict: bool) -> Result<(), ValidationError> {
+    fn validate_basics(
+        &self,
+        strict: bool,
+        now: Time
+    ) -> Result<(), ValidationError> {
         // The following lists all such constraints in the RFC, noting those
         // that we cannot check here.
 
@@ -332,7 +363,7 @@ impl Cert {
         Name::validate_rpki(&self.subject, strict)?;
         
         // 4.6 Validity. Check according to RFC 5280.
-        self.validity.validate()?;
+        self.validity.validate_at(now)?;
 
         // 4.7 Subject Public Key Info: limited algorithms. Already checked
         // during parsing.
@@ -583,8 +614,12 @@ impl Validity {
     }
 
     pub fn validate(&self) -> Result<(), ValidationError> {
-        self.not_before.validate_not_before()?;
-        self.not_after.validate_not_after()?;
+        self.validate_at(Time::now())
+    }
+
+    pub fn validate_at(&self, now: Time) -> Result<(), ValidationError> {
+        self.not_before.validate_not_before(now)?;
+        self.not_after.validate_not_after(now)?;
         Ok(())
     }
 

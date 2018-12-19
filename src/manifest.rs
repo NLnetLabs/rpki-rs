@@ -55,7 +55,16 @@ impl Manifest {
         cert: &ResourceCert,
         strict: bool,
     ) -> Result<(ResourceCert, ManifestContent), ValidationError> {
-        let cert = self.signed.validate(cert, strict)?;
+        self.validate_at(cert, strict, Time::now())
+    }
+
+    pub fn validate_at(
+        self,
+        cert: &ResourceCert,
+        strict: bool,
+        now: Time
+    ) -> Result<(ResourceCert, ManifestContent), ValidationError> {
+        let cert = self.signed.validate_at(cert, strict, now)?;
         Ok((cert, self.content))
     }
 }

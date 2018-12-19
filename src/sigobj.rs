@@ -173,9 +173,18 @@ impl SignedObject {
         issuer: &ResourceCert,
         strict: bool,
     ) -> Result<ResourceCert, ValidationError> {
+        self.validate_at(issuer, strict, Time::now())
+    }
+
+    pub fn validate_at(
+        self,
+        issuer: &ResourceCert,
+        strict: bool,
+        now: Time,
+    ) -> Result<ResourceCert, ValidationError> {
         self.verify_compliance(strict)?;
         self.verify_signature(strict)?;
-        self.cert.validate_ee(issuer, strict)
+        self.cert.validate_ee_at(issuer, strict, now)
     }
 
     /// Validates that the signed object complies with the specification.

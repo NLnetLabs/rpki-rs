@@ -10,7 +10,6 @@ use bcder::encode::PrimitiveContent;
 use cert::SubjectPublicKeyInfo;
 use chrono::{Datelike, DateTime, LocalResult, Timelike, TimeZone, Utc};
 use hex;
-use super::time;
 use signing::SignatureAlgorithm;
 use std::io;
 use bcder::Oid;
@@ -198,7 +197,7 @@ impl SignedData {
 
 //------------ Time ----------------------------------------------------------
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Time(DateTime<Utc>);
 
 impl Time {
@@ -308,8 +307,11 @@ impl Time {
         }))
     }
 
-    pub fn validate_not_before(&self) -> Result<(), ValidationError> {
-        if time::now() < self.0 {
+    pub fn validate_not_before(
+        &self,
+        now: Time
+    ) -> Result<(), ValidationError> {
+        if now.0 < self.0 {
             Err(ValidationError)
         }
         else {
@@ -317,8 +319,11 @@ impl Time {
         }
     }
 
-    pub fn validate_not_after(&self) -> Result<(), ValidationError> {
-        if time::now() > self.0 {
+    pub fn validate_not_after(
+        &self,
+        now: Time
+    ) -> Result<(), ValidationError> {
+        if now.0 > self.0 {
             Err(ValidationError)
         }
         else {
