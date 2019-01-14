@@ -15,14 +15,13 @@
 //! [`CrlStore`]: struct.CrlStore.html
 
 use std::collections::HashSet;
-use bcder::decode;
+use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Oid, Tag, Unsigned};
-use super::uri;
-use super::cert::Cert;
-use super::x509::{
-    update_once, Name, SignedData, Time, ValidationError
-};
-use super::signing::SignatureAlgorithm;
+use crate::uri;
+use crate::x509::{Name, SignedData, Time, ValidationError};
+use crate::crypto::{PublicKey, SignatureAlgorithm};
+use crate::cert::ext::{AuthorityKeyIdentifier, CrlNumber};
+use crate::cert::ext::oid;
 
 
 //------------ Crl -----------------------------------------------------------
@@ -85,7 +84,7 @@ impl Crl {
                 cons.skip_u8_if(1)?; // v2 => 1
                 Ok(Crl {
                     signed_data,
-                    signature: SignatureAlgorithm::take_from(cons)?,
+                    signature: SignatureAlgorithm::x509_take_from(cons)?,
                     issuer: Name::take_from(cons)?,
                     this_update: Time::take_from(cons)?,
                     next_update: Time::take_opt_from(cons)?,
@@ -102,13 +101,15 @@ impl Crl {
 
     /// Validates the certificate revocation list.
     ///
-    /// The list’s signature is validated against the certificate provided
-    /// via `issuer`.
-    pub fn validate<C: AsRef<Cert>>(
+    /// The list’s signature is validated against the provided public key.
+    pub fn validate(
         &self,
-        issuer: C
+        public_key: &PublicKey
     ) -> Result<(), ValidationError> {
-        self.signed_data.verify_signature(issuer.as_ref().public_key())
+        if self.signature != self.signed_data.signature().algorithm() {
+            return Err(ValidationError)
+        }
+        self.signed_data.verify_signature(public_key)
     }
 
     /// Caches the serial numbers in the CRL.
@@ -131,7 +132,14 @@ impl Crl {
             None => self.revoked_certs.contains(serial)
         }
     }
+
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        // This relies on signed_data always being in sync with the other
+        // elements!
+        self.signed_data.encode()
+    }
 }
+
 
 
 //------------ RevokedCertificates ------------------------------------------
@@ -249,10 +257,12 @@ impl CrlEntry {
 #[derive(Clone, Debug)]
 pub struct Extensions {
     /// Authority Key Identifier
-    authority_key_id: OctetString,
+    ///
+    /// May be omitted in CRLs included in protocol messages.
+    authority_key_id: Option<AuthorityKeyIdentifier>,
 
     /// CRL Number
-    crl_number: Unsigned,
+    crl_number: CrlNumber,
 }
 
 impl Extensions {
@@ -265,16 +275,16 @@ impl Extensions {
             let mut crl_number = None;
             while let Some(()) = cons.take_opt_sequence(|cons| {
                 let id = Oid::take_from(cons)?;
-                let _critical = cons.take_opt_bool()?.unwrap_or(false);
+                let critical = cons.take_opt_bool()?.unwrap_or(false);
                 let value = OctetString::take_from(cons)?;
                 Mode::Der.decode(value.to_source(), |cons| {
                     if id == oid::CE_AUTHORITY_KEY_IDENTIFIER {
-                        Self::take_authority_key_identifier(
-                            cons, &mut authority_key_id
+                        AuthorityKeyIdentifier::take(
+                            cons, critical, &mut authority_key_id
                         )
                     }
                     else if id == oid::CE_CRL_NUMBER {
-                        Self::take_crl_number(cons, &mut crl_number)
+                        CrlNumber::take(cons, critical, &mut crl_number)
                     }
                     else {
                         // RFC 6487 says that no other extensions are
@@ -284,10 +294,6 @@ impl Extensions {
                     }
                 }).map_err(Into::into)
             })? { }
-            let authority_key_id = match authority_key_id {
-                Some(some) => some,
-                None => return Err(decode::Malformed.into())
-            };
             let crl_number = match crl_number {
                 Some(some) => some,
                 None => return Err(decode::Malformed.into())
@@ -296,54 +302,6 @@ impl Extensions {
                 authority_key_id,
                 crl_number
             })
-        })
-    }
-
-    /// Parses the Authority Key Identifier Extension.
-    ///
-    /// Must be present.
-    ///
-    /// ```text
-    /// AuthorityKeyIdentifier ::= SEQUENCE {
-    ///   keyIdentifier             [0] KeyIdentifier           OPTIONAL,
-    ///   authorityCertIssuer       [1] GeneralNames            OPTIONAL,
-    ///   authorityCertSerialNumber [2] CertificateSerialNumber OPTIONAL  }
-    ///
-    /// KeyIdentifier ::= OCTET STRING
-    /// ```
-    ///
-    /// For certificates, only keyIdentifier must be present. Let’s assume
-    /// the same is true for CRLs.
-    fn take_authority_key_identifier<S: decode::Source>(
-        cons: &mut decode::Constructed<S>,
-        authority_key_id: &mut Option<OctetString>
-    ) -> Result<(), S::Err> {
-        update_once(authority_key_id, || {
-            let res = cons.take_sequence(|cons| {
-                cons.take_value_if(Tag::CTX_0, OctetString::from_content)
-            })?;
-            if res.len() != 20 {
-                return Err(decode::Malformed.into())
-            }
-            else {
-                Ok(res)
-            }
-        })
-    }
-
-    /// Parses the CRL Number Extension.
-    ///
-    /// Must be present
-    ///
-    /// ```text
-    /// CRLNumber ::= INTEGER (0..MAX)
-    /// ```
-    fn take_crl_number<S: decode::Source>(
-        cons: &mut decode::Constructed<S>,
-        crl_number: &mut Option<Unsigned>
-    ) -> Result<(), S::Err> {
-        update_once(crl_number, || {
-            Unsigned::take_from(cons)
         })
     }
 }
@@ -400,15 +358,5 @@ impl CrlStore {
         }
         None
     }
-}
-
-
-//------------ OIDs ----------------------------------------------------------
-
-mod oid {
-    use bcder::Oid;
-
-    pub const CE_CRL_NUMBER: Oid<&[u8]> = Oid(&[85, 29, 20]);
-    pub const CE_AUTHORITY_KEY_IDENTIFIER: Oid<&[u8]> = Oid(&[85, 29, 35]);
 }
 

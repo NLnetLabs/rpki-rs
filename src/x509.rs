@@ -1,20 +1,17 @@
 //! Types common to all things X.509.
 
-use std::str;
+use std::{io, str};
 use std::str::FromStr;
 use bcder::{decode, encode};
-use bcder::{BitString, Captured, Mode, Tag};
+use bcder::{BitString, Captured, Mode, Oid, Tag};
 use bcder::string::PrintableString;
 use bcder::decode::Source;
 use bcder::encode::PrimitiveContent;
-use cert::SubjectPublicKeyInfo;
 use chrono::{Datelike, DateTime, LocalResult, Timelike, TimeZone, Utc};
 use hex;
-use super::time;
-use signing::SignatureAlgorithm;
-use std::io;
-use bcder::Oid;
-use std::result::Result::Err;
+use crate::crypto::{
+    PublicKey, Signature, SignatureAlgorithm, VerificationError
+};
 
 
 //------------ Functions -----------------------------------------------------
@@ -113,7 +110,7 @@ impl Name {
     /// on the hash of the public key. This is in line with
     /// the recommendations in RFC6487 sections 4.4, 4.5
     /// and 8.
-    pub fn from_pub_key(key_info: &SubjectPublicKeyInfo) -> Self {
+    pub fn from_pub_key(key_info: &PublicKey) -> Self {
         let ki = key_info.key_identifier();
         // Borrow checker shenanigans ...
         let enc = hex::encode(&ki);
@@ -140,9 +137,15 @@ impl Name {
 #[derive(Clone, Debug)]
 pub struct SignedData {
     data: Captured,
-    signature_algorithm: SignatureAlgorithm,
-    signature_value: BitString,
+    signature: Signature,
 }
+
+impl SignedData {
+    pub fn signature(&self) -> &Signature {
+        &self.signature
+    }
+}
+
 
 impl SignedData {
     pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
@@ -160,8 +163,10 @@ impl SignedData {
     ) -> Result<Self, S::Err> {
         Ok(SignedData {
             data: cons.capture_one()?,
-            signature_algorithm: SignatureAlgorithm::take_from(cons)?,
-            signature_value: BitString::take_from(cons)?,
+            signature: Signature::new(
+                SignatureAlgorithm::x509_take_from(cons)?,
+                BitString::take_from(cons)?.octet_bytes()
+            )
         })
     }
 
@@ -171,37 +176,62 @@ impl SignedData {
 
     pub fn verify_signature(
         &self,
-        public_key: &[u8]
+        public_key: &PublicKey
     ) -> Result<(), ValidationError> {
-        ::ring::signature::verify(
-            &::ring::signature::RSA_PKCS1_2048_8192_SHA256,
-            ::untrusted::Input::from(public_key),
-            ::untrusted::Input::from(self.data.as_ref()),
-            ::untrusted::Input::from(
-                self.signature_value.octet_slice().unwrap()
-            )
-        ).map_err(|_| ValidationError)
+        public_key.verify(
+            self.data.as_ref(),
+            &self.signature
+        ).map_err(Into::into)
     }
 
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence((
             &self.data,
-            self.signature_algorithm.encode(),
-            self.signature_value.encode(),
+            self.signature.algorithm().x509_encode(),
+            SignatureValueContent(self).encode(),
         ))
     }
-
 }
 
 
+#[derive(Clone, Copy, Debug)]
+pub struct SignatureValueContent<'a>(&'a SignedData);
+
+impl<'a> PrimitiveContent for SignatureValueContent<'a> {
+    const TAG: Tag = Tag::BIT_STRING;
+
+    fn encoded_len(self, _: Mode) -> usize {
+        self.0.signature.value().len() + 1
+    }
+
+    fn write_encoded<W: io::Write>(
+        self,
+        _: Mode,
+        target: &mut W
+    ) -> Result<(), io::Error> {
+        target.write_all(&[0u8])?;
+        target.write_all(self.0.signature.value().as_ref())
+    }
+}
+
 //------------ Time ----------------------------------------------------------
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Time(DateTime<Utc>);
 
 impl Time {
     pub fn new(dt: DateTime<Utc>) -> Self {
         Time(dt)
+    }
+
+    pub fn now() -> Self {
+        Self::new(Utc::now())
+    }
+
+    pub fn utc(
+        year: i32, month: u32, day: u32, hour: u32, min: u32, sec: u32
+    ) -> Self {
+        Time(Utc.ymd(year, month, day).and_hms(hour, min, sec))
     }
 
     pub fn take_from<S: decode::Source>(
@@ -302,8 +332,11 @@ impl Time {
         }))
     }
 
-    pub fn validate_not_before(&self) -> Result<(), ValidationError> {
-        if time::now() < self.0 {
+    pub fn validate_not_before(
+        &self,
+        now: Time
+    ) -> Result<(), ValidationError> {
+        if now.0 < self.0 {
             Err(ValidationError)
         }
         else {
@@ -311,8 +344,11 @@ impl Time {
         }
     }
 
-    pub fn validate_not_after(&self) -> Result<(), ValidationError> {
-        if time::now() > self.0 {
+    pub fn validate_not_after(
+        &self,
+        now: Time
+    ) -> Result<(), ValidationError> {
+        if now.0 > self.0 {
             Err(ValidationError)
         }
         else {
@@ -325,11 +361,11 @@ impl PrimitiveContent for Time {
 
     const TAG: Tag = Tag::GENERALIZED_TIME;
 
-    fn encoded_len(&self, _: Mode) -> usize {
+    fn encoded_len(self, _: Mode) -> usize {
         15 // yyyyMMddhhmmssZ
     }
 
-    fn write_encoded<W: io::Write>(&self, _: Mode, target: &mut W)
+    fn write_encoded<W: io::Write>(self, _: Mode, target: &mut W)
         -> Result<(), io::Error>
     {
         write!(target, "{:04}", self.0.year())?;
@@ -390,6 +426,12 @@ impl From<decode::Error> for ValidationError {
     }
 }
 
+impl From<VerificationError> for ValidationError {
+    fn from(_: VerificationError) -> ValidationError {
+        ValidationError
+    }
+}
+
 
 //------------ OIDs ----------------------------------------------------------
 
@@ -414,7 +456,7 @@ mod test {
 
     #[test]
     fn signed_data_decode_then_encode() {
-        let data = include_bytes!("../test/oob/id-publisher-ta.cer");
+        let data = include_bytes!("../test/id_publisher_ta.cer");
         let obj = SignedData::decode(data.as_ref()).unwrap();
         let mut encoded = Vec::new();
         obj.encode().write_encoded(Mode::Der, &mut encoded).unwrap();
@@ -422,3 +464,4 @@ mod test {
         assert_eq!(data.as_ref(), AsRef::<[u8]>::as_ref(&encoded));
     }
 }
+

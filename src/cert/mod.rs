@@ -22,13 +22,12 @@ use bcder::{decode, encode};
 use bcder::encode::PrimitiveContent;
 use bcder::{BitString, Mode, OctetString, Tag, Unsigned};
 use chrono::Utc;
-use ring::digest::{self, Digest};
-use super::asres::AsBlocks;
-use super::uri;
-use super::ipres::IpAddressBlocks;
-use super::tal::TalInfo;
-use super::x509::{Name, SignedData, Time, ValidationError};
-use signing::{PublicKeyAlgorithm, SignatureAlgorithm};
+use crate::asres::AsBlocks;
+use crate::uri;
+use crate::ipres::IpAddressBlocks;
+use crate::tal::TalInfo;
+use crate::x509::{Name, SignedData, Time, ValidationError};
+use crate::crypto::{PublicKey, SignatureAlgorithm};
 use self::ext::{Extensions, UriGeneralName, UriGeneralNames};
 
 
@@ -97,7 +96,7 @@ pub struct Cert {
     subject: Name,
 
     /// Information about the public key of this certificate.
-    subject_public_key_info: SubjectPublicKeyInfo,
+    subject_public_key_info: PublicKey,
 
     /// The optional Issuer Unique ID.
     issuer_unique_id: Option<BitString>,
@@ -109,6 +108,36 @@ pub struct Cert {
     extensions: Extensions,
 }
 
+
+/// # Data Access
+///
+impl Cert {
+    /// Returns a reference to the subject key identifier.
+    pub fn subject_key_identifier(&self) -> &OctetString {
+        &self.extensions.subject_key_id()
+    }
+
+    /// Returns a reference to the entire public key information structure.
+    pub fn subject_public_key_info(&self) -> &PublicKey {
+        &self.subject_public_key_info
+    }
+
+    /// Returns a reference to the certificate’s CRL distributionb point.
+    ///
+    /// If present, this will be an `rsync` URI. 
+    pub fn crl_distribution(&self) -> Option<&UriGeneralNames> {
+        self.extensions.crl_distribution()
+    }
+
+    /// Returns a reference to the certificate’s serial number.
+    pub fn serial_number(&self) -> &Unsigned {
+        &self.serial_number
+    }
+}
+
+
+/// # Decoding
+///
 impl Cert {
     /// Decodes a source as a certificate.
     pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
@@ -141,12 +170,12 @@ impl Cert {
                 Ok(Cert {
                     signed_data,
                     serial_number: Unsigned::take_from(cons)?,
-                    signature: SignatureAlgorithm::take_from(cons)?,
+                    signature: SignatureAlgorithm::x509_take_from(cons)?,
                     issuer: Name::take_from(cons)?,
                     validity: Validity::take_from(cons)?,
                     subject: Name::take_from(cons)?,
                     subject_public_key_info: 
-                        SubjectPublicKeyInfo::take_from(cons)?,
+                        PublicKey::take_from(cons)?,
                     issuer_unique_id: cons.take_opt_value_if(
                         Tag::CTX_1,
                         |c| BitString::from_content(c)
@@ -163,34 +192,6 @@ impl Cert {
             })
         }).map_err(Into::into)
     }
-
-    /// Returns a reference to the certificate’s public key.
-    pub fn public_key(&self) -> &[u8] {
-        self.subject_public_key_info
-            .subject_public_key.octet_slice().unwrap()
-    }
-
-    /// Returns a reference to the subject key identifier.
-    pub fn subject_key_identifier(&self) -> &OctetString {
-        &self.extensions.subject_key_id()
-    }
-
-    /// Returns a reference to the entire public key information structure.
-    pub fn subject_public_key_info(&self) -> &SubjectPublicKeyInfo {
-        &self.subject_public_key_info
-    }
-
-    /// Returns a reference to the certificate’s CRL distributionb point.
-    ///
-    /// If present, this will be an `rsync` URI. 
-    pub fn crl_distribution(&self) -> Option<&UriGeneralNames> {
-        self.extensions.crl_distribution()
-    }
-
-    /// Returns a reference to the certificate’s serial number.
-    pub fn serial_number(&self) -> &Unsigned {
-        &self.serial_number
-    }
 }
 
 /// # Validation
@@ -206,7 +207,16 @@ impl Cert {
         tal: Arc<TalInfo>,
         strict: bool
     ) -> Result<ResourceCert, ValidationError> {
-        self.validate_basics(strict)?;
+        self.validate_ta_at(tal, strict, Time::now())
+    }
+
+    pub fn validate_ta_at(
+        self,
+        tal: Arc<TalInfo>,
+        strict: bool,
+        now: Time,
+    ) -> Result<ResourceCert, ValidationError> {
+        self.validate_basics(strict, now)?;
         self.validate_ca_basics(strict)?;
 
         // 4.8.3. Authority Key Identifier. May be present, if so, must be
@@ -240,8 +250,7 @@ impl Cert {
         )?;
 
         self.signed_data.verify_signature(
-            self.subject_public_key_info
-                .subject_public_key.octet_slice().unwrap()
+            &self.subject_public_key_info
         )?;
 
         Ok(ResourceCert {
@@ -263,7 +272,16 @@ impl Cert {
         issuer: &ResourceCert,
         strict: bool
     ) -> Result<ResourceCert, ValidationError> {
-        self.validate_basics(strict)?;
+        self.validate_ca_at(issuer, strict, Time::now())
+    }
+
+    pub fn validate_ca_at(
+        self,
+        issuer: &ResourceCert,
+        strict: bool,
+        now: Time,
+    ) -> Result<ResourceCert, ValidationError> {
+        self.validate_basics(strict, now)?;
         self.validate_ca_basics(strict)?;
         self.validate_issued(issuer, strict)?;
         self.validate_signature(issuer, strict)?;
@@ -281,7 +299,16 @@ impl Cert {
         issuer: &ResourceCert,
         strict: bool
     ) -> Result<ResourceCert, ValidationError>  {
-        self.validate_basics(strict)?;
+        self.validate_ee_at(issuer, strict, Time::now())
+    }
+
+    pub fn validate_ee_at(
+        self,
+        issuer: &ResourceCert,
+        strict: bool,
+        now: Time,
+    ) -> Result<ResourceCert, ValidationError>  {
+        self.validate_basics(strict, now)?;
         self.validate_issued(issuer, strict)?;
 
         // 4.8.1. Basic Constraints: Must not be present.
@@ -308,7 +335,11 @@ impl Cert {
     //--- Validation Components
 
     /// Validates basic compliance with section 4 of RFC 6487.
-    fn validate_basics(&self, strict: bool) -> Result<(), ValidationError> {
+    fn validate_basics(
+        &self,
+        strict: bool,
+        now: Time
+    ) -> Result<(), ValidationError> {
         // The following lists all such constraints in the RFC, noting those
         // that we cannot check here.
 
@@ -317,6 +348,12 @@ impl Cert {
 
         // 4.3 Signature Algorithm: limited to those in RFC 6485. Already
         // checked in parsing.
+        //
+        // However, RFC 5280 demands that the two mentions of the signature
+        // algorithm are the same. So we do that here.
+        if self.signature != self.signed_data.signature().algorithm() {
+            return Err(ValidationError)
+        }
 
         // 4.4 Issuer: must have certain format. 
         Name::validate_rpki(&self.issuer, strict)?;
@@ -325,7 +362,7 @@ impl Cert {
         Name::validate_rpki(&self.subject, strict)?;
         
         // 4.6 Validity. Check according to RFC 5280.
-        self.validity.validate()?;
+        self.validity.validate_at(now)?;
 
         // 4.7 Subject Public Key Info: limited algorithms. Already checked
         // during parsing.
@@ -442,7 +479,9 @@ impl Cert {
         issuer: &ResourceCert,
         _strict: bool
     ) -> Result<(), ValidationError> {
-        self.signed_data.verify_signature(issuer.cert.public_key())
+        self.signed_data.verify_signature(
+            issuer.cert.subject_public_key_info()
+        )
     }
 
     /// Validates and extracts the IP and AS resources.
@@ -546,7 +585,7 @@ impl AsRef<Cert> for ResourceCert {
 
 //------------ Validity ------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Validity {
     not_before: Time,
     not_after: Time,
@@ -558,7 +597,7 @@ impl Validity {
     }
 
     pub fn from_duration(duration: ::chrono::Duration) -> Self {
-        let not_before = Time::new(Utc::now());
+        let not_before = Time::now();
         let not_after = Time::new(Utc::now() + duration);
 
         Validity { not_before, not_after }
@@ -576,68 +615,20 @@ impl Validity {
     }
 
     pub fn validate(&self) -> Result<(), ValidationError> {
-        self.not_before.validate_not_before()?;
-        self.not_after.validate_not_after()?;
+        self.validate_at(Time::now())
+    }
+
+    pub fn validate_at(&self, now: Time) -> Result<(), ValidationError> {
+        self.not_before.validate_not_before(now)?;
+        self.not_after.validate_not_after(now)?;
         Ok(())
     }
 
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        encode::sequence(
-            (
-                self.not_before.encode(),
-                self.not_after.encode(),
-            )
-        )
-    }
-}
-
-
-//------------ SubjectPublicKeyInfo ------------------------------------------
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SubjectPublicKeyInfo {
-    algorithm: PublicKeyAlgorithm,
-    subject_public_key: BitString,
-}
-
-impl SubjectPublicKeyInfo {
-    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
-        Mode::Der.decode(source, Self::take_from)
-    }
-
-    pub fn subject_public_key(&self) -> &BitString {
-        &self.subject_public_key
-    }
-
-    pub fn algorithm(&self) -> &PublicKeyAlgorithm {
-        &self.algorithm
-    }
-
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_sequence(|cons| {
-            Ok(SubjectPublicKeyInfo {
-                algorithm: PublicKeyAlgorithm::take_from(cons)?,
-                subject_public_key: BitString::take_from(cons)?
-            })
-        })
-    }
-
-    pub fn key_identifier(&self) -> Digest {
-        digest::digest(
-            &digest::SHA1,
-            self.subject_public_key.octet_slice().unwrap()
-        )
-    }
-
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        encode::sequence(
-            (
-                self.algorithm.encode(),
-                self.subject_public_key.encode()
-            )
-        )
+        encode::sequence((
+            self.not_before.encode(),
+            self.not_after.encode(),
+        ))
     }
 }
 

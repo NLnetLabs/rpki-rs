@@ -4,12 +4,10 @@ use bcder::decode;
 use bcder::{Captured, Mode, Oid, Tag};
 use bcder::string::{OctetString, OctetStringSource};
 use bytes::Bytes;
-use ring::digest;
-use untrusted::Input;
-use super::x509::update_once;
-use super::cert::{Cert, ResourceCert};
-use super::x509::{Time, ValidationError};
-use signing::{DigestAlgorithm, SignatureAlgorithm};
+use crate::x509::update_once;
+use crate::cert::{Cert, ResourceCert};
+use crate::x509::{Time, ValidationError};
+use crate::crypto::{DigestAlgorithm, Signature, SignatureAlgorithm};
 
 
 //------------ SignedObject --------------------------------------------------
@@ -173,9 +171,18 @@ impl SignedObject {
         issuer: &ResourceCert,
         strict: bool,
     ) -> Result<ResourceCert, ValidationError> {
+        self.validate_at(issuer, strict, Time::now())
+    }
+
+    pub fn validate_at(
+        self,
+        issuer: &ResourceCert,
+        strict: bool,
+        now: Time,
+    ) -> Result<ResourceCert, ValidationError> {
         self.verify_compliance(strict)?;
         self.verify_signature(strict)?;
-        self.cert.validate_ee(issuer, strict)
+        self.cert.validate_ee_at(issuer, strict, now)
     }
 
     /// Validates that the signed object complies with the specification.
@@ -206,7 +213,7 @@ impl SignedObject {
     /// This is item 2 of [RFC 6488]’s section 3.
     fn verify_signature(&self, _strict: bool) -> Result<(), ValidationError> {
         let digest = {
-            let mut context = digest::Context::new(&digest::SHA256);
+            let mut context = self.signer_info.digest_algorithm().start();
             self.content.iter().for_each(|x| context.update(x));
             context.finish()
         };
@@ -214,12 +221,10 @@ impl SignedObject {
             return Err(ValidationError)
         }
         let msg = self.signer_info.signed_attrs.encode_verify();
-        ::ring::signature::verify(
-            &::ring::signature::RSA_PKCS1_2048_8192_SHA256,
-            Input::from(self.cert.public_key().as_ref()),
-            Input::from(&msg),
-            Input::from(self.signer_info.signature_value.to_bytes().as_ref())
-        ).map_err(|_| ValidationError)
+        self.cert.subject_public_key_info().verify(
+            &msg,
+            &self.signer_info.signature()
+        ).map_err(Into::into)
     }
 }
 
@@ -231,18 +236,20 @@ pub struct SignerInfo {
     sid: OctetString,
     digest_algorithm: DigestAlgorithm,
     signed_attrs: SignedAttributes,
-    signature_algorithm: SignatureAlgorithm,
-    signature_value: OctetString
+    signature: Signature,
 }
 
 impl SignerInfo {
-
     pub fn signed_attrs(&self) -> &SignedAttributes {
         &self.signed_attrs
     }
 
-    pub fn signature_value(&self) -> &OctetString {
-        &self.signature_value
+    pub fn digest_algorithm(&self) -> DigestAlgorithm {
+        self.digest_algorithm
+    }
+
+    pub fn signature(&self) -> &Signature {
+        &self.signature
     }
 
     pub fn take_set_from<S: decode::Source>(
@@ -251,6 +258,18 @@ impl SignerInfo {
         cons.take_set(Self::take_from)
     }
 
+    /// Parses a SignerInfo.
+    ///
+    /// ```text
+    /// SignerInfo ::= SEQUENCE {
+    ///     version CMSVersion,
+    ///     sid SignerIdentifier,
+    ///     digestAlgorithm DigestAlgorithmIdentifier,
+    ///     signedAttrs [0] IMPLICIT SignedAttributes OPTIONAL,
+    ///     signatureAlgorithm SignatureAlgorithmIdentifier,
+    ///     signature SignatureValue,
+    ///     unsignedAttrs [1] IMPLICIT UnsignedAttributes OPTIONAL }
+    /// ```
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
@@ -262,8 +281,10 @@ impl SignerInfo {
                 })?,
                 digest_algorithm: DigestAlgorithm::take_from(cons)?,
                 signed_attrs: SignedAttributes::take_from(cons)?,
-                signature_algorithm: SignatureAlgorithm::take_from(cons)?,
-                signature_value: OctetString::take_from(cons)?
+                signature: Signature::new(
+                    SignatureAlgorithm::cms_take_from(cons)?,
+                    OctetString::take_from(cons)?.to_bytes()
+                )
             })
         })
     }
@@ -286,6 +307,24 @@ pub struct SignedAttributes {
 }
 
 impl SignedAttributes {
+    /// Parses Signed Attributes.
+    ///
+    /// ```text
+    /// This appears in the SignerInfo as:
+    ///    signedAttrs [0] IMPLICIT SignedAttributes OPTIONAL,
+    ///
+    /// Where:
+    ///
+    ///         SignedAttributes ::= SET SIZE (1..MAX) OF Attribute
+    ///
+    ///         Attribute ::= SEQUENCE {
+    ///           attrType OBJECT IDENTIFIER,
+    ///           attrValues SET OF AttributeValue }
+    ///
+    ///         AttributeValue ::= ANY
+    ///
+    /// See section 2.1.6.4 of RFC 6488 for specifications.
+    /// ```
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
@@ -405,6 +444,8 @@ pub mod oid {
         = Oid(&[42, 134, 72, 134, 247, 13, 1, 7, 2]);
     pub const CONTENT_TYPE: Oid<&[u8]>
         = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 3]);
+    pub const PROTOCOL_CONTENT_TYPE: Oid<&[u8]>
+        = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 16, 1, 28]);
     pub const MESSAGE_DIGEST: Oid<&[u8]>
         = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 4]);
     pub const SIGNING_TIME: Oid<&[u8]>

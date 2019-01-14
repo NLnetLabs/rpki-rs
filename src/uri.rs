@@ -19,7 +19,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 //
 //     SPACE CONTROL " # < > ? [ \\ ] ^ ` { | }
 //
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Rsync {
     module: RsyncModule,
     path: Bytes
@@ -193,7 +193,7 @@ impl fmt::Display for RsyncModule {
 /// This supports only what we need for the references in RPKI objects and
 /// publication / provisioning messages. In particular, this does not support
 /// the query and fragment components of URIs.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Http {
     scheme: Scheme,
     host:   Bytes,
@@ -270,7 +270,7 @@ impl fmt::Display for Http {
 }
 
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Scheme {
     Http,
     Https,

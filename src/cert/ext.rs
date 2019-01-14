@@ -1,406 +1,22 @@
 //! X509 Extensions
 
 use std::fmt;
-use bcder::{BitString, Captured, Mode, OctetString, Oid, Tag};
 use bcder::{decode, encode};
+use bcder::{
+    BitString, Captured, ConstOid, Mode, OctetString, Oid, Tag, Unsigned
+};
 use bcder::encode::PrimitiveContent;
 use bytes::Bytes;
-use ipres::IpResources;
-use asres::AsResources;
-use x509::update_once;
-use uri;
-use cert::SubjectPublicKeyInfo;
-
-
-//------------ Encoding ------------------------------------------------------
-
-pub fn encode_extension<'a, V: encode::Values + 'a>(
-    oid: &'static Oid<&'static [u8]>,
-    critical: &'a bool,
-    content: V
-) -> impl encode::Values + 'a {
-    //  Extension  ::=  SEQUENCE  {
-    //      extnID      OBJECT IDENTIFIER,
-    //      critical    BOOLEAN DEFAULT FALSE,
-    //      extnValue   OCTET STRING
-    //                  -- contains the DER encoding of an ASN.1 value
-    //                  -- corresponding to the extension type identified
-    //                  -- by extnID
-    //      }
-
-    encode::sequence(
-        (
-            oid.encode(),
-            critical.encode(),
-            OctetString::encode_wrapped(Mode::Der, content)
-        )
-    )
-}
-
-
-//------------ BasicCa -------------------------------------------------------
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BasicCa {
-    // RFC5280 section 4.2.1.9 MAY appear as critical or non-critical
-    critical: bool,
-    ca: bool,
-}
-
-/// # Creating
-///
-impl BasicCa {
-    pub fn new(critical: bool, ca: bool) -> Self {
-        Self { critical, ca }
-    }
-}
-
-/// # Decoding
-///
-impl BasicCa {
-    /// Parses the Basic Constraints Extension.
-    ///
-    /// The extension must be present in CA certificates and must not be
-    /// present in EE certificates.
-    ///
-    /// ```text
-    ///   BasicConstraints ::= SEQUENCE {
-    ///        cA                      BOOLEAN DEFAULT FALSE,
-    ///        pathLenConstraint       INTEGER (0..MAX) OPTIONAL }
-    /// ```
-    ///
-    /// The cA field gets chosen by the CA. The pathLenConstraint field must
-    /// not be present.
-    pub fn take<S: decode::Source>(
-        cons: &mut decode::Constructed<S>,
-        critical: bool,
-        basic_ca: &mut Option<Self>
-    ) -> Result<(), S::Err> {
-        update_once(basic_ca, || {
-            let ca = match cons.take_sequence(|cons| cons.take_opt_bool())? {
-                Some(res) => res,
-                None => false
-            };
-
-            Ok(Self{critical, ca})
-        })
-    }
-}
-
-
-/// # Data Access
-///
-impl BasicCa {
-    pub fn ca(&self) -> bool {
-        self.ca
-    }
-
-    pub fn is_critical(&self) -> bool {
-        self.critical
-    }
-}
-
-/// # Encoding
-///
-impl BasicCa {
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        encode_extension(
-            &oid::CE_BASIC_CONSTRAINTS,
-            &self.critical,
-            encode::sequence(
-                self.ca.encode()
-            )
-        )
-    }
-}
-
-
-//------------ SubjectKeyIdentifier ------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct SubjectKeyIdentifier {
-    subject_key_id: OctetString
-}
-
-/// # Creating
-///
-impl SubjectKeyIdentifier {
-    pub fn new(key_info: &SubjectPublicKeyInfo) -> Self {
-        let ki = key_info.key_identifier();
-        let b = Bytes::from(ki.as_ref());
-
-        Self{subject_key_id: OctetString::new(b)}
-    }
-}
-
-/// # Decoding
-///
-impl SubjectKeyIdentifier {
-    /// Parses the Subject Key Identifier Extension.
-    ///
-    /// The extension must be present and contain the 160 bit SHA-1 hash of
-    /// the value of the DER-encoded bit string of the subject public key.
-    ///
-    /// ```text
-    /// SubjectKeyIdentifier ::= KeyIdentifier
-    /// KeyIdentifier        ::= OCTET STRING
-    /// ```
-    ///
-    /// Conforming CAs MUST mark this extension as non-critical.
-    pub fn take<S: decode::Source>(
-        cons: &mut decode::Constructed<S>,
-        critical: bool,
-        subject_key_id: &mut Option<Self>
-    ) -> Result<(), S::Err> {
-        update_once(subject_key_id, || {
-            let subject_key_id = OctetString::take_from(cons)?;
-            if critical == true {
-                // RFC5280: Conforming CAs MUST mark this extension as non-critical.
-                xerr!(Err(decode::Malformed.into()))
-            }
-            else if subject_key_id.len() != 20 {
-                xerr!(Err(decode::Malformed.into()))
-            }
-            else {
-                Ok(Self{subject_key_id} )
-            }
-        })
-    }
-}
-
-/// # Data Access
-///
-impl SubjectKeyIdentifier {
-    pub fn subject_key_id(&self) -> &OctetString {
-        &self.subject_key_id
-    }
-}
-
-/// # Encoding
-///
-impl SubjectKeyIdentifier {
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-
-        encode_extension(
-            &oid::CE_SUBJECT_KEY_IDENTIFIER,
-            &false,
-            self.subject_key_id.encode()
-        )
-    }
-}
-
-
-//------------ AuthorityKeyIdentifier ----------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct AuthorityKeyIdentifier {
-    authority_key_id: OctetString
-}
-
-/// # Creating
-///
-impl AuthorityKeyIdentifier {
-    pub fn new(key_info: &SubjectPublicKeyInfo) -> Self {
-        let ki = key_info.key_identifier();
-        let b = Bytes::from(ki.as_ref());
-
-        Self{authority_key_id: OctetString::new(b)}
-    }
-}
-
-/// # Decoding
-///
-impl AuthorityKeyIdentifier {
-    /// Parses the Authority Key Identifier Extension.
-    ///
-    /// Must be present except in self-signed CA certificates where it is
-    /// optional.
-    ///
-    /// ```text
-    /// AuthorityKeyIdentifier ::= SEQUENCE {
-    ///   keyIdentifier             [0] KeyIdentifier           OPTIONAL,
-    ///   authorityCertIssuer       [1] GeneralNames            OPTIONAL,
-    ///   authorityCertSerialNumber [2] CertificateSerialNumber OPTIONAL  }
-    ///
-    /// KeyIdentifier ::= OCTET STRING
-    /// ```
-    ///
-    /// Only keyIdentifier MUST be present.
-    pub fn take<S: decode::Source>(
-        cons: &mut decode::Constructed<S>,
-        critical: bool,
-        authority_key_id: &mut Option<Self>
-    ) -> Result<(), S::Err> {
-        update_once(authority_key_id, || {
-            let authority_key_id = cons.take_sequence(|cons| {
-                cons.take_value_if(Tag::CTX_0, OctetString::from_content)
-            })?;
-            if critical == true {
-                // RFC5280: Conforming CAs MUST mark this extension as non-critical.
-                return Err(decode::Malformed.into())
-            }
-            else if authority_key_id.len() != 20 {
-                return Err(decode::Malformed.into())
-            }
-            else {
-                Ok(AuthorityKeyIdentifier{authority_key_id})
-            }
-        })
-    }
-}
-
-/// # Encoding
-///
-impl AuthorityKeyIdentifier {
-//    const OID: &'static Oid<&'static [u8]> = &oid::CE_AUTHORITY_KEY_IDENTIFIER;
-
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        encode_extension(
-            &oid::CE_AUTHORITY_KEY_IDENTIFIER,
-            &false,
-            encode::sequence(
-                 self.authority_key_id.encode_as(Tag::CTX_0)
-            )
-        )
-    }
-
-}
-
-
-/// # Data Access
-///
-impl AuthorityKeyIdentifier {
-    pub fn authority_key_id(&self) -> &OctetString {
-        &self.authority_key_id
-    }
-}
-
-//------------ SubjectInfoAccess ---------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct SubjectInfoAccess {
-    content: Captured,
-    ca: bool
-}
-
-/// # Decoding
-///
-impl SubjectInfoAccess {
-    fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_sequence(|cons| {
-            let mut ca = None;
-            let content = cons.capture(|cons| {
-                while let Some(()) = cons.take_opt_sequence(|cons| {
-                    let oid = Oid::take_from(cons)?;
-                    if oid == oid::AD_CA_REPOSITORY
-                        || oid == oid::AD_RPKI_MANIFEST
-                        {
-                            match ca {
-                                None => ca = Some(true),
-                                Some(true) => { }
-                                Some(false) => {
-                                    xerr!(return Err(decode::Malformed.into()))
-                                }
-                            }
-                        }
-                        else if oid == oid::AD_SIGNED_OBJECT {
-                            match ca {
-                                None => ca = Some(false),
-                                Some(false) => { }
-                                Some(true) => {
-                                    xerr!(return Err(decode::Malformed.into()))
-                                }
-                            }
-                        }
-                    let _ = UriGeneralName::take_from(cons)?;
-                    Ok(())
-                })? { }
-                Ok(())
-            })?;
-            if let Some(ca) = ca {
-                Ok(SubjectInfoAccess { content, ca })
-            }
-                else {
-                    // The sequence was empty.
-                    xerr!(Err(decode::Malformed.into()))
-                }
-        })
-    }
-}
-
-/// # Data Access
-///
-impl SubjectInfoAccess {
-    pub fn iter(&self) -> SiaIter {
-        SiaIter { content: self.content.clone() }
-    }
-
-    pub fn ca(&self) -> bool {
-        self.ca
-    }
-}
-
-
-//------------ SiaIter -------------------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct SiaIter {
-    content: Captured,
-}
-
-impl SiaIter {
-    pub fn filter_oid<O: AsRef<[u8]>>(
-        self,
-        expected: Oid<O>
-    ) -> impl Iterator<Item=UriGeneralName> {
-        self.filter_map(move |(oid, uri)| {
-            if oid == expected {
-                Some(uri)
-            }
-                else {
-                    None
-                }
-        })
-    }
-}
-
-impl Iterator for SiaIter {
-    type Item = (Oid, UriGeneralName);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.content.decode_partial(|cons| {
-            cons.take_opt_sequence(|cons| {
-                Ok((
-                    Oid::take_from(cons)?,
-                    UriGeneralName::take_from(cons)?
-                ))
-            })
-        }).unwrap()
-    }
-}
-
-
-//------------ CertificatePolicies -------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct CertificatePolicies(Captured);
-
-/// # Decoding
-///
-impl CertificatePolicies {
-    fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        // XXX TODO Parse properly.
-        cons.take_sequence(|c| c.capture_all()).map(CertificatePolicies)
-    }
-}
+use crate::asres::AsResources;
+use crate::crypto::PublicKey;
+use crate::ipres::IpResources;
+use crate::uri;
+use crate::x509::update_once;
 
 
 //------------ Extensions ----------------------------------------------------
 
+/// Extensions used in RPKI Certificates.
 #[derive(Clone, Debug)]
 pub struct Extensions {
     /// Basic Contraints.
@@ -450,6 +66,72 @@ pub struct Extensions {
     /// AS Resources
     as_resources: Option<AsResources>,
 }
+
+
+/// # Data Access
+///
+impl Extensions {
+    pub fn basic_ca(&self) -> Option<bool> {
+        match &self.basic_ca {
+            Some(ca) => Some(ca.ca),
+            None => None
+        }
+    }
+
+    pub fn subject_key_id(&self) -> &OctetString {
+        &self.subject_key_id.subject_key_id()
+    }
+
+    pub fn crl_distribution(&self) -> Option<&UriGeneralNames> {
+        self.crl_distribution.as_ref()
+    }
+
+    pub fn authority_key_id(&self) -> Option<&OctetString> {
+        match &self.authority_key_id {
+            Some(a) => Some(a.authority_key_id()),
+            None => None
+        }
+    }
+
+    pub fn authority_info_access(&self) -> Option<&UriGeneralName> {
+        self.authority_info_access.as_ref()
+    }
+
+    pub fn ip_resources(&self) -> Option<&IpResources> {
+        self.ip_resources.as_ref()
+    }
+
+    pub fn as_resources(&self) -> Option<&AsResources> {
+        self.as_resources.as_ref()
+    }
+
+    pub fn key_usage_ca(&self) -> bool {
+        self.key_usage_ca
+    }
+
+    pub fn subject_info_access(&self) -> &SubjectInfoAccess {
+        &self.subject_info_access
+    }
+
+    pub fn manifest_uris(&self) -> impl Iterator<Item=UriGeneralName> {
+        self.subject_info_access.iter().filter_oid(oid::AD_RPKI_MANIFEST)
+    }
+
+    pub fn repository_uri(&self) -> Option<uri::Rsync> {
+        for uri in self.subject_info_access
+                       .iter().filter_oid(oid::AD_CA_REPOSITORY) {
+            if let Some(mut uri) = uri.into_rsync_uri() {
+                return Some(uri)
+            }
+        }
+        None
+    }
+
+    pub fn extended_key_usage(&self) -> Option<&Captured> {
+        self.extended_key_usage.as_ref()
+    }
+}
+
 
 /// # Decoding
 ///
@@ -572,12 +254,12 @@ impl Extensions {
             if bits.bit(5) && bits.bit(6) {
                 Ok(true)
             }
-                else if bits.bit(0) {
-                    Ok(false)
-                }
-                    else {
-                        Err(decode::Malformed.into())
-                    }
+            else if bits.bit(0) {
+                Ok(false)
+            }
+            else {
+                Err(decode::Malformed.into())
+            }
         })
     }
 
@@ -735,70 +417,418 @@ impl Extensions {
     }
 }
 
-/// # Data Access
+
+//------------ BasicCa -------------------------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BasicCa {
+    // RFC5280 section 4.2.1.9 MAY appear as critical or non-critical
+    critical: bool,
+    ca: bool,
+}
+
+/// # Creation and Data Access
 ///
-impl Extensions {
-    pub fn basic_ca(&self) -> Option<bool> {
-        match &self.basic_ca {
-            Some(ca) => Some(ca.ca),
-            None => None
-        }
+impl BasicCa {
+    pub fn new(critical: bool, ca: bool) -> Self {
+        Self { critical, ca }
+    }
+
+    pub fn ca(&self) -> bool {
+        self.ca
+    }
+
+    pub fn is_critical(&self) -> bool {
+        self.critical
+    }
+}
+
+
+/// # Decoding and Encoding
+///
+impl BasicCa {
+    /// Parses the Basic Constraints Extension.
+    ///
+    /// The extension must be present in CA certificates and must not be
+    /// present in EE certificates.
+    ///
+    /// ```text
+    ///   BasicConstraints ::= SEQUENCE {
+    ///        cA                      BOOLEAN DEFAULT FALSE,
+    ///        pathLenConstraint       INTEGER (0..MAX) OPTIONAL }
+    /// ```
+    ///
+    /// The cA field gets chosen by the CA. The pathLenConstraint field must
+    /// not be present.
+    pub fn take<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+        critical: bool,
+        basic_ca: &mut Option<Self>
+    ) -> Result<(), S::Err> {
+        update_once(basic_ca, || {
+            let ca = match cons.take_sequence(|cons| cons.take_opt_bool())? {
+                Some(res) => res,
+                None => false
+            };
+
+            Ok(Self{critical, ca})
+        })
+    }
+
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        encode_extension(
+            &oid::CE_BASIC_CONSTRAINTS,
+            &self.critical,
+            encode::sequence(
+                self.ca.encode()
+            )
+        )
+    }
+}
+
+
+//------------ KeyIdentifier -------------------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KeyIdentifier(OctetString);
+
+impl KeyIdentifier {
+    pub fn new(key_info: &PublicKey) -> Self {
+        let ki = key_info.key_identifier();
+        let b = Bytes::from(ki.as_ref());
+        KeyIdentifier(OctetString::new(b))
+    }
+
+    pub fn key_id(&self) -> &OctetString {
+        &self.0
+    }
+
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        self.0.encode()
+    }
+
+    pub fn encode_as<'a>(&'a self, tag: Tag) -> impl encode::Values + 'a {
+        self.0.encode_as(tag)
+    }
+}
+
+impl From<OctetString> for KeyIdentifier {
+    fn from(o: OctetString) -> Self {
+        KeyIdentifier(o)
+    }
+}
+
+
+//------------ SubjectKeyIdentifier ------------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubjectKeyIdentifier {
+    subject_key_id: KeyIdentifier
+}
+
+/// # Creating and Data Access
+///
+impl SubjectKeyIdentifier {
+    pub fn new(key_info: &PublicKey) -> Self {
+        Self{subject_key_id: KeyIdentifier::new(key_info)}
     }
 
     pub fn subject_key_id(&self) -> &OctetString {
-        &self.subject_key_id.subject_key_id
-    }
-
-    pub fn crl_distribution(&self) -> Option<&UriGeneralNames> {
-        self.crl_distribution.as_ref()
-    }
-
-    pub fn authority_key_id(&self) -> Option<&OctetString> {
-        match &self.authority_key_id {
-            Some(a) => Some(a.authority_key_id()),
-            None => None
-        }
-    }
-
-    pub fn authority_info_access(&self) -> Option<&UriGeneralName> {
-        self.authority_info_access.as_ref()
-    }
-
-    pub fn ip_resources(&self) -> Option<&IpResources> {
-        self.ip_resources.as_ref()
-    }
-
-    pub fn as_resources(&self) -> Option<&AsResources> {
-        self.as_resources.as_ref()
-    }
-
-    pub fn key_usage_ca(&self) -> bool {
-        self.key_usage_ca
-    }
-
-    pub fn subject_info_access(&self) -> &SubjectInfoAccess {
-        &self.subject_info_access
-    }
-
-    pub fn manifest_uris(&self) -> impl Iterator<Item=UriGeneralName> {
-        self.subject_info_access.iter().filter_oid(oid::AD_RPKI_MANIFEST)
-    }
-
-    pub fn repository_uri(&self) -> Option<uri::Rsync> {
-        for uri in self.subject_info_access
-            .iter().filter_oid(oid::AD_CA_REPOSITORY)
-            {
-                if let Some(mut uri) = uri.into_rsync_uri() {
-                    return Some(uri)
-                }
-            }
-        None
-    }
-
-    pub fn extended_key_usage(&self) -> Option<&Captured> {
-        self.extended_key_usage.as_ref()
+        self.subject_key_id.key_id()
     }
 }
+
+
+/// # Decoding and Encoding
+///
+impl SubjectKeyIdentifier {
+    /// Parses the Subject Key Identifier Extension.
+    ///
+    /// The extension must be present and contain the 160 bit SHA-1 hash of
+    /// the value of the DER-encoded bit string of the subject public key.
+    ///
+    /// ```text
+    /// SubjectKeyIdentifier ::= KeyIdentifier
+    /// KeyIdentifier        ::= OCTET STRING
+    /// ```
+    ///
+    /// Conforming CAs MUST mark this extension as non-critical.
+    pub fn take<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+        critical: bool,
+        subject_key_id: &mut Option<Self>
+    ) -> Result<(), S::Err> {
+        update_once(subject_key_id, || {
+            let subject_key_id = OctetString::take_from(cons)?;
+            if critical == true {
+                // RFC5280: Conforming CAs MUST mark this extension as
+                // non-critical.
+                xerr!(Err(decode::Malformed.into()))
+            }
+            else if subject_key_id.len() != 20 {
+                xerr!(Err(decode::Malformed.into()))
+            }
+            else {
+                Ok(Self{subject_key_id: subject_key_id.into()} )
+            }
+        })
+    }
+
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        encode_extension(
+            &oid::CE_SUBJECT_KEY_IDENTIFIER,
+            &false,
+            self.subject_key_id.encode()
+        )
+    }
+}
+
+
+//------------ AuthorityKeyIdentifier ----------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuthorityKeyIdentifier {
+    authority_key_id: OctetString
+}
+
+/// # Creating and Data Access
+///
+impl AuthorityKeyIdentifier {
+    pub fn new(key_info: &PublicKey) -> Self {
+        let ki = key_info.key_identifier();
+        let b = Bytes::from(ki.as_ref());
+
+        Self{authority_key_id: OctetString::new(b)}
+    }
+
+    pub fn authority_key_id(&self) -> &OctetString {
+        &self.authority_key_id
+    }
+
+}
+
+
+/// # Decoding and Encoding
+///
+impl AuthorityKeyIdentifier {
+    /// Parses the Authority Key Identifier Extension.
+    ///
+    /// Must be present except in self-signed CA certificates where it is
+    /// optional.
+    ///
+    /// ```text
+    /// AuthorityKeyIdentifier ::= SEQUENCE {
+    ///   keyIdentifier             [0] KeyIdentifier           OPTIONAL,
+    ///   authorityCertIssuer       [1] GeneralNames            OPTIONAL,
+    ///   authorityCertSerialNumber [2] CertificateSerialNumber OPTIONAL  }
+    ///
+    /// KeyIdentifier ::= OCTET STRING
+    /// ```
+    ///
+    /// Only keyIdentifier MUST be present.
+    pub fn take<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+        critical: bool,
+        authority_key_id: &mut Option<Self>
+    ) -> Result<(), S::Err> {
+        update_once(authority_key_id, || {
+            let authority_key_id = cons.take_sequence(|cons| {
+                cons.take_value_if(Tag::CTX_0, OctetString::from_content)
+            })?;
+            if critical == true {
+                // RFC5280: Conforming CAs MUST mark this extension as
+                // non-critical.
+                return Err(decode::Malformed.into())
+            }
+            else if authority_key_id.len() != 20 {
+                return Err(decode::Malformed.into())
+            }
+            else {
+                Ok(AuthorityKeyIdentifier{authority_key_id})
+            }
+        })
+    }
+
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        encode_extension(
+            &oid::CE_AUTHORITY_KEY_IDENTIFIER,
+            &false,
+            encode::sequence(
+                 self.authority_key_id.encode_as(Tag::CTX_0)
+            )
+        )
+    }
+}
+
+
+//------------ SubjectInfoAccess ---------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct SubjectInfoAccess {
+    content: Captured,
+    ca: bool
+}
+
+/// # Data Access
+///
+impl SubjectInfoAccess {
+    pub fn iter(&self) -> SiaIter {
+        SiaIter { content: self.content.clone() }
+    }
+
+    pub fn ca(&self) -> bool {
+        self.ca
+    }
+}
+
+/// # Decoding
+///
+impl SubjectInfoAccess {
+    fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        cons.take_sequence(|cons| {
+            let mut ca = None;
+            let content = cons.capture(|cons| {
+                while let Some(()) = cons.take_opt_sequence(|cons| {
+                    let oid = Oid::take_from(cons)?;
+                    if oid == oid::AD_CA_REPOSITORY
+                        || oid == oid::AD_RPKI_MANIFEST
+                        {
+                            match ca {
+                                None => ca = Some(true),
+                                Some(true) => { }
+                                Some(false) => {
+                                    xerr!(return Err(decode::Malformed.into()))
+                                }
+                            }
+                        }
+                        else if oid == oid::AD_SIGNED_OBJECT {
+                            match ca {
+                                None => ca = Some(false),
+                                Some(false) => { }
+                                Some(true) => {
+                                    xerr!(return Err(decode::Malformed.into()))
+                                }
+                            }
+                        }
+                    let _ = UriGeneralName::take_from(cons)?;
+                    Ok(())
+                })? { }
+                Ok(())
+            })?;
+            if let Some(ca) = ca {
+                Ok(SubjectInfoAccess { content, ca })
+            }
+                else {
+                    // The sequence was empty.
+                    xerr!(Err(decode::Malformed.into()))
+                }
+        })
+    }
+}
+
+
+//------------ SiaIter -------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct SiaIter {
+    content: Captured,
+}
+
+impl SiaIter {
+    pub fn filter_oid<O: AsRef<[u8]>>(
+        self,
+        expected: Oid<O>
+    ) -> impl Iterator<Item=UriGeneralName> {
+        self.filter_map(move |(oid, uri)| {
+            if oid == expected {
+                Some(uri)
+            }
+                else {
+                    None
+                }
+        })
+    }
+}
+
+impl Iterator for SiaIter {
+    type Item = (Oid, UriGeneralName);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.content.decode_partial(|cons| {
+            cons.take_opt_sequence(|cons| {
+                Ok((
+                    Oid::take_from(cons)?,
+                    UriGeneralName::take_from(cons)?
+                ))
+            })
+        }).unwrap()
+    }
+}
+
+
+//------------ CertificatePolicies -------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct CertificatePolicies(Captured);
+
+/// # Decoding
+///
+impl CertificatePolicies {
+    fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        // XXX TODO Parse properly.
+        cons.take_sequence(|c| c.capture_all()).map(CertificatePolicies)
+    }
+}
+
+
+//------------ CrlNumber -----------------------------------------------------
+
+/// This extension is used in CRLs.
+#[derive(Clone, Debug)]
+pub struct CrlNumber {
+    number: Unsigned
+}
+
+/// # Creating
+///
+impl CrlNumber {
+    pub fn new(number: u32) -> Self {
+        CrlNumber{ number: number.into() }
+    }
+}
+
+/// # Decoding and Encoding
+///
+impl CrlNumber {
+    /// Parses the CRL Number Extension.
+    ///
+    /// Must be present
+    ///
+    /// ```text
+    /// CRLNumber ::= INTEGER (0..MAX)
+    /// ```
+    pub fn take<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+        _critical: bool,
+        crl_number: &mut Option<Self>
+    ) -> Result<(), S::Err> {
+        update_once(crl_number, || {
+            Ok(CrlNumber { number: Unsigned::take_from(cons)? })
+        })
+    }
+
+    pub fn encode<'a>(& 'a self) -> impl encode::Values + 'a {
+        encode::sequence((
+            oid::CE_CRL_NUMBER.encode(),
+            OctetString::encode_wrapped(Mode::Der, self.number.encode())
+        ))
+    }
+}
+
 
 
 //------------ URIGeneralNames -----------------------------------------------
@@ -919,10 +949,39 @@ impl fmt::Display for UriGeneralName {
 }
 
 
+//------------ Helper Functions ----------------------------------------------
+
+/// Returns an encoder for an extension.
+///
+/// The encoder will implement the following ASN.1 grammar:
+///
+/// ```text
+///  Extension  ::=  SEQUENCE  {
+///      extnID      OBJECT IDENTIFIER,
+///      critical    BOOLEAN DEFAULT FALSE,
+///      extnValue   OCTET STRING
+///                  -- contains the DER encoding of an ASN.1 value
+///                  -- corresponding to the extension type identified
+///                  -- by extnID
+///      }
+/// ```
+fn encode_extension<'a, V: encode::Values + 'a>(
+    oid: &'a ConstOid,
+    critical: &'a bool,
+    content: V
+) -> impl encode::Values + 'a {
+    encode::sequence((
+        oid.encode(),
+        critical.encode(),
+        OctetString::encode_wrapped(Mode::Der, content)
+    ))
+}
+
+
 //------------ OIDs ----------------------------------------------------------
 
 #[allow(dead_code)] // XXX
-pub mod oid {
+pub(crate) mod oid {
     use bcder::Oid;
 
     pub const AD_CA_ISSUERS: Oid<&[u8]> = Oid(&[43, 6, 1, 5, 5, 7, 48, 2]);
@@ -935,6 +994,7 @@ pub mod oid {
     pub const CE_KEY_USAGE: Oid<&[u8]> = Oid(&[85, 29, 15]);
     pub const CE_BASIC_CONSTRAINTS: Oid<&[u8]> = Oid(&[85, 29, 19]);
     pub const CE_CRL_DISTRIBUTION_POINTS: Oid<&[u8]> = Oid(&[85, 29, 31]);
+    pub const CE_CRL_NUMBER: Oid<&[u8]> = Oid(&[85, 29, 20]);
     pub const CE_EXTENDED_KEY_USAGE: Oid<&[u8]> = Oid(&[85, 29, 37]);
     pub const CE_CERTIFICATE_POLICIES: Oid<&[u8]> = Oid(&[85, 29, 32]);
     pub const CE_AUTHORITY_KEY_IDENTIFIER: Oid<&[u8]> = Oid(&[85, 29, 35]);
@@ -946,3 +1006,32 @@ pub mod oid {
     pub const PE_SUBJECT_INFO_ACCESS: Oid<&[u8]>
         = Oid(&[43, 6, 1, 5, 5, 7, 1, 11]);
 }
+
+
+//============ Tests =========================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bcder::encode::Values;
+
+    #[test]
+    fn should_encode_basic_ca() {
+        let ba = BasicCa::new(true, true);
+        let mut v = Vec::new();
+        ba.encode().write_encoded(Mode::Der, &mut v).unwrap();
+
+        // 48 15            Sequence with length 15
+        //  6 3 85 29 19       OID 2.5.29.19 basicConstraints
+        //  1 1 255              Boolean true
+        //  4 5                OctetString of length 5
+        //     48 3               Sequence with length 3
+        //        1 1 255           Boolean true
+
+        assert_eq!(
+            vec![48, 15, 6, 3, 85, 29, 19, 1, 1, 255, 4, 5, 48, 3, 1, 1, 255 ],
+            v
+        );
+    }
+}
+
