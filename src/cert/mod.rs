@@ -22,13 +22,12 @@ use bcder::{decode, encode};
 use bcder::encode::PrimitiveContent;
 use bcder::{BitString, Mode, OctetString, Tag, Unsigned};
 use chrono::Utc;
-use ring::digest::{self, Digest};
 use crate::asres::AsBlocks;
 use crate::uri;
 use crate::ipres::IpAddressBlocks;
 use crate::tal::TalInfo;
 use crate::x509::{Name, SignedData, Time, ValidationError};
-use crate::signing::{PublicKeyAlgorithm, SignatureAlgorithm};
+use crate::crypto::{PublicKey, SignatureAlgorithm};
 use self::ext::{Extensions, UriGeneralName, UriGeneralNames};
 
 
@@ -97,7 +96,7 @@ pub struct Cert {
     subject: Name,
 
     /// Information about the public key of this certificate.
-    subject_public_key_info: SubjectPublicKeyInfo,
+    subject_public_key_info: PublicKey,
 
     /// The optional Issuer Unique ID.
     issuer_unique_id: Option<BitString>,
@@ -113,19 +112,13 @@ pub struct Cert {
 /// # Data Access
 ///
 impl Cert {
-    /// Returns a reference to the certificate’s public key.
-    pub fn public_key(&self) -> &[u8] {
-        self.subject_public_key_info
-            .subject_public_key.octet_slice().unwrap()
-    }
-
     /// Returns a reference to the subject key identifier.
     pub fn subject_key_identifier(&self) -> &OctetString {
         &self.extensions.subject_key_id()
     }
 
     /// Returns a reference to the entire public key information structure.
-    pub fn subject_public_key_info(&self) -> &SubjectPublicKeyInfo {
+    pub fn subject_public_key_info(&self) -> &PublicKey {
         &self.subject_public_key_info
     }
 
@@ -177,12 +170,12 @@ impl Cert {
                 Ok(Cert {
                     signed_data,
                     serial_number: Unsigned::take_from(cons)?,
-                    signature: SignatureAlgorithm::take_from(cons)?,
+                    signature: SignatureAlgorithm::x509_take_from(cons)?,
                     issuer: Name::take_from(cons)?,
                     validity: Validity::take_from(cons)?,
                     subject: Name::take_from(cons)?,
                     subject_public_key_info: 
-                        SubjectPublicKeyInfo::take_from(cons)?,
+                        PublicKey::take_from(cons)?,
                     issuer_unique_id: cons.take_opt_value_if(
                         Tag::CTX_1,
                         |c| BitString::from_content(c)
@@ -355,6 +348,12 @@ impl Cert {
 
         // 4.3 Signature Algorithm: limited to those in RFC 6485. Already
         // checked in parsing.
+        //
+        // However, RFC 5280 demands that the two mentions of the signature
+        // algorithm are the same. So we do that here.
+        if self.signature != self.signed_data.signature().algorithm() {
+            return Err(ValidationError)
+        }
 
         // 4.4 Issuer: must have certain format. 
         Name::validate_rpki(&self.issuer, strict)?;
@@ -480,7 +479,9 @@ impl Cert {
         issuer: &ResourceCert,
         _strict: bool
     ) -> Result<(), ValidationError> {
-        self.signed_data.verify_signature(issuer.cert.subject_public_key_info())
+        self.signed_data.verify_signature(
+            issuer.cert.subject_public_key_info()
+        )
     }
 
     /// Validates and extracts the IP and AS resources.
@@ -627,54 +628,6 @@ impl Validity {
         encode::sequence((
             self.not_before.encode(),
             self.not_after.encode(),
-        ))
-    }
-}
-
-
-//------------ SubjectPublicKeyInfo ------------------------------------------
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SubjectPublicKeyInfo {
-    algorithm: PublicKeyAlgorithm,
-    subject_public_key: BitString,
-}
-
-impl SubjectPublicKeyInfo {
-    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
-        Mode::Der.decode(source, Self::take_from)
-    }
-
-    pub fn subject_public_key(&self) -> &BitString {
-        &self.subject_public_key
-    }
-
-    pub fn algorithm(&self) -> &PublicKeyAlgorithm {
-        &self.algorithm
-    }
-
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_sequence(|cons| {
-            Ok(SubjectPublicKeyInfo {
-                algorithm: PublicKeyAlgorithm::take_from(cons)?,
-                subject_public_key: BitString::take_from(cons)?
-            })
-        })
-    }
-
-    pub fn key_identifier(&self) -> Digest {
-        digest::digest(
-            &digest::SHA1,
-            self.subject_public_key.octet_slice().unwrap()
-        )
-    }
-
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        encode::sequence((
-            self.algorithm.encode(),
-            self.subject_public_key.encode()
         ))
     }
 }

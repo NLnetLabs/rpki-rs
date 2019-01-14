@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 use base64;
 use bcder::decode;
-use super::cert::SubjectPublicKeyInfo;
+use crate::crypto::PublicKey;
 use super::uri;
 
 
@@ -15,7 +15,7 @@ use super::uri;
 #[derive(Clone, Debug)]
 pub struct Tal {
     uris: Vec<uri::Rsync>,
-    key_info: SubjectPublicKeyInfo,
+    key_info: PublicKey,
     info: Arc<TalInfo>,
 }
 
@@ -72,7 +72,7 @@ impl Tal {
             uris.push(uri)
         }
         let key_info = base64::decode_config(data, base64::MIME)?;
-        let key_info = SubjectPublicKeyInfo::decode(key_info.as_ref())?;
+        let key_info = PublicKey::decode(key_info.as_ref())?;
         Ok(Tal {
             uris,
             key_info,
@@ -101,7 +101,7 @@ impl Tal {
         self.uris.iter()
     }
 
-    pub fn key_info(&self) -> &SubjectPublicKeyInfo {
+    pub fn key_info(&self) -> &PublicKey {
         &self.key_info
     }
 

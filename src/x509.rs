@@ -1,19 +1,17 @@
 //! Types common to all things X.509.
 
-use std::str;
+use std::{io, str};
 use std::str::FromStr;
 use bcder::{decode, encode};
-use bcder::{BitString, Captured, Mode, Tag};
+use bcder::{BitString, Captured, Mode, Oid, Tag};
 use bcder::string::PrintableString;
 use bcder::decode::Source;
 use bcder::encode::PrimitiveContent;
-use cert::SubjectPublicKeyInfo;
 use chrono::{Datelike, DateTime, LocalResult, Timelike, TimeZone, Utc};
 use hex;
-use signing::SignatureAlgorithm;
-use std::io;
-use bcder::Oid;
-use std::result::Result::Err;
+use crate::crypto::{
+    PublicKey, Signature, SignatureAlgorithm, VerificationError
+};
 
 
 //------------ Functions -----------------------------------------------------
@@ -112,7 +110,7 @@ impl Name {
     /// on the hash of the public key. This is in line with
     /// the recommendations in RFC6487 sections 4.4, 4.5
     /// and 8.
-    pub fn from_pub_key(key_info: &SubjectPublicKeyInfo) -> Self {
+    pub fn from_pub_key(key_info: &PublicKey) -> Self {
         let ki = key_info.key_identifier();
         // Borrow checker shenanigans ...
         let enc = hex::encode(&ki);
@@ -139,8 +137,13 @@ impl Name {
 #[derive(Clone, Debug)]
 pub struct SignedData {
     data: Captured,
-    signature_algorithm: SignatureAlgorithm,
-    signature_value: BitString,
+    signature: Signature,
+}
+
+impl SignedData {
+    pub fn signature(&self) -> &Signature {
+        &self.signature
+    }
 }
 
 
@@ -160,8 +163,10 @@ impl SignedData {
     ) -> Result<Self, S::Err> {
         Ok(SignedData {
             data: cons.capture_one()?,
-            signature_algorithm: SignatureAlgorithm::take_from(cons)?,
-            signature_value: BitString::take_from(cons)?,
+            signature: Signature::new(
+                SignatureAlgorithm::x509_take_from(cons)?,
+                BitString::take_from(cons)?.octet_bytes()
+            )
         })
     }
 
@@ -171,29 +176,43 @@ impl SignedData {
 
     pub fn verify_signature(
         &self,
-        public_key: &SubjectPublicKeyInfo
+        public_key: &PublicKey
     ) -> Result<(), ValidationError> {
-        let public_key = public_key.subject_public_key().octet_slice().unwrap();
-        ::ring::signature::verify(
-            &::ring::signature::RSA_PKCS1_2048_8192_SHA256,
-            ::untrusted::Input::from(public_key),
-            ::untrusted::Input::from(self.data.as_ref()),
-            ::untrusted::Input::from(
-                self.signature_value.octet_slice().unwrap()
-            )
-        ).map_err(|_| ValidationError)
+        public_key.verify(
+            self.data.as_ref(),
+            &self.signature
+        ).map_err(Into::into)
     }
 
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence((
             &self.data,
-            self.signature_algorithm.encode(),
-            self.signature_value.encode(),
+            self.signature.algorithm().x509_encode(),
+            SignatureValueContent(self).encode(),
         ))
     }
-
 }
 
+
+#[derive(Clone, Copy, Debug)]
+pub struct SignatureValueContent<'a>(&'a SignedData);
+
+impl<'a> PrimitiveContent for SignatureValueContent<'a> {
+    const TAG: Tag = Tag::BIT_STRING;
+
+    fn encoded_len(self, _: Mode) -> usize {
+        self.0.signature.value().len() + 1
+    }
+
+    fn write_encoded<W: io::Write>(
+        self,
+        _: Mode,
+        target: &mut W
+    ) -> Result<(), io::Error> {
+        target.write_all(&[0u8])?;
+        target.write_all(self.0.signature.value().as_ref())
+    }
+}
 
 //------------ Time ----------------------------------------------------------
 
@@ -342,11 +361,11 @@ impl PrimitiveContent for Time {
 
     const TAG: Tag = Tag::GENERALIZED_TIME;
 
-    fn encoded_len(&self, _: Mode) -> usize {
+    fn encoded_len(self, _: Mode) -> usize {
         15 // yyyyMMddhhmmssZ
     }
 
-    fn write_encoded<W: io::Write>(&self, _: Mode, target: &mut W)
+    fn write_encoded<W: io::Write>(self, _: Mode, target: &mut W)
         -> Result<(), io::Error>
     {
         write!(target, "{:04}", self.0.year())?;
@@ -403,6 +422,12 @@ pub struct ValidationError;
 
 impl From<decode::Error> for ValidationError {
     fn from(_: decode::Error) -> ValidationError {
+        ValidationError
+    }
+}
+
+impl From<VerificationError> for ValidationError {
+    fn from(_: VerificationError) -> ValidationError {
         ValidationError
     }
 }

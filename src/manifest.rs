@@ -16,7 +16,7 @@ use super::uri;
 use super::cert::{ResourceCert};
 use super::sigobj::SignedObject;
 use super::x509::{Time, ValidationError};
-use signing;
+use crate::oid;
 
 
 //------------ Manifest ------------------------------------------------------
@@ -116,7 +116,7 @@ impl ManifestContent {
             if this_update > next_update {
                 xerr!(return Err(decode::Malformed.into()));
             }
-            signing::oid::SHA256.skip_if(cons)?;
+            oid::SHA256.skip_if(cons)?;
             let mut len = 0;
             let file_list = cons.take_sequence(|cons| {
                 cons.capture(|cons| {

@@ -19,10 +19,9 @@ use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Oid, Tag, Unsigned};
 use crate::uri;
 use crate::x509::{Name, SignedData, Time, ValidationError};
-use crate::signing::SignatureAlgorithm;
+use crate::crypto::{PublicKey, SignatureAlgorithm};
 use crate::cert::ext::{AuthorityKeyIdentifier, CrlNumber};
 use crate::cert::ext::oid;
-use crate::cert::SubjectPublicKeyInfo;
 
 
 //------------ Crl -----------------------------------------------------------
@@ -85,7 +84,7 @@ impl Crl {
                 cons.skip_u8_if(1)?; // v2 => 1
                 Ok(Crl {
                     signed_data,
-                    signature: SignatureAlgorithm::take_from(cons)?,
+                    signature: SignatureAlgorithm::x509_take_from(cons)?,
                     issuer: Name::take_from(cons)?,
                     this_update: Time::take_from(cons)?,
                     next_update: Time::take_opt_from(cons)?,
@@ -105,8 +104,11 @@ impl Crl {
     /// The list’s signature is validated against the provided public key.
     pub fn validate(
         &self,
-        public_key: &SubjectPublicKeyInfo
+        public_key: &PublicKey
     ) -> Result<(), ValidationError> {
+        if self.signature != self.signed_data.signature().algorithm() {
+            return Err(ValidationError)
+        }
         self.signed_data.verify_signature(public_key)
     }
 

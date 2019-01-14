@@ -23,18 +23,19 @@ extern crate hex;
 #[macro_use] extern crate log;
 #[cfg(feature = "softkeys")] extern crate openssl;
 extern crate ring;
+#[cfg(feature = "softkeys")] extern crate slab;
 extern crate untrusted;
-extern crate xml;
 
 pub mod asres;
 pub mod cert;
 pub mod crl;
+pub mod crypto;
 pub mod ipres;
 pub mod manifest;
+pub mod oid;
 pub mod roa;
 pub mod uri;
 pub mod sigobj;
 pub mod tal;
 pub mod x509;
 
-pub mod signing;

@@ -4,12 +4,10 @@ use bcder::decode;
 use bcder::{Captured, Mode, Oid, Tag};
 use bcder::string::{OctetString, OctetStringSource};
 use bytes::Bytes;
-use ring::digest;
-use untrusted::Input;
-use super::x509::update_once;
-use super::cert::{Cert, ResourceCert};
-use super::x509::{Time, ValidationError};
-use signing::{DigestAlgorithm, SignatureAlgorithm};
+use crate::x509::update_once;
+use crate::cert::{Cert, ResourceCert};
+use crate::x509::{Time, ValidationError};
+use crate::crypto::{DigestAlgorithm, Signature, SignatureAlgorithm};
 
 
 //------------ SignedObject --------------------------------------------------
@@ -215,7 +213,7 @@ impl SignedObject {
     /// This is item 2 of [RFC 6488]’s section 3.
     fn verify_signature(&self, _strict: bool) -> Result<(), ValidationError> {
         let digest = {
-            let mut context = digest::Context::new(&digest::SHA256);
+            let mut context = self.signer_info.digest_algorithm().start();
             self.content.iter().for_each(|x| context.update(x));
             context.finish()
         };
@@ -223,12 +221,10 @@ impl SignedObject {
             return Err(ValidationError)
         }
         let msg = self.signer_info.signed_attrs.encode_verify();
-        ::ring::signature::verify(
-            &::ring::signature::RSA_PKCS1_2048_8192_SHA256,
-            Input::from(self.cert.public_key().as_ref()),
-            Input::from(&msg),
-            Input::from(self.signer_info.signature_value.to_bytes().as_ref())
-        ).map_err(|_| ValidationError)
+        self.cert.subject_public_key_info().verify(
+            &msg,
+            &self.signer_info.signature()
+        ).map_err(Into::into)
     }
 }
 
@@ -240,18 +236,20 @@ pub struct SignerInfo {
     sid: OctetString,
     digest_algorithm: DigestAlgorithm,
     signed_attrs: SignedAttributes,
-    signature_algorithm: SignatureAlgorithm,
-    signature_value: OctetString
+    signature: Signature,
 }
 
 impl SignerInfo {
-
     pub fn signed_attrs(&self) -> &SignedAttributes {
         &self.signed_attrs
     }
 
-    pub fn signature_value(&self) -> &OctetString {
-        &self.signature_value
+    pub fn digest_algorithm(&self) -> DigestAlgorithm {
+        self.digest_algorithm
+    }
+
+    pub fn signature(&self) -> &Signature {
+        &self.signature
     }
 
     pub fn take_set_from<S: decode::Source>(
@@ -283,8 +281,10 @@ impl SignerInfo {
                 })?,
                 digest_algorithm: DigestAlgorithm::take_from(cons)?,
                 signed_attrs: SignedAttributes::take_from(cons)?,
-                signature_algorithm: SignatureAlgorithm::take_from(cons)?,
-                signature_value: OctetString::take_from(cons)?
+                signature: Signature::new(
+                    SignatureAlgorithm::cms_take_from(cons)?,
+                    OctetString::take_from(cons)?.to_bytes()
+                )
             })
         })
     }

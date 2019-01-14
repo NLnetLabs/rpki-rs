@@ -8,10 +8,10 @@ use bcder::{
 use bcder::encode::PrimitiveContent;
 use bytes::Bytes;
 use crate::asres::AsResources;
+use crate::crypto::PublicKey;
 use crate::ipres::IpResources;
 use crate::uri;
 use crate::x509::update_once;
-use super::SubjectPublicKeyInfo;
 
 
 //------------ Extensions ----------------------------------------------------
@@ -493,7 +493,7 @@ impl BasicCa {
 pub struct KeyIdentifier(OctetString);
 
 impl KeyIdentifier {
-    pub fn new(key_info: &SubjectPublicKeyInfo) -> Self {
+    pub fn new(key_info: &PublicKey) -> Self {
         let ki = key_info.key_identifier();
         let b = Bytes::from(ki.as_ref());
         KeyIdentifier(OctetString::new(b))
@@ -529,7 +529,7 @@ pub struct SubjectKeyIdentifier {
 /// # Creating and Data Access
 ///
 impl SubjectKeyIdentifier {
-    pub fn new(key_info: &SubjectPublicKeyInfo) -> Self {
+    pub fn new(key_info: &PublicKey) -> Self {
         Self{subject_key_id: KeyIdentifier::new(key_info)}
     }
 
@@ -594,7 +594,7 @@ pub struct AuthorityKeyIdentifier {
 /// # Creating and Data Access
 ///
 impl AuthorityKeyIdentifier {
-    pub fn new(key_info: &SubjectPublicKeyInfo) -> Self {
+    pub fn new(key_info: &PublicKey) -> Self {
         let ki = key_info.key_identifier();
         let b = Bytes::from(ki.as_ref());
 
