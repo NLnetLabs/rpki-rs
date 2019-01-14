@@ -5,7 +5,13 @@
 
 Breaking Changes
 
+* New module `crypto` includes the now removed module `signer` and all
+  crypto-related types. The latter have been re-designed as well.
+
 New
+
+* `DigestAlgorithm` allows digesting, `PublicKeyFormat` allows checking
+  signatures.
 
 Bug Fixes
 
