@@ -12,7 +12,7 @@ use openssl::error::ErrorStack;
 use slab::Slab;
 use super::keys::{PublicKey, PublicKeyFormat};
 use super::signature::{Signature, SignatureAlgorithm};
-use super::signer::{Signer, SigningError};
+use super::signer::{KeyError, Signer, SigningError};
 
 
 
@@ -46,10 +46,10 @@ impl Signer for OpenSslSigner {
     fn get_key_info(
         &self,
         id: &Self::KeyId
-    ) -> Result<Option<PublicKey>, Self::Error> {
+    ) -> Result<PublicKey, KeyError<Self::Error>> {
         match self.keys.get(id.0) {
-            Some(key) => Ok(Some(key.get_key_info()?)),
-            None => Ok(None)
+            Some(key) => Ok(key.get_key_info()?),
+            None => Err(KeyError::KeyNotFound),
         }
     }
 
@@ -58,10 +58,10 @@ impl Signer for OpenSslSigner {
     ) -> Result<bool, Self::Error> {
         if self.keys.contains(key.0) {
             self.keys.remove(key.0);
-            Ok(true)
+            Ok(())
         }
         else {
-            Ok(false)
+            Err(KeyError::KeyNotFound)
         }
     }
 

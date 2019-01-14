@@ -27,7 +27,7 @@ pub trait Signer {
     fn get_key_info(
         &self,
         key: &Self::KeyId
-    ) -> Result<Option<PublicKey>, Self::Error>;
+    ) -> Result<PublicKey, KeyError<Self::Error>>;
 
     /// Destroys a key.
     ///
@@ -35,7 +35,7 @@ pub trait Signer {
     fn destroy_key(
         &mut self,
         key: &Self::KeyId
-    ) -> Result<bool, Self::Error>;
+    ) -> Result<(), KeyError<Self::Error>>;
 
     /// Signs data.
     fn sign<D: AsRef<[u8]> + ?Sized>(
@@ -57,6 +57,35 @@ pub trait Signer {
 }
 
 
+//------------ KeyError ------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub enum KeyError<S> {
+    /// A key with the given key ID doesn’t exist.
+    KeyNotFound,
+
+    /// An error happened during signing.
+    Signer(S)
+}
+
+impl<S> From<S> for SigningError<S> {
+    fn from(err: S) -> Self {
+        SigningError::Signer(err)
+    }
+}
+
+impl<S: fmt::Display> fmt::Display for KeyError<S> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::KeyError::*;
+
+        match *self {
+            KeyNotFound => write!(f, "key not found"),
+            Signer(ref s) => s.fmt(f)
+        }
+    }
+}
+
+
 //------------ SigningError --------------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -71,9 +100,12 @@ pub enum SigningError<S> {
     Signer(S)
 }
 
-impl<S> From<S> for SigningError<S> {
-    fn from(err: S) -> Self {
-        SigningError::Signer(err)
+impl<S> From<KeyError<S>> for SigningError<S> {
+    fn from(err: KeyError<S>) -> Self {
+        match err {
+            KeyError::KeyNotFound => SigningError::KeyNotFound,
+            KeyError::Signer(err) => SigningError::Signer(err)
+        }
     }
 }
 

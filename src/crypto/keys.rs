@@ -72,6 +72,7 @@ impl PublicKeyFormat{
 
 //------------ PublicKey -----------------------------------------------------
 
+/// A public key.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PublicKey {
     algorithm: PublicKeyFormat,
@@ -109,6 +110,11 @@ impl PublicKey {
 }
 
 
+/// # As `SubjectPublicKeyInfo`
+///
+/// Public keys are included in X.509 certificates as `SubjectPublicKeyInfo`
+/// structures. As these are contain the same information as `PublicKey`,
+/// it can be decoded from and encoded to such sequences.
 impl PublicKey {
     pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
         Mode::Der.decode(source, Self::take_from)
