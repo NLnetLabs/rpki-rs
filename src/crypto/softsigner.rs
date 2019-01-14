@@ -55,7 +55,7 @@ impl Signer for OpenSslSigner {
 
     fn destroy_key(
         &mut self, key: &Self::KeyId
-    ) -> Result<bool, Self::Error> {
+    ) -> Result<(), KeyError<Self::Error>> {
         if self.keys.contains(key.0) {
             self.keys.remove(key.0);
             Ok(())
@@ -156,8 +156,8 @@ pub mod tests {
         let mut s = OpenSslSigner::new();
         let ki = s.create_key(PublicKeyFormat).unwrap();
         let data = b"foobar";
-        let info = s.get_key_info(&ki).unwrap();
-        let sig = s.sign(&ki, SignatureAlgorithm, data).unwrap();
+        let _ = s.get_key_info(&ki).unwrap();
+        let _ = s.sign(&ki, SignatureAlgorithm, data).unwrap();
         s.destroy_key(&ki).unwrap();
     }
     

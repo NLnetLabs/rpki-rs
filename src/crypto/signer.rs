@@ -68,9 +68,9 @@ pub enum KeyError<S> {
     Signer(S)
 }
 
-impl<S> From<S> for SigningError<S> {
+impl<S> From<S> for KeyError<S> {
     fn from(err: S) -> Self {
-        SigningError::Signer(err)
+        KeyError::Signer(err)
     }
 }
 
@@ -98,6 +98,12 @@ pub enum SigningError<S> {
 
     /// An error happened during signing.
     Signer(S)
+}
+
+impl<S> From<S> for SigningError<S> {
+    fn from(err: S) -> Self {
+        SigningError::Signer(err)
+    }
 }
 
 impl<S> From<KeyError<S>> for SigningError<S> {
