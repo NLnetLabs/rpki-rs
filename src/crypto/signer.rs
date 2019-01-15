@@ -13,7 +13,7 @@ pub trait Signer {
     type KeyId;
 
     /// An operational error happened in the signer.
-    type Error;
+    type Error: fmt::Debug + fmt::Display;
 
     /// Creates a new key and returns an identifier.
     fn create_key(
