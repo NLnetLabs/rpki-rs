@@ -200,12 +200,12 @@ pub struct SignatureValueContent<'a>(&'a SignedData);
 impl<'a> PrimitiveContent for SignatureValueContent<'a> {
     const TAG: Tag = Tag::BIT_STRING;
 
-    fn encoded_len(self, _: Mode) -> usize {
+    fn encoded_len(&self, _: Mode) -> usize {
         self.0.signature.value().len() + 1
     }
 
     fn write_encoded<W: io::Write>(
-        self,
+        &self,
         _: Mode,
         target: &mut W
     ) -> Result<(), io::Error> {
@@ -361,11 +361,11 @@ impl PrimitiveContent for Time {
 
     const TAG: Tag = Tag::GENERALIZED_TIME;
 
-    fn encoded_len(self, _: Mode) -> usize {
+    fn encoded_len(&self, _: Mode) -> usize {
         15 // yyyyMMddhhmmssZ
     }
 
-    fn write_encoded<W: io::Write>(self, _: Mode, target: &mut W)
+    fn write_encoded<W: io::Write>(&self, _: Mode, target: &mut W)
         -> Result<(), io::Error>
     {
         write!(target, "{:04}", self.0.year())?;

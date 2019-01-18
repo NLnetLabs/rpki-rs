@@ -134,7 +134,7 @@ impl PublicKey {
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence((
             self.algorithm.encode(),
-            self.bits.encode()
+            self.bits.clone().encode()
         ))
     }
 }
