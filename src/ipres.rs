@@ -7,8 +7,11 @@
 //! value is not used for an address family, the set of addresses must be
 //! non-empty.
 
-use bcder::decode;
+use std::{io, mem};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use bcder::{decode, encode};
 use bcder::{BitString, Captured, Mode, OctetString, Tag};
+use bcder::encode::PrimitiveContent;
 use super::roa::RoaIpAddress;
 use super::x509::ValidationError;
 
@@ -23,10 +26,10 @@ use super::x509::ValidationError;
 #[derive(Clone, Debug)]
 pub struct IpResources {
     /// The IPv4 address resources if present.
-    v4: Option<AddressChoice>,
+    v4: Option<AddressChoice<AddressBlocks>>,
 
     /// The IPv6 address resources if present.
-    v6: Option<AddressChoice>,
+    v6: Option<AddressChoice<AddressBlocks>>,
 }
 
 impl IpResources {
@@ -64,6 +67,68 @@ impl IpResources {
 }
 
 
+//------------ IpResourcesBuilder --------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct IpResourcesBuilder {
+    v4: Option<AddressChoice<AddressBlocksBuilder>>,
+    v6: Option<AddressChoice<AddressBlocksBuilder>>,
+}
+
+impl IpResourcesBuilder {
+    pub fn new() -> Self {
+        IpResourcesBuilder {
+            v4: None,
+            v6: None
+        }
+    }
+
+    pub fn inherit_v4(&mut self) {
+        self.v4 = Some(AddressChoice::Inherit)
+    }
+
+    pub fn inherit_v6(&mut self) {
+        self.v4 = Some(AddressChoice::Inherit)
+    }
+
+    pub fn v4_blocks<F>(&mut self, build: F)
+    where F: FnOnce(&mut AddressBlocksBuilder) {
+        if self.v4.as_ref().map(|v4| v4.is_inherited()).unwrap_or(false) {
+            self.v4 = Some(AddressChoice::Blocks(AddressBlocksBuilder::new()))
+        }
+        build(self.v4.as_mut().unwrap().as_blocks_mut().unwrap())
+    }
+
+    pub fn v6_blocks<F>(&mut self, build: F)
+    where F: FnOnce(&mut AddressBlocksBuilder) {
+        if self.v6.as_ref().map(|v6| v6.is_inherited()).unwrap_or(false) {
+            self.v6 = Some(AddressChoice::Blocks(AddressBlocksBuilder::new()))
+        }
+        build(self.v6.as_mut().unwrap().as_blocks_mut().unwrap())
+    }
+
+    pub fn encode<'a>(&'a self) -> Option<impl encode::Values + 'a> {
+        if self.v4.is_none() && self.v6.is_none() {
+            return None
+        }
+        Some(encode::sequence((
+            self.v4.as_ref().map(|choice| {
+                encode::sequence((
+                    AddressFamily::Ipv4.encode(),
+                    choice.encode(),
+                ))
+            }),
+            self.v6.as_ref().map(|choice| {
+                encode::sequence((
+                    AddressFamily::Ipv6.encode(),
+                    choice.encode(),
+                ))
+            })
+        )))
+    }
+}
+
+
 //------------ AddressChoice -------------------------------------------------
 
 /// The choice of per-family address resources.
@@ -72,12 +137,12 @@ impl IpResources {
 /// instructs to just keep using the address blocks from the issuer
 /// certificate.
 #[derive(Clone, Debug)]
-pub enum AddressChoice {
+pub enum AddressChoice<T> {
     Inherit,
-    Blocks(AddressBlocks),
+    Blocks(T),
 }
 
-impl AddressChoice {
+impl<T> AddressChoice<T> {
     /// Returns whether the choice is for inheriting.
     pub fn is_inherited(&self) -> bool {
         match *self {
@@ -86,6 +151,22 @@ impl AddressChoice {
         }
     }
 
+    pub fn as_blocks(&self) -> Option<&T> {
+        match *self {
+            AddressChoice::Inherit => None,
+            AddressChoice::Blocks(ref blocks) => Some(blocks)
+        }
+    }
+
+    pub fn as_blocks_mut(&mut self) -> Option<&mut T> {
+        match *self {
+            AddressChoice::Inherit => None,
+            AddressChoice::Blocks(ref mut blocks) => Some(blocks)
+        }
+    }
+}
+
+impl AddressChoice<AddressBlocks> {
     /// Converts the choice into a list of address blocks.
     ///
     /// If the inherit choice is present, this will result in a
@@ -96,9 +177,7 @@ impl AddressChoice {
             AddressChoice::Blocks(ref blocks) => Ok(blocks.clone())
         }
     }
-}
 
-impl AddressChoice {
     /// Takes an address choice from the beginning of a constructed value.
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
@@ -116,6 +195,17 @@ impl AddressChoice {
                 xerr!(Err(decode::Malformed.into()))
             }
         })
+    }
+}
+
+impl AddressChoice<AddressBlocksBuilder> {
+    fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        match *self {
+            AddressChoice::Inherit => encode::Choice2::One(().encode()),
+            AddressChoice::Blocks(ref blocks) => {
+                encode::Choice2::Two(blocks.encode())
+            }
+        }
     }
 }
 
@@ -241,7 +331,7 @@ impl AddressBlocks {
     /// `None`, `inner` has to be `None`, too, or an error will happen.
     fn encompasses(
         outer: Option<&Self>,
-        inner: Option<&AddressChoice>
+        inner: Option<&AddressChoice<AddressBlocks>>
     ) -> Result<Option<Self>, ValidationError> {
         match (outer, inner) {
             (Some(outer), Some(AddressChoice::Inherit)) => {
@@ -326,6 +416,46 @@ impl<'a> Iterator for AddressBlocksIter<'a> {
         }
     }
 }
+
+
+//------------ AddressBlocksBuilder ------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct AddressBlocksBuilder(Vec<RangeOrPrefix>);
+
+#[derive(Clone, Debug)]
+enum RangeOrPrefix {
+    Range(AddressRange),
+    Prefix(Prefix)
+}
+
+impl AddressBlocksBuilder {
+    fn new() -> Self {
+        AddressBlocksBuilder(Vec::new())
+    }
+
+    pub fn push_range(&mut self, range: AddressRange) {
+        self.0.push(RangeOrPrefix::Range(range))
+    }
+
+    pub fn push_prefix(&mut self, prefix: Prefix) {
+        self.0.push(RangeOrPrefix::Prefix(prefix))
+    }
+
+    fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence(
+            encode::Iter::new(self.0.iter().map(|item| {
+                match *item {
+                    RangeOrPrefix::Range(ref range) => 
+                        encode::Choice2::One(range.encode()),
+                    RangeOrPrefix::Prefix(ref prefix) => 
+                        encode::Choice2::Two(prefix.encode())
+                }
+            }))
+        )
+    }
+}
+
 
 
 //------------ AddressRange --------------------------------------------------
@@ -483,6 +613,185 @@ impl AddressRange {
         }
         Ok((addr, mask))
     }
+
+    /// Calculates the prefix for the minimum address.
+    ///
+    /// This is a prefix with all trailing zeros dropped.
+    fn min_to_prefix(&self) -> Prefix {
+        Prefix::new_bits(self.min, 128 - self.min.trailing_zeros() as u8)
+    }
+
+    /// Calculates the prefix for the maximum address.
+    ///
+    /// This is a prefix with all trailing ones dropped.
+    fn max_to_prefix(&self) -> Prefix {
+        Prefix::new_bits(self.max, 128 - (!self.max).trailing_zeros() as u8)
+    }
+
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence((
+            self.min_to_prefix().encode(),
+            self.max_to_prefix().encode(),
+        ))
+    }
+}
+
+
+//------------ Prefix --------------------------------------------------------
+
+/// An IP address prefix.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Prefix {
+    /// The address of the prefix.
+    addr: u128,
+
+    /// The length of the prefix.
+    len: u8,
+}
+
+impl Prefix {
+    /// Creates a new prefix from a raw address and length.
+    ///
+    /// # Panics
+    ///
+    /// This function panics of `len` is larger than 128.
+    pub fn new_bits(addr: u128, len: u8) -> Self {
+        assert!(len <= 128);
+        // This makes sure that all the unused bits are zero.
+        Prefix { 
+            addr: addr & (!0 << len as usize),
+            len
+        }
+    }
+
+    /// Creates a new prefix from an address and length.
+    ///
+    /// # Panics
+    ///
+    /// This function panics of `len` is larger than 128.
+    pub fn new(addr: IpAddr, len: u8) -> Self {
+        match addr {
+            IpAddr::V4(addr) => Self::new_v4(addr, len),
+            IpAddr::V6(addr) => Self::new_v6(addr, len)
+        }
+    }
+
+    /// Creates a new prefix from an IPv4 address and length.
+    ///
+    /// # Panics
+    ///
+    /// This function panics of `len` is larger than 32.
+    pub fn new_v4(addr: Ipv4Addr, len: u8) -> Self {
+        assert!(len <= 32);
+        Prefix::new_bits(u128::from(u32::from(addr)) << (128 - 32), len)
+    }
+
+    /// Creates a new prefix from an IPv6 address and length.
+    ///
+    /// # Panics
+    ///
+    /// This function panics of `len` is larger than 128.
+    pub fn new_v6(addr: Ipv6Addr, len: u8) -> Self {
+        Prefix::new_bits(u128::from(addr), len)
+    }
+
+    /// Creates a new prefix from its encoding as a BIT STRING.
+    pub fn from_bit_string(src: BitString) -> Result<Self, decode::Error> {
+        if src.octet_len() > 16 {
+            xerr!(return Err(decode::Malformed))
+        }
+        let mut addr = 0;
+        for octet in src.octets() {
+            addr = (addr << 8) | (octet as u128)
+        }
+        for _ in src.octet_len()..16 {
+            addr <<= 8;
+        }
+        Ok(Self::new_bits(addr, src.bit_len() as u8))
+    }
+
+    /// Returns the raw address of the prefix.
+    pub fn to_bits(self) -> u128 {
+        self.addr
+    }
+
+    /// Returns the length of the prefix.
+    pub fn addr_len(self) -> u8 {
+        self.len
+    }
+
+    /// Converts the prefix into an IPv4 address.
+    pub fn to_v4(self) -> Ipv4Addr {
+        Ipv4Addr::new(
+            ((self.addr >> 120) & 0xFF) as u8,
+            ((self.addr >> 112) & 0xFF) as u8,
+            ((self.addr >> 104) & 0xFF) as u8,
+            ((self.addr >> 96) & 0xFF) as u8
+        )
+    }
+
+    /// Converts the prefix into an IPv6 address.
+    pub fn to_v6(self) -> Ipv6Addr {
+        Ipv6Addr::new(
+            ((self.addr >> 112) & 0xFFFF) as u16,
+            ((self.addr >> 96) & 0xFFFF) as u16,
+            ((self.addr >> 80) & 0xFFFF) as u16,
+            ((self.addr >> 64) & 0xFFFF) as u16,
+            ((self.addr >> 48) & 0xFFFF) as u16,
+            ((self.addr >> 32) & 0xFFFF) as u16,
+            ((self.addr >> 16) & 0xFFFF) as u16,
+            (self.addr & 0xFFFF) as u16
+        )
+    }
+
+    /// Returns the range of raw addresses covered by this prefix.
+    ///
+    /// The first element of the returned pair is the smallest covered
+    /// address, the second element is the largest.
+    pub fn range(self) -> (u128, u128) {
+        let mask = if self.len < 128 {
+            !0u128 >> self.len
+        }
+        else {
+            0
+        };
+        (self.addr, self.addr | mask)
+    }
+
+    /// Takes an encoded prefix from a source.
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        Ok(Self::from_bit_string(BitString::take_from(cons)?)?)
+    }
+}
+
+impl encode::PrimitiveContent for Prefix {
+    const TAG: Tag = Tag::BIT_STRING;
+
+    fn encoded_len(&self, _: Mode) -> usize {
+        if self.len % 8 == 0 {
+            self.len as usize / 8 + 1
+        }
+        else {
+            self.len as usize / 8 + 2
+        }
+    }
+
+    fn write_encoded<W: io::Write>(
+        &self, 
+        _: Mode, 
+        target: &mut W
+    ) -> Result<(), io::Error> {
+        // The type ensures that all the unused bits are zero, so we don’t
+        // need to take care of that here.
+        let len = if self.len % 8 == 0 { self.len }
+                  else { self.len + 1 };
+        target.write_all(&[(self.len % 8) as u8])?;
+        let addr = self.addr.to_be();
+        let addr: [u8; 16] = unsafe { mem::transmute(addr) };
+        target.write_all(&addr[..len as usize])
+    }
 }
 
 
@@ -525,6 +834,15 @@ impl AddressFamily {
             (0, 2) => Ok(AddressFamily::Ipv6),
             _ => xerr!(Err(decode::Malformed.into())),
         }
+    }
+
+    pub fn encode(self) -> impl encode::Values {
+        OctetString::encode_slice(
+            match self {
+                AddressFamily::Ipv4 => b"\x00\x01",
+                AddressFamily::Ipv6 => b"\x00\x02",
+            }
+        )
     }
 }
 

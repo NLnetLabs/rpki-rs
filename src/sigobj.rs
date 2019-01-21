@@ -4,9 +4,9 @@ use bcder::decode;
 use bcder::{Captured, Mode, Oid, Tag};
 use bcder::string::{OctetString, OctetStringSource};
 use bytes::Bytes;
-use crate::x509::update_once;
 use crate::cert::{Cert, ResourceCert};
-use crate::x509::{Time, ValidationError};
+use crate::oid;
+use crate::x509::{Time, ValidationError, update_once};
 use crate::crypto::{DigestAlgorithm, Signature, SignatureAlgorithm};
 
 
@@ -435,22 +435,27 @@ impl SignedAttributes {
 }
 
 
-//------------ OIDs ----------------------------------------------------------
+/*
+//------------ SignedObjectBuilder -------------------------------------------
 
-pub mod oid {
-    use bcder::Oid;
-
-    pub const SIGNED_DATA: Oid<&[u8]>
-        = Oid(&[42, 134, 72, 134, 247, 13, 1, 7, 2]);
-    pub const CONTENT_TYPE: Oid<&[u8]>
-        = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 3]);
-    pub const PROTOCOL_CONTENT_TYPE: Oid<&[u8]>
-        = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 16, 1, 28]);
-    pub const MESSAGE_DIGEST: Oid<&[u8]>
-        = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 4]);
-    pub const SIGNING_TIME: Oid<&[u8]>
-        = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 5]);
-    pub const AA_BINARY_SIGNING_TIME: Oid<&[u8]> =
-        Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 16, 2, 46]);
+#[derive(Clone, Debug)]
+pub struct SignedObjectBuilder<C> {
+    content_type: ConstOid,
+    content: C,
+    cert: CertBuilder,
 }
+
+The actual construction has to work like this:
+
+   o  Produce the signed attributes.
+
+   o  Sign the signed attributes with a one-off key.
+
+   o  Take the public key from that and finish the certificate.
+
+   o  Sign the certificate with the issuing CA certificate.
+
+   o  Put it all together.
+
+*/
 

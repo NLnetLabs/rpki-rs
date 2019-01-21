@@ -1,5 +1,6 @@
 //! Digest algorithm and operations.
 
+use std::io;
 use ring::digest;
 use bcder::{decode, encode};
 use bcder::encode::PrimitiveContent;
@@ -7,7 +8,7 @@ use bcder::Tag;
 use crate::oid;
 
 // Re-export the things from ring for actual digest generation.
-pub use ring::digest::{Context, Digest};
+pub use ring::digest::Digest;
 
 
 //------------ DigestAlgorithm -----------------------------------------------
@@ -34,7 +35,7 @@ impl DigestAlgorithm {
 
     /// Returns a digest context for multi-step calculation of the digest.
     pub fn start(self) -> Context {
-        Context::new(&digest::SHA256)
+        Context(digest::Context::new(&digest::SHA256))
     }
 }
 
@@ -125,6 +126,44 @@ impl DigestAlgorithm {
         encode::set(
             self.encode()
         )
+    }
+}
+
+
+//------------ Sha1 ----------------------------------------------------------
+
+pub fn sha1_digest(data: &[u8]) -> Digest {
+    digest::digest(&digest::SHA1, data)
+}
+
+pub fn start_sha1() -> Context {
+    Context(digest::Context::new(&digest::SHA1))
+}
+
+
+//------------ Context -------------------------------------------------------
+
+#[derive(Clone)]
+pub struct Context(digest::Context);
+
+impl Context {
+    pub fn update(&mut self, data: &[u8]) {
+        self.0.update(data)
+    }
+
+    pub fn finish(self) -> Digest {
+        self.0.finish()
+    }
+}
+
+impl io::Write for Context {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
+        self.update(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> Result<(), io::Error> {
+        Ok(())
     }
 }
 

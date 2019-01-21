@@ -1,7 +1,8 @@
 //! Types and parameters of keys.
 
+use std::io;
 use bcder::{decode, encode};
-use bcder::{BitString, Mode};
+use bcder::{BitString, Mode, Tag};
 use bcder::encode::PrimitiveContent;
 use ring::{digest, signature};
 use ring::error::Unspecified;
@@ -134,8 +135,59 @@ impl PublicKey {
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence((
             self.algorithm.encode(),
-            self.bits.encode()
+            self.bits.encode_ref()
         ))
+    }
+
+    pub fn encode_subject_name<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence(
+            encode::set(
+                encode::sequence((
+                    oid::AT_COMMON_NAME.encode(),
+                    PublicKeyCn(&self).encode(),
+                ))
+            )
+        )
+    }
+}
+
+
+//------------ PublicKeyCn ---------------------------------------------------
+
+/// Value encoder for a public key as a common name.
+///
+/// This type encodes the bits of a public key in a printable string as a
+/// sequence of hex digits as suggested as one option for subject names in
+/// RPKI certificates by section 8 of [RFC 6487].
+///
+/// [RFC 6487]: https://tools.ietf.org/html/rfc6487
+#[derive(Clone, Debug)]
+pub struct PublicKeyCn<'a>(&'a PublicKey);
+
+impl<'a> PrimitiveContent for PublicKeyCn<'a> {
+    const TAG: Tag = Tag::PRINTABLE_STRING;
+
+    fn encoded_len(&self, _mode: Mode) -> usize {
+        self.0.bits.octet_len() * 2
+    }
+
+    fn write_encoded<W: io::Write>(
+        &self, 
+        _mode: Mode, 
+        target: &mut W
+    ) -> Result<(), io::Error> {
+        fn hexdig(ch: u8) -> u8 {
+            if ch < 0xa { ch + b'0' }
+            else { ch + b'a' }
+        }
+
+        for ch in self.0.bits.octets() {
+            target.write_all(&[
+                hexdig(ch & 0x0F),
+                hexdig(ch >> 4)
+            ])?
+        }
+        Ok(())
     }
 }
 

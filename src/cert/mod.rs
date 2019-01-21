@@ -31,6 +31,7 @@ use crate::crypto::{PublicKey, SignatureAlgorithm};
 use self::ext::{Extensions, UriGeneralName, UriGeneralNames};
 
 
+pub mod builder;
 pub mod ext;
 
 
@@ -112,6 +113,11 @@ pub struct Cert {
 /// # Data Access
 ///
 impl Cert {
+    /// Returns a reference to the subject.
+    pub fn subject(&self) -> &Name {
+        &self.subject
+    }
+
     /// Returns a reference to the subject key identifier.
     pub fn subject_key_identifier(&self) -> &OctetString {
         &self.extensions.subject_key_id()
@@ -522,7 +528,6 @@ impl AsRef<Cert> for Cert {
         self
     }
 }
-
 
 
 //------------ ResourceCert --------------------------------------------------
