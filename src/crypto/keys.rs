@@ -3,11 +3,12 @@
 use std::io;
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, Tag};
-use bcder::encode::PrimitiveContent;
+use bcder::encode::{PrimitiveContent, Values};
 use ring::{digest, signature};
 use ring::error::Unspecified;
 use untrusted::Input;
 use crate::oid;
+use crate::x509::Name;
 use super::signature::Signature;
 
 
@@ -148,6 +149,10 @@ impl PublicKey {
                 ))
             )
         )
+    }
+
+    pub fn to_subject_name(&self) -> Name {
+        Name::from_captured(self.encode_subject_name().to_captured(Mode::Der))
     }
 }
 

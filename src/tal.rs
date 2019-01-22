@@ -157,13 +157,19 @@ pub struct TalInfo {
 
 impl TalInfo {
     fn from_path<P: AsRef<Path>>(path: P) -> Self {
-        TalInfo {
-            name: {
-                path.as_ref().file_stem()
-                    .expect("TAL path needs to have a file name")
-                    .to_string_lossy().into_owned()
-            }
-        }
+        TalInfo::from_name(
+            path.as_ref().file_stem()
+                .expect("TAL path needs to have a file name")
+                .to_string_lossy().into_owned()
+        )
+    }
+
+    pub fn from_name(name: String) -> Self {
+        TalInfo { name }
+    }
+
+    pub fn into_arc(self) -> Arc<Self> {
+        Arc::new(self)
     }
 
     pub fn name(&self) -> &str {

@@ -35,6 +35,10 @@ where F: FnOnce() -> Result<T, E>, E: From<decode::Error> {
 pub struct Name(Captured);
 
 impl Name {
+    pub(crate) fn from_captured(captured: Captured) -> Self {
+        Name(captured)
+    }
+
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
@@ -214,6 +218,7 @@ impl<'a> PrimitiveContent for SignatureValueContent<'a> {
         target.write_all(self.0.signature.value().as_ref())
     }
 }
+
 
 //------------ Time ----------------------------------------------------------
 

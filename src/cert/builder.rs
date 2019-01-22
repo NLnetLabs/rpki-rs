@@ -282,7 +282,6 @@ impl CertBuilder {
                     )
                 }
             },
-            self.subject.as_ref().unwrap().encode(),      
             self.public_key.encode(),
             // no issuerUniqueID, no subjectUniqueID
             encode::sequence_as(Tag::CTX_3, encode::sequence((
@@ -417,5 +416,47 @@ fn extension<V: encode::Values>(
         critical.encode(),
         OctetString::encode_wrapped(Mode::Der, content)
     ))
+}
+
+
+//============ Test ==========================================================
+
+#[cfg(test)]
+mod test {
+}
+
+#[cfg(all(test, feature="softkeys"))]
+mod signer_test {
+    use bcder::encode::Values;
+    use crate::asres::AsId;
+    use crate::cert::Cert;
+    use crate::crypto::PublicKeyFormat;
+    use crate::crypto::softsigner::OpenSslSigner;
+    use crate::ipres::Prefix;
+    use crate::tal::TalInfo;
+    use super::*;
+        
+    #[test]
+    fn ta_cert() {
+        let mut signer = OpenSslSigner::new();
+        let key = signer.create_key(PublicKeyFormat).unwrap();
+        let pubkey = signer.get_key_info(&key).unwrap();
+        let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
+
+        let mut builder = CertBuilder::new(
+            12, pubkey.to_subject_name(), Validity::from_secs(86400),
+            pubkey, true
+        );
+        builder
+            .rpki_manifest(uri.clone())
+            .v4_blocks(|blocks| blocks.push_prefix(Prefix::new_bits(0, 0)))
+            .as_blocks(|blocks| blocks.push((AsId::MIN, AsId::MAX)));
+        let captured = builder.encode(&signer, &key, SignatureAlgorithm)
+            .unwrap()
+            .to_captured(Mode::Der);
+        let cert = Cert::decode(captured.as_slice()).unwrap();
+        let talinfo = TalInfo::from_name("foo".into()).into_arc();
+        cert.validate_ta(talinfo, true).unwrap();
+    }
 }
 

@@ -21,7 +21,7 @@ use std::sync::Arc;
 use bcder::{decode, encode};
 use bcder::encode::PrimitiveContent;
 use bcder::{BitString, Mode, OctetString, Tag, Unsigned};
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use crate::asres::AsBlocks;
 use crate::uri;
 use crate::ipres::IpAddressBlocks;
@@ -601,11 +601,19 @@ impl Validity {
         Validity { not_before, not_after }
     }
 
-    pub fn from_duration(duration: ::chrono::Duration) -> Self {
+    pub fn from_duration(duration: Duration) -> Self {
         let not_before = Time::now();
         let not_after = Time::new(Utc::now() + duration);
+        if not_before < not_after {
+            Validity { not_before, not_after }
+        }
+        else {
+            Validity { not_after, not_before }
+        }
+    }
 
-        Validity { not_before, not_after }
+    pub fn from_secs(secs: i64) -> Self {
+        Self::from_duration(Duration::seconds(secs))
     }
 
     pub fn take_from<S: decode::Source>(

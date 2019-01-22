@@ -93,7 +93,7 @@ impl IpResourcesBuilder {
 
     pub fn v4_blocks<F>(&mut self, build: F)
     where F: FnOnce(&mut AddressBlocksBuilder) {
-        if self.v4.as_ref().map(|v4| v4.is_inherited()).unwrap_or(false) {
+        if self.v4.as_ref().map(|v4| v4.is_inherited()).unwrap_or(true) {
             self.v4 = Some(AddressChoice::Blocks(AddressBlocksBuilder::new()))
         }
         build(self.v4.as_mut().unwrap().as_blocks_mut().unwrap())
@@ -101,7 +101,7 @@ impl IpResourcesBuilder {
 
     pub fn v6_blocks<F>(&mut self, build: F)
     where F: FnOnce(&mut AddressBlocksBuilder) {
-        if self.v6.as_ref().map(|v6| v6.is_inherited()).unwrap_or(false) {
+        if self.v6.as_ref().map(|v6| v6.is_inherited()).unwrap_or(true) {
             self.v6 = Some(AddressChoice::Blocks(AddressBlocksBuilder::new()))
         }
         build(self.v6.as_mut().unwrap().as_blocks_mut().unwrap())

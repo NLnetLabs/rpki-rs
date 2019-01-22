@@ -133,7 +133,7 @@ impl Rsync {
     }
 
     pub fn encode_general_name<'a>(&'a self) -> impl encode::Values + 'a {
-        encode::sequence_as(Tag::CTX_6, self.encode())
+        self.encode_as(Tag::CTX_6)
     }
 }
 
@@ -454,7 +454,7 @@ mod tests {
     #[test]
     fn should_parse_http_uri() {
         let http = Http::from_str("http://my.host.tld/and/a/path").unwrap();
-        assert_eq!(Scheme::Http, http.scheme);
+        assert_eq!(Scheme::Http, http.scheme());
         assert_eq!(Bytes::from("my.host.tld"), http.host);
         assert_eq!(Bytes::from("/and/a/path"), http.path);
     }
@@ -462,7 +462,7 @@ mod tests {
     #[test]
     fn should_parse_https_uri() {
         let http = Http::from_str("https://my.host.tld/and/a/path").unwrap();
-        assert_eq!(Scheme::Https, http.scheme);
+        assert_eq!(Scheme::Https, http.scheme());
         assert_eq!(Bytes::from("my.host.tld"), http.host);
         assert_eq!(Bytes::from("/and/a/path"), http.path);
     }

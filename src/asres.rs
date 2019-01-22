@@ -111,7 +111,7 @@ impl AsResourcesBuilder {
 
     pub fn blocks<F>(&mut self, build: F)
     where F: FnOnce(&mut AsIdBlocksBuilder) {
-        if self.res.as_ref().map(|res| res.is_inherited()).unwrap_or(false) {
+        if self.res.as_ref().map(|res| res.is_inherited()).unwrap_or(true) {
             self.res = Some(AsChoice::Ids(AsIdBlocksBuilder::new()))
         }
         build(self.res.as_mut().unwrap().as_blocks_mut().unwrap())
@@ -505,6 +505,9 @@ impl From<(AsId, AsId)> for AsBlock {
 pub struct AsId(u32);
 
 impl AsId {
+    pub const MIN: AsId = AsId(std::u32::MIN);
+    pub const MAX: AsId = AsId(std::u32::MAX);
+
     /// Takes an AS number from the beginning of an encoded value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
