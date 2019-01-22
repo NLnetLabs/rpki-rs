@@ -29,38 +29,9 @@ use super::x509::ValidationError;
 /// be an actual set of AS numbers associated with the certificate – this is
 /// the `AsResources::Ids` variant –, or the AS resources of the issuer can
 /// be inherited – the `AsResources::Inherit` variant.
-#[derive(Clone, Debug)]
-pub enum AsResources {
-    /// AS resources are to be inherited from the issuer.
-    Inherit,
-
-    /// The AS resources are provided as a set of AS numbers.
-    ///
-    /// This set is represented as a sequence of consecutive blocks of AS
-    /// numbers.
-    Ids(AsIdBlocks),
-}
+pub type AsResources = AsChoice<AsIdBlocks>;
 
 impl AsResources {
-    /// Returns whether the AS resources are of the inherited variant.
-    pub fn is_inherited(&self) -> bool {
-        match self {
-            AsResources::Inherit => true,
-            _ =>  false
-        }
-    }
-
-    /// Converts the AS resources into a AS number blocks sequence.
-    ///
-    /// If this value is of the inherited variant, a validation error will
-    /// be returned.
-    pub fn to_blocks(&self) -> Result<AsIdBlocks, ValidationError> {
-        match self {
-            AsResources::Inherit => Err(ValidationError),
-            AsResources::Ids(ref some) => Ok(some.clone()),
-        }
-    }
-
     /// Takes the AS resources from the beginning of an encoded value.
     ///
     /// The ASN.1 specification for the `ASIdentifiers` types parsed here is
@@ -104,11 +75,11 @@ impl AsResources {
                 cons.take_value(|tag, content| {
                     if tag == Tag::NULL {
                         content.to_null()?;
-                        Ok(AsResources::Inherit)
+                        Ok(AsChoice::Inherit)
                     }
                     else if tag == Tag::SEQUENCE {
                         AsIdBlocks::parse_content(content)
-                            .map(AsResources::Ids)
+                            .map(AsChoice::Ids)
                     }
                     else {
                         xerr!(Err(decode::Error::Malformed.into()))
@@ -116,6 +87,103 @@ impl AsResources {
                 })
             })
         })
+    }
+}
+
+
+//------------ AsResourcesBuilder --------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct AsResourcesBuilder {
+    res: Option<AsChoice<AsIdBlocksBuilder>>
+}
+
+impl AsResourcesBuilder {
+    pub fn new() -> Self {
+        AsResourcesBuilder {
+            res: None
+        }
+    }
+
+    pub fn inhert(&mut self) {
+        self.res = Some(AsChoice::Inherit)
+    }
+
+    pub fn blocks<F>(&mut self, build: F)
+    where F: FnOnce(&mut AsIdBlocksBuilder) {
+        if self.res.as_ref().map(|res| res.is_inherited()).unwrap_or(true) {
+            self.res = Some(AsChoice::Ids(AsIdBlocksBuilder::new()))
+        }
+        build(self.res.as_mut().unwrap().as_blocks_mut().unwrap())
+    }
+
+    pub fn encode<'a>(&'a self) -> Option<impl encode::Values + 'a> {
+        self.res.as_ref().map(|res| {
+            encode::sequence(
+                encode::sequence_as(Tag::CTX_0, res.encode())
+            )
+        })
+    }
+}
+
+
+//------------ AsChoice ------------------------------------------------------
+#[derive(Clone, Debug)]
+pub enum AsChoice<T> {
+    /// AS resources are to be inherited from the issuer.
+    Inherit,
+
+    /// The AS resources are provided as a set of AS numbers.
+    ///
+    /// This set is represented as a sequence of consecutive blocks of AS
+    /// numbers.
+    Ids(T),
+}
+
+impl<T> AsChoice<T> {
+    /// Returns whether the AS resources are of the inherited variant.
+    pub fn is_inherited(&self) -> bool {
+        match self {
+            AsChoice::Inherit => true,
+            _ =>  false
+        }
+    }
+
+    pub fn as_blocks(&self) -> Option<&T> {
+        match self {
+            AsChoice::Inherit => None,
+            AsChoice::Ids(ref some) => Some(some)
+        }
+    }
+
+    pub fn as_blocks_mut(&mut self) -> Option<&mut T> {
+        match self {
+            AsChoice::Inherit => None,
+            AsChoice::Ids(ref mut some) => Some(some)
+        }
+    }
+
+    /// Converts the AS resources into a AS number blocks sequence.
+    ///
+    /// If this value is of the inherited variant, a validation error will
+    /// be returned.
+    pub fn to_blocks(&self) -> Result<T, ValidationError>
+    where T: Clone {
+        match self {
+            AsChoice::Inherit => Err(ValidationError),
+            AsChoice::Ids(ref some) => Ok(some.clone()),
+        }
+    }
+}
+
+impl AsChoice<AsIdBlocksBuilder> {
+    fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        match *self {
+            AsChoice::Inherit => encode::Choice2::One(().encode()),
+            AsChoice::Ids(ref blocks) => {
+                encode::Choice2::Two(blocks.encode())
+            }
+        }
     }
 }
 
@@ -135,8 +203,8 @@ impl AsBlocks {
         res: Option<&AsResources>
     ) -> Result<Self, ValidationError> {
         match res {
-            Some(AsResources::Inherit) => Err(ValidationError),
-            Some(AsResources::Ids(ref some)) => {
+            Some(AsChoice::Inherit) => Err(ValidationError),
+            Some(AsChoice::Ids(ref some)) => {
                 Ok(AsBlocks(Some(some.clone())))
             }
             None => Ok(AsBlocks(None))
@@ -152,8 +220,8 @@ impl AsBlocks {
         res: Option<&AsResources>
     ) -> Result<Self, ValidationError> {
         match res {
-            Some(AsResources::Inherit) => Ok(self.clone()),
-            Some(AsResources::Ids(ref inner)) => {
+            Some(AsChoice::Inherit) => Ok(self.clone()),
+            Some(AsChoice::Ids(ref inner)) => {
                 match self.0 {
                     Some(ref outer) => {
                         if outer.encompasses(inner) {
@@ -279,7 +347,27 @@ impl<'a> Iterator for AsIdBlockIter<'a> {
 }
 
 
-//------------ AsBlock ---------------------------------------------------
+//------------ AsIdBlocksBuilder ---------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct AsIdBlocksBuilder(Vec<AsBlock>);
+
+impl AsIdBlocksBuilder {
+    fn new() -> Self {
+        AsIdBlocksBuilder(Vec::new())
+    }
+
+    pub fn push<T: Into<AsBlock>>(&mut self, block: T) {
+        self.0.push(block.into())
+    }
+
+    fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::Iter::new(self.0.iter().map(|block| block.encode()))
+    }
+}
+
+
+//------------ AsBlock -------------------------------------------------------
 
 /// A block of consecutive AS numbers.
 #[derive(Clone, Copy, Debug)]
@@ -389,6 +477,27 @@ impl AsBlock {
 }
 
 
+//--- From
+
+impl From<AsId> for AsBlock {
+    fn from(id: AsId) -> Self {
+        AsBlock::Id(id)
+    }
+}
+
+impl From<AsRange> for AsBlock {
+    fn from(range: AsRange) -> Self {
+        AsBlock::Range(range)
+    }
+}
+
+impl From<(AsId, AsId)> for AsBlock {
+    fn from(range: (AsId, AsId)) -> Self {
+        AsBlock::Range(AsRange::new(range.0, range.1))
+    }
+}
+
+
 //------------ AsId ----------------------------------------------------------
 
 /// An AS number.
@@ -396,6 +505,9 @@ impl AsBlock {
 pub struct AsId(u32);
 
 impl AsId {
+    pub const MIN: AsId = AsId(std::u32::MIN);
+    pub const MAX: AsId = AsId(std::u32::MAX);
+
     /// Takes an AS number from the beginning of an encoded value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>

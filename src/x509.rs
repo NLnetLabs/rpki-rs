@@ -12,6 +12,7 @@ use hex;
 use crate::crypto::{
     PublicKey, Signature, SignatureAlgorithm, VerificationError
 };
+use crate::oid;
 
 
 //------------ Functions -----------------------------------------------------
@@ -34,6 +35,10 @@ where F: FnOnce() -> Result<T, E>, E: From<decode::Error> {
 pub struct Name(Captured);
 
 impl Name {
+    pub(crate) fn from_captured(captured: Captured) -> Self {
+        Name(captured)
+    }
+
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
@@ -65,7 +70,7 @@ impl Name {
                     while let Some(()) = cons.take_opt_set(|cons| {
                         while let Some(()) = cons.take_opt_sequence(|cons| {
                             let id = Oid::take_from(cons)?;
-                            if id == oid::ID_AT_COMMON_NAME {
+                            if id == oid::AT_COMMON_NAME {
                                 if cn {
                                     xerr!(
                                         return Err(decode::Error::Malformed)
@@ -74,7 +79,7 @@ impl Name {
                                 let _ = PrintableString::take_from(cons)?;
                                 cn = true;
                             }
-                            else if id == oid::ID_AT_SERIAL_NUMBER {
+                            else if id == oid::AT_SERIAL_NUMBER {
                                 if sn {
                                     xerr!(
                                         return Err(decode::Error::Malformed)
@@ -118,7 +123,7 @@ impl Name {
         let values = encode::sequence(
             encode::set(
                 encode::sequence((
-                    oid::ID_AT_COMMON_NAME.encode(),
+                    oid::AT_COMMON_NAME.encode(),
                     enc.encode_as(Tag::PRINTABLE_STRING),
                 ))
             )
@@ -213,6 +218,7 @@ impl<'a> PrimitiveContent for SignatureValueContent<'a> {
         target.write_all(self.0.signature.value().as_ref())
     }
 }
+
 
 //------------ Time ----------------------------------------------------------
 
@@ -365,18 +371,14 @@ impl PrimitiveContent for Time {
         15 // yyyyMMddhhmmssZ
     }
 
-    fn write_encoded<W: io::Write>(&self, _: Mode, target: &mut W)
-        -> Result<(), io::Error>
-    {
-        write!(target, "{:04}", self.0.year())?;
-        write!(target, "{:02}", self.0.month())?;
-        write!(target, "{:02}", self.0.day())?;
-        write!(target, "{:02}", self.0.hour())?;
-        write!(target, "{:02}", self.0.minute())?;
-        write!(target, "{:02}", self.0.second())?;
-        write!(target, "Z")?;
-
-        Ok(())
+    fn write_encoded<W: io::Write>(
+        &self, _: Mode, target: &mut W
+    ) -> Result<(), io::Error> {
+        write!(
+            target, "{:04}{:02}{:02}{:02}{:02}{:02}Z",
+            self.0.year(), self.0.month(), self.0.day(),
+            self.0.hour(), self.0.minute(), self.0.second()
+        )
     }
 }
 
@@ -430,20 +432,6 @@ impl From<VerificationError> for ValidationError {
     fn from(_: VerificationError) -> ValidationError {
         ValidationError
     }
-}
-
-
-//------------ OIDs ----------------------------------------------------------
-
-pub mod oid {
-    use bcder::Oid;
-
-    // https://www.itu.int/ITU-T/formal-language/itu-t/x/x520/2012/SelectedAttributeTypes.html#SelectedAttributeTypes.id-at-commonName
-    pub const ID_AT_COMMON_NAME: Oid<&[u8]> = Oid(&[85, 4, 3]); // 2 5 4 3
-
-    // https://www.itu.int/ITU-T/formal-language/itu-t/x/x520/2012/SelectedAttributeTypes.html#SelectedAttributeTypes.id-at-serialNumber
-    pub const ID_AT_SERIAL_NUMBER: Oid<&[u8]> = Oid(&[85, 4, 5]); // 2 5 4 5
-
 }
 
 

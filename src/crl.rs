@@ -17,11 +17,11 @@
 use std::collections::HashSet;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Oid, Tag, Unsigned};
+use crate::oid;
 use crate::uri;
 use crate::x509::{Name, SignedData, Time, ValidationError};
 use crate::crypto::{PublicKey, SignatureAlgorithm};
 use crate::cert::ext::{AuthorityKeyIdentifier, CrlNumber};
-use crate::cert::ext::oid;
 
 
 //------------ Crl -----------------------------------------------------------

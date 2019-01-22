@@ -2,14 +2,15 @@
 //!
 //! For details, see RFC 6482.
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::IpAddr;
 use std::sync::Arc;
-use bcder::decode;
-use bcder::{BitString, Captured, Mode, Tag};
+use bcder::{decode, encode};
+use bcder::{Captured, Mode, Tag};
 use bcder::decode::Source;
+use bcder::encode::PrimitiveContent;
 use super::asres::AsId;
 use super::cert::{Cert, ResourceCert};
-use super::ipres::AddressFamily;
+use super::ipres::{AddressFamily, Prefix};
 use super::sigobj::SignedObject;
 use super::tal::TalInfo;
 use super::x509::ValidationError;
@@ -219,48 +220,100 @@ impl<'a> Iterator for RoaIpAddressIter<'a> {
 }
 
 
+//------------ RoaIpAddressesBuilder -----------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct RoaIpAddressesBuilder {
+    addrs: Vec<RoaIpAddress>,
+}
+
+impl RoaIpAddressesBuilder {
+    pub fn new() -> Self {
+        RoaIpAddressesBuilder {
+            addrs: Vec::new()
+        }
+    }
+
+    pub fn push(&mut self, addr: RoaIpAddress) {
+        self.addrs.push(addr)
+    }
+
+    pub fn push_addr(&mut self, addr: IpAddr, len: u8, max_len: Option<u8>) {
+        self.push(RoaIpAddress::new_addr(addr, len, max_len))
+    }
+
+    pub fn extend_from_slice(&mut self, addrs: &[RoaIpAddress]) {
+        self.addrs.extend_from_slice(addrs)
+    }
+
+    pub fn finalize(self) -> RoaIpAddresses {
+        RoaIpAddresses(Captured::from_values(Mode::Der, self.encode()))
+    }
+
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence(
+            encode::Iter::new(self.addrs.iter().map(|v| v.encode()))
+        )
+    }
+}
+
+impl Default for RoaIpAddressesBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Extend<RoaIpAddress> for RoaIpAddressesBuilder {
+    fn extend<T>(&mut self, iter: T)
+    where T: IntoIterator<Item=RoaIpAddress> {
+        self.addrs.extend(iter)
+    }
+}
+
+
 //------------ RoaIpAddress --------------------------------------------------
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct RoaIpAddress {
-    address: u128,
-    address_length: u8,
+    prefix: Prefix,
     max_length: Option<u8>
 }
 
 impl RoaIpAddress {
+    pub fn new(prefix: Prefix, max_length: Option<u8>) -> Self {
+        RoaIpAddress { prefix, max_length }
+    }
+
+    pub fn new_addr(addr: IpAddr, len: u8, max_len: Option<u8>) -> Self {
+        RoaIpAddress::new(Prefix::new(addr, len), max_len)
+    }
+
     pub fn range(&self) -> (u128, u128) {
-        let mask = if self.address_length < 128 {
-            !0u128 >> self.address_length
-        }
-        else {
-            0
-        };
-        (self.address & !mask, self.address | mask)
+        self.prefix.range()
     }
 }
 
 impl RoaIpAddress {
+    // Section 3 of RFC 6482 defines  ROAIPAddress as
+    //
+    // ```txt
+    // ROAIPAddress ::= SEQUENCE {
+    //    address       IPAddress,
+    //    maxLength     INTEGER OPTIONAL }
+    //
+    // IPAddress    ::= BIT STRING
+    // ```
+    //
+    // The address is the same as in section 2.1.1 of RFC 3779, that is, it
+    // is a bit string with all the bits of the prefix.
+
     fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, S::Err> {
         cons.take_opt_sequence(|cons| {
-            let bs = BitString::take_from(cons)?;
-            let max = cons.take_opt_u8()?;
-            if bs.octet_len() > 16 {
-                xerr!(return Err(decode::Malformed.into()))
-            }
-            let mut addr = 0;
-            for octet in bs.octets() {
-                addr = (addr << 8) | (octet as u128)
-            }
-            for _ in bs.octet_len()..16 {
-                addr = addr << 8
-            }
             Ok(RoaIpAddress {
-                address: addr,
-                address_length: bs.bit_len() as u8,
-                max_length: max
+                prefix: Prefix::take_from(cons)?,
+                max_length: cons.take_opt_u8()?,
             })
         })
     }
@@ -268,14 +321,14 @@ impl RoaIpAddress {
     fn skip_opt_in<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<()>, S::Err> {
-        cons.take_opt_sequence(|cons| {
-            let bs = BitString::take_from(cons)?;
-            let _ = cons.take_opt_u8()?;
-            if bs.octet_len() > 16 {
-                xerr!(return Err(decode::Malformed.into()))
-            }
-            Ok(())
-        })
+        Self::take_opt_from(cons).map(|res| res.map(|_| ()))
+    }
+
+    fn encode(&self) -> impl encode::Values {
+        encode::sequence((
+            self.prefix.encode(),
+            self.max_length.map(|v| v.encode())
+        ))
     }
 }
 
@@ -295,33 +348,21 @@ impl FriendlyRoaIpAddress {
 
     pub fn address(&self) -> IpAddr {
         if self.v4 {
-            Ipv4Addr::new(
-                ((self.addr.address >> 120) & 0xFF) as u8,
-                ((self.addr.address >> 112) & 0xFF) as u8,
-                ((self.addr.address >> 104) & 0xFF) as u8,
-                ((self.addr.address >> 96) & 0xFF) as u8
-            ).into()
+            self.addr.prefix.to_v4().into()
         }
         else {
-            Ipv6Addr::new(
-                ((self.addr.address >> 112) & 0xFFFF) as u16,
-                ((self.addr.address >> 96) & 0xFFFF) as u16,
-                ((self.addr.address >> 80) & 0xFFFF) as u16,
-                ((self.addr.address >> 64) & 0xFFFF) as u16,
-                ((self.addr.address >> 48) & 0xFFFF) as u16,
-                ((self.addr.address >> 32) & 0xFFFF) as u16,
-                ((self.addr.address >> 16) & 0xFFFF) as u16,
-                (self.addr.address & 0xFFFF) as u16
-            ).into()
+            self.addr.prefix.to_v6().into()
         }
     }
 
     pub fn address_length(&self) -> u8 {
-        self.addr.address_length
+        self.addr.prefix.addr_len()
     }
 
     pub fn max_length(&self) -> u8 {
-        self.addr.max_length.unwrap_or(self.addr.address_length)
+        self.addr.max_length.unwrap_or_else(||
+            self.addr.prefix.addr_len()
+        )
     }
 }
 

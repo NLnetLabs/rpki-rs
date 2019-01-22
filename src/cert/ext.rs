@@ -10,6 +10,7 @@ use bytes::Bytes;
 use crate::asres::AsResources;
 use crate::crypto::PublicKey;
 use crate::ipres::IpResources;
+use crate::oid;
 use crate::uri;
 use crate::x509::update_once;
 
@@ -975,36 +976,6 @@ fn encode_extension<'a, V: encode::Values + 'a>(
         critical.encode(),
         OctetString::encode_wrapped(Mode::Der, content)
     ))
-}
-
-
-//------------ OIDs ----------------------------------------------------------
-
-#[allow(dead_code)] // XXX
-pub(crate) mod oid {
-    use bcder::Oid;
-
-    pub const AD_CA_ISSUERS: Oid<&[u8]> = Oid(&[43, 6, 1, 5, 5, 7, 48, 2]);
-    pub const AD_CA_REPOSITORY: Oid<&[u8]> = Oid(&[43, 6, 1, 5, 5, 7, 48, 5]);
-    pub const AD_RPKI_MANIFEST: Oid<&[u8]> = Oid(&[43, 6, 1, 5, 5, 7, 48, 10]);
-    pub const AD_SIGNED_OBJECT: Oid<&[u8]> = Oid(&[43, 6, 1, 5, 5, 7, 48, 11]);
-
-    pub const CE_SUBJECT_KEY_IDENTIFIER: Oid<&[u8]> = Oid(&[85, 29, 14]);
-
-    pub const CE_KEY_USAGE: Oid<&[u8]> = Oid(&[85, 29, 15]);
-    pub const CE_BASIC_CONSTRAINTS: Oid<&[u8]> = Oid(&[85, 29, 19]);
-    pub const CE_CRL_DISTRIBUTION_POINTS: Oid<&[u8]> = Oid(&[85, 29, 31]);
-    pub const CE_CRL_NUMBER: Oid<&[u8]> = Oid(&[85, 29, 20]);
-    pub const CE_EXTENDED_KEY_USAGE: Oid<&[u8]> = Oid(&[85, 29, 37]);
-    pub const CE_CERTIFICATE_POLICIES: Oid<&[u8]> = Oid(&[85, 29, 32]);
-    pub const CE_AUTHORITY_KEY_IDENTIFIER: Oid<&[u8]> = Oid(&[85, 29, 35]);
-    pub const PE_AUTHORITY_INFO_ACCESS: Oid<&[u8]>
-        = Oid(&[43, 6, 1, 5, 5, 7, 1, 1]);
-    pub const PE_IP_ADDR_BLOCK: Oid<&[u8]> = Oid(&[43, 6, 1, 5, 5, 7, 1, 7]);
-    pub const PE_AUTONOMOUS_SYS_IDS: Oid<&[u8]>
-        = Oid(&[43, 6, 1, 5, 5, 7, 1, 8]);
-    pub const PE_SUBJECT_INFO_ACCESS: Oid<&[u8]>
-        = Oid(&[43, 6, 1, 5, 5, 7, 1, 11]);
 }
 
 

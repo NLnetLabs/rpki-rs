@@ -21,7 +21,7 @@ use std::sync::Arc;
 use bcder::{decode, encode};
 use bcder::encode::PrimitiveContent;
 use bcder::{BitString, Mode, OctetString, Tag, Unsigned};
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use crate::asres::AsBlocks;
 use crate::uri;
 use crate::ipres::IpAddressBlocks;
@@ -31,6 +31,7 @@ use crate::crypto::{PublicKey, SignatureAlgorithm};
 use self::ext::{Extensions, UriGeneralName, UriGeneralNames};
 
 
+pub mod builder;
 pub mod ext;
 
 
@@ -112,6 +113,11 @@ pub struct Cert {
 /// # Data Access
 ///
 impl Cert {
+    /// Returns a reference to the subject.
+    pub fn subject(&self) -> &Name {
+        &self.subject
+    }
+
     /// Returns a reference to the subject key identifier.
     pub fn subject_key_identifier(&self) -> &OctetString {
         &self.extensions.subject_key_id()
@@ -524,7 +530,6 @@ impl AsRef<Cert> for Cert {
 }
 
 
-
 //------------ ResourceCert --------------------------------------------------
 
 /// A validated resource certificate.
@@ -596,11 +601,19 @@ impl Validity {
         Validity { not_before, not_after }
     }
 
-    pub fn from_duration(duration: ::chrono::Duration) -> Self {
+    pub fn from_duration(duration: Duration) -> Self {
         let not_before = Time::now();
         let not_after = Time::new(Utc::now() + duration);
+        if not_before < not_after {
+            Validity { not_before, not_after }
+        }
+        else {
+            Validity { not_after, not_before }
+        }
+    }
 
-        Validity { not_before, not_after }
+    pub fn from_secs(secs: i64) -> Self {
+        Self::from_duration(Duration::seconds(secs))
     }
 
     pub fn take_from<S: decode::Source>(

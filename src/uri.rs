@@ -1,6 +1,9 @@
 //! URIs.
 
-use std::{fmt, str};
+use std::{fmt, io, str};
+use bcder::encode;
+use bcder::{Mode, Tag};
+use bcder::encode::PrimitiveContent;
 use bytes::{BufMut, Bytes, BytesMut};
 
 
@@ -128,7 +131,12 @@ impl Rsync {
     pub fn ends_with(&self, extension: &str) -> bool {
         self.path.ends_with(extension.as_bytes())
     }
+
+    pub fn encode_general_name<'a>(&'a self) -> impl encode::Values + 'a {
+        self.encode_as(Tag::CTX_6)
+    }
 }
+
 
 impl fmt::Display for Rsync {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -136,6 +144,31 @@ impl fmt::Display for Rsync {
         if !self.path.is_empty() {
             write!(f, "{}", self.path())?;
         }
+        Ok(())
+    }
+}
+
+
+impl<'a> encode::PrimitiveContent for &'a Rsync {
+    const TAG: Tag = Tag::IA5_STRING;
+
+    fn encoded_len(&self, _: Mode) -> usize {
+        // "rsync://" + authority + "/" + module + "/" + path
+        10 + self.module.authority.len() + self.module.module.len()
+        + self.path.len()
+    }
+
+    fn write_encoded<W: io::Write>(
+        &self,
+        _mode: Mode,
+        target: &mut W
+    ) -> Result<(), io::Error> {
+        target.write_all(b"rsync://")?;
+        target.write_all(self.module.authority.as_ref())?;
+        target.write_all(b"/")?;
+        target.write_all(self.module.module.as_ref())?;
+        target.write_all(b"/")?;
+        target.write_all(self.path.as_ref())?;
         Ok(())
     }
 }
@@ -195,7 +228,7 @@ impl fmt::Display for RsyncModule {
 /// the query and fragment components of URIs.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Http {
-    scheme: Scheme,
+    secure: bool,
     host:   Bytes,
     path:   Bytes
 }
@@ -219,11 +252,11 @@ impl Http {
             return Err(Error::NotAscii)
         }
 
-        let scheme = Scheme::take(&mut bytes)?;
-        match scheme {
-            Scheme::Rsync => { return Err(Error::BadScheme) }
-            _ => { }
-        }
+        let secure = match Scheme::take(&mut bytes)? {
+            Scheme::Http => false,
+            Scheme::Https => true,
+            Scheme::Rsync => return Err(Error::BadScheme)
+        };
 
         let host_length = {
             let mut parts = bytes.splitn(3, |ch| *ch == b'/');
@@ -240,7 +273,16 @@ impl Http {
             return Err(Error::BadUri)
         }
 
-        Ok(Http{scheme, host, path})
+        Ok(Http { secure, host, path })
+    }
+
+    pub fn secure(&self) -> bool {
+        self.secure
+    }
+
+    pub fn scheme(&self) -> Scheme {
+        if self.secure { Scheme::Https }
+        else { Scheme::Http }
     }
 
     pub fn host(&self) -> &str {
@@ -254,11 +296,15 @@ impl Http {
     pub fn to_string(&self) -> String {
         format!("{}", self)
     }
+
+    pub fn encode_general_name<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence_as(Tag::CTX_6, self.encode())
+    }
 }
 
 impl fmt::Display for Http {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.scheme.fmt(f)?;
+        self.scheme().fmt(f)?;
         if !self.host.is_empty() {
             write!(f, "{}", self.host())?;
         }
@@ -269,8 +315,31 @@ impl fmt::Display for Http {
     }
 }
 
+impl<'a> encode::PrimitiveContent for &'a Http {
+    const TAG: Tag = Tag::IA5_STRING;
 
-#[derive(Clone, Debug, PartialEq)]
+    fn encoded_len(&self, _: Mode) -> usize {
+        // scheme + "://" + host + path
+        self.scheme().as_str().len() + 3 + self.host.len() + self.path.len()
+    }
+
+    fn write_encoded<W: io::Write>(
+        &self,
+        _mode: Mode,
+        target: &mut W
+    ) -> Result<(), io::Error> {
+        target.write_all(self.scheme().as_str().as_bytes())?;
+        target.write_all(b"://")?;
+        target.write_all(self.host.as_ref())?;
+        target.write_all(self.path.as_ref())?;
+        Ok(())
+    }
+}
+
+
+//------------ Scheme --------------------------------------------------------
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Scheme {
     Http,
     Https,
@@ -304,6 +373,14 @@ impl Scheme {
         Err(Error::BadScheme)
     }
 
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Scheme::Http => "http",
+            Scheme::Https => "https",
+            Scheme::Rsync => "rsync",
+        }
+    }
+
     pub fn to_string(&self) -> String {
         format!("{}", self)
     }
@@ -311,12 +388,7 @@ impl Scheme {
 
 impl fmt::Display for Scheme {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Scheme::Http  => { write!(f, "{}", "http://")?; },
-            Scheme::Https => { write!(f, "{}", "https://")?; },
-            Scheme::Rsync => { write!(f, "{}", "rsync://")?; }
-        }
-        Ok(())
+        write!(f, "{}://", self.as_str())
     }
 }
 
@@ -382,7 +454,7 @@ mod tests {
     #[test]
     fn should_parse_http_uri() {
         let http = Http::from_str("http://my.host.tld/and/a/path").unwrap();
-        assert_eq!(Scheme::Http, http.scheme);
+        assert_eq!(Scheme::Http, http.scheme());
         assert_eq!(Bytes::from("my.host.tld"), http.host);
         assert_eq!(Bytes::from("/and/a/path"), http.path);
     }
@@ -390,7 +462,7 @@ mod tests {
     #[test]
     fn should_parse_https_uri() {
         let http = Http::from_str("https://my.host.tld/and/a/path").unwrap();
-        assert_eq!(Scheme::Https, http.scheme);
+        assert_eq!(Scheme::Https, http.scheme());
         assert_eq!(Bytes::from("my.host.tld"), http.host);
         assert_eq!(Bytes::from("/and/a/path"), http.path);
     }

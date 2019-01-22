@@ -144,5 +144,9 @@ impl Signature {
     pub fn value(&self) -> &Bytes {
         &self.value
     }
+
+    pub fn unwrap(self) -> (SignatureAlgorithm, Bytes) {
+        (self.algorithm, self.value)
+    }
 }
 
