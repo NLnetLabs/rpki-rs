@@ -13,9 +13,13 @@ New
 * `DigestAlgorithm` allows digesting, `PublicKeyFormat` allows checking
   signatures.
 
+* `CertBuilder` for making certificates. [(#16)]
+
 Bug Fixes
 
 Dependencies
+
+[(#49)]: https://github.com/NLnetLabs/rpki-rs/pull/16
 
 
 ## 0.2.0
