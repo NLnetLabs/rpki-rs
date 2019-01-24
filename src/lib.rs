@@ -28,6 +28,7 @@ extern crate untrusted;
 
 pub mod asres;
 pub mod cert;
+pub mod chain;
 pub mod crl;
 pub mod crypto;
 pub mod ipres;
