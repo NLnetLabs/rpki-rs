@@ -26,6 +26,9 @@ New
 
   * `cert::ResourceCertificate::into_tal`, `signed_object_uri`,
     `validity`.
+  * `cert::Validity::not_before` and `not_after`.
+
+* `x509::Time` now derefs to `chrono::DateTime<chrono::Utc>`.
 
 
 Bug Fixes

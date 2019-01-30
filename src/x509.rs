@@ -1,6 +1,6 @@
 //! Types common to all things X.509.
 
-use std::{io, str};
+use std::{io, ops, str};
 use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{BitString, Captured, Mode, Oid, Tag};
@@ -360,6 +360,20 @@ impl Time {
         else {
             Ok(())
         }
+    }
+}
+
+impl ops::Deref for Time {
+    type Target = DateTime<Utc>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl AsRef<DateTime<Utc>> for Time {
+    fn as_ref(&self) -> &DateTime<Utc> {
+        &self.0
     }
 }
 

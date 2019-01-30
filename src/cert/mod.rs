@@ -631,6 +631,14 @@ impl Validity {
         Self::from_duration(Duration::seconds(secs))
     }
 
+    pub fn not_before(&self) -> Time {
+        self.not_before
+    }
+
+    pub fn not_after(&self) -> Time {
+        self.not_after
+    }
+
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
