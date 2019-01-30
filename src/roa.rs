@@ -44,8 +44,8 @@ impl Roa {
     ) -> Result<RouteOriginAttestation, ValidationError>
     where F: FnOnce(&Cert) -> Result<(), ValidationError> {
         let cert = self.signed.validate(issuer, strict)?;
-        self.content.validate(&cert)?;
         check_crl(cert.as_ref())?;
+        self.content.validate(cert)?;
         Ok(self.content)
     }
 }
@@ -142,7 +142,7 @@ impl RouteOriginAttestation {
 
     fn validate(
         &mut self,
-        cert: &ResourceCert
+        cert: ResourceCert
     ) -> Result<(), ValidationError> {
         if !self.v4_addrs.is_empty() {
             let blocks = match cert.ip_resources().v4() {
@@ -166,7 +166,7 @@ impl RouteOriginAttestation {
                 }
             }
         }
-        self.status = RoaStatus::Valid { tal: cert.tal().clone() };
+        self.status = RoaStatus::Valid { cert };
         Ok(())
     }
 }
@@ -372,7 +372,7 @@ impl FriendlyRoaIpAddress {
 #[derive(Clone, Debug)]
 pub enum RoaStatus {
     Valid {
-        tal: Arc<TalInfo>,
+        cert: ResourceCert,
     },
     Invalid {
         // XXX Add information for why this is invalid.
@@ -383,7 +383,7 @@ pub enum RoaStatus {
 impl RoaStatus {
     pub fn tal(&self) -> Option<&Arc<TalInfo>> {
         match *self {
-            RoaStatus::Valid { ref tal, .. } => Some(tal),
+            RoaStatus::Valid { ref cert, .. } => Some(cert.tal()),
             _ => None
         }
     }

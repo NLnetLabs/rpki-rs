@@ -8,12 +8,17 @@ Breaking Changes
 * New module `crypto` includes the now removed module `signer` and all
   crypto-related types. The latter have been re-designed as well.
 
+* `roa::RoaStatus::Valid` now contains the complete resource certificate
+  of the ROA.
+
 New
 
 * `DigestAlgorithm` allows digesting, `PublicKeyFormat` allows checking
   signatures.
 
 * `CertBuilder` for making certificates. [(#16)]
+
+* `uri::Rsync::relative_to` for finding a relative path.
 
 Bug Fixes
 
