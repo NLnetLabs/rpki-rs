@@ -9,16 +9,23 @@ Breaking Changes
   crypto-related types. The latter have been re-designed as well.
 
 * `roa::RoaStatus::Valid` now contains the complete resource certificate
-  of the ROA.
+  of the ROA. This change is reflected in the methods of
+  `roa::RouteOriginAttestation` that deal with the ROA status.
+
 
 New
 
 * `DigestAlgorithm` allows digesting, `PublicKeyFormat` allows checking
   signatures.
 
-* `CertBuilder` for making certificates. [(#16)]
+* `cert::CertBuilder` for making certificates. [(#16)]
 
 * `uri::Rsync::relative_to` for finding a relative path.
+
+* Added methods:
+
+  * `cert::ResourceCertificate::into_tal`.
+
 
 Bug Fixes
 

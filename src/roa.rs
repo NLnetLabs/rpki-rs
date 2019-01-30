@@ -2,6 +2,7 @@
 //!
 //! For details, see RFC 6482.
 
+use std::mem;
 use std::net::IpAddr;
 use std::sync::Arc;
 use bcder::{decode, encode};
@@ -76,6 +77,10 @@ impl RouteOriginAttestation {
 
     pub fn status(&self) -> &RoaStatus {
         &self.status
+    }
+
+    pub fn take_cert(&mut self) -> Option<ResourceCert> {
+        self.status.take_cert()
     }
 
     pub fn iter<'a>(
@@ -381,6 +386,18 @@ pub enum RoaStatus {
 }
 
 impl RoaStatus {
+    pub fn take_cert(&mut self) -> Option<ResourceCert> {
+        let res = mem::replace(self, RoaStatus::Unknown);
+        match res {
+            RoaStatus::Valid { cert, .. } => Some(cert),
+            RoaStatus::Invalid { .. } => {
+                *self = RoaStatus::Invalid { };
+                None
+            }
+            RoaStatus::Unknown => None
+        }
+    }
+
     pub fn tal(&self) -> Option<&Arc<TalInfo>> {
         match *self {
             RoaStatus::Valid { ref cert, .. } => Some(cert.tal()),

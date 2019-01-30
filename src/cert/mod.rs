@@ -576,6 +576,11 @@ impl ResourceCert {
     pub fn tal(&self) -> &Arc<TalInfo> {
         &self.tal
     }
+
+    /// Converts the certificate into its TAL info.
+    pub fn into_tal(self) -> Arc<TalInfo> {
+        self.tal
+    }
 }
 
 
