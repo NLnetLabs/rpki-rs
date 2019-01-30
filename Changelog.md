@@ -24,7 +24,8 @@ New
 
 * Added methods:
 
-  * `cert::ResourceCertificate::into_tal`.
+  * `cert::ResourceCertificate::into_tal`, `signed_object_uri`,
+    `validity`.
 
 
 Bug Fixes

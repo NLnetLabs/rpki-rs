@@ -571,6 +571,16 @@ impl ResourceCert {
     pub fn repository_uri(&self) -> Option<uri::Rsync> {
         self.cert.extensions.repository_uri()
     }
+    
+    /// Returns the signed object rsync URI of this certificate if available.
+    pub fn signed_object_uri(&self) -> Option<uri::Rsync> {
+        self.cert.extensions.signed_object_uri()
+    }
+
+    /// Returns a reference to the validity.
+    pub fn validity(&self) -> &Validity {
+        &self.cert.validity
+    }
 
     /// Returns information about the TAL this certificate is based on.
     pub fn tal(&self) -> &Arc<TalInfo> {
