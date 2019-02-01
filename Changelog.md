@@ -11,15 +11,34 @@ Breaking Changes
   and moved to a shared `resources` module.
 * IP resources in `Cert` and `ResourceCert` broken up into `v4_resources`
   and `v6_resources` handled independently.
+* `roa::RoaStatus::Valid` now contains the complete resource certificate
+  of the ROA. This change is reflected in the methods of
+  `roa::RouteOriginAttestation` that deal with the ROA status.
+
 
 New
 
 * `DigestAlgorithm` allows digesting, `PublicKeyFormat` allows checking
   signatures.
 
+* `cert::CertBuilder` for making certificates. [(#16)]
+
+* `uri::Rsync::relative_to` for finding a relative path.
+
+* Added methods:
+
+  * `cert::ResourceCertificate::into_tal`, `signed_object_uri`,
+    `validity`.
+  * `cert::Validity::not_before` and `not_after`.
+
+* `x509::Time` now derefs to `chrono::DateTime<chrono::Utc>`.
+
+
 Bug Fixes
 
 Dependencies
+
+[(#49)]: https://github.com/NLnetLabs/rpki-rs/pull/16
 
 
 ## 0.2.0

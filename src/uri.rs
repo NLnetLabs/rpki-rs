@@ -132,6 +132,24 @@ impl Rsync {
         self.path.ends_with(extension.as_bytes())
     }
 
+    /// Returns some relative path of self as a sub path of other, as long as
+    /// other is a parent. If self and other are the same, or equal, then the
+    /// the returned slice is empty. If other is not a parent of self, then
+    /// None is returned.
+    pub fn relative_to(&self, other: &Rsync) -> Option<&[u8]> {
+        if self.module == other.module {
+            if self.path.starts_with(other.path.as_ref()) {
+                let cut_len = other.path.len();
+                let (_, rel) = self.path.split_at(cut_len);
+                Some(rel)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
     pub fn encode_general_name<'a>(&'a self) -> impl encode::Values + 'a {
         self.encode_as(Tag::CTX_6)
     }
@@ -426,6 +444,21 @@ pub enum Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn should_resolve_relative_rsync_path() {
+        let a = Rsync::from_str("rsync://localhost/module/a").unwrap();
+        let a_b = Rsync::from_str("rsync://localhost/module/a/b").unwrap();
+        let c = Rsync::from_str("rsync://localhost/module/c").unwrap();
+        let m2_a_b = Rsync::from_str("rsync://localhost/mod_b/a/b").unwrap();
+
+        assert_eq!(Some(b"".as_ref()), a.relative_to(&a));
+        assert_eq!(Some(b"/b".as_ref()), a_b.relative_to(&a));
+        assert_eq!(None, a_b.relative_to(&c));
+        assert_eq!(None, c.relative_to(&a));
+        assert_eq!(None, a.relative_to(&a_b));
+        assert_eq!(None, m2_a_b.relative_to(&a));
+    }
 
     #[test]
     fn should_reject_non_ascii_http_uri() {

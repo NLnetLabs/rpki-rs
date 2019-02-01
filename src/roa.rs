@@ -2,6 +2,7 @@
 //!
 //! For details, see RFC 6482.
 
+use std::mem;
 use std::net::IpAddr;
 use std::sync::Arc;
 use bcder::{decode, encode};
@@ -43,8 +44,8 @@ impl Roa {
     ) -> Result<RouteOriginAttestation, ValidationError>
     where F: FnOnce(&Cert) -> Result<(), ValidationError> {
         let cert = self.signed.validate(issuer, strict)?;
-        self.content.validate(&cert)?;
         check_crl(cert.as_ref())?;
+        self.content.validate(cert)?;
         Ok(self.content)
     }
 }
@@ -75,6 +76,10 @@ impl RouteOriginAttestation {
 
     pub fn status(&self) -> &RoaStatus {
         &self.status
+    }
+
+    pub fn take_cert(&mut self) -> Option<ResourceCert> {
+        self.status.take_cert()
     }
 
     pub fn iter<'a>(
@@ -141,7 +146,7 @@ impl RouteOriginAttestation {
 
     fn validate(
         &mut self,
-        cert: &ResourceCert
+        cert: ResourceCert
     ) -> Result<(), ValidationError> {
         if !self.v4_addrs.is_empty() {
             let blocks = cert.v4_resources();
@@ -165,7 +170,7 @@ impl RouteOriginAttestation {
                 }
             }
         }
-        self.status = RoaStatus::Valid { tal: cert.tal().clone() };
+        self.status = RoaStatus::Valid { cert };
         Ok(())
     }
 }
@@ -371,7 +376,7 @@ impl FriendlyRoaIpAddress {
 #[derive(Clone, Debug)]
 pub enum RoaStatus {
     Valid {
-        tal: Arc<TalInfo>,
+        cert: ResourceCert,
     },
     Invalid {
         // XXX Add information for why this is invalid.
@@ -380,9 +385,21 @@ pub enum RoaStatus {
 }
 
 impl RoaStatus {
+    pub fn take_cert(&mut self) -> Option<ResourceCert> {
+        let res = mem::replace(self, RoaStatus::Unknown);
+        match res {
+            RoaStatus::Valid { cert, .. } => Some(cert),
+            RoaStatus::Invalid { .. } => {
+                *self = RoaStatus::Invalid { };
+                None
+            }
+            RoaStatus::Unknown => None
+        }
+    }
+
     pub fn tal(&self) -> Option<&Arc<TalInfo>> {
         match *self {
-            RoaStatus::Valid { ref tal, .. } => Some(tal),
+            RoaStatus::Valid { ref cert, .. } => Some(cert.tal()),
             _ => None
         }
     }

@@ -144,6 +144,16 @@ impl Extensions {
     pub fn as_resources(&self) -> Option<&AsResources> {
         self.as_resources.as_ref()
     }
+
+    pub fn signed_object_uri(&self) -> Option<uri::Rsync> {
+        for uri in self.subject_info_access
+                       .iter().filter_oid(oid::AD_SIGNED_OBJECT) {
+            if let Some(mut uri) = uri.into_rsync_uri() {
+                return Some(uri)
+            }
+        }
+        None
+    }
 }
 
 
