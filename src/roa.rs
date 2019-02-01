@@ -160,7 +160,7 @@ impl RouteOriginAttestation {
             }
         }
         if !self.v6_addrs.is_empty() {
-            let blocks = cert.v4_resources();
+            let blocks = cert.v6_resources();
             if blocks.is_empty() {
                 return Err(ValidationError)
             }
