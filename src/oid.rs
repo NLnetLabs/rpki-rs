@@ -58,8 +58,8 @@ pub const CE_EXTENDED_KEY_USAGE: Oid<&[u8]> = Oid(&[85, 29, 37]);
 pub const CE_KEY_USAGE: Oid<&[u8]> = Oid(&[85, 29, 15]);
 pub const CE_SUBJECT_KEY_IDENTIFIER: Oid<&[u8]> = Oid(&[85, 29, 14]);
 
-pub const CP_IPADDR_ASNUMBER: Oid<&[u8]> = Oid(&[43, 6, 1, 5, 7, 14, 2]);
-pub const CP_IPADDR_ASNUMBER_V2: Oid<&[u8]> = Oid(&[43, 6, 1, 5, 7, 14, 3]);
+pub const CP_IPADDR_ASNUMBER: Oid<&[u8]> = Oid(&[43, 6, 1, 5, 5, 7, 14, 2]);
+pub const CP_IPADDR_ASNUMBER_V2: Oid<&[u8]> = Oid(&[43, 6, 1, 5, 5, 7, 14, 3]);
 
 pub const PE_AUTHORITY_INFO_ACCESS: Oid<&[u8]>
     = Oid(&[43, 6, 1, 5, 5, 7, 1, 1]);

@@ -432,7 +432,14 @@ impl Extensions {
         update_once(overclaim, || {
             cons.take_sequence(|cons| {
                 cons.take_sequence(|cons| {
-                    Ok(Overclaim::from_policy(&Oid::take_from(cons)?)?)
+                    // policyIdentifier. This can be one of two options and
+                    // decides how we deal with overclaim.
+                    let res = Overclaim::from_policy(&Oid::take_from(cons)?)?;
+                    // policyQualifiers. This is a sequence of sequences with
+                    // stuff we don’t really care about. Let’s skip all the
+                    // rest.
+                    cons.skip_all()?;
+                    Ok(res)
                 })
             })
         })

@@ -728,7 +728,7 @@ impl Overclaim {
             Ok(Overclaim::Trim)
         }
         else {
-            Err(decode::Malformed)
+            xerr!(Err(decode::Malformed))
         }
     }
 
@@ -757,3 +757,17 @@ impl Overclaim {
     }
 }
 
+
+//============ Tests =========================================================
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn decode_tal() {
+        Cert::decode(
+            &include_bytes!("../../test/afrinic-tal.cer")[..]
+        ).unwrap();
+    }
+}
