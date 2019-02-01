@@ -2,10 +2,11 @@
 use bcder::encode;
 use bcder::{BitString, Captured, ConstOid, Mode, OctetString, Tag};
 use bcder::encode::PrimitiveContent;
-use crate::asres::{AsIdBlocksBuilder, AsResourcesBuilder};
 use crate::crypto::{PublicKey, SignatureAlgorithm, Signer, SigningError};
-use crate::ipres::{AddressBlocksBuilder, IpResourcesBuilder};
 use crate::oid;
+use crate::resources::{
+    AsBlocksBuilder, AsResourcesBuilder, IpBlocksBuilder, IpResourcesBuilder
+};
 use crate::uri;
 use crate::x509::Name;
 use super::Validity;
@@ -136,16 +137,22 @@ pub struct CertBuilder {
     //  This contains a single policy, id-cp-ipAddr-asNumber, without any
     //  qualifiers.
 
-    /// IP Resources
+    /// IPv4 Resources
     ///
-    /// Either this one or AS Resources must be present. If present, it must
-    /// be critical. We have a builder for this.
-    ip_resources: IpResourcesBuilder,
+    /// One of the resources must be present. The IPv4 resources are part of
+    /// the IP resources which, if present, it must be critical.
+    v4_resources: IpResourcesBuilder,
+
+    /// IPv6 Resources
+    ///
+    /// One of the resources must be present. The IPv4 resources are part of
+    /// the IP resources which, if present, it must be critical.
+    v6_resources: IpResourcesBuilder,
 
     /// AS Resources
     ///
-    /// Either this one or IP Resources must be present. If present, it must
-    /// be critical. We have a builder for this.
+    /// If present, it must be critical. One of the resources must be
+    /// present.
     as_resources: AsResourcesBuilder,
 }
 
@@ -170,7 +177,8 @@ impl CertBuilder {
             rpki_manifest: None,
             signed_object: None,
             rpki_notify: None,
-            ip_resources: IpResourcesBuilder::new(),
+            v4_resources: IpResourcesBuilder::new(),
+            v6_resources: IpResourcesBuilder::new(),
             as_resources: AsResourcesBuilder::new(),
         }
     }
@@ -213,12 +221,12 @@ impl CertBuilder {
     }
 
     pub fn inherit_v4(&mut self) -> &mut Self {
-        self.ip_resources.inherit_v4();
+        self.v4_resources.inherit();
         self
     }
 
     pub fn inherit_v6(&mut self) -> &mut Self {
-        self.ip_resources.inherit_v6();
+        self.v6_resources.inherit();
         self
     }
 
@@ -228,19 +236,19 @@ impl CertBuilder {
     }
 
     pub fn v4_blocks<F>(&mut self, build: F) -> &mut Self
-    where F: FnOnce(&mut AddressBlocksBuilder) {
-        self.ip_resources.v4_blocks(build);
+    where F: FnOnce(&mut IpBlocksBuilder) {
+        self.v4_resources.blocks(build);
         self
     }
 
     pub fn v6_blocks<F>(&mut self, build: F) -> &mut Self
-    where F: FnOnce(&mut AddressBlocksBuilder) {
-        self.ip_resources.v6_blocks(build);
+    where F: FnOnce(&mut IpBlocksBuilder) {
+        self.v6_resources.blocks(build);
         self
     }
 
     pub fn as_blocks<F>(&mut self, build: F) -> &mut Self
-    where F: FnOnce(&mut AsIdBlocksBuilder) {
+    where F: FnOnce(&mut AsBlocksBuilder) {
         self.as_resources.blocks(build);
         self
     }
@@ -392,13 +400,15 @@ impl CertBuilder {
                 ),
 
                 // IP Resources
+                /*
                 self.ip_resources.encode().map(|res| {
                     extension(&oid::PE_IP_ADDR_BLOCK, true, res)
                 }),
+                */
 
                 // AS Resources
-                self.as_resources.encode().map(|res| {
-                    extension(&oid::PE_AUTONOMOUS_SYS_IDS, true, res)
+                self.as_resources.finalize().map(|res| {
+                    extension(&oid::PE_AUTONOMOUS_SYS_IDS, true, res.encode())
                 })
             )))
         )))

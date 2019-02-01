@@ -17,15 +17,16 @@
 //! [RFC 5280]: https://tools.ietf.org/html/rfc5280
 //! [RFC 6487]: https://tools.ietf.org/html/rfc5487
 
+use std::ops;
 use std::sync::Arc;
 use bcder::{decode, encode};
 use bcder::encode::PrimitiveContent;
-use bcder::{BitString, Mode, OctetString, Tag, Unsigned};
+use bcder::{BitString, Mode, OctetString, Oid, Tag, Unsigned};
 use chrono::{Duration, Utc};
-use crate::asres::AsBlocks;
-use crate::uri;
-use crate::ipres::IpAddressBlocks;
+use crate::oid;
+use crate::resources::{AsBlocks, IpBlocks};
 use crate::tal::TalInfo;
+use crate::uri;
 use crate::x509::{Name, SignedData, Time, ValidationError};
 use crate::crypto::{PublicKey, SignatureAlgorithm};
 use self::ext::{Extensions, UriGeneralName, UriGeneralNames};
@@ -244,8 +245,11 @@ impl Cert {
         }
 
         // 4.8.10.  IP Resources. If present, musn’t be "inherit".
-        let ip_resources = IpAddressBlocks::from_resources(
-            self.extensions.ip_resources()
+        let v4_resources = IpBlocks::from_resources(
+            self.extensions.v4_resources()
+        )?;
+        let v6_resources = IpBlocks::from_resources(
+            self.extensions.v6_resources()
         )?;
  
         // 4.8.11.  AS Resources. If present, musn’t be "inherit". That
@@ -261,7 +265,8 @@ impl Cert {
 
         Ok(ResourceCert {
             cert: self,
-            ip_resources,
+            v4_resources,
+            v6_resources,
             as_resources,
             tal
         })
@@ -498,23 +503,21 @@ impl Cert {
         issuer: &ResourceCert,
         _strict: bool
     ) -> Result<ResourceCert, ValidationError> {
-        // 4.8.10.  IP Resources. If present, must be encompassed by issuer.
-        // certificates.
-        let ip_resources = issuer.ip_resources.encompasses(
-            self.extensions.ip_resources()
-        )?;
-        
-        // 4.8.11.  AS Resources. If present, must be encompassed by issuer.
-        // That IP or AS resources need to be present has been
-        // checked during parsing.
-        let as_resources = issuer.as_resources.encompasses(
-            self.extensions.as_resources()
-        )?;
-
         Ok(ResourceCert {
+            // 4.8.10.  IP Resources. If present, must be encompassed by or
+            // trimmed down to the issuer certificate.
+            v4_resources: issuer.v4_resources.validate_issued(
+                self.extensions.v4_resources(), self.extensions.overclaim()
+            )?,
+            v6_resources: issuer.v6_resources.validate_issued(
+                self.extensions.v6_resources(), self.extensions.overclaim()
+            )?,
+            // 4.8.11.  AS Resources. If present, must be encompassed by or
+            // trimmed down to the issuer.
+            as_resources: issuer.as_resources.validate_issued(
+                self.extensions.as_resources(), self.extensions.overclaim()
+            )?,
             cert: self,
-            ip_resources,
-            as_resources,
             tal: issuer.tal.clone(),
         })
     }
@@ -541,8 +544,11 @@ pub struct ResourceCert {
     /// The underlying resource certificate.
     cert: Cert,
 
-    /// The resolved IP resources.
-    ip_resources: IpAddressBlocks,
+    /// The resolved IPv4 resources.
+    v4_resources: IpBlocks,
+
+    /// The resolved IPv6 resources.
+    v6_resources: IpBlocks,
 
     /// The resolved AS resources.
     as_resources: AsBlocks,
@@ -552,9 +558,19 @@ pub struct ResourceCert {
 }
 
 impl ResourceCert {
-    /// Returns a reference to the IP resources of this certificate.
-    pub fn ip_resources(&self) -> &IpAddressBlocks {
-        &self.ip_resources
+    /// Returns a reference to the underlying certificate.
+    pub fn as_cert(&self) -> &Cert {
+        &self.cert
+    }
+
+    /// Returns a reference to the IPv4 resources of this certificate.
+    pub fn v4_resources(&self) -> &IpBlocks {
+        &self.v4_resources
+    }
+
+    /// Returns a reference to the IPv6 resources of this certificate.
+    pub fn v6_resources(&self) -> &IpBlocks {
+        &self.v6_resources
     }
 
     /// Returns a reference to the AS resources of this certificate.
@@ -579,11 +595,19 @@ impl ResourceCert {
 }
 
 
-//--- AsRef
+//--- Deref and AsRef
+
+impl ops::Deref for ResourceCert {
+    type Target = Cert;
+
+    fn deref(&self) -> &Cert {
+        self.as_cert()
+    }
+}
 
 impl AsRef<Cert> for ResourceCert {
     fn as_ref(&self) -> &Cert {
-        &self.cert
+        self.as_cert()
     }
 }
 
@@ -642,6 +666,71 @@ impl Validity {
             self.not_before.encode(),
             self.not_after.encode(),
         ))
+    }
+}
+
+
+//------------ Overclaim -----------------------------------------------------
+
+/// The overclaim mode for resource validation.
+///
+/// In the original RPKI specification, a certificate becomes valid if it
+/// claims more resources than its issuer, a condition known as
+/// ‘overclaiming’. [RFC 8360] proposed an alternative approach where in this
+/// case the resources of the certificate are simply trimmed back to what the
+/// issuer certificate allows. This makes handling cases where a CA loses some
+/// resources easier.
+///
+/// A certificate can choose to use the old or new method by using different
+/// OIDs for the certificate policy and the resource extensions.
+///
+/// This type specifies which mode a certificate uses.
+///
+/// [RFC 8380]: https://tools.ietf.org/html/rfc8360
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Overclaim {
+    /// A certificate becomes invalid if it overclaims resources.
+    Refuse,
+
+    /// Overclaimed resources are trimmed to the by encompassed by the issuer.
+    Trim,
+}
+
+impl Overclaim {
+    fn from_policy(oid: &Oid) -> Result<Self, decode::Error> {
+        if oid == &oid::CP_IPADDR_ASNUMBER {
+            Ok(Overclaim::Refuse)
+        }
+        else if oid == &oid::CP_IPADDR_ASNUMBER_V2 {
+            Ok(Overclaim::Trim)
+        }
+        else {
+            Err(decode::Malformed)
+        }
+    }
+
+    fn from_ip_res(oid: &Oid) -> Option<Self> {
+        if oid == &oid::PE_IP_ADDR_BLOCK {
+            Some(Overclaim::Refuse)
+        }
+        else if oid == &oid::PE_IP_ADDR_BLOCK_V2 {
+            Some(Overclaim::Trim)
+        }
+        else {
+            None
+        }
+    }
+
+    fn from_as_res(oid: &Oid) -> Option<Self> {
+        if oid == &oid::PE_AUTONOMOUS_SYS_IDS {
+            Some(Overclaim::Refuse)
+        }
+        else if oid == &oid::PE_AUTONOMOUS_SYS_IDS_V2 {
+            Some(Overclaim::Trim)
+        }
+        else {
+            None
+        }
     }
 }
 

@@ -7,12 +7,12 @@ use bcder::{
 };
 use bcder::encode::PrimitiveContent;
 use bytes::Bytes;
-use crate::asres::AsResources;
 use crate::crypto::PublicKey;
-use crate::ipres::IpResources;
 use crate::oid;
+use crate::resources::{AsResources, IpResources};
 use crate::uri;
 use crate::x509::update_once;
+use super::Overclaim;
 
 
 //------------ Extensions ----------------------------------------------------
@@ -56,13 +56,18 @@ pub struct Extensions {
 
     /// Certificate Policies
     ///
-    /// Must be present and critical. RFC 6484 describes the policies for
-    /// PKIX certificates. This value contains the content of the
-    /// certificatePolicies sequence.
-    certificate_policies: CertificatePolicies,
+    /// Must be present and critical. RFC 6484 demands there to be a single
+    /// policy with a specific OID and no paramters. RFC 8630 adds a second
+    /// OID for a different way of handling overclaim of resources.
+    ///
+    /// We reflect this choice of policy with an overclaim mode.
+    overclaim: Overclaim,
 
-    /// IP Resources
-    ip_resources: Option<IpResources>,
+    /// IP Resources for the IPv4 address family.
+    v4_resources: Option<IpResources>,
+
+    /// IP Resources for the IPv6 address family.
+    v6_resources: Option<IpResources>,
 
     /// AS Resources
     as_resources: Option<AsResources>,
@@ -98,16 +103,12 @@ impl Extensions {
         self.authority_info_access.as_ref()
     }
 
-    pub fn ip_resources(&self) -> Option<&IpResources> {
-        self.ip_resources.as_ref()
-    }
-
-    pub fn as_resources(&self) -> Option<&AsResources> {
-        self.as_resources.as_ref()
-    }
-
     pub fn key_usage_ca(&self) -> bool {
         self.key_usage_ca
+    }
+
+    pub fn extended_key_usage(&self) -> Option<&Captured> {
+        self.extended_key_usage.as_ref()
     }
 
     pub fn subject_info_access(&self) -> &SubjectInfoAccess {
@@ -128,8 +129,20 @@ impl Extensions {
         None
     }
 
-    pub fn extended_key_usage(&self) -> Option<&Captured> {
-        self.extended_key_usage.as_ref()
+    pub fn overclaim(&self) -> Overclaim {
+        self.overclaim
+    }
+
+    pub fn v4_resources(&self) -> Option<&IpResources> {
+        self.v4_resources.as_ref()
+    }
+
+    pub fn v6_resources(&self) -> Option<&IpResources> {
+        self.v6_resources.as_ref()
+    }
+
+    pub fn as_resources(&self) -> Option<&AsResources> {
+        self.as_resources.as_ref()
     }
 }
 
@@ -149,9 +162,11 @@ impl Extensions {
             let mut crl_distribution = None;
             let mut authority_info_access = None;
             let mut subject_info_access = None;
-            let mut certificate_policies = None;
+            let mut overclaim = None;
             let mut ip_resources = None;
+            let mut ip_overclaim = None;
             let mut as_resources = None;
+            let mut as_overclaim = None;
             while let Some(()) = cons.take_opt_sequence(|cons| {
                 let id = Oid::take_from(cons)?;
                 let critical = cons.take_opt_bool()?.unwrap_or(false);
@@ -189,11 +204,13 @@ impl Extensions {
                         )
                     } else if id == oid::CE_CERTIFICATE_POLICIES {
                         Self::take_certificate_policies(
-                            content, &mut certificate_policies
+                            content, &mut overclaim
                         )
-                    } else if id == oid::PE_IP_ADDR_BLOCK {
+                    } else if let Some(m) = Overclaim::from_ip_res(&id) {
+                        ip_overclaim = Some(m);
                         Self::take_ip_resources(content, &mut ip_resources)
-                    } else if id == oid::PE_AUTONOMOUS_SYS_IDS {
+                    } else if let Some(m) = Overclaim::from_as_res(&id) {
+                        as_overclaim = Some(m);
                         Self::take_as_resources(content, &mut as_resources)
                     } else if critical {
                         xerr!(Err(decode::Malformed))
@@ -209,6 +226,16 @@ impl Extensions {
             if ip_resources.is_none() && as_resources.is_none() {
                 xerr!(return Err(decode::Malformed.into()))
             }
+            if ip_resources.is_some() && ip_overclaim != overclaim {
+                xerr!(return Err(decode::Malformed.into()))
+            }
+            if as_resources.is_some() && as_overclaim != overclaim {
+                xerr!(return Err(decode::Malformed.into()))
+            }
+            let ip_resources = match ip_resources {
+                None => (None, None),
+                Some((a, b)) => (a, b),
+            };
             Ok(Extensions {
                 basic_ca,
                 subject_key_id: subject_key_id.ok_or(decode::Malformed)?,
@@ -218,10 +245,10 @@ impl Extensions {
                 crl_distribution,
                 authority_info_access,
                 subject_info_access:
-                subject_info_access.ok_or(decode::Malformed)?,
-                certificate_policies:
-                certificate_policies.ok_or(decode::Malformed)?,
-                ip_resources,
+                    subject_info_access.ok_or(decode::Malformed)?,
+                overclaim: overclaim.ok_or(decode::Malformed)?,
+                v4_resources: ip_resources.0,
+                v6_resources: ip_resources.1,
                 as_resources,
             })
         })
@@ -390,21 +417,23 @@ impl Extensions {
     /// Must be present.
     fn take_certificate_policies<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
-        certificate_policies: &mut Option<CertificatePolicies>,
+        overclaim: &mut Option<Overclaim>,
     ) -> Result<(), S::Err> {
-        update_once(certificate_policies, || {
-            CertificatePolicies::take_from(cons)
+        update_once(overclaim, || {
+            cons.take_sequence(|cons| {
+                cons.take_sequence(|cons| {
+                    Ok(Overclaim::from_policy(&Oid::take_from(cons)?)?)
+                })
+            })
         })
     }
 
     /// Parses the IP Resources extension.
     fn take_ip_resources<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
-        ip_resources: &mut Option<IpResources>
+        ip_resources: &mut Option<(Option<IpResources>, Option<IpResources>)>
     ) -> Result<(), S::Err> {
-        update_once(ip_resources, || {
-            IpResources::take_from(cons)
-        })
+        update_once(ip_resources, || IpResources::take_families_from(cons))
     }
 
     /// Parses the AS Resources extension.
@@ -765,23 +794,6 @@ impl Iterator for SiaIter {
                 ))
             })
         }).unwrap()
-    }
-}
-
-
-//------------ CertificatePolicies -------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct CertificatePolicies(Captured);
-
-/// # Decoding
-///
-impl CertificatePolicies {
-    fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        // XXX TODO Parse properly.
-        cons.take_sequence(|c| c.capture_all()).map(CertificatePolicies)
     }
 }
 

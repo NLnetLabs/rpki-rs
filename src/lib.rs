@@ -26,14 +26,12 @@ extern crate ring;
 #[cfg(feature = "softkeys")] extern crate slab;
 extern crate untrusted;
 
-pub mod asres;
 pub mod cert;
-pub mod chain;
 pub mod crl;
 pub mod crypto;
-pub mod ipres;
 pub mod manifest;
 pub mod oid;
+pub mod resources;
 pub mod roa;
 pub mod uri;
 pub mod sigobj;

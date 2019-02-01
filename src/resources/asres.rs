@@ -13,23 +13,48 @@
 //! [RFC 3779]: https://tools.ietf.org/html/rfc3779
 //! [RFC 6487]: https://tools.ietf.org/html/rfc6487
 
-use std::{fmt, ops};
+use std::{fmt, iter, ops};
+use std::iter::FromIterator;
 use bcder::{decode, encode};
-use bcder::{Captured, Mode, Tag};
+use bcder::Tag;
 use bcder::encode::PrimitiveContent;
-use super::x509::ValidationError;
+use crate::cert::Overclaim;
+use crate::x509::ValidationError;
+use super::chain::{Block, SharedChain};
+use super::choice::ResourcesChoice;
 
 
 //------------ AsResources ---------------------------------------------------
 
 /// The AS Resources of an RPKI Certificate.
 ///
-/// This type contains the resources as represented in an RPKI certificates
+/// This type contains the ‘Autonomous System Identifier Delegation Extension’
+/// as defined in [RFC 3779] in the restricted form specified in [RFC 6487].
+///
+/// This type contains the resources as represented in an RPKI certificate’s
 /// AS resources extension. This extension provides two options: there can
 /// be an actual set of AS numbers associated with the certificate – this is
-/// the `AsResources::Ids` variant –, or the AS resources of the issuer can
+/// the `AsResources::Blocks` variant –, or the AS resources of the issuer can
 /// be inherited – the `AsResources::Inherit` variant.
-pub type AsResources = AsChoice<AsIdBlocks>;
+#[derive(Clone, Debug)]
+pub struct AsResources(ResourcesChoice<AsBlocks>);
+
+impl AsResources {
+    /// Returns whether the resources are of the inherited variant.
+    pub fn is_inherited(&self) -> bool {
+        self.0.is_inherited()
+    }
+
+    /// Returns a reference to the blocks if there are any.
+    pub fn as_blocks(&self) -> Option<&AsBlocks> {
+        self.0.as_blocks()
+    }
+
+    /// Converts the resources into blocks or returns an error.
+    pub fn to_blocks(&self) -> Result<AsBlocks, ValidationError> {
+        self.0.to_blocks()
+    }
+}
 
 impl AsResources {
     /// Takes the AS resources from the beginning of an encoded value.
@@ -75,18 +100,27 @@ impl AsResources {
                 cons.take_value(|tag, content| {
                     if tag == Tag::NULL {
                         content.to_null()?;
-                        Ok(AsChoice::Inherit)
+                        Ok(ResourcesChoice::Inherit)
                     }
                     else if tag == Tag::SEQUENCE {
-                        AsIdBlocks::parse_content(content)
-                            .map(AsChoice::Ids)
+                        AsBlocks::parse_content(content)
+                            .map(ResourcesChoice::Blocks)
                     }
                     else {
                         xerr!(Err(decode::Error::Malformed.into()))
                     }
                 })
             })
-        })
+        }).map(AsResources)
+    }
+
+    pub fn encode(self) -> impl encode::Values {
+        match self.0 {
+            ResourcesChoice::Inherit => encode::Choice2::One(().encode()),
+            ResourcesChoice::Blocks(blocks) => {
+                encode::Choice2::Two(blocks.encode())
+            }
+        }
     }
 }
 
@@ -95,7 +129,7 @@ impl AsResources {
 
 #[derive(Clone, Debug)]
 pub struct AsResourcesBuilder {
-    res: Option<AsChoice<AsIdBlocksBuilder>>
+    res: Option<ResourcesChoice<AsBlocksBuilder>>
 }
 
 impl AsResourcesBuilder {
@@ -106,84 +140,21 @@ impl AsResourcesBuilder {
     }
 
     pub fn inhert(&mut self) {
-        self.res = Some(AsChoice::Inherit)
+        self.res = Some(ResourcesChoice::Inherit)
     }
 
     pub fn blocks<F>(&mut self, build: F)
-    where F: FnOnce(&mut AsIdBlocksBuilder) {
+    where F: FnOnce(&mut AsBlocksBuilder) {
         if self.res.as_ref().map(|res| res.is_inherited()).unwrap_or(true) {
-            self.res = Some(AsChoice::Ids(AsIdBlocksBuilder::new()))
+            self.res = Some(ResourcesChoice::Blocks(AsBlocksBuilder::new()))
         }
         build(self.res.as_mut().unwrap().as_blocks_mut().unwrap())
     }
 
-    pub fn encode<'a>(&'a self) -> Option<impl encode::Values + 'a> {
-        self.res.as_ref().map(|res| {
-            encode::sequence(
-                encode::sequence_as(Tag::CTX_0, res.encode())
-            )
+    pub fn finalize(self) -> Option<AsResources> {
+        self.res.map(|choice| {
+            AsResources(choice.map_blocks(AsBlocksBuilder::finalize))
         })
-    }
-}
-
-
-//------------ AsChoice ------------------------------------------------------
-#[derive(Clone, Debug)]
-pub enum AsChoice<T> {
-    /// AS resources are to be inherited from the issuer.
-    Inherit,
-
-    /// The AS resources are provided as a set of AS numbers.
-    ///
-    /// This set is represented as a sequence of consecutive blocks of AS
-    /// numbers.
-    Ids(T),
-}
-
-impl<T> AsChoice<T> {
-    /// Returns whether the AS resources are of the inherited variant.
-    pub fn is_inherited(&self) -> bool {
-        match self {
-            AsChoice::Inherit => true,
-            _ =>  false
-        }
-    }
-
-    pub fn as_blocks(&self) -> Option<&T> {
-        match self {
-            AsChoice::Inherit => None,
-            AsChoice::Ids(ref some) => Some(some)
-        }
-    }
-
-    pub fn as_blocks_mut(&mut self) -> Option<&mut T> {
-        match self {
-            AsChoice::Inherit => None,
-            AsChoice::Ids(ref mut some) => Some(some)
-        }
-    }
-
-    /// Converts the AS resources into a AS number blocks sequence.
-    ///
-    /// If this value is of the inherited variant, a validation error will
-    /// be returned.
-    pub fn to_blocks(&self) -> Result<T, ValidationError>
-    where T: Clone {
-        match self {
-            AsChoice::Inherit => Err(ValidationError),
-            AsChoice::Ids(ref some) => Ok(some.clone()),
-        }
-    }
-}
-
-impl AsChoice<AsIdBlocksBuilder> {
-    fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        match *self {
-            AsChoice::Inherit => encode::Choice2::One(().encode()),
-            AsChoice::Ids(ref blocks) => {
-                encode::Choice2::Two(blocks.encode())
-            }
-        }
     }
 }
 
@@ -192,9 +163,14 @@ impl AsChoice<AsIdBlocksBuilder> {
 
 /// A possibly empty sequence of consecutive sets of AS numbers.
 #[derive(Clone, Debug)]
-pub struct AsBlocks(Option<AsIdBlocks>);
+pub struct AsBlocks(SharedChain<AsBlock>);
 
 impl AsBlocks {
+    /// Creates empty AS blocks.
+    pub fn empty() -> Self {
+        AsBlocks(SharedChain::empty())
+    }
+
     /// Creates AS blocks from AS resources.
     ///
     /// If the AS resources are of the inherited variant, a validation error
@@ -202,167 +178,108 @@ impl AsBlocks {
     pub fn from_resources(
         res: Option<&AsResources>
     ) -> Result<Self, ValidationError> {
-        match res {
-            Some(AsChoice::Inherit) => Err(ValidationError),
-            Some(AsChoice::Ids(ref some)) => {
-                Ok(AsBlocks(Some(some.clone())))
-            }
-            None => Ok(AsBlocks(None))
+        match res.map(|res| &res.0) {
+            Some(ResourcesChoice::Inherit) => Err(ValidationError),
+            Some(ResourcesChoice::Blocks(ref some)) => Ok(some.clone()),
+            None => Ok(AsBlocks::empty())
         }
     }
 
-    /// Checks that some AS resource are encompassed by this AS blocks value.
-    ///
-    /// Upon success, returns the effictive AS blocks to use for the AS
-    /// resource.
-    pub fn encompasses(
+    /// Returns whether the blocks is empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Returns an iterator over the individual AS number blocks.
+    pub fn iter(&self) -> impl Iterator<Item=&AsBlock> {
+        self.0.iter()
+    }
+
+    /// Validates AS resources issued under these blocks.
+    pub fn validate_issued(
         &self,
-        res: Option<&AsResources>
-    ) -> Result<Self, ValidationError> {
-        match res {
-            Some(AsChoice::Inherit) => Ok(self.clone()),
-            Some(AsChoice::Ids(ref inner)) => {
-                match self.0 {
-                    Some(ref outer) => {
-                        if outer.encompasses(inner) {
-                            Ok(AsBlocks(Some(inner.clone())))
+        res: Option<&AsResources>,
+        mode: Overclaim,
+    ) -> Result<AsBlocks, ValidationError> {
+        match res.map(|res| &res.0) {
+            Some(ResourcesChoice::Inherit) => Ok(self.clone()),
+            Some(ResourcesChoice::Blocks(ref blocks)) => {
+                match mode {
+                    Overclaim::Refuse => {
+                        if blocks.0.is_encompassed(&self.0) {
+                            Ok(blocks.clone())
                         }
                         else {
                             Err(ValidationError)
                         }
                     }
-                    None => Err(ValidationError)
+                    Overclaim::Trim => {
+                        match blocks.0.trim(&self.0) {
+                            Ok(()) => Ok(blocks.clone()),
+                            Err(new) => Ok(AsBlocks(new.into()))
+                        }
+                    }
                 }
-            }
-            None => Ok(AsBlocks(None))
+            },
+            None => Ok(Self::empty()),
         }
     }
 }
 
 
-//------------ AsIdBlocks ----------------------------------------------------
-
-/// A DER-encoded sequence of blocks of consecutive AS numbers.
-//
-//  The bytes values contains the content octets of the DER encoding of the
-//  blocks.
-#[derive(Clone, Debug)]
-pub struct AsIdBlocks(Captured);
-
-impl AsIdBlocks {
-    /// Creates a new, empty value.
-    pub fn new() -> Self {
-        AsIdBlocks(Captured::empty(Mode::Der))
-    }
-
-    /// Pushes a new block to the end of the value.
-    pub fn push(&mut self, block: &AsBlock) {
-        self.0.extend(block.encode())
-    }
-
-    /// Returns an iterator over the individual AS number blocks.
-    pub fn iter(&self) -> AsIdBlockIter {
-        AsIdBlockIter(self.0.as_ref())
-    }
-}
-
-impl AsIdBlocks {
+/// # Decoding and Encoding
+///
+impl AsBlocks {
     /// Parses the content of a AS ID blocks sequence.
     fn parse_content<S: decode::Source>(
         content: &mut decode::Content<S>
     ) -> Result<Self, S::Err> {
         let cons = content.as_constructed()?;
-        cons.capture(|cons| {
-            while let Some(()) = AsBlock::skip_opt_in(cons)? { }
-            Ok(())
-        }).map(AsIdBlocks)
-    }
+        let mut err = None;
 
-    /// Returns wether `other` is encompassed by `self`.
-    ///
-    /// For this to be true, `other` all AS numbers that are part of `other`
-    /// need to be part of `self`, too.
-    fn encompasses(&self, other: &AsIdBlocks) -> bool {
-        // Numbers need to be in increasing order. So we can loop over the
-        // blocks in other and check that self keeps pace.
-        let mut siter = self.iter();
-        let mut oiter = other.iter();
-        let (mut sas, mut oas) = match (siter.next(), oiter.next()) {
-            (_, None) => return true,
-            (None, Some(_)) => return false,
-            (Some(sas), Some(oas)) => (sas, oas),
-        };
-        loop {
-            // If they start below us, we don’t encompass them.
-            if oas.min() < sas.min() {
-                return false
-            }
-            // It they start above us, we need to go to the next range.
-            else if oas.min() > sas.max() {
-                sas = match siter.next() {
-                    Some(sas) => sas,
-                    None => return false,
-                }
-            }
-            // If they end above us we lift their start to our end plus 1.
-            else if oas.max() > sas.max() {
-                // This can’t happen if sas.max() is u32::MAX (because
-                // oas.max() can never be greater than that), so this
-                // should be safe.
-                oas.set_min(sas.max() + 1)
-            }
-            // If they neither start below us nor end above us, we cover them
-            // and take the next block.
-            else {
-                oas = match oiter.next() {
-                    Some(oas) => oas,
-                    None => return true
-                }
-            }
+        let res = SharedChain::from_iter(
+            iter::repeat_with(|| AsBlock::take_opt_from(cons))
+                .map(|item| {
+                    match item {
+                        Ok(Some(val)) => Some(val),
+                        Ok(None) => None,
+                        Err(e) => {
+                            err = Some(e);
+                            None
+                        }
+                    }
+                })
+                .take_while(|item| item.is_some())
+                .map(Option::unwrap)
+        );
+        match err {
+            Some(err) => Err(err),
+            None => Ok(AsBlocks(res))
         }
     }
 
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        &self.0
+    pub fn encode(self) -> impl encode::Values {
+        encode::slice(self.0, |block| block.encode())
     }
 }
 
 
-//------------ AsIdBlockIter -------------------------------------------------
-
-/// An iterator over the AS blocks in an AS blocks sequence.
-pub struct AsIdBlockIter<'a>(&'a [u8]);
-
-impl<'a> Iterator for AsIdBlockIter<'a> {
-    type Item = AsBlock;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.0.is_empty() {
-            None
-        }
-        else {
-            Mode::Der.decode(&mut self.0, AsBlock::take_opt_from).unwrap()
-        }
-    }
-}
-
-
-//------------ AsIdBlocksBuilder ---------------------------------------------
+//------------ AsBlocksBuilder -----------------------------------------------
 
 #[derive(Clone, Debug)]
-pub struct AsIdBlocksBuilder(Vec<AsBlock>);
+pub struct AsBlocksBuilder(Vec<AsBlock>);
 
-impl AsIdBlocksBuilder {
+impl AsBlocksBuilder {
     fn new() -> Self {
-        AsIdBlocksBuilder(Vec::new())
+        AsBlocksBuilder(Vec::new())
     }
 
     pub fn push<T: Into<AsBlock>>(&mut self, block: T) {
         self.0.push(block.into())
     }
 
-    fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        encode::Iter::new(self.0.iter().map(|block| block.encode()))
+    pub fn finalize(self) -> AsBlocks {
+        AsBlocks(SharedChain::from_iter(self.0.into_iter()))
     }
 }
 
@@ -451,6 +368,7 @@ impl AsBlock {
         })
     }
 
+    /*
     /// Skips over the AS block at the beginning of an encoded value.
     fn skip_opt_in<S: decode::Source>(
         cons: &mut decode::Constructed<S>
@@ -467,11 +385,12 @@ impl AsBlock {
             }
         })
     }
+    */
 
-    fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        match *self {
-            AsBlock::Id(ref inner) => encode::Choice2::One(inner.encode()),
-            AsBlock::Range(ref inner) => encode::Choice2::Two(inner.encode()),
+    fn encode(self) -> impl encode::Values {
+        match self {
+            AsBlock::Id(inner) => encode::Choice2::One(inner.encode()),
+            AsBlock::Range(inner) => encode::Choice2::Two(inner.encode()),
         }
     }
 }
@@ -498,72 +417,30 @@ impl From<(AsId, AsId)> for AsBlock {
 }
 
 
-//------------ AsId ----------------------------------------------------------
+//--- Block
 
-/// An AS number.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct AsId(u32);
+impl Block for AsBlock {
+    type Item = AsId;
 
-impl AsId {
-    pub const MIN: AsId = AsId(std::u32::MIN);
-    pub const MAX: AsId = AsId(std::u32::MAX);
-
-    /// Takes an AS number from the beginning of an encoded value.
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_u32().map(AsId)
+    fn new(min: Self::Item, max: Self::Item) -> Self {
+        if min == max {
+            AsBlock::Id(min)
+        }
+        else {
+            AsBlock::Range(AsRange::new(min, max))
+        }
     }
 
-    /// Skips over the AS number at the beginning of an encoded value.
-    fn skip_in<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<(), S::Err> {
-        cons.take_u32().map(|_| ())
+    fn min(&self) -> Self::Item {
+        self.min()
     }
 
-    /// Parses the content of an AS number value.
-    fn parse_content<S: decode::Source>(
-        content: &mut decode::Content<S>
-    ) -> Result<Self, S::Err> {
-        content.to_u32().map(AsId)
+    fn max(&self) -> Self::Item {
+        self.max()
     }
 
-    /// Skips the content of an AS number value.
-    fn skip_content<S: decode::Source>(
-        content: &mut decode::Content<S>
-    ) -> Result<(), S::Err> {
-        content.to_u32().map(|_| ())
-    }
-
-    fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        self.0.encode()
-    }
-}
-
-impl From<u32> for AsId {
-    fn from(id: u32) -> Self {
-        AsId(id)
-    }
-}
-
-impl From<AsId> for u32 {
-    fn from(id: AsId) -> Self {
-        id.0
-    }
-}
-
-impl ops::Add<u32> for AsId {
-    type Output = Self;
-
-    fn add(self, rhs: u32) -> Self {
-        AsId(self.0.checked_add(rhs).unwrap())
-    }
-}
-
-impl fmt::Display for AsId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "AS{}", self.0)
+    fn next(item: Self::Item) -> Option<Self::Item> {
+        item.0.checked_add(1).map(AsId)
     }
 }
 
@@ -613,6 +490,7 @@ impl AsRange {
         })
     }
 
+    /*
     /// Skips over the content of an AS range value.
     fn skip_content<S: decode::Source>(
         content: &mut decode::Content<S>
@@ -622,12 +500,119 @@ impl AsRange {
         AsId::skip_in(cons)?;
         Ok(())
     }
+    */
 
-    fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+    fn encode(self) -> impl encode::Values {
         encode::sequence((
             self.min.encode(),
             self.max.encode(),
         ))
+    }
+}
+
+
+//--- Block
+
+impl Block for AsRange {
+    type Item = AsId;
+
+    fn new(min: Self::Item, max: Self::Item) -> Self {
+        Self::new(min, max)
+    }
+
+    fn min(&self) -> Self::Item {
+        self.min()
+    }
+
+    fn max(&self) -> Self::Item {
+        self.max()
+    }
+
+    fn next(item: Self::Item) -> Option<Self::Item> {
+        item.0.checked_add(1).map(AsId)
+    }
+}
+
+
+//------------ AsId ----------------------------------------------------------
+
+/// An AS number.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct AsId(u32);
+
+impl AsId {
+    pub const MIN: AsId = AsId(std::u32::MIN);
+    pub const MAX: AsId = AsId(std::u32::MAX);
+
+    /// Takes an AS number from the beginning of an encoded value.
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        cons.take_u32().map(AsId)
+    }
+
+    /*
+    /// Skips over the AS number at the beginning of an encoded value.
+    fn skip_in<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<(), S::Err> {
+        cons.take_u32().map(|_| ())
+    }
+    */
+
+    /// Parses the content of an AS number value.
+    fn parse_content<S: decode::Source>(
+        content: &mut decode::Content<S>
+    ) -> Result<Self, S::Err> {
+        content.to_u32().map(AsId)
+    }
+
+    /*
+    /// Skips the content of an AS number value.
+    fn skip_content<S: decode::Source>(
+        content: &mut decode::Content<S>
+    ) -> Result<(), S::Err> {
+        content.to_u32().map(|_| ())
+    }
+    */
+
+    fn encode(self) -> impl encode::Values {
+        self.0.encode()
+    }
+}
+
+
+//--- From
+
+impl From<u32> for AsId {
+    fn from(id: u32) -> Self {
+        AsId(id)
+    }
+}
+
+impl From<AsId> for u32 {
+    fn from(id: AsId) -> Self {
+        id.0
+    }
+}
+
+
+//--- Add
+
+impl ops::Add<u32> for AsId {
+    type Output = Self;
+
+    fn add(self, rhs: u32) -> Self {
+        AsId(self.0.checked_add(rhs).unwrap())
+    }
+}
+
+
+//--- Display
+
+impl fmt::Display for AsId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "AS{}", self.0)
     }
 }
 

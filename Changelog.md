@@ -7,6 +7,10 @@ Breaking Changes
 
 * New module `crypto` includes the now removed module `signer` and all
   crypto-related types. The latter have been re-designed as well.
+* Resource handling in modules `asres` and `ipres` entirely redesigned
+  and moved to a shared `resources` module.
+* IP resources in `Cert` and `ResourceCert` broken up into `v4_resources`
+  and `v6_resources` handled independently.
 
 New
 
