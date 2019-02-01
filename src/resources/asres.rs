@@ -115,12 +115,18 @@ impl AsResources {
     }
 
     pub fn encode(self) -> impl encode::Values {
-        match self.0 {
-            ResourcesChoice::Inherit => encode::Choice2::One(().encode()),
-            ResourcesChoice::Blocks(blocks) => {
-                encode::Choice2::Two(blocks.encode())
-            }
-        }
+        encode::sequence(
+            encode::sequence_as(Tag::CTX_0,
+                match self.0 {
+                    ResourcesChoice::Inherit => {
+                        encode::Choice2::One(().encode())
+                    }
+                    ResourcesChoice::Blocks(blocks) => {
+                        encode::Choice2::Two(blocks.encode())
+                    }
+                }
+            )
+        )
     }
 }
 

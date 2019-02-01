@@ -5,7 +5,8 @@ use bcder::encode::PrimitiveContent;
 use crate::crypto::{PublicKey, SignatureAlgorithm, Signer, SigningError};
 use crate::oid;
 use crate::resources::{
-    AsBlocksBuilder, AsResourcesBuilder, IpBlocksBuilder, IpResourcesBuilder
+    AsBlocksBuilder, AsResourcesBuilder, IpBlocksBuilder, IpResources,
+    IpResourcesBuilder
 };
 use crate::uri;
 use crate::x509::Name;
@@ -400,11 +401,12 @@ impl CertBuilder {
                 ),
 
                 // IP Resources
-                /*
-                self.ip_resources.encode().map(|res| {
+                IpResources::encode_families(
+                    self.v4_resources.finalize(),
+                    self.v6_resources.finalize()
+                ).map(|res| {
                     extension(&oid::PE_IP_ADDR_BLOCK, true, res)
                 }),
-                */
 
                 // AS Resources
                 self.as_resources.finalize().map(|res| {
@@ -438,11 +440,10 @@ mod test {
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
     use bcder::encode::Values;
-    use crate::asres::AsId;
     use crate::cert::Cert;
     use crate::crypto::PublicKeyFormat;
     use crate::crypto::softsigner::OpenSslSigner;
-    use crate::ipres::Prefix;
+    use crate::resources::{AsId, Prefix};
     use crate::tal::TalInfo;
     use super::*;
         
@@ -459,7 +460,7 @@ mod signer_test {
         );
         builder
             .rpki_manifest(uri.clone())
-            .v4_blocks(|blocks| blocks.push_prefix(Prefix::new_bits(0, 0)))
+            .v4_blocks(|blocks| blocks.push(Prefix::new(0, 0)))
             .as_blocks(|blocks| blocks.push((AsId::MIN, AsId::MAX)));
         let captured = builder.encode(&signer, &key, SignatureAlgorithm)
             .unwrap()

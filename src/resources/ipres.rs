@@ -86,21 +86,42 @@ impl IpResources {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        cons.take_sequence(|cons| {
-            cons.take_value(|tag, content| {
-                if tag == Tag::NULL {
-                    content.to_null()?;
-                    Ok(ResourcesChoice::Inherit)
-                }
-                else if tag == Tag::SEQUENCE {
-                    IpBlocks::parse_content(content)
-                        .map(ResourcesChoice::Blocks)
-                }
-                else {
-                    xerr!(Err(decode::Error::Malformed.into()))
-                }
-            })
+        cons.take_value(|tag, content| {
+            if tag == Tag::NULL {
+                content.to_null()?;
+                Ok(ResourcesChoice::Inherit)
+            }
+            else if tag == Tag::SEQUENCE {
+                IpBlocks::parse_content(content)
+                    .map(ResourcesChoice::Blocks)
+            }
+            else {
+                xerr!(Err(decode::Error::Malformed.into()))
+            }
         }).map(IpResources)
+    }
+
+    pub fn encode_families(
+        v4: Option<Self>,
+        v6: Option<Self>
+    ) -> Option<impl encode::Values> {
+        if v4.is_none() && v6.is_none() {
+            return None
+        }
+        Some(encode::sequence((
+            v4.map(|v4| {
+                encode::sequence((
+                    AddressFamily::Ipv4.encode(),
+                    v4.encode()
+                ))
+            }),
+            v6.map(|v6| {
+                encode::sequence((
+                    AddressFamily::Ipv6.encode(),
+                    v6.encode()
+                ))
+            }),
+        )))
     }
 
     pub fn encode(self) -> impl encode::Values {
@@ -256,7 +277,7 @@ impl IpBlocks {
     }
 
     pub fn encode(self) -> impl encode::Values {
-        encode::slice(self.0, |block| block.encode())
+        encode::sequence(encode::slice(self.0, |block| block.encode()))
     }
 }
 
