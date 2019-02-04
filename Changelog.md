@@ -8,6 +8,12 @@ Breaking Changes
 * New module `crypto` includes the now removed module `signer` and all
   crypto-related types. The latter have been re-designed as well.
 
+* Resource handling in modules `asres` and `ipres` entirely redesigned
+  and moved to a shared `resources` module. [(#17)]
+
+* IP resources in `Cert` and `ResourceCert` broken up into `v4_resources`
+  and `v6_resources` handled independently. [(#17)]
+
 * `roa::RoaStatus::Valid` now contains the complete resource certificate
   of the ROA. This change is reflected in the methods of
   `roa::RouteOriginAttestation` that deal with the ROA status.
@@ -36,9 +42,11 @@ New
 
 Bug Fixes
 
+
 Dependencies
 
-[(#49)]: https://github.com/NLnetLabs/rpki-rs/pull/16
+[(#16)]: https://github.com/NLnetLabs/rpki-rs/pull/16
+[(#17)]: https://github.com/NLnetLabs/rpki-rs/pull/17
 [(#19)]: https://github.com/NLnetLabs/rpki-rs/pull/19
 
 
