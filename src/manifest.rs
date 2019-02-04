@@ -147,6 +147,13 @@ impl ManifestContent {
     pub fn len(&self) -> usize {
         self.len
     }
+
+    /// Returns whether the manifest is stale.
+    ///
+    /// A manifest is stale if it’s nextUpdate time has passed.
+    pub fn is_stale(&self) -> bool {
+        self.next_update < Time::now()
+    }
 }
 
 

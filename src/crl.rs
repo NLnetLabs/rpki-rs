@@ -133,6 +133,11 @@ impl Crl {
         }
     }
 
+    /// Returns whether the CRL’s nextUpdate time has passed.
+    pub fn is_stale(&self) -> bool {
+        self.next_update.map(|t| t < Time::now()).unwrap_or(false)
+    }
+
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         // This relies on signed_data always being in sync with the other
         // elements!
