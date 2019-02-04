@@ -26,7 +26,10 @@ New
 
   * `cert::ResourceCertificate::into_tal`, `signed_object_uri`,
     `validity`.
-  * `cert::Validity::not_before` and `not_after`.
+
+  * `cert::Validity::not_before` and `not_after`,
+
+  * `Manifest::is_stale` and `Crl::is_stale`. [(#19)]
 
 * `x509::Time` now derefs to `chrono::DateTime<chrono::Utc>`.
 
@@ -36,6 +39,7 @@ Bug Fixes
 Dependencies
 
 [(#49)]: https://github.com/NLnetLabs/rpki-rs/pull/16
+[(#19)]: https://github.com/NLnetLabs/rpki-rs/pull/19
 
 
 ## 0.2.0
