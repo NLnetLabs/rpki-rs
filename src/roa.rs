@@ -9,9 +9,8 @@ use bcder::{decode, encode};
 use bcder::{Captured, Mode, Tag};
 use bcder::decode::Source;
 use bcder::encode::PrimitiveContent;
-use super::asres::AsId;
 use super::cert::{Cert, ResourceCert};
-use super::ipres::{AddressFamily, Prefix};
+use super::resources::{Addr, AddressFamily, AsId, Prefix};
 use super::sigobj::SignedObject;
 use super::tal::TalInfo;
 use super::x509::ValidationError;
@@ -150,23 +149,23 @@ impl RouteOriginAttestation {
         cert: ResourceCert
     ) -> Result<(), ValidationError> {
         if !self.v4_addrs.is_empty() {
-            let blocks = match cert.ip_resources().v4() {
-                Some(blocks) => blocks,
-                None => return Err(ValidationError)
-            };
+            let blocks = cert.v4_resources();
+            if blocks.is_empty() {
+                return Err(ValidationError)
+            }
             for addr in self.v4_addrs.iter() {
-                if !blocks.contain(&addr) {
+                if !blocks.contains(&addr) {
                     return Err(ValidationError)
                 }
             }
         }
         if !self.v6_addrs.is_empty() {
-            let blocks = match cert.ip_resources().v6() {
-                Some(blocks) => blocks,
-                None => return Err(ValidationError)
-            };
+            let blocks = cert.v6_resources();
+            if blocks.is_empty() {
+                return Err(ValidationError)
+            }
             for addr in self.v6_addrs.iter() {
-                if !blocks.contain(&addr) {
+                if !blocks.contains(&addr) {
                     return Err(ValidationError)
                 }
             }
@@ -293,7 +292,7 @@ impl RoaIpAddress {
         RoaIpAddress::new(Prefix::new(addr, len), max_len)
     }
 
-    pub fn range(&self) -> (u128, u128) {
+    pub fn range(&self) -> (Addr, Addr) {
         self.prefix.range()
     }
 }
