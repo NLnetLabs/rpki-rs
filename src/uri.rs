@@ -150,6 +150,15 @@ impl Rsync {
         }
     }
 
+    /// Returns true if this uri is a directory and it contains the other
+    /// uri.
+    pub fn is_parent_of(&self, other: &Rsync) -> bool {
+        self.ends_with("/") &&
+        self.module == other.module &&
+        other.path.len() > self.path.len() &&
+        other.path.starts_with(self.path.as_ref())
+    }
+
     pub fn encode_general_name<'a>(&'a self) -> impl encode::Values + 'a {
         self.encode_as(Tag::CTX_6)
     }
