@@ -442,30 +442,35 @@ impl<C: encode::Values> SignedObjectBuilder<C> {
         let cert = self.cert.encode(signer, cert_key, cert_alg, &key_info)?;
 
         Ok(encode::sequence((
-            3u8.encode(), // version
-            digest_alg.encode_set(), // digestAlgorithms
-            encode::sequence(( // encapContentInfo
-                self.content_type.encode(),
-                self.content
-            )),
-            encode::sequence_as(Tag::CTX_0, // certificates
-                cert
-            ),
-            // crl -- omitted
-            encode::set( // signerInfo
-                encode::sequence(( // SignerInfo
+            oid::SIGNED_DATA.encode(), // contentType
+            encode::sequence_as(Tag::CTX_0, // content
+                encode::sequence((
                     3u8.encode(), // version
-                    OctetString::encode_slice_as( // sid
-                        key_info.key_identifier(),
-                        Tag::CTX_0,
+                    digest_alg.encode_set(), // digestAlgorithms
+                    encode::sequence(( // encapContentInfo
+                        self.content_type.encode(),
+                        encode::sequence_as(Tag::CTX_0, self.content),
+                    )),
+                    encode::sequence_as(Tag::CTX_0, // certificates
+                        cert
                     ),
-                    digest_alg.encode(), // digestAlgorithm
-                    signed_attrs, // signedAttrs
-                    obj_alg.cms_encode(), // signatureAlgorithm
-                    OctetString::encode_slice( // signature
-                        signature
-                    ),
-                    // unsignedAttrs omitted
+                    // crl -- omitted
+                    encode::set( // signerInfo
+                        encode::sequence(( // SignerInfo
+                            3u8.encode(), // version
+                            OctetString::encode_slice_as( // sid
+                                key_info.key_identifier(),
+                                Tag::CTX_0,
+                            ),
+                            digest_alg.encode(), // digestAlgorithm
+                            signed_attrs, // signedAttrs
+                            obj_alg.cms_encode(), // signatureAlgorithm
+                            OctetString::encode_slice( // signature
+                                signature
+                            ),
+                            // unsignedAttrs omitted
+                        ))
+                    )
                 ))
             )
         )))
@@ -475,24 +480,30 @@ impl<C: encode::Values> SignedObjectBuilder<C> {
         let mut digest = digest_alg.start();
         self.content.write_encoded(Mode::Der, &mut digest).unwrap();
         let digest = digest.finish();
-        Captured::from_values(Mode::Der, encode::set((
+        Captured::from_values(Mode::Der, encode::sequence_as(Tag::CTX_0, (
             // Content Type
             encode::sequence((
                 oid::CONTENT_TYPE.encode(),
-                self.content_type.encode_ref(),
+                encode::set(
+                    self.content_type.encode_ref(),
+                )
             )),
 
             // Message Digest
             encode::sequence((
                 oid::MESSAGE_DIGEST.encode(),
-                OctetString::encode_slice(digest),
+                encode::set(
+                    OctetString::encode_slice(digest),
+                )
             )),
 
             // Signing Time
             self.signing_time.map(|time| {
                 encode::sequence((
                     oid::SIGNING_TIME.encode(),
-                    time.encode(),
+                    encode::set(
+                        time.encode(),
+                    )
                 ))
             }),
 
@@ -500,7 +511,9 @@ impl<C: encode::Values> SignedObjectBuilder<C> {
             self.binary_signing_time.map(|time| {
                 encode::sequence((
                     oid::AA_BINARY_SIGNING_TIME.encode(),
-                    time.to_binary_time().encode()
+                    encode::set(
+                        time.to_binary_time().encode()
+                    )
                 ))
             })
         )))
@@ -508,7 +521,62 @@ impl<C: encode::Values> SignedObjectBuilder<C> {
 }
 
 
-//=========== Specification Documentation ====================================
+//============ Tests =========================================================
+
+#[cfg(test)]
+mod test {
+}
+
+#[cfg(all(test, feature="softkeys"))]
+mod signer_test {
+    use bcder::encode::Values;
+    use crate::cert::Validity;
+    use crate::crypto::PublicKeyFormat;
+    use crate::crypto::softsigner::OpenSslSigner;
+    use crate::resources::{AsId, Prefix};
+    use crate::uri;
+    use super::*;
+        
+    #[test]
+    fn encode_signed_object() {
+        let mut signer = OpenSslSigner::new();
+        let key = signer.create_key(PublicKeyFormat).unwrap();
+        let pubkey = signer.get_key_info(&key).unwrap();
+        let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
+
+        let mut cert = CertBuilder::new(
+            12, pubkey.to_subject_name(), Validity::from_secs(86400), true
+        );
+        cert.rpki_manifest(uri.clone())
+            .v4_blocks(|blocks| blocks.push(Prefix::new(0, 0)))
+            .as_blocks(|blocks| blocks.push((AsId::MIN, AsId::MAX)));
+
+        let builder = SignedObjectBuilder::new(
+            oid::SIGNED_DATA, // yeah, I know. Whatever.
+            b"1234".encode(),
+            cert
+        );
+        let captured = builder.encode(
+            &signer, &key, SignatureAlgorithm, DigestAlgorithm,
+            SignatureAlgorithm
+        ).unwrap().to_captured(Mode::Der);
+
+        let sigobj = SignedObject::decode(captured.as_slice(), true).unwrap();
+
+        /*
+
+        let captured = builder.encode(
+            &signer, &key, SignatureAlgorithm, &pubkey
+        ).unwrap().to_captured(Mode::Der);
+        let cert = Cert::decode(captured.as_slice()).unwrap();
+        let talinfo = TalInfo::from_name("foo".into()).into_arc();
+        cert.validate_ta(talinfo, true).unwrap();
+        */
+    }
+}
+
+
+//============ Specification Documentation ===================================
 
 /// Signed Objects Specification.
 ///
@@ -519,7 +587,18 @@ impl<C: encode::Values> SignedObjectBuilder<C> {
 /// the options of the various fields. They are specified in [RFC 6488] while
 /// CMS is specified in [RFC 5652].
 ///
-/// Signed data is defined in [RFC 5652] as follows:
+/// A signed object is a CMS object with a single signed data obhect in it.
+///
+/// A CMS object is:
+///
+/// ```txt
+/// ContentInfo             ::= SEQUENCE {
+///     contentType             ContentType,
+///     content                 [0] EXPLICIT ANY DEFINED BY contentType }
+/// ```
+///
+/// The _contentType_ must be `oid::SIGNED_DATA` and the _content_ a
+/// _SignedData_ object (however, note the `[0] EXPLICIT` there) as follows:
 ///
 /// ```txt
 /// SignedData              ::= SEQUENCE {
