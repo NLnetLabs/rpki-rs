@@ -315,7 +315,7 @@ impl CertBuilder {
                 self.authority_key_identifier.as_ref().map(|id| {
                     extension(
                         &oid::CE_AUTHORITY_KEY_IDENTIFIER, false,
-                        encode::sequence(id.encode_as(Tag::CTX_0))
+                        encode::sequence(id.encode_ref_as(Tag::CTX_0))
                     )
                 }),
 

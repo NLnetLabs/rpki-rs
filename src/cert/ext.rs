@@ -550,12 +550,20 @@ impl KeyIdentifier {
         &self.0
     }
 
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode(self) -> impl encode::Values {
         self.0.encode()
     }
 
-    pub fn encode_as<'a>(&'a self, tag: Tag) -> impl encode::Values + 'a {
+    pub fn encode_as(self, tag: Tag) -> impl encode::Values {
         self.0.encode_as(tag)
+    }
+
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        self.0.encode_ref()
+    }
+
+    pub fn encode_ref_as<'a>(&'a self, tag: Tag) -> impl encode::Values + 'a {
+        self.0.encode_ref_as(tag)
     }
 }
 
@@ -621,11 +629,19 @@ impl SubjectKeyIdentifier {
         })
     }
 
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode(self) -> impl encode::Values {
         encode_extension(
             &oid::CE_SUBJECT_KEY_IDENTIFIER,
             &false,
             self.subject_key_id.encode()
+        )
+    }
+
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        encode_extension(
+            &oid::CE_SUBJECT_KEY_IDENTIFIER,
+            &false,
+            self.subject_key_id.encode_ref()
         )
     }
 }
@@ -696,12 +712,22 @@ impl AuthorityKeyIdentifier {
         })
     }
 
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode(self) -> impl encode::Values {
         encode_extension(
             &oid::CE_AUTHORITY_KEY_IDENTIFIER,
             &false,
             encode::sequence(
                  self.authority_key_id.encode_as(Tag::CTX_0)
+            )
+        )
+    }
+
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        encode_extension(
+            &oid::CE_AUTHORITY_KEY_IDENTIFIER,
+            &false,
+            encode::sequence(
+                 self.authority_key_id.encode_ref_as(Tag::CTX_0)
             )
         )
     }
