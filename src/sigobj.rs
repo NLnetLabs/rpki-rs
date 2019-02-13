@@ -1,13 +1,16 @@
 //! Signed Objects
 
-use bcder::decode;
-use bcder::{Captured, Mode, Oid, Tag};
+use bcder::{decode, encode};
+use bcder::{Captured, ConstOid, Mode, Oid, Tag};
+use bcder::encode::PrimitiveContent;
 use bcder::string::{OctetString, OctetStringSource};
 use bytes::Bytes;
-use crate::cert::{Cert, ResourceCert};
+use crate::cert::{Cert, CertBuilder, ResourceCert};
 use crate::oid;
 use crate::x509::{Time, ValidationError, update_once};
-use crate::crypto::{DigestAlgorithm, Signature, SignatureAlgorithm};
+use crate::crypto::{
+    DigestAlgorithm, Signature, SignatureAlgorithm, Signer, SigningError
+};
 
 
 //------------ SignedObject --------------------------------------------------
@@ -69,20 +72,6 @@ impl SignedObject {
     }
 
     /// Parses a SignedData value.
-    ///
-    /// RFC 6488:
-    ///
-    /// ```text
-    /// SignedData ::= SEQUENCE {
-    ///     version CMSVersion,
-    ///     digestAlgorithms DigestAlgorithmIdentifiers,
-    ///     encapContentInfo EncapsulatedContentInfo,
-    ///     certificates [0] IMPLICIT CertificateSet OPTIONAL,
-    ///     crls [1] IMPLICIT RevocationInfoChoices OPTIONAL,
-    ///     signerInfos SignerInfos }
-    /// ```
-    ///
-    /// `version` must be 3, `certificates` present and `crls` not.
     fn take_signed_data<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
@@ -101,14 +90,6 @@ impl SignedObject {
 
     /// Parses an EncapsulatedContentInfo value.
     ///
-    /// RFC 6488:
-    ///
-    /// ```text
-    /// EncapsulatedContentInfo ::= SEQUENCE {
-    ///       eContentType ContentType,
-    ///       eContent [0] EXPLICIT OCTET STRING OPTIONAL }
-    /// ```
-    ///
     /// For a ROA, `eContentType` must be `oid:::ROUTE_ORIGIN_AUTH`.
     pub fn take_encap_content_info<S: decode::Source>(
         cons: &mut decode::Constructed<S>
@@ -125,38 +106,10 @@ impl SignedObject {
     }
 
     /// Parse a certificates field of a SignedData value.
-    ///
-    /// The field is `[0] IMPLICIT CertificateSet`.
-    ///
-    /// And then, RFC 5652:
-    ///
-    /// ```text
-    /// CertificateSet ::= SET OF CertificateChoices
-    /// CertificateChoices ::= CHOICE {
-    ///   certificate Certificate,
-    ///   extendedCertificate [0] IMPLICIT ExtendedCertificate,  -- Obsolete
-    ///   v1AttrCert [1] IMPLICIT AttributeCertificateV1,        -- Obsolete
-    ///   v2AttrCert [2] IMPLICIT AttributeCertificateV2,
-    ///   other [3] IMPLICIT OtherCertificateFormat }
-    /// ```
-    /// 
-    /// Certificate is a SEQUENCE. For the moment, we don’t implement the
-    /// other choices.
-    ///
-    /// RFC 6288 limites the set to exactly one.
     fn take_certificates<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Cert, S::Err> {
-        cons.take_constructed_if(Tag::CTX_0, |cons| {
-            cons.take_constructed(|tag, cons| {
-                match tag {
-                    Tag::SEQUENCE =>  Cert::from_constructed(cons),
-                    _ => {
-                        xerr!(Err(decode::Unimplemented.into()))
-                    }
-                }
-            })
-        })
+        cons.take_constructed_if(Tag::CTX_0, Cert::take_from)
     }
 
     /// Validates the signed object.
@@ -259,17 +212,6 @@ impl SignerInfo {
     }
 
     /// Parses a SignerInfo.
-    ///
-    /// ```text
-    /// SignerInfo ::= SEQUENCE {
-    ///     version CMSVersion,
-    ///     sid SignerIdentifier,
-    ///     digestAlgorithm DigestAlgorithmIdentifier,
-    ///     signedAttrs [0] IMPLICIT SignedAttributes OPTIONAL,
-    ///     signatureAlgorithm SignatureAlgorithmIdentifier,
-    ///     signature SignatureValue,
-    ///     unsignedAttrs [1] IMPLICIT UnsignedAttributes OPTIONAL }
-    /// ```
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
@@ -435,7 +377,6 @@ impl SignedAttributes {
 }
 
 
-/*
 //------------ SignedObjectBuilder -------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -443,19 +384,267 @@ pub struct SignedObjectBuilder<C> {
     content_type: ConstOid,
     content: C,
     cert: CertBuilder,
+    signing_time: Option<Time>,
+    binary_signing_time: Option<Time>,
 }
 
-The actual construction has to work like this:
+impl<C> SignedObjectBuilder<C> {
+    pub fn new(
+        content_type: ConstOid,
+        content: C,
+        cert: CertBuilder
+    ) -> Self {
+        SignedObjectBuilder {
+            content_type,
+            content,
+            cert,
+            signing_time: None,
+            binary_signing_time: None,
+        }
+    }
 
-   o  Produce the signed attributes.
+    pub fn cert(&self) -> &CertBuilder {
+        &self.cert
+    }
 
-   o  Sign the signed attributes with a one-off key.
+    pub fn cert_mut(&mut self) -> &mut CertBuilder {
+        &mut self.cert
+    }
 
-   o  Take the public key from that and finish the certificate.
+    pub fn signing_time(&mut self, time: Time) {
+        self.signing_time = Some(time)
+    }
 
-   o  Sign the certificate with the issuing CA certificate.
+    pub fn binary_signing_time(&mut self, time: Time) {
+        self.binary_signing_time = Some(time)
+    }
+}
 
-   o  Put it all together.
+impl<C: encode::Values> SignedObjectBuilder<C> {
+    pub fn encode<S: Signer>(
+        self,
+        signer: &S,
+        cert_key: &S::KeyId,
+        cert_alg: SignatureAlgorithm,
+        digest_alg: DigestAlgorithm,
+        obj_alg: SignatureAlgorithm,
+    ) -> Result<impl encode::Values, SigningError<S::Error>> {
+        // Produce signed attributes.
+        let signed_attrs = self.encode_signed_attrs(digest_alg);
 
-*/
+        // Sign signed attributes with a one-off key.
+        let (signature, key_info) = signer.sign_one_off(
+            obj_alg, &signed_attrs
+        )?;
+        let (obj_alg, signature) = signature.unwrap();
+
+        // Complete the certificate.
+        let cert = self.cert.encode(signer, cert_key, cert_alg, &key_info)?;
+
+        Ok(encode::sequence((
+            3u8.encode(), // version
+            digest_alg.encode_set(), // digestAlgorithms
+            encode::sequence(( // encapContentInfo
+                self.content_type.encode(),
+                self.content
+            )),
+            encode::sequence_as(Tag::CTX_0, // certificates
+                cert
+            ),
+            // crl -- omitted
+            encode::set( // signerInfo
+                encode::sequence(( // SignerInfo
+                    3u8.encode(), // version
+                    OctetString::encode_slice_as( // sid
+                        key_info.key_identifier(),
+                        Tag::CTX_0,
+                    ),
+                    digest_alg.encode(), // digestAlgorithm
+                    signed_attrs, // signedAttrs
+                    obj_alg.cms_encode(), // signatureAlgorithm
+                    OctetString::encode_slice( // signature
+                        signature
+                    ),
+                    // unsignedAttrs omitted
+                ))
+            )
+        )))
+    }
+
+    fn encode_signed_attrs(&self, digest_alg: DigestAlgorithm) -> Captured {
+        let mut digest = digest_alg.start();
+        self.content.write_encoded(Mode::Der, &mut digest).unwrap();
+        let digest = digest.finish();
+        Captured::from_values(Mode::Der, encode::set((
+            // Content Type
+            encode::sequence((
+                oid::CONTENT_TYPE.encode(),
+                self.content_type.encode_ref(),
+            )),
+
+            // Message Digest
+            encode::sequence((
+                oid::MESSAGE_DIGEST.encode(),
+                OctetString::encode_slice(digest),
+            )),
+
+            // Signing Time
+            self.signing_time.map(|time| {
+                encode::sequence((
+                    oid::SIGNING_TIME.encode(),
+                    time.encode(),
+                ))
+            }),
+
+            // Binary Signing Time
+            self.binary_signing_time.map(|time| {
+                encode::sequence((
+                    oid::AA_BINARY_SIGNING_TIME.encode(),
+                    time.to_binary_time().encode()
+                ))
+            })
+        )))
+    }
+}
+
+
+//=========== Specification Documentation ====================================
+
+/// Signed Objects Specification.
+///
+/// This is a documentation-only module. It summarizes the specification for
+/// signed objects, how they are to be parsed and constructed.
+///
+/// Signed objects are CMS signed objects that have been severly limited in
+/// the options of the various fields. They are specified in [RFC 6488] while
+/// CMS is specified in [RFC 5652].
+///
+/// Signed data is defined in [RFC 5652] as follows:
+///
+/// ```txt
+/// SignedData              ::= SEQUENCE {
+///     version                 CMSVersion,
+///     digestAlgorithms        DigestAlgorithmIdentifiers,
+///     encapContentInfo        EncapsulatedContentInfo,
+///     certificates            [0] IMPLICIT CertificateSet OPTIONAL,
+///     crls                    [1] IMPLICIT RevocationInfoChoices OPTIONAL,
+///     signerInfos             SignerInfos }
+///
+/// EncapsulatedContentInfo ::= SEQUENCE {
+///     eContentType            ContentType,
+///     eContent                [0] EXPLICIT OCTET STRING OPTIONAL }
+///
+/// CertificateSet          ::= SET OF CertificateChoices
+///
+/// CertificateChoices      ::= CHOICE {
+///     certificate             Certificate,
+///     extendedCertificate     [0] IMPLICIT ExtendedCertificate,   -- Obsolete
+///     v1AttrCert              [1] IMPLICIT AttributeCertificateV1,-- Obsolete
+///     v2AttrCert              [2] IMPLICIT AttributeCertificateV2,
+///     other                   [3] IMPLICIT OtherCertificateFormat }
+/// ```
+///
+/// Limitations imposed by [RFC 6488] are as follows:
+///
+/// * The _version_ must be 3.
+/// * The _digestAlgorithms_ set must be exactly one algorithm chosen from
+///   those defined in [RFC 7935]. The [`DigestAlgorithm`] type implements
+///   both the _DigestAlgorithmIdentifier_ and _DigestAlgorithmIndentifiers_
+///   definitions (the latter via `take_set_from` and `encode_set`).
+/// * The _eContentType_ field of _encapContentInfo_ defines the type of an
+///   object. Check the specific signed objects for their matching object ID.
+/// * The _eContent_ field of _encapContentInfo_ must be present and contains
+///   actual content of the signed object.
+/// * There must be exactly one certificate in the `certificates` set. It must
+///   be of the _certificate_ choice (that’s not exactly in RFC 6488, but it
+///   is the only logical choice for ‘the RPKI end-entity (EE) certificate
+///   needed to validate this signed object’), which in practice means it is
+///   just one [`Cert`].
+/// * The _crls_ field must be omitted.
+///
+/// The _SignerInfos_ structure:
+///
+/// ```txt
+///
+/// SignerInfos             ::= SET OF SignerInfo
+///
+/// SignerInfo              ::= SEQUENCE {
+///     version                 CMSVersion,
+///     sid                     SignerIdentifier,
+///     digestAlgorithm         DigestAlgorithmIdentifier,
+///     signedAttrs             [0] IMPLICIT SignedAttributes OPTIONAL,
+///     signatureAlgorithm      SignatureAlgorithmIdentifier,
+///     signature               SignatureValue,
+///     unsignedAttrs           [1] IMPLICIT UnsignedAttributes OPTIONAL }
+///
+/// SignerIdentifier        ::= CHOICE {
+///     issuerAndSerialNumber   IssuerAndSerialNumber,
+///     subjectKeyIdentifier    [0] EXPLICIT SubjectKeyIdentifier }
+///
+/// SubjectKeyIdentifier    ::= OCTET STRING
+/// 
+/// SignatureValue          ::= OCTET STRING
+/// ```
+///
+/// Limitations are as follows:
+///
+/// * There must be exactly one _SignerInfo_ present.
+/// * The _version_ must be 3.
+/// * The _sid_ must be identical to the value of the Subject Key Identifier
+///   extension of the included certificate. I.e., it must be the second
+///   choice.
+/// * The _digestAlgorithm_ must be the same as the only value in the outer
+///   _digestAlgorthm_ field.
+/// * The _signedAttrs_ field must be present. See below.
+/// * For the content of the _signature_ field, see below.
+/// * The _unsignedAttrs_ field must be omitted.
+///
+/// Finally, _SignedAttributes_ is a sequence of attributes keyed by an OID.
+/// RPKI has two mandatory and two optional attributes. Definition for all
+/// of these is the following:
+///
+/// ```text
+/// SignedAttributes        ::= SET SIZE (1..MAX) OF Attribute
+///
+/// Attribute               ::= SEQUENCE {
+///     attrType                OBJECT IDENTIFIER,
+///     attrValues              SET OF AttributeValue }
+///
+/// ContentType             ::= OBJECT IDENTIFIER
+///
+/// MessageDigest           ::= OCTET STRING
+///
+/// SigningTime             ::= Time
+///
+/// Time                    ::= CHOICE {
+///     utcTime                 UTCTime,
+///     generalizedTime         GeneralizedTime }
+///
+/// BinarySigningTime       ::= BinaryTime
+///
+/// BinaryTime              ::= INTEGER (0..MAX)
+/// ```
+///
+/// The two mandatory attributes are _ContentType_ and _MessageDigest_. The
+/// content type attribute must be the same as the _eContentType_ field of
+/// the _encapContentInfo_. The message digest attribute contains the digest
+/// value of the (actual) content.
+///
+/// The _SigningTime_ and _BinarySigningTime_ attributes are optional. Their
+/// presence is not considered when validating a signed object.
+///
+/// No other attribute may be present.
+///
+/// For the object identifiers of the attributes, see the [`oid`] module.
+///
+/// The _signature_ field of the signed object contains a signature over the
+/// DER encoding of the _signedAttrs_ field.
+///
+/// [RFC 5652]: https://tools.ietf.org/html/rfc5652
+/// [RFC 6488]: https://tools.ietf.org/html/rfc6488
+/// [RFC 7935]: https://tools.ietf.org/html/rfc7935
+/// [`Cert`]: ../../cert/struct.Cert.html
+/// [`DigestAlgorithm`]: ../../crypto/keys/struct.DigestAlgorithm.html
+/// [`oid`]: ../../oid/index.html
+pub mod spec { }
 

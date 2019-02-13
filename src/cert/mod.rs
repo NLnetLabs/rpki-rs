@@ -17,6 +17,12 @@
 //! [RFC 5280]: https://tools.ietf.org/html/rfc5280
 //! [RFC 6487]: https://tools.ietf.org/html/rfc5487
 
+pub use self::builder::CertBuilder;
+
+
+pub mod builder;
+pub mod ext;
+
 use std::ops;
 use std::sync::Arc;
 use bcder::{decode, encode};
@@ -30,10 +36,6 @@ use crate::uri;
 use crate::x509::{Name, SignedData, Time, ValidationError};
 use crate::crypto::{PublicKey, SignatureAlgorithm};
 use self::ext::{Extensions, UriGeneralName, UriGeneralNames};
-
-
-pub mod builder;
-pub mod ext;
 
 
 //------------ Cert ----------------------------------------------------------

@@ -23,7 +23,7 @@ pub const RSA_ENCRYPTION: ConstOid
 ///
 /// Identifies the PKCS #1 version 1.5 signature algorithm with SHA-256.
 pub const SHA256_WITH_RSA_ENCRYPTION: ConstOid
-        = Oid(&[42, 134, 72, 134, 247, 13, 1, 1, 11]);
+    = Oid(&[42, 134, 72, 134, 247, 13, 1, 1, 11]);
 
 
 pub const SIGNED_DATA: Oid<&[u8]>

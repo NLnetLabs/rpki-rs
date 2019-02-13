@@ -63,8 +63,10 @@ pub struct CertBuilder {
 
     /// Subject Public Key Info
     ///
-    /// This is required for all certificates.
-    public_key: PublicKey,
+    /// This is required for all certificates. However, because we sometimes
+    /// use one-off certificates that only receive their key info very late
+    /// in the process, we won’t store the key info but take it as an
+    /// argument for encoding.
 
     //  Issuer Unique ID, Subject Unique ID
     //
@@ -162,7 +164,6 @@ impl CertBuilder {
         serial_number: u128,
         issuer: Name,
         validity: Validity,
-        public_key: PublicKey,
         ca: bool
     ) -> Self {
         CertBuilder {
@@ -170,7 +171,6 @@ impl CertBuilder {
             issuer,
             validity,
             subject: None,
-            public_key,
             ca,
             authority_key_identifier: None,
             crl_distribution: None,
@@ -260,8 +260,9 @@ impl CertBuilder {
         signer: &S,
         key: &S::KeyId,
         alg: SignatureAlgorithm,
+        public_key: &PublicKey,
     ) -> Result<impl encode::Values, SigningError<S::Error>> {
-        let tbs_cert = self.encode_tbs_cert(alg);
+        let tbs_cert = self.encode_tbs_cert(alg, public_key);
         let (alg, signature) = signer.sign(key, alg, &tbs_cert)?.unwrap();
         Ok(encode::sequence((
             tbs_cert,
@@ -272,10 +273,11 @@ impl CertBuilder {
 
     fn encode_tbs_cert(
         mut self,
-        alg: SignatureAlgorithm
+        alg: SignatureAlgorithm,
+        public_key: &PublicKey,
     ) -> Captured {
         if self.subject.is_none() {
-            self.subject = Some(Name::from_pub_key(&self.public_key))
+            self.subject = Some(Name::from_pub_key(public_key))
         }
         Captured::from_values(Mode::Der, encode::sequence((
             encode::sequence_as(Tag::CTX_0, 2.encode()), // version
@@ -287,11 +289,11 @@ impl CertBuilder {
                 Some(subject) => encode::Choice2::One(subject.encode()),
                 None => {
                     encode::Choice2::Two(
-                        self.public_key.encode_subject_name()
+                        public_key.encode_subject_name()
                     )
                 }
             },
-            self.public_key.encode(),
+            public_key.encode(),
             // no issuerUniqueID, no subjectUniqueID
             encode::sequence_as(Tag::CTX_3, encode::sequence((
                 // Basic Constraints
@@ -307,7 +309,7 @@ impl CertBuilder {
                 extension(
                     &oid::CE_SUBJECT_KEY_IDENTIFIER, false,
                     OctetString::encode_slice(
-                        self.public_key.key_identifier()
+                        public_key.key_identifier()
                     )
                 ),
 
@@ -315,7 +317,7 @@ impl CertBuilder {
                 self.authority_key_identifier.as_ref().map(|id| {
                     extension(
                         &oid::CE_AUTHORITY_KEY_IDENTIFIER, false,
-                        encode::sequence(id.encode_as(Tag::CTX_0))
+                        encode::sequence(id.encode_ref_as(Tag::CTX_0))
                     )
                 }),
 
@@ -455,16 +457,15 @@ mod signer_test {
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
 
         let mut builder = CertBuilder::new(
-            12, pubkey.to_subject_name(), Validity::from_secs(86400),
-            pubkey, true
+            12, pubkey.to_subject_name(), Validity::from_secs(86400), true
         );
         builder
             .rpki_manifest(uri.clone())
             .v4_blocks(|blocks| blocks.push(Prefix::new(0, 0)))
             .as_blocks(|blocks| blocks.push((AsId::MIN, AsId::MAX)));
-        let captured = builder.encode(&signer, &key, SignatureAlgorithm)
-            .unwrap()
-            .to_captured(Mode::Der);
+        let captured = builder.encode(
+            &signer, &key, SignatureAlgorithm, &pubkey
+        ).unwrap().to_captured(Mode::Der);
         let cert = Cert::decode(captured.as_slice()).unwrap();
         let talinfo = TalInfo::from_name("foo".into()).into_arc();
         cert.validate_ta(talinfo, true).unwrap();
