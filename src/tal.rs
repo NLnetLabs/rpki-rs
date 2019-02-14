@@ -180,21 +180,21 @@ impl TalInfo {
 
 //------------ ReadError -----------------------------------------------------
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum ReadError {
-    #[fail(display="{}", _0)]
+    #[display(fmt="{}", _0)]
     Io(io::Error),
 
-    #[fail(display="unexpected end of file")]
+    #[display(fmt="unexpected end of file")]
     UnexpectedEof,
 
-    #[fail(display="bad trunst anchor URI: {}", _0)]
+    #[display(fmt="bad trunst anchor URI: {}", _0)]
     BadUri(uri::Error),
 
-    #[fail(display="bad key info: {}", _0)]
+    #[display(fmt="bad key info: {}", _0)]
     BadKeyInfoEncoding(base64::DecodeError),
 
-    #[fail(display="bad key info: {}", _0)]
+    #[display(fmt="bad key info: {}", _0)]
     BadKeyInfo(decode::Error),
 }
 
