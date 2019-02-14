@@ -280,13 +280,13 @@ impl<T: Block> ops::Deref for Chain<T> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.as_slice()
     }
 }
 
 impl<T: Block> AsRef<[T]> for Chain<T> {
     fn as_ref(&self) -> &[T] {
-        &self.0
+        self.as_slice()
     }
 }
 
