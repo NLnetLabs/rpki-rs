@@ -614,7 +614,7 @@ impl Prefix {
     }
 
     /// Creates a new prefix from its encoding as a BIT STRING.
-    pub fn from_bit_string(src: BitString) -> Result<Self, decode::Error> {
+    pub fn from_bit_string(src: &BitString) -> Result<Self, decode::Error> {
         if src.octet_len() > 16 {
             xerr!(return Err(decode::Malformed))
         }
@@ -672,7 +672,7 @@ impl Prefix {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        Ok(Self::from_bit_string(BitString::take_from(cons)?)?)
+        Ok(Self::from_bit_string(&BitString::take_from(cons)?)?)
     }
 
     /// Parses the content of a prefix.
@@ -680,7 +680,7 @@ impl Prefix {
         content: &mut decode::Content<S>
     ) -> Result<Self, S::Err> {
         Ok(Self::from_bit_string(
-            BitString::from_content(content)?
+            &BitString::from_content(content)?
         )?)
     }
 }

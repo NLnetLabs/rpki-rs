@@ -20,7 +20,7 @@ use super::signature::Signature;
 /// of 2048 bits. However, as that might change in the future, we are not
 /// hard-coding that format but rather use this type – which for the time
 /// being is zero-sized.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PublicKeyFormat;
 
 /// # ASN.1 Algorithm Identifiers

@@ -398,7 +398,7 @@ impl<T: Block> From<Vec<T>> for OwnedChain<T> {
 impl<'a, T: Block + Clone> From<&'a [T]> for OwnedChain<T> {
     fn from(src: &'a [T]) -> Self {
         <Self as iter::FromIterator<T>>::from_iter(
-            src.iter().map(Clone::clone)
+            src.iter().cloned()
         )
     }
 }
