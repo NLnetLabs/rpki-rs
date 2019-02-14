@@ -50,11 +50,6 @@ New
 * `x509::Time` now derefs to `chrono::DateTime<chrono::Utc>`.
 
 
-Dependencies
-
-* Update _ring_ to 0.14. [(#23)]
-
-
 [(#16)]: https://github.com/NLnetLabs/rpki-rs/pull/16
 [(#17)]: https://github.com/NLnetLabs/rpki-rs/pull/17
 [(#19)]: https://github.com/NLnetLabs/rpki-rs/pull/19
