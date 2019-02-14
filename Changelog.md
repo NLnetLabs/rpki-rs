@@ -18,6 +18,11 @@ Breaking Changes
   of the ROA. This change is reflected in the methods of
   `roa::RouteOriginAttestation` that deal with the ROA status.
 
+* `uri::Rsync::from_str` and `uri::Http::from_str` moved to `FromStr`
+  implementations.
+
+* `uri::Scheme::to_string` replaced with `into_string`.
+
 
 New
 
@@ -36,6 +41,8 @@ New
   * `cert::Validity::not_before` and `not_after`,
 
   * `Manifest::is_stale` and `Crl::is_stale`. [(#19)]
+
+  * `uri::Rsync::is_parent`.
 
 * `x509::Time` now derefs to `chrono::DateTime<chrono::Utc>`.
 

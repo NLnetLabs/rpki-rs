@@ -365,3 +365,9 @@ impl CrlStore {
     }
 }
 
+impl Default for CrlStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+

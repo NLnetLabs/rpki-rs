@@ -87,6 +87,7 @@ impl<T: Block> Chain<T> {
     }
 
     pub fn empty() -> &'static Self {
+        #[allow(transmute_ptr_to_ptr)] // alternative causes ICE
         unsafe { mem::transmute::<&[T], _>(&[]) }
     }
 
@@ -264,7 +265,7 @@ impl<T: Block> Chain<T> {
         // If res is an index, we ran out of other items (we return early
         // otherwise) and need to make a copy of the indexed elements.
         let res = match res {
-            Ok(idx) => self.0[..idx + 1].into(),
+            Ok(idx) => self.0[..=idx].into(),
             Err(vec) => vec
         };
         Err(unsafe { OwnedChain::from_vec_unchecked(res) })
@@ -310,6 +311,7 @@ impl<T: Block> OwnedChain<T> {
     }
 
     pub fn as_chain(&self) -> &Chain<T> {
+        #[allow(transmute_ptr_to_ptr)] // alternative causes ICE
         unsafe { mem::transmute(self.0.as_slice()) }
     }
 }
@@ -511,6 +513,11 @@ mod test {
         fn min(&self) -> u8 { self.0 }
         fn max(&self) -> u8 { self.1 }
         fn next(item: u8) -> Option<u8> { item.checked_add(1) }
+    }
+
+    #[test]
+    fn empty() {
+        Chain::<Block>::empty().is_empty()
     }
 
     #[test]

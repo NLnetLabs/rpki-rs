@@ -168,6 +168,12 @@ impl IpResourcesBuilder {
     }
 }
 
+impl Default for IpResourcesBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 
 //------------ IpBlocks ------------------------------------------------------
 
@@ -614,7 +620,7 @@ impl Prefix {
         }
         let mut addr = 0;
         for octet in src.octets() {
-            addr = (addr << 8) | (octet as u128)
+            addr = (addr << 8) | (u128::from(octet))
         }
         for _ in src.octet_len()..16 {
             addr <<= 8;
@@ -766,7 +772,7 @@ impl Addr {
             self
         }
         else {
-            Addr(self.0 & !(!0 >> prefix_len as u32))
+            Addr(self.0 & !(!0 >> u32::from(prefix_len)))
         }
     }
 
@@ -864,7 +870,7 @@ impl AddressFamily {
             Some(second) => second,
             None => xerr!(return Err(decode::Malformed.into()))
         };
-        if let Some(_) = octets.next() {
+        if octets.next().is_some() {
             xerr!(return Err(decode::Malformed.into()))
         }
         match (first, second) {

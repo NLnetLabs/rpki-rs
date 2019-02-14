@@ -374,6 +374,7 @@ impl FriendlyRoaIpAddress {
 //------------ RoaStatus -----------------------------------------------------
 
 #[derive(Clone, Debug)]
+#[allow(large_enum_variant)]
 pub enum RoaStatus {
     Valid {
         cert: ResourceCert,

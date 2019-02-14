@@ -14,6 +14,8 @@
 //!
 //! Documentation for the items in this crate is currently somewhat sparse.
 //! This will be rectified in upcoming releases.
+#![allow(renamed_and_removed_lints, unknown_lints)]
+
 extern crate base64;
 #[macro_use] extern crate bcder;
 extern crate bytes;

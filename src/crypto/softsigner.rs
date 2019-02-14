@@ -21,6 +21,7 @@ use super::signer::{KeyError, Signer, SigningError};
 /// An OpenSSL based signer.
 ///
 /// Keeps the keys in memory (for now).
+#[derive(Default)]
 pub struct OpenSslSigner {
     keys: Slab<KeyPair>,
 }
@@ -135,7 +136,7 @@ impl KeyPair {
         let mut signer = ::openssl::sign::Signer::new(
             MessageDigest::sha256(), &self.0
         )?;
-        signer.update(data.as_ref())?;
+        signer.update(data)?;
         Ok(Signature::new(
             SignatureAlgorithm,
             signer.sign_to_vec()?.into()
