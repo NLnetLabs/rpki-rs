@@ -19,9 +19,9 @@ Breaking Changes
   `roa::RouteOriginAttestation` that deal with the ROA status.
 
 * `uri::Rsync::from_str` and `uri::Http::from_str` moved to `FromStr`
-  implementations.
+  implementations. [(#21)]
 
-* `uri::Scheme::to_string` replaced with `into_string`.
+* `uri::Scheme::to_string` replaced with `into_string`. [(#21)]
 
 
 New
@@ -55,6 +55,7 @@ Dependencies
 [(#16)]: https://github.com/NLnetLabs/rpki-rs/pull/16
 [(#17)]: https://github.com/NLnetLabs/rpki-rs/pull/17
 [(#19)]: https://github.com/NLnetLabs/rpki-rs/pull/19
+[(#21)]: https://github.com/NLnetLabs/rpki-rs/pull/21
 
 
 ## 0.2.0

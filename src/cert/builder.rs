@@ -439,6 +439,7 @@ mod test {
 
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
+    use std::str::FromStr;
     use bcder::encode::Values;
     use crate::cert::Cert;
     use crate::crypto::PublicKeyFormat;

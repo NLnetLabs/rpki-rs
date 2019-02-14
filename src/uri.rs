@@ -478,6 +478,7 @@ pub enum Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
 
     #[test]
     fn should_resolve_relative_rsync_path() {

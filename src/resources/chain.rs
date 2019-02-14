@@ -516,11 +516,6 @@ mod test {
     }
 
     #[test]
-    fn empty() {
-        Chain::<Block>::empty().is_empty()
-    }
-
-    #[test]
     fn from_iter() {
         // Happy case.
         assert_eq!(
