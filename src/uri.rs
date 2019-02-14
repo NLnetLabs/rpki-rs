@@ -460,15 +460,15 @@ pub fn is_uri_ascii<S: AsRef<[u8]>>(slice: S) -> bool {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Clone, Debug, Fail)]
+#[derive(Clone, Copy, Debug, Display, Eq, PartialEq)]
 pub enum Error {
-    #[fail(display="invalid characters")]
+    #[display(fmt="invalid characters")]
     NotAscii,
 
-    #[fail(display="bad URI")]
+    #[display(fmt="bad URI")]
     BadUri,
 
-    #[fail(display="bad URI scheme")]
+    #[display(fmt="bad URI scheme")]
     BadScheme,
 }
 

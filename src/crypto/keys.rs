@@ -209,8 +209,8 @@ impl<'a> PrimitiveContent for PublicKeyCn<'a> {
 /// An error happened while verifying a signature.
 ///
 /// No further information is provided. This is on purpose.
-#[derive(Clone, Copy, Debug, Eq, Fail, PartialEq)]
-#[fail(display="signature verification failed")]
+#[derive(Clone, Copy, Debug, Display, Eq, PartialEq)]
+#[display(fmt="signature verification failed")]
 pub struct VerificationError;
 
 impl From<Unspecified> for VerificationError {

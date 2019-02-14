@@ -23,6 +23,9 @@ Breaking Changes
 
 * `uri::Scheme::to_string` replaced with `into_string`. [(#21)]
 
+*  Drop use of _failure_ crate. Error types now provide a `Display`
+   implementation only. [(#22)]
+
 
 New
 
@@ -56,6 +59,7 @@ Dependencies
 [(#17)]: https://github.com/NLnetLabs/rpki-rs/pull/17
 [(#19)]: https://github.com/NLnetLabs/rpki-rs/pull/19
 [(#21)]: https://github.com/NLnetLabs/rpki-rs/pull/21
+[(#22)]: https://github.com/NLnetLabs/rpki-rs/pull/22
 
 
 ## 0.2.0
