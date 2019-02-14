@@ -1,7 +1,7 @@
 # Change Log
 
 
-## Unrelease next version
+## 0.3.0
 
 Breaking Changes
 
@@ -50,10 +50,9 @@ New
 * `x509::Time` now derefs to `chrono::DateTime<chrono::Utc>`.
 
 
-Bug Fixes
-
-
 Dependencies
+
+* Update _ring_ to 0.14.
 
 [(#16)]: https://github.com/NLnetLabs/rpki-rs/pull/16
 [(#17)]: https://github.com/NLnetLabs/rpki-rs/pull/17
