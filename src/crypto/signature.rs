@@ -25,7 +25,7 @@ pub struct SignatureAlgorithm;
 
 impl SignatureAlgorithm {
     /// Returns the preferred public key format for this algorithm.
-    pub fn public_key_format(&self) -> PublicKeyFormat {
+    pub fn public_key_format(self) -> PublicKeyFormat {
         PublicKeyFormat
     }
 }

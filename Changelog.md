@@ -18,6 +18,11 @@ Breaking Changes
   of the ROA. This change is reflected in the methods of
   `roa::RouteOriginAttestation` that deal with the ROA status.
 
+* `uri::Rsync::from_str` and `uri::Http::from_str` moved to `FromStr`
+  implementations. [(#21)]
+
+* `uri::Scheme::to_string` replaced with `into_string`. [(#21)]
+
 
 New
 
@@ -37,6 +42,8 @@ New
 
   * `Manifest::is_stale` and `Crl::is_stale`. [(#19)]
 
+  * `uri::Rsync::is_parent`.
+
 * `x509::Time` now derefs to `chrono::DateTime<chrono::Utc>`.
 
 
@@ -48,6 +55,7 @@ Dependencies
 [(#16)]: https://github.com/NLnetLabs/rpki-rs/pull/16
 [(#17)]: https://github.com/NLnetLabs/rpki-rs/pull/17
 [(#19)]: https://github.com/NLnetLabs/rpki-rs/pull/19
+[(#21)]: https://github.com/NLnetLabs/rpki-rs/pull/21
 
 
 ## 0.2.0

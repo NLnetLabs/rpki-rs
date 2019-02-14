@@ -148,6 +148,11 @@ impl ManifestContent {
         self.len
     }
 
+    /// Returns whether the file list is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
     /// Returns whether the manifest is stale.
     ///
     /// A manifest is stale if it’s nextUpdate time has passed.
@@ -180,7 +185,7 @@ impl Iterator for ManifestIter {
             self.file_list.decode_partial(|cons| {
                 FileAndHash::take_opt_from(cons)
             }).unwrap().map(|item| {
-                item.to_uri_etc(&self.base)
+                item.into_uri_etc(&self.base)
             })
         }
     }
@@ -230,11 +235,11 @@ impl FileAndHash {
     }
 
     /// Converts a value into a pair of an absolute URI and its hash.
-    fn to_uri_etc(
+    fn into_uri_etc(
         self,
         base: &uri::Rsync
     ) -> Result<(uri::Rsync, ManifestHash), ValidationError> {
-        let name = self.file.to_bytes();
+        let name = self.file.into_bytes();
         if !name.is_ascii() {
             return Err(ValidationError)
         }

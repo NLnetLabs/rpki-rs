@@ -122,7 +122,7 @@ impl Iterator for TalIter {
         loop {
             match self.0.next() {
                 Some(Ok(entry)) => {
-                    match next_entry(entry) {
+                    match next_entry(&entry) {
                         Ok(Some(res)) => return Some(Ok(res)),
                         Ok(None) => { },
                         Err(err) => {
@@ -138,7 +138,7 @@ impl Iterator for TalIter {
     }
 }
 
-fn next_entry(entry: DirEntry) -> Result<Option<Tal>, ReadError> {
+fn next_entry(entry: &DirEntry) -> Result<Option<Tal>, ReadError> {
     if !entry.file_type()?.is_file() {
         return Ok(None)
     }

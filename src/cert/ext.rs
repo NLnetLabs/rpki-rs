@@ -524,8 +524,8 @@ impl BasicCa {
 
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         encode_extension(
-            &oid::CE_BASIC_CONSTRAINTS,
-            &self.critical,
+            oid::CE_BASIC_CONSTRAINTS,
+            self.critical,
             encode::sequence(
                 self.ca.encode()
             )
@@ -615,12 +615,7 @@ impl SubjectKeyIdentifier {
     ) -> Result<(), S::Err> {
         update_once(subject_key_id, || {
             let subject_key_id = OctetString::take_from(cons)?;
-            if critical == true {
-                // RFC5280: Conforming CAs MUST mark this extension as
-                // non-critical.
-                xerr!(Err(decode::Malformed.into()))
-            }
-            else if subject_key_id.len() != 20 {
+            if critical || subject_key_id.len() != 20 {
                 xerr!(Err(decode::Malformed.into()))
             }
             else {
@@ -631,16 +626,16 @@ impl SubjectKeyIdentifier {
 
     pub fn encode(self) -> impl encode::Values {
         encode_extension(
-            &oid::CE_SUBJECT_KEY_IDENTIFIER,
-            &false,
+            oid::CE_SUBJECT_KEY_IDENTIFIER,
+            false,
             self.subject_key_id.encode()
         )
     }
 
     pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         encode_extension(
-            &oid::CE_SUBJECT_KEY_IDENTIFIER,
-            &false,
+            oid::CE_SUBJECT_KEY_IDENTIFIER,
+            false,
             self.subject_key_id.encode_ref()
         )
     }
@@ -698,13 +693,8 @@ impl AuthorityKeyIdentifier {
             let authority_key_id = cons.take_sequence(|cons| {
                 cons.take_value_if(Tag::CTX_0, OctetString::from_content)
             })?;
-            if critical == true {
-                // RFC5280: Conforming CAs MUST mark this extension as
-                // non-critical.
-                return Err(decode::Malformed.into())
-            }
-            else if authority_key_id.len() != 20 {
-                return Err(decode::Malformed.into())
+            if critical || authority_key_id.len() != 20 {
+                Err(decode::Malformed.into())
             }
             else {
                 Ok(AuthorityKeyIdentifier{authority_key_id})
@@ -714,8 +704,8 @@ impl AuthorityKeyIdentifier {
 
     pub fn encode(self) -> impl encode::Values {
         encode_extension(
-            &oid::CE_AUTHORITY_KEY_IDENTIFIER,
-            &false,
+            oid::CE_AUTHORITY_KEY_IDENTIFIER,
+            false,
             encode::sequence(
                  self.authority_key_id.encode_as(Tag::CTX_0)
             )
@@ -724,8 +714,8 @@ impl AuthorityKeyIdentifier {
 
     pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         encode_extension(
-            &oid::CE_AUTHORITY_KEY_IDENTIFIER,
-            &false,
+            oid::CE_AUTHORITY_KEY_IDENTIFIER,
+            false,
             encode::sequence(
                  self.authority_key_id.encode_ref_as(Tag::CTX_0)
             )
@@ -906,7 +896,7 @@ impl<'a> UriGeneralNames {
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         Ok(UriGeneralNames(cons.capture(|cons| {
-            if let None = UriGeneralName::skip_opt(cons)? {
+            if UriGeneralName::skip_opt(cons)?.is_none() {
                 xerr!(return Err(decode::Malformed.into()))
             }
             while let Some(()) = UriGeneralName::skip_opt(cons)? { }
@@ -1022,8 +1012,8 @@ impl fmt::Display for UriGeneralName {
 ///      }
 /// ```
 fn encode_extension<'a, V: encode::Values + 'a>(
-    oid: &'a ConstOid,
-    critical: &'a bool,
+    oid: ConstOid,
+    critical: bool,
     content: V
 ) -> impl encode::Values + 'a {
     encode::sequence((

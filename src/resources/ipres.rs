@@ -168,6 +168,12 @@ impl IpResourcesBuilder {
     }
 }
 
+impl Default for IpResourcesBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 
 //------------ IpBlocks ------------------------------------------------------
 
@@ -608,13 +614,13 @@ impl Prefix {
     }
 
     /// Creates a new prefix from its encoding as a BIT STRING.
-    pub fn from_bit_string(src: BitString) -> Result<Self, decode::Error> {
+    pub fn from_bit_string(src: &BitString) -> Result<Self, decode::Error> {
         if src.octet_len() > 16 {
             xerr!(return Err(decode::Malformed))
         }
         let mut addr = 0;
         for octet in src.octets() {
-            addr = (addr << 8) | (octet as u128)
+            addr = (addr << 8) | (u128::from(octet))
         }
         for _ in src.octet_len()..16 {
             addr <<= 8;
@@ -666,7 +672,7 @@ impl Prefix {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        Ok(Self::from_bit_string(BitString::take_from(cons)?)?)
+        Ok(Self::from_bit_string(&BitString::take_from(cons)?)?)
     }
 
     /// Parses the content of a prefix.
@@ -674,7 +680,7 @@ impl Prefix {
         content: &mut decode::Content<S>
     ) -> Result<Self, S::Err> {
         Ok(Self::from_bit_string(
-            BitString::from_content(content)?
+            &BitString::from_content(content)?
         )?)
     }
 }
@@ -766,7 +772,7 @@ impl Addr {
             self
         }
         else {
-            Addr(self.0 & !(!0 >> prefix_len as u32))
+            Addr(self.0 & !(!0 >> u32::from(prefix_len)))
         }
     }
 
@@ -864,7 +870,7 @@ impl AddressFamily {
             Some(second) => second,
             None => xerr!(return Err(decode::Malformed.into()))
         };
-        if let Some(_) = octets.next() {
+        if octets.next().is_some() {
             xerr!(return Err(decode::Malformed.into()))
         }
         match (first, second) {

@@ -164,6 +164,12 @@ impl AsResourcesBuilder {
     }
 }
 
+impl Default for AsResourcesBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 
 //------------ AsBlocks ------------------------------------------------------
 
@@ -474,12 +480,12 @@ impl AsRange {
     }
 
     /// Returns the smallest AS number that is part of this range.
-    pub fn min(&self) -> AsId {
+    pub fn min(self) -> AsId {
         self.min
     }
 
     /// Returns the largest AS number that is still part of this range.
-    pub fn max(&self) -> AsId {
+    pub fn max(self) -> AsId {
         self.max
     }
 }
@@ -527,11 +533,11 @@ impl Block for AsRange {
     }
 
     fn min(&self) -> Self::Item {
-        self.min()
+        Self::min(*self)
     }
 
     fn max(&self) -> Self::Item {
-        self.max()
+        Self::max(*self)
     }
 
     fn next(item: Self::Item) -> Option<Self::Item> {
