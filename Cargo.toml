@@ -20,12 +20,9 @@ openssl         = { version = "^0.10", optional = true }
 ring            = "^0.13"
 slab            = { version = "^0.4", optional = true }
 untrusted       = "^0.6"
-xml-rs          = "^0.8"
 
 [features]
 default = []
 softkeys = [ "openssl", "slab" ]
 extra-debug = [ "bcder/extra-debug" ]
 
-[patch.crates-io]
-bcder = { git="https://github.com/NLnetLabs/bcder.git" }

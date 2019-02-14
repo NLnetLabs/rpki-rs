@@ -1,7 +1,7 @@
 # Change Log
 
 
-## Unrelease next version
+## 0.3.0
 
 Breaking Changes
 
@@ -50,16 +50,12 @@ New
 * `x509::Time` now derefs to `chrono::DateTime<chrono::Utc>`.
 
 
-Bug Fixes
-
-
-Dependencies
-
 [(#16)]: https://github.com/NLnetLabs/rpki-rs/pull/16
 [(#17)]: https://github.com/NLnetLabs/rpki-rs/pull/17
 [(#19)]: https://github.com/NLnetLabs/rpki-rs/pull/19
 [(#21)]: https://github.com/NLnetLabs/rpki-rs/pull/21
 [(#22)]: https://github.com/NLnetLabs/rpki-rs/pull/22
+[(#23)]: https://github.com/NLnetLabs/rpki-rs/pull/23
 
 
 ## 0.2.0
