@@ -529,6 +529,7 @@ mod test {
 
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
+    use std::str::FromStr;
     use bcder::encode::Values;
     use crate::cert::Validity;
     use crate::crypto::PublicKeyFormat;
@@ -561,17 +562,7 @@ mod signer_test {
             SignatureAlgorithm
         ).unwrap().to_captured(Mode::Der);
 
-        let sigobj = SignedObject::decode(captured.as_slice(), true).unwrap();
-
-        /*
-
-        let captured = builder.encode(
-            &signer, &key, SignatureAlgorithm, &pubkey
-        ).unwrap().to_captured(Mode::Der);
-        let cert = Cert::decode(captured.as_slice()).unwrap();
-        let talinfo = TalInfo::from_name("foo".into()).into_arc();
-        cert.validate_ta(talinfo, true).unwrap();
-        */
+        let _sigobj = SignedObject::decode(captured.as_slice(), true).unwrap();
     }
 }
 
