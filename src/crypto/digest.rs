@@ -86,6 +86,17 @@ impl DigestAlgorithm {
         cons.take_opt_sequence(Self::from_constructed)
     }
 
+    /// Takes and returns a set of digest algorithm identifiers.
+    ///
+    /// The set must contain exactly one identifier as required everywhere for
+    /// RPKI. If it contains more than one or identifiers that are not
+    /// allowed, a malformed error is returned.
+    pub fn take_set_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        cons.take_set(Self::take_from)
+    }
+
     /// Parses the algorithm identifier from the contents of its sequence.
     fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>

@@ -8,6 +8,10 @@ Breaking Changes
 
 New
 
+* `SignedObject::take_from` will now return a malformed error if the
+  certificate in the signed object is of any other choice than a plain
+  certificate. This was a not implemented error before.
+
 
 Bug Fixes
 

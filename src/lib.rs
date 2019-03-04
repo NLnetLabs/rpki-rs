@@ -16,6 +16,10 @@
 //! This will be rectified in upcoming releases.
 #![allow(renamed_and_removed_lints, unknown_lints)]
 
+// We have seemingly redundant closures (i.e., closures where just providing
+// a function would also work) that cannot be removed due to lifetime issues.
+#![allow(redundant_closure)]
+
 extern crate base64;
 #[macro_use] extern crate bcder;
 extern crate bytes;

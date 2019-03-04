@@ -240,6 +240,10 @@ impl Time {
         Time(Utc.ymd(year, month, day).and_hms(hour, min, sec))
     }
 
+    pub fn to_binary_time(self) -> i64 {
+        self.0.timestamp()
+    }
+
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
