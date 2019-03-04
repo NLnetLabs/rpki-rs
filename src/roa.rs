@@ -619,10 +619,6 @@ mod signer_test {
             SignatureAlgorithm
         ).unwrap().to_captured(Mode::Der);
 
-        let mut file = std::fs::File::create("/tmp/output.der").unwrap();
-        use std::io::Write;
-        file.write_all(captured.as_slice()).unwrap();
-
         let _roa = Roa::decode(captured.as_slice(), true).unwrap();
     }
 }
