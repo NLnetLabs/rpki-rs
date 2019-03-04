@@ -1,5 +1,6 @@
 //! Signed Objects
 
+use std::ops;
 use bcder::{decode, encode};
 use bcder::{Captured, ConstOid, Mode, Oid, Tag};
 use bcder::encode::PrimitiveContent;
@@ -403,6 +404,14 @@ impl<C> SignedObjectBuilder<C> {
         }
     }
 
+    pub fn content(&self) -> &C {
+        &self.content
+    }
+
+    pub fn content_mut(&mut self) -> &mut C {
+        &mut self.content
+    }
+
     pub fn cert(&self) -> &CertBuilder {
         &self.cert
     }
@@ -418,6 +427,18 @@ impl<C> SignedObjectBuilder<C> {
     pub fn binary_signing_time(&mut self, time: Time) {
         self.binary_signing_time = Some(time)
     }
+
+    pub fn map<U, F>(self, f: F) -> SignedObjectBuilder<U>
+    where F: FnOnce(C) -> U {
+        SignedObjectBuilder {
+            content_type: self.content_type,
+            content: f(self.content),
+            cert: self.cert,
+            signing_time: self.signing_time,
+            binary_signing_time: self.binary_signing_time
+        }
+    }
+
 }
 
 impl<C: encode::Values> SignedObjectBuilder<C> {
@@ -449,7 +470,11 @@ impl<C: encode::Values> SignedObjectBuilder<C> {
                     digest_alg.encode_set(), // digestAlgorithms
                     encode::sequence(( // encapContentInfo
                         self.content_type.encode(),
-                        encode::sequence_as(Tag::CTX_0, self.content),
+                        encode::sequence_as(Tag::CTX_0,
+                            OctetString::encode_wrapped(
+                                Mode::Der, self.content
+                            )
+                        ),
                     )),
                     encode::sequence_as(Tag::CTX_0, // certificates
                         cert
@@ -517,6 +542,35 @@ impl<C: encode::Values> SignedObjectBuilder<C> {
                 ))
             })
         )))
+    }
+}
+
+
+//--- Deref, DerefMut, AsRef, and AsMut
+
+impl<C> ops::Deref for SignedObjectBuilder<C> {
+    type Target = C;
+
+    fn deref(&self) -> &Self::Target {
+        &self.content
+    }
+}
+
+impl<C> ops::DerefMut for SignedObjectBuilder<C> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.content
+    }
+}
+
+impl<C> AsRef<C> for SignedObjectBuilder<C> {
+    fn as_ref(&self) -> &C {
+        &self.content
+    }
+}
+
+impl<C> AsMut<C> for SignedObjectBuilder<C> {
+    fn as_mut(&mut self) -> &mut C {
+        &mut self.content
     }
 }
 
