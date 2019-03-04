@@ -87,6 +87,7 @@ impl<T: Block> Chain<T> {
     }
 
     pub fn empty() -> &'static Self {
+        #[allow(transmute_ptr_to_ptr)] // alternative causes ICE
         unsafe { mem::transmute::<&[T], _>(&[]) }
     }
 
@@ -264,7 +265,7 @@ impl<T: Block> Chain<T> {
         // If res is an index, we ran out of other items (we return early
         // otherwise) and need to make a copy of the indexed elements.
         let res = match res {
-            Ok(idx) => self.0[..idx + 1].into(),
+            Ok(idx) => self.0[..=idx].into(),
             Err(vec) => vec
         };
         Err(unsafe { OwnedChain::from_vec_unchecked(res) })
@@ -279,13 +280,13 @@ impl<T: Block> ops::Deref for Chain<T> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.as_slice()
     }
 }
 
 impl<T: Block> AsRef<[T]> for Chain<T> {
     fn as_ref(&self) -> &[T] {
-        &self.0
+        self.as_slice()
     }
 }
 
@@ -310,6 +311,7 @@ impl<T: Block> OwnedChain<T> {
     }
 
     pub fn as_chain(&self) -> &Chain<T> {
+        #[allow(transmute_ptr_to_ptr)] // alternative causes ICE
         unsafe { mem::transmute(self.0.as_slice()) }
     }
 }
@@ -396,7 +398,7 @@ impl<T: Block> From<Vec<T>> for OwnedChain<T> {
 impl<'a, T: Block + Clone> From<&'a [T]> for OwnedChain<T> {
     fn from(src: &'a [T]) -> Self {
         <Self as iter::FromIterator<T>>::from_iter(
-            src.iter().map(Clone::clone)
+            src.iter().cloned()
         )
     }
 }

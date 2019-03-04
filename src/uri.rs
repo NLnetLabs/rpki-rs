@@ -37,10 +37,6 @@ impl Rsync {
         Self::from_bytes(Bytes::from(s))
     }
 
-    pub fn from_str(s: &str) -> Result<Self, Error> {
-        Self::from_bytes(Bytes::from(s))
-    }
-
     pub fn from_slice(slice: &[u8]) -> Result<Self, Error> {
         Self::from_bytes(slice.into())
     }
@@ -166,16 +162,18 @@ impl Rsync {
 }
 
 
-impl fmt::Display for Rsync {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.module.fmt(f)?;
-        if !self.path.is_empty() {
-            write!(f, "{}", self.path())?;
-        }
-        Ok(())
+//--- FromStr
+
+impl str::FromStr for Rsync {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Error> {
+        Self::from_bytes(Bytes::from(s))
     }
 }
 
+
+//--- PrimitiveContent
 
 impl<'a> encode::PrimitiveContent for &'a Rsync {
     const TAG: Tag = Tag::IA5_STRING;
@@ -197,6 +195,19 @@ impl<'a> encode::PrimitiveContent for &'a Rsync {
         target.write_all(self.module.module.as_ref())?;
         target.write_all(b"/")?;
         target.write_all(self.path.as_ref())?;
+        Ok(())
+    }
+}
+
+
+//--- Display
+
+impl fmt::Display for Rsync {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.module.fmt(f)?;
+        if !self.path.is_empty() {
+            write!(f, "{}", self.path())?;
+        }
         Ok(())
     }
 }
@@ -267,10 +278,6 @@ impl Http {
         Self::from_bytes(Bytes::from(s))
     }
 
-    pub fn from_str(s: &str) -> Result<Self, Error> {
-        Self::from_bytes(Bytes::from(s))
-    }
-
     pub fn from_slice(slice: &[u8]) -> Result<Self, Error> {
         Self::from_bytes(slice.into())
     }
@@ -297,7 +304,7 @@ impl Http {
         let host = bytes.split_to(host_length);
         let path = bytes;
 
-        if path.len() == 0 {
+        if path.is_empty() {
             return Err(Error::BadUri)
         }
 
@@ -330,18 +337,19 @@ impl Http {
     }
 }
 
-impl fmt::Display for Http {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.scheme().fmt(f)?;
-        if !self.host.is_empty() {
-            write!(f, "{}", self.host())?;
-        }
-        if !self.path.is_empty() {
-            write!(f, "{}", self.path())?;
-        }
-        Ok(())
+
+//--- FromStr
+
+impl str::FromStr for Http {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Error> {
+        Self::from_bytes(Bytes::from(s))
     }
 }
+
+
+//--- PrimitiveContent
 
 impl<'a> encode::PrimitiveContent for &'a Http {
     const TAG: Tag = Tag::IA5_STRING;
@@ -360,6 +368,22 @@ impl<'a> encode::PrimitiveContent for &'a Http {
         target.write_all(b"://")?;
         target.write_all(self.host.as_ref())?;
         target.write_all(self.path.as_ref())?;
+        Ok(())
+    }
+}
+
+
+//--- Display
+
+impl fmt::Display for Http {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.scheme().fmt(f)?;
+        if !self.host.is_empty() {
+            write!(f, "{}", self.host())?;
+        }
+        if !self.path.is_empty() {
+            write!(f, "{}", self.path())?;
+        }
         Ok(())
     }
 }
@@ -384,7 +408,7 @@ impl Scheme {
             bytes.advance(l);
             return true
         }
-        return false
+        false
     }
 
     fn take(bytes: &mut Bytes) -> Result<Scheme, Error> {
@@ -409,7 +433,7 @@ impl Scheme {
         }
     }
 
-    pub fn to_string(&self) -> String {
+    pub fn into_string(self) -> String {
         format!("{}", self)
     }
 }
@@ -436,15 +460,15 @@ pub fn is_uri_ascii<S: AsRef<[u8]>>(slice: S) -> bool {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Clone, Debug, Fail)]
+#[derive(Clone, Copy, Debug, Display, Eq, PartialEq)]
 pub enum Error {
-    #[fail(display="invalid characters")]
+    #[display(fmt="invalid characters")]
     NotAscii,
 
-    #[fail(display="bad URI")]
+    #[display(fmt="bad URI")]
     BadUri,
 
-    #[fail(display="bad URI scheme")]
+    #[display(fmt="bad URI scheme")]
     BadScheme,
 }
 
@@ -454,6 +478,7 @@ pub enum Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
 
     #[test]
     fn should_resolve_relative_rsync_path() {

@@ -20,7 +20,7 @@ use super::signature::Signature;
 /// of 2048 bits. However, as that might change in the future, we are not
 /// hard-coding that format but rather use this type – which for the time
 /// being is zero-sized.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PublicKeyFormat;
 
 /// # ASN.1 Algorithm Identifiers
@@ -63,7 +63,7 @@ impl PublicKeyFormat{
     }
 
     /// Provides an encoder for the algorihm identifier.
-    pub fn encode(&self) -> impl encode::Values {
+    pub fn encode(self) -> impl encode::Values {
         encode::sequence((
             oid::RSA_ENCRYPTION.encode(),
             ().encode(),
@@ -133,7 +133,14 @@ impl PublicKey {
         })
     }
 
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode(self) -> impl encode::Values {
+        encode::sequence((
+            self.algorithm.encode(),
+            self.bits.encode()
+        ))
+    }
+
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence((
             self.algorithm.encode(),
             self.bits.encode_ref()
@@ -202,8 +209,8 @@ impl<'a> PrimitiveContent for PublicKeyCn<'a> {
 /// An error happened while verifying a signature.
 ///
 /// No further information is provided. This is on purpose.
-#[derive(Clone, Copy, Debug, Eq, Fail, PartialEq)]
-#[fail(display="signature verification failed")]
+#[derive(Clone, Copy, Debug, Display, Eq, PartialEq)]
+#[display(fmt="signature verification failed")]
 pub struct VerificationError;
 
 impl From<Unspecified> for VerificationError {

@@ -1,6 +1,6 @@
 [package]
 name = "rpki"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["The NLnet Labs RPKI Team <rpki@nlnetlabs.nl>"]
 description = "A library for validating and creating RPKI data."
 repository = "https://github.com/NLnetLabs/rpki-rs"
@@ -13,14 +13,13 @@ base64          = "^0.9"
 bcder           = "^0.2"
 bytes           = "^0.4"
 chrono          = "^0.4"
-failure         = "^0.1"
+derive_more     = "^0.14"
 hex             = "^0.3"
 log             = "^0.4"
 openssl         = { version = "^0.10", optional = true }
 ring            = "^0.13"
 slab            = { version = "^0.4", optional = true }
 untrusted       = "^0.6"
-xml-rs          = "^0.8"
 
 [features]
 default = []
@@ -28,4 +27,5 @@ softkeys = [ "openssl", "slab" ]
 extra-debug = [ "bcder/extra-debug" ]
 
 [patch.crates-io]
-bcder = { git="https://github.com/NLnetLabs/bcder.git", branch="moving-encode"}
+bcder = { git="https://github.com/NLnetLabs/bcder.git" }
+

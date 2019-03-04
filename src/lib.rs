@@ -14,11 +14,13 @@
 //!
 //! Documentation for the items in this crate is currently somewhat sparse.
 //! This will be rectified in upcoming releases.
+#![allow(renamed_and_removed_lints, unknown_lints)]
+
 extern crate base64;
 #[macro_use] extern crate bcder;
 extern crate bytes;
 extern crate chrono;
-#[macro_use] extern crate failure;
+#[macro_use] extern crate derive_more;
 extern crate hex;
 #[macro_use] extern crate log;
 #[cfg(feature = "softkeys")] extern crate openssl;

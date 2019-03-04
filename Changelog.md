@@ -5,6 +5,24 @@
 
 Breaking Changes
 
+
+New
+
+* `SignedObject::take_from` will now return a malformed error if the
+  certificate in the signed object is of any other choice than a plain
+  certificate. This was a not implemented error before.
+
+
+Bug Fixes
+
+
+Dependencies
+
+
+## 0.3.0
+
+Breaking Changes
+
 * New module `crypto` includes the now removed module `signer` and all
   crypto-related types. The latter have been re-designed as well.
 
@@ -17,6 +35,14 @@ Breaking Changes
 * `roa::RoaStatus::Valid` now contains the complete resource certificate
   of the ROA. This change is reflected in the methods of
   `roa::RouteOriginAttestation` that deal with the ROA status.
+
+* `uri::Rsync::from_str` and `uri::Http::from_str` moved to `FromStr`
+  implementations. [(#21)]
+
+* `uri::Scheme::to_string` replaced with `into_string`. [(#21)]
+
+*  Drop use of _failure_ crate. Error types now provide a `Display`
+   implementation only. [(#22)]
 
 
 New
@@ -37,21 +63,17 @@ New
 
   * `Manifest::is_stale` and `Crl::is_stale`. [(#19)]
 
+  * `uri::Rsync::is_parent`.
+
 * `x509::Time` now derefs to `chrono::DateTime<chrono::Utc>`.
 
-
-Bug Fixes
-
-* `SignedObject::take_from` will now return a malformed error if the
-  certificate in the signed object is of any other choice than a plain
-  certificate. This was a not implemented error before.
-
-
-Dependencies
 
 [(#16)]: https://github.com/NLnetLabs/rpki-rs/pull/16
 [(#17)]: https://github.com/NLnetLabs/rpki-rs/pull/17
 [(#19)]: https://github.com/NLnetLabs/rpki-rs/pull/19
+[(#21)]: https://github.com/NLnetLabs/rpki-rs/pull/21
+[(#22)]: https://github.com/NLnetLabs/rpki-rs/pull/22
+[(#23)]: https://github.com/NLnetLabs/rpki-rs/pull/23
 
 
 ## 0.2.0

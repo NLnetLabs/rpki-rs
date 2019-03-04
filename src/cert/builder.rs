@@ -293,7 +293,7 @@ impl CertBuilder {
                     )
                 }
             },
-            public_key.encode(),
+            public_key.encode_ref(),
             // no issuerUniqueID, no subjectUniqueID
             encode::sequence_as(Tag::CTX_3, encode::sequence((
                 // Basic Constraints
@@ -441,6 +441,7 @@ mod test {
 
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
+    use std::str::FromStr;
     use bcder::encode::Values;
     use crate::cert::Cert;
     use crate::crypto::PublicKeyFormat;
