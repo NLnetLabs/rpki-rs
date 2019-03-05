@@ -704,8 +704,8 @@ impl encode::PrimitiveContent for Prefix {
     ) -> Result<(), io::Error> {
         // The type ensures that all the unused bits are zero, so we don’t
         // need to take care of that here.
-        let len = if self.len % 8 == 0 { self.len }
-                  else { self.len + 1 };
+        let len = if self.len % 8 == 0 { self.len / 8 }
+                  else { self.len / 8 + 1 };
         target.write_all(&[(self.len % 8) as u8])?;
         let addr = self.addr.to_bytes();
         target.write_all(&addr[..len as usize])

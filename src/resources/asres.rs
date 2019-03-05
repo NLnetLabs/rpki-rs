@@ -588,7 +588,7 @@ impl AsId {
     }
     */
 
-    fn encode(self) -> impl encode::Values {
+    pub fn encode(self) -> impl encode::Values {
         self.0.encode()
     }
 }

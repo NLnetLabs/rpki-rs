@@ -72,4 +72,5 @@ pub const PE_AUTONOMOUS_SYS_IDS_V2: Oid<&[u8]>
 pub const PE_SUBJECT_INFO_ACCESS: Oid<&[u8]>
     = Oid(&[43, 6, 1, 5, 5, 7, 1, 11]);
 
-
+pub const ROUTE_ORIGIN_AUTHZ: ConstOid
+    = Oid(&[42, 6, 72, 6, 119, 13, 1, 9, 16, 1, 24]);
