@@ -42,7 +42,7 @@ impl Manifest {
         strict: bool
     ) -> Result<Self, S::Err> {
         let signed = SignedObject::decode(source, strict)?;
-        if signed.content_type().ne(&oid::AD_RPKI_MANIFEST) {
+        if signed.content_type().ne(&oid::CT_RPKI_MANIFEST) {
             return Err(decode::Malformed.into())
         }
         let content = signed.decode_content(
@@ -90,7 +90,7 @@ impl ManifestBuilder {
     ) -> Self {
         ManifestBuilder(
             SignedObjectBuilder::new(
-                oid::AD_RPKI_MANIFEST,
+                oid::CT_RPKI_MANIFEST,
                 ManifestContentBuilder::new(
                     manifest_number, this_update, next_update, file_hash_alg
                 ),

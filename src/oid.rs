@@ -61,6 +61,9 @@ pub const CE_SUBJECT_KEY_IDENTIFIER: Oid<&[u8]> = Oid(&[85, 29, 14]);
 pub const CP_IPADDR_ASNUMBER: Oid<&[u8]> = Oid(&[43, 6, 1, 5, 5, 7, 14, 2]);
 pub const CP_IPADDR_ASNUMBER_V2: Oid<&[u8]> = Oid(&[43, 6, 1, 5, 5, 7, 14, 3]);
 
+pub const CT_RPKI_MANIFEST: ConstOid
+    = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 16, 1, 26]);
+
 pub const PE_AUTHORITY_INFO_ACCESS: Oid<&[u8]>
     = Oid(&[43, 6, 1, 5, 5, 7, 1, 1]);
 pub const PE_IP_ADDR_BLOCK: Oid<&[u8]> = Oid(&[43, 6, 1, 5, 5, 7, 1, 7]);
