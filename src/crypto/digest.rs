@@ -138,6 +138,11 @@ impl DigestAlgorithm {
             self.encode()
         )
     }
+
+    /// Provides an encoder for just the object identifier of the algorithm.
+    pub fn encode_oid(self) -> impl encode::Values {
+        oid::SHA256.encode()
+    }
 }
 
 
