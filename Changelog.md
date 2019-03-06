@@ -14,14 +14,17 @@ New
 * `RoaBuilder` for making ROAs. [(#25)]
 * `ManifestBuilder` for making manifests. [(#26)]
 
-
 Bug Fixes
+
+* Decoding manifest and ROAs now checks that the content type field in the
+  signed object has the correct object identifier. [(#27)]
 
 
 Dependencies
 
 [(#25)]: https://github.com/NLnetLabs/rpki-rs/pull/25
 [(#26)]: https://github.com/NLnetLabs/rpki-rs/pull/26
+[(#27)]: https://github.com/NLnetLabs/rpki-rs/pull/27
 
 
 ## 0.3.0
