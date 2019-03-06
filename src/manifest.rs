@@ -42,6 +42,9 @@ impl Manifest {
         strict: bool
     ) -> Result<Self, S::Err> {
         let signed = SignedObject::decode(source, strict)?;
+        if signed.content_type().ne(&oid::AD_RPKI_MANIFEST) {
+            return Err(decode::Malformed.into())
+        }
         let content = signed.decode_content(
             |cons| ManifestContent::decode(cons)
         )?;
@@ -428,7 +431,7 @@ mod signer_test {
     use super::*;
 
     #[test]
-    fn encode_roa() {
+    fn encode_manifest() {
         let mut signer = OpenSslSigner::new();
         let key = signer.create_key(PublicKeyFormat).unwrap();
         let pubkey = signer.get_key_info(&key).unwrap();

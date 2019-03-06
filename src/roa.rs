@@ -31,6 +31,9 @@ impl Roa {
         strict: bool
     ) -> Result<Self, S::Err> {
         let signed = SignedObject::decode(source, strict)?;
+        if signed.content_type().ne(&oid::ROUTE_ORIGIN_AUTHZ) {
+            return Err(decode::Malformed.into())
+        }
         let content = signed.decode_content(|cons| {
             RouteOriginAttestation::take_from(cons)
         })?;
