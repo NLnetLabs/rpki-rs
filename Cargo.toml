@@ -10,7 +10,7 @@ license = "BSD-3-Clause"
 
 [dependencies]
 base64          = "^0.9"
-bcder           = "^0.2.2"
+bcder           = "^0.2.1"
 bytes           = "^0.4"
 chrono          = "^0.4"
 derive_more     = "^0.14"
@@ -25,7 +25,4 @@ untrusted       = "^0.6"
 default = []
 softkeys = [ "openssl", "slab" ]
 extra-debug = [ "bcder/extra-debug" ]
-
-[patch.crates-io]
-bcder = { git="https://github.com/NLnetLabs/bcder.git" }
 

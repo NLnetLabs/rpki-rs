@@ -1,15 +1,11 @@
 # Change Log
 
-## Unreleased next version
-
-Breaking
-
-New
-
-Bug Fixes
+## 0.3.2
 
 Dependencies
 
+* Require *bcder* of at least 0.2.1. This was required already but not
+  reflected in `Cargo.toml`.
 
 
 ## 0.3.1
