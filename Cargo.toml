@@ -26,5 +26,3 @@ default = []
 softkeys = [ "openssl", "slab" ]
 extra-debug = [ "bcder/extra-debug" ]
 
-[patch.crates-io]
-bcder = { git="https://github.com/NLnetLabs/bcder.git" }
