@@ -8,7 +8,12 @@ New
 
 Bug Fixes
 
+* Fix an unwrap on `Option` in `Chain::is_encompassed` when the other
+  chain ends before this block. [(#30)]
+
 Dependencies
+
+[(#30)]: https://github.com/NLnetLabs/rpki-rs/pull/30
 
 
 ## 0.3.2
