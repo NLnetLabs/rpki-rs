@@ -115,8 +115,8 @@ impl<T: Block> Chain<T> {
             // we start this, so unwrap here is fine.
             while other.first().unwrap().max() < block.min() {
                 other = match other.split_first() {
-                    Some((_, tail)) => tail,
-                    None => return false,
+                    Some((_, tail)) if !tail.is_empty() => tail,
+                    _ => return false,
                 }
             }
             // The first other block ends after our start, so it must
@@ -566,6 +566,10 @@ mod test {
         assert!(
             !OwnedChain::from([(3,9)].as_ref())
                 .is_encompassed(&chain)
+        );
+        assert!(
+            !OwnedChain::from([(3,9)].as_ref())
+                .is_encompassed(&OwnedChain::from([(0,2)].as_ref()))
         );
     }
 
