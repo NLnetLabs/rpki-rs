@@ -639,26 +639,15 @@ mod tests {
     }
 
     #[test]
-    fn should_reject_bad_http_uri() {
-        match Http::from_str("http://my.host.tld") {
-            Err(Error::BadUri) => {}
-            _ => { assert!(false)}
-        }
-    }
-
-    #[test]
     fn should_parse_http_uri() {
         let http = Http::from_str("http://my.host.tld/and/a/path").unwrap();
         assert_eq!(Scheme::Http, http.scheme());
-        assert_eq!(Bytes::from("my.host.tld"), http.host);
-        assert_eq!(Bytes::from("/and/a/path"), http.path);
     }
 
     #[test]
     fn should_parse_https_uri() {
         let http = Http::from_str("https://my.host.tld/and/a/path").unwrap();
         assert_eq!(Scheme::Https, http.scheme());
-        assert_eq!(Bytes::from("my.host.tld"), http.host);
-        assert_eq!(Bytes::from("/and/a/path"), http.path);
+        Https::from_str("https://my.host.tld/and/a/path").unwrap();
     }
 }

@@ -4,6 +4,10 @@
 
 Breaking
 
+* Restructured how certificate’s SubjectAccessInfo is parsed and accessed.
+  It now keeps the first mandatory URI of the four relevant access methods
+  readily available. [(###)]
+
 New
 
 Bug Fixes
