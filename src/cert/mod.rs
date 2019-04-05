@@ -35,7 +35,7 @@ use crate::tal::TalInfo;
 use crate::uri;
 use crate::x509::{Name, SignedData, Time, ValidationError};
 use crate::crypto::{PublicKey, SignatureAlgorithm};
-use self::ext::{Extensions, UriGeneralName, UriGeneralNames};
+use self::ext::{Extensions, UriGeneralNames};
 
 
 //------------ Cert ----------------------------------------------------------
@@ -580,19 +580,24 @@ impl ResourceCert {
         &self.as_resources
     }
 
-    /// Returns an iterator over the manifest URIs of this certificate.
-    pub fn manifest_uris(&self) -> impl Iterator<Item=UriGeneralName> {
-        self.cert.extensions.manifest_uris()
+    /// Returns the manifest rsync URI of this certificate if available.
+    pub fn manifest_uri(&self) -> Option<&uri::Rsync> {
+        self.cert.extensions.manifest_uri()
     }
 
     /// Returns the repository rsync URI of this certificate if available.
-    pub fn repository_uri(&self) -> Option<uri::Rsync> {
-        self.cert.extensions.repository_uri()
+    pub fn ca_repository_uri(&self) -> Option<&uri::Rsync> {
+        self.cert.extensions.ca_repository_uri()
     }
     
     /// Returns the signed object rsync URI of this certificate if available.
-    pub fn signed_object_uri(&self) -> Option<uri::Rsync> {
+    pub fn signed_object_uri(&self) -> Option<&uri::Rsync> {
         self.cert.extensions.signed_object_uri()
+    }
+
+    /// Returns the RPKI notify HTTPS URI of this certificate if available.
+    pub fn rpki_notify_uri(&self) -> Option<&uri::Https> {
+        self.cert.extensions.rpki_notify_uri()
     }
 
     /// Returns a reference to the validity.

@@ -115,18 +115,20 @@ impl Extensions {
         &self.subject_info_access
     }
 
-    pub fn manifest_uris(&self) -> impl Iterator<Item=UriGeneralName> {
-        self.subject_info_access.iter().filter_oid(oid::AD_RPKI_MANIFEST)
+    pub fn ca_repository_uri(&self) -> Option<&uri::Rsync> {
+        self.subject_info_access.ca_repository()
     }
 
-    pub fn repository_uri(&self) -> Option<uri::Rsync> {
-        for uri in self.subject_info_access
-                       .iter().filter_oid(oid::AD_CA_REPOSITORY) {
-            if let Some(mut uri) = uri.into_rsync_uri() {
-                return Some(uri)
-            }
-        }
-        None
+    pub fn manifest_uri(&self) -> Option<&uri::Rsync> {
+        self.subject_info_access.rpki_manifest()
+    }
+
+    pub fn signed_object_uri(&self) -> Option<&uri::Rsync> {
+        self.subject_info_access.signed_object()
+    }
+
+    pub fn rpki_notify_uri(&self) -> Option<&uri::Https> {
+        self.subject_info_access.rpki_notify()
     }
 
     pub fn overclaim(&self) -> Overclaim {
@@ -143,16 +145,6 @@ impl Extensions {
 
     pub fn as_resources(&self) -> Option<&AsResources> {
         self.as_resources.as_ref()
-    }
-
-    pub fn signed_object_uri(&self) -> Option<uri::Rsync> {
-        for uri in self.subject_info_access
-                       .iter().filter_oid(oid::AD_SIGNED_OBJECT) {
-            if let Some(mut uri) = uri.into_rsync_uri() {
-                return Some(uri)
-            }
-        }
-        None
     }
 }
 
@@ -728,19 +720,38 @@ impl AuthorityKeyIdentifier {
 
 #[derive(Clone, Debug)]
 pub struct SubjectInfoAccess {
+    ca_repository: Option<uri::Rsync>,
+    rpki_manifest: Option<uri::Rsync>,
+    signed_object: Option<uri::Rsync>,
+    rpki_notify: Option<uri::Https>,
     content: Captured,
-    ca: bool
 }
 
 /// # Data Access
 ///
 impl SubjectInfoAccess {
+    pub fn ca_repository(&self) -> Option<&uri::Rsync> {
+        self.ca_repository.as_ref()
+    }
+
+    pub fn rpki_manifest(&self) -> Option<&uri::Rsync> {
+        self.rpki_manifest.as_ref()
+    }
+
+    pub fn signed_object(&self) -> Option<&uri::Rsync> {
+        self.signed_object.as_ref()
+    }
+
+    pub fn rpki_notify(&self) -> Option<&uri::Https> {
+        self.rpki_notify.as_ref()
+    }
+
     pub fn iter(&self) -> SiaIter {
         SiaIter { content: self.content.clone() }
     }
 
     pub fn ca(&self) -> bool {
-        self.ca
+        self.ca_repository.is_some()
     }
 }
 
@@ -751,42 +762,110 @@ impl SubjectInfoAccess {
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
-            let mut ca = None;
+            let mut ca_repository = None;
+            let mut ca_repository_seen = false;
+            let mut rpki_manifest = None;
+            let mut rpki_manifest_seen = false;
+            let mut signed_object = None;
+            let mut signed_object_seen = false;
+            let mut rpki_notify = None;
+            let mut rpki_notify_seen = false;
+            let mut other_seen = false;
             let content = cons.capture(|cons| {
                 while let Some(()) = cons.take_opt_sequence(|cons| {
                     let oid = Oid::take_from(cons)?;
-                    if oid == oid::AD_CA_REPOSITORY
-                        || oid == oid::AD_RPKI_MANIFEST
-                        {
-                            match ca {
-                                None => ca = Some(true),
-                                Some(true) => { }
-                                Some(false) => {
-                                    xerr!(return Err(decode::Malformed.into()))
+                    let uri = UriGeneralName::take_any_from(cons)?;
+                    if oid == oid::AD_CA_REPOSITORY {
+                        ca_repository_seen = true;
+                        if ca_repository.is_none() {
+                            if let Some(uri) = uri {
+                                if let Some(uri) = uri.into_rsync_uri() {
+                                    ca_repository = Some(uri)
                                 }
                             }
                         }
-                        else if oid == oid::AD_SIGNED_OBJECT {
-                            match ca {
-                                None => ca = Some(false),
-                                Some(false) => { }
-                                Some(true) => {
-                                    xerr!(return Err(decode::Malformed.into()))
+                    }
+                    else if oid == oid::AD_RPKI_MANIFEST {
+                        rpki_manifest_seen = true;
+                        if rpki_manifest.is_none() {
+                            if let Some(uri) = uri {
+                                if let Some(uri) = uri.into_rsync_uri() {
+                                    rpki_manifest = Some(uri)
                                 }
                             }
                         }
-                    let _ = UriGeneralName::take_from(cons)?;
+                    }
+                    else if oid == oid::AD_SIGNED_OBJECT {
+                        signed_object_seen = true;
+                        if signed_object.is_none() {
+                            if let Some(uri) = uri {
+                                if let Some(uri) = uri.into_rsync_uri() {
+                                    signed_object = Some(uri)
+                                }
+                            }
+                        }
+                    }
+                    else if oid == oid::AD_RPKI_NOTIFY {
+                        rpki_notify_seen = true;
+                        // This one must be a HTTP URI.
+                        //
+                        // XXX We are a bit lenient here: The RFC hints at
+                        //     having exactly one of these but it isn’t
+                        //     specific. We will therefore allow more than
+                        //     one but will ignore all but the first.
+                        let uri = match uri {
+                            Some(uri) => uri,
+                            None => {
+                                return xerr!(Err(decode::Malformed.into()))
+                            }
+                        };
+                        let uri = match uri.into_https_uri() {
+                            Some(uri) => uri,
+                            None => {
+                                return xerr!(Err(decode::Malformed.into()))
+                            }
+                        };
+                        if rpki_notify.is_none() {
+                            rpki_notify = Some(uri)
+                        }
+                    }
+                    else {
+                        other_seen = true
+                    }
                     Ok(())
                 })? { }
                 Ok(())
             })?;
-            if let Some(ca) = ca {
-                Ok(SubjectInfoAccess { content, ca })
-            }
-                else {
-                    // The sequence was empty.
-                    xerr!(Err(decode::Malformed.into()))
+            
+            // Check that we have a valid combination.
+            if ca_repository.is_some() {
+                // CA Certificate
+                //
+                // Requires also rpki_manifest. rpki_notify is optional.
+                //
+                // RFC 6487 doesn’t say that others aren’t allowed in CA
+                // certificates but it does say so for EE certificates so I
+                // guess it must be fine to have others in CA certificates.
+                if rpki_manifest.is_none() {
+                    return xerr!(Err(decode::Malformed.into()))
                 }
+            }
+            else {
+                // EE Certificate
+                //
+                // Only signed_object. Note that signed_object is not required
+                // in EE certificates for router keys etc. So we shouldn’t
+                // check that here.
+                if rpki_manifest.is_some() || rpki_notify.is_some()
+                    || other_seen
+                {
+                    return xerr!(Err(decode::Malformed.into()))
+                }
+            }
+            Ok(SubjectInfoAccess {
+                ca_repository, rpki_manifest, signed_object, rpki_notify,
+                content
+            })
         })
     }
 }
@@ -952,6 +1031,33 @@ impl UriGeneralName {
         })
     }
 
+    /// Takes a general name from the source that doesn’t need to be a URI.
+    ///
+    /// The next element in `cons` needs to be a GeneralName but it doesn’t
+    /// have to have the URI form. In this case, returns `Ok(None)`.
+    fn take_any_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Option<Self>, S::Err> {
+        cons.take_value(|tag, content| {
+            if !tag.is_context_specific() || tag.number() > 8 {
+                return xerr!(Err(decode::Malformed.into()))
+            }
+            if tag == Tag::CTX_6 {
+                let res = content.as_primitive()?.take_all()?;
+                if res.is_ascii() {
+                    Ok(Some(UriGeneralName(res)))
+                }
+                else {
+                    xerr!(Err(decode::Malformed.into()))
+                }
+            }
+            else {
+                Ok(None)
+            }
+        })
+    }
+
+
     fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, S::Err> {
@@ -981,7 +1087,11 @@ impl UriGeneralName {
     }
 
     pub fn into_rsync_uri(self) -> Option<uri::Rsync> {
-        uri::Rsync::from_bytes(self.0.clone()).ok()
+        uri::Rsync::from_bytes(self.0).ok()
+    }
+
+    pub fn into_https_uri(self) -> Option<uri::Https> {
+        uri::Https::from_bytes(self.0).ok()
     }
 }
 

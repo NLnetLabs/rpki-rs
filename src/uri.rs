@@ -262,18 +262,19 @@ impl fmt::Display for RsyncModule {
 
 /// A simple HTTP(s) URI
 ///
-/// This supports only what we need for the references in RPKI objects and
-/// publication / provisioning messages. In particular, this does not support
-/// the query and fragment components of URIs.
+/// This is only a slim wrapper around a `Bytes` value ensuring that the
+/// scheme is either `"http"` or `"https"`.
+///
+/// Note that this type holds both HTTP and HTTPS URIs. If you require a
+/// HTTPS URI, use [`uri::Https`] instead.
+///
+/// [`uri::Https`]: struct.Https.html
 #[derive(Clone, Debug, PartialEq)]
 pub struct Http {
-    secure: bool,
-    host:   Bytes,
-    path:   Bytes
+    uri: Bytes
 }
 
 impl Http {
-
     pub fn from_string(s: String) -> Result<Self, Error> {
         Self::from_bytes(Bytes::from(s))
     }
@@ -282,58 +283,55 @@ impl Http {
         Self::from_bytes(slice.into())
     }
 
-    pub fn from_bytes(mut bytes: Bytes) -> Result<Self, Error> {
+    pub fn from_bytes(bytes: Bytes) -> Result<Self, Error> {
         if !is_uri_ascii(&bytes) {
             return Err(Error::NotAscii)
         }
-
-        let secure = match Scheme::take(&mut bytes)? {
-            Scheme::Http => false,
-            Scheme::Https => true,
-            Scheme::Rsync => return Err(Error::BadScheme)
-        };
-
-        let host_length = {
-            let mut parts = bytes.splitn(3, |ch| *ch == b'/');
-            match parts.next() {
-                Some(host) => { host.len() }
-                None => return Err(Error::BadUri)
-            }
-        };
-
-        let host = bytes.split_to(host_length);
-        let path = bytes;
-
-        if path.is_empty() {
-            return Err(Error::BadUri)
+        if !Scheme::from_prefix(bytes.as_ref())?.0.is_any_http() {
+            return Err(Error::BadScheme)
         }
-
-        Ok(Http { secure, host, path })
+        Ok(Http { uri: bytes })
     }
 
     pub fn secure(&self) -> bool {
-        self.secure
+        self.scheme() == Scheme::Https
     }
 
     pub fn scheme(&self) -> Scheme {
-        if self.secure { Scheme::Https }
-        else { Scheme::Http }
+        Scheme::from_prefix(self.uri.as_ref()).unwrap().0
     }
 
-    pub fn host(&self) -> &str {
-        unsafe { ::std::str::from_utf8_unchecked(self.host.as_ref()) }
-    }
-
-    pub fn path(&self) -> &str {
-        unsafe { ::std::str::from_utf8_unchecked(self.path.as_ref()) }
+    pub fn as_str(&self) -> &str {
+        unsafe { str::from_utf8_unchecked(self.uri.as_ref()) }
     }
 
     pub fn to_string(&self) -> String {
-        format!("{}", self)
+        self.as_str().into()
     }
 
     pub fn encode_general_name<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence_as(Tag::CTX_6, self.encode())
+    }
+}
+
+
+//--- AsRef
+
+impl AsRef<Bytes> for Http {
+    fn as_ref(&self) -> &Bytes {
+        &self.uri
+    }
+}
+
+impl AsRef<str> for Http {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl AsRef<[u8]> for Http {
+    fn as_ref(&self) -> &[u8] {
+        self.uri.as_ref()
     }
 }
 
@@ -355,8 +353,7 @@ impl<'a> encode::PrimitiveContent for &'a Http {
     const TAG: Tag = Tag::IA5_STRING;
 
     fn encoded_len(&self, _: Mode) -> usize {
-        // scheme + "://" + host + path
-        self.scheme().as_str().len() + 3 + self.host.len() + self.path.len()
+        self.uri.len()
     }
 
     fn write_encoded<W: io::Write>(
@@ -364,11 +361,7 @@ impl<'a> encode::PrimitiveContent for &'a Http {
         _mode: Mode,
         target: &mut W
     ) -> Result<(), io::Error> {
-        target.write_all(self.scheme().as_str().as_bytes())?;
-        target.write_all(b"://")?;
-        target.write_all(self.host.as_ref())?;
-        target.write_all(self.path.as_ref())?;
-        Ok(())
+        target.write_all(self.uri.as_ref())
     }
 }
 
@@ -377,14 +370,115 @@ impl<'a> encode::PrimitiveContent for &'a Http {
 
 impl fmt::Display for Http {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.scheme().fmt(f)?;
-        if !self.host.is_empty() {
-            write!(f, "{}", self.host())?;
+        self.as_str().fmt(f)
+    }
+}
+
+
+//------------ Https ---------------------------------------------------------
+
+/// A simple HTTPS URI.
+///
+/// This is only a slim wrapper around a `Bytes` value ensuring that the
+/// scheme is `"https"`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Https {
+    uri: Bytes
+}
+
+impl Https {
+    pub fn from_string(s: String) -> Result<Self, Error> {
+        Self::from_bytes(Bytes::from(s))
+    }
+
+    pub fn from_slice(slice: &[u8]) -> Result<Self, Error> {
+        Self::from_bytes(slice.into())
+    }
+
+    pub fn from_bytes(bytes: Bytes) -> Result<Self, Error> {
+        if !is_uri_ascii(&bytes) {
+            return Err(Error::NotAscii)
         }
-        if !self.path.is_empty() {
-            write!(f, "{}", self.path())?;
+        if !Scheme::from_prefix(bytes.as_ref())?.0.is_https() {
+            return Err(Error::BadScheme)
         }
-        Ok(())
+        Ok(Https { uri: bytes })
+    }
+
+    pub fn scheme(&self) -> Scheme {
+        Scheme::Https
+    }
+
+    pub fn as_str(&self) -> &str {
+        unsafe { str::from_utf8_unchecked(self.uri.as_ref()) }
+    }
+
+    pub fn to_string(&self) -> String {
+        self.as_str().into()
+    }
+
+    pub fn encode_general_name<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence_as(Tag::CTX_6, self.encode())
+    }
+}
+
+
+//--- AsRef
+
+impl AsRef<Bytes> for Https {
+    fn as_ref(&self) -> &Bytes {
+        &self.uri
+    }
+}
+
+impl AsRef<str> for Https {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl AsRef<[u8]> for Https {
+    fn as_ref(&self) -> &[u8] {
+        self.uri.as_ref()
+    }
+}
+
+
+//--- FromStr
+
+impl str::FromStr for Https {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Error> {
+        Self::from_bytes(Bytes::from(s))
+    }
+}
+
+
+//--- PrimitiveContent
+
+impl<'a> encode::PrimitiveContent for &'a Https {
+    const TAG: Tag = Tag::IA5_STRING;
+
+    fn encoded_len(&self, _: Mode) -> usize {
+        self.uri.len()
+    }
+
+    fn write_encoded<W: io::Write>(
+        &self,
+        _mode: Mode,
+        target: &mut W
+    ) -> Result<(), io::Error> {
+        target.write_all(self.uri.as_ref())
+    }
+}
+
+
+//--- Display
+
+impl fmt::Display for Https {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.as_str().fmt(f)
     }
 }
 
@@ -399,30 +493,54 @@ pub enum Scheme {
 }
 
 impl Scheme {
-
-    fn take_if_matches(bytes: &mut Bytes, s: &str) -> bool {
-
-        let l = s.len();
-
-        if bytes.len()>l && bytes[..l].eq_ignore_ascii_case(s.as_ref()) {
-            bytes.advance(l);
-            return true
+    fn from_prefix(s: &[u8]) -> Result<(Self, usize), Error> {
+        if starts_with_ignore_case(s, b"http://") {
+            Ok((Scheme::Http, 7))
         }
-        false
+        else if starts_with_ignore_case(s, b"https://") {
+            Ok((Scheme::Https, 8))
+        }
+        else if starts_with_ignore_case(s, b"rsync://") {
+            Ok((Scheme::Rsync, 8))
+        }
+        else {
+            Err(Error::BadScheme)
+        }
     }
 
     fn take(bytes: &mut Bytes) -> Result<Scheme, Error> {
+        let (res, len) = Self::from_prefix(bytes.as_ref())?;
+        bytes.advance(len);
+        Ok(res)
+    }
 
-        if Scheme::take_if_matches(bytes, "rsync://") {
-            return Ok(Scheme::Rsync)
+    pub fn is_http(self) -> bool {
+        match self {
+            Scheme::Http => true,
+            _ => false
         }
-        if Scheme::take_if_matches(bytes, "https://") {
-            return Ok(Scheme::Https)
+    }
+
+    pub fn is_https(self) -> bool {
+        match self {
+            Scheme::Https => true,
+            _ => false
         }
-        if Scheme::take_if_matches(bytes, "http://") {
-            return Ok(Scheme::Http)
+    }
+
+    pub fn is_any_http(self) -> bool {
+        match self {
+            Scheme::Http => true,
+            Scheme::Https => true,
+            _ => false
         }
-        Err(Error::BadScheme)
+    }
+
+    pub fn is_rsync(self) -> bool {
+        match self {
+            Scheme::Rsync => true,
+            _ => false
+        }
     }
 
     pub fn as_str(self) -> &'static str {
@@ -447,6 +565,15 @@ impl fmt::Display for Scheme {
 
 
 //------------ Helper Functions ----------------------------------------------
+
+pub fn starts_with_ignore_case(s: &[u8], expected: &[u8]) -> bool {
+    if let Some(s) = s.get(..expected.len()) {
+        s.eq_ignore_ascii_case(expected)
+    }
+    else {
+        false
+    }
+}
 
 pub fn is_uri_ascii<S: AsRef<[u8]>>(slice: S) -> bool {
     slice.as_ref().iter().all(|&ch| {

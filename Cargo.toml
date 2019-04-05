@@ -1,6 +1,6 @@
 [package]
 name = "rpki"
-version = "0.3.4"
+version = "0.4.0"
 authors = ["The NLnet Labs RPKI Team <rpki@nlnetlabs.nl>"]
 description = "A library for validating and creating RPKI data."
 repository = "https://github.com/NLnetLabs/rpki-rs"
@@ -10,7 +10,7 @@ license = "BSD-3-Clause"
 
 [dependencies]
 base64          = "^0.9"
-bcder           = "^0.2.1"
+bcder           = "^0.2.2"
 bytes           = "^0.4"
 chrono          = "^0.4"
 derive_more     = "^0.14"
