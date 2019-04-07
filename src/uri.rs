@@ -381,7 +381,7 @@ impl fmt::Display for Http {
 ///
 /// This is only a slim wrapper around a `Bytes` value ensuring that the
 /// scheme is `"https"`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Https {
     uri: Bytes
 }

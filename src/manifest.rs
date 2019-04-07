@@ -440,7 +440,7 @@ mod signer_test {
         let mut cert = CertBuilder::new(
             12, pubkey.to_subject_name(), Validity::from_secs(86400), true
         );
-        cert.rpki_manifest(uri.clone())
+        cert.signed_object(uri.clone())
             .v4_blocks(|blocks| blocks.push(Prefix::new(0, 0)))
             .as_blocks(|blocks| blocks.push((AsId::MIN, AsId::MAX)));
 
