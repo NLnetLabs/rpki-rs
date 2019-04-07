@@ -1,6 +1,6 @@
 //! URIs.
 
-use std::{fmt, io, str};
+use std::{fmt, hash, io, str};
 use bcder::encode;
 use bcder::{Mode, Tag};
 use bcder::encode::PrimitiveContent;
@@ -215,7 +215,7 @@ impl fmt::Display for Rsync {
 
 //------------ RsyncModule ---------------------------------------------------
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct RsyncModule {
     authority: Bytes,
     module: Bytes,
@@ -250,6 +250,33 @@ impl RsyncModule {
         unsafe { ::std::str::from_utf8_unchecked(self.module.as_ref()) }
     }
 }
+
+
+//--- PartialEq and Eq
+
+impl PartialEq for RsyncModule {
+    fn eq(&self, other: &Self) -> bool {
+        self.authority.eq_ignore_ascii_case(other.authority.as_ref())
+        && self.module == other.module
+    }
+}
+
+impl Eq for RsyncModule { }
+
+
+//--- Hash
+
+impl hash::Hash for RsyncModule {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        for ch in self.authority.iter() {
+            ch.to_ascii_lowercase().hash(state)
+        }
+        self.module.hash(state)
+    }
+}
+
+
+//--- Display
 
 impl fmt::Display for RsyncModule {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -381,9 +408,23 @@ impl fmt::Display for Http {
 ///
 /// This is only a slim wrapper around a `Bytes` value ensuring that the
 /// scheme is `"https"`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Https {
-    uri: Bytes
+    /// The raw octets of the URI.
+    ///
+    /// Since a URI is guaranteed to be ASCII-only, this is also a valid
+    /// `str`.
+    uri: Bytes,
+
+    /// The index within `uri` where the hostname ends.
+    ///
+    /// We need this for comparison: the host part needs to be compared
+    /// case insensitive while all the rest is case sensitive. This attribute
+    /// then marks where case sensitive comparision starts.
+    ///
+    /// In a correctly encoded HTTPS URI, this is the third slash or the end
+    /// of the bytes if there isn’t one.
+    path_idx: usize,
 }
 
 impl Https {
@@ -399,10 +440,14 @@ impl Https {
         if !is_uri_ascii(&bytes) {
             return Err(Error::NotAscii)
         }
-        if !Scheme::from_prefix(bytes.as_ref())?.0.is_https() {
+        let (scheme, start) = Scheme::from_prefix(bytes.as_ref())?;
+        if !scheme.is_https() {
             return Err(Error::BadScheme)
         }
-        Ok(Https { uri: bytes })
+        let path_idx = bytes.iter().enumerate().skip(start).find(|&(_, ch)| {
+            *ch == b'/'
+        }).map(|(idx, _)| idx).unwrap_or_else(|| bytes.len());
+        Ok(Https { uri: bytes, path_idx })
     }
 
     pub fn scheme(&self) -> Scheme {
@@ -455,6 +500,33 @@ impl str::FromStr for Https {
 }
 
 
+//--- PartialEq and Eq
+
+impl PartialEq for Https {
+    fn eq(&self, other: &Self) -> bool {
+        self.path_idx == other.path_idx
+        && self.uri[..self.path_idx].eq_ignore_ascii_case(
+            &other.uri[..other.path_idx]
+        )
+        && self.uri[self.path_idx..] == other.uri[self.path_idx..]
+    }
+}
+
+impl Eq for Https { }
+
+
+//--- Hash
+
+impl hash::Hash for Https {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        for ch in self.uri[..self.path_idx].iter() {
+            ch.to_ascii_lowercase().hash(state)
+        }
+        self.uri[self.path_idx..].hash(state)
+    }
+}
+
+
 //--- PrimitiveContent
 
 impl<'a> encode::PrimitiveContent for &'a Https {
@@ -493,6 +565,10 @@ pub enum Scheme {
 }
 
 impl Scheme {
+    /// Determines the scheme from the prefix of a bytes slice.
+    ///
+    /// Returns both the scheme itself and the index of the first byte
+    /// following the scheme prefx including the two slashes.
     fn from_prefix(s: &[u8]) -> Result<(Self, usize), Error> {
         if starts_with_ignore_case(s, b"http://") {
             Ok((Scheme::Http, 7))
@@ -608,7 +684,7 @@ mod tests {
     use std::str::FromStr;
 
     #[test]
-    fn should_resolve_relative_rsync_path() {
+    fn resolve_relative_rsync_path() {
         let a = Rsync::from_str("rsync://localhost/module/a").unwrap();
         let a_b = Rsync::from_str("rsync://localhost/module/a/b").unwrap();
         let c = Rsync::from_str("rsync://localhost/module/c").unwrap();
@@ -623,7 +699,7 @@ mod tests {
     }
 
     #[test]
-    fn should_reject_non_ascii_http_uri() {
+    fn reject_non_ascii_http_uri() {
         match  Http::from_bytes(Bytes::from("http://my.høst.tld/å/pâth")) {
             Err(Error::NotAscii) => { }
             _ => { assert!(false); }
@@ -631,7 +707,7 @@ mod tests {
     }
 
     #[test]
-    fn should_reject_bad_scheme_http_uri() {
+    fn reject_bad_scheme_http_uri() {
         match Http::from_str("rsync://my.host.tld/path") {
             Err(Error::BadScheme) => {}
             _ => { assert!(false)}
@@ -639,15 +715,88 @@ mod tests {
     }
 
     #[test]
-    fn should_parse_http_uri() {
+    fn parse_http_uri() {
         let http = Http::from_str("http://my.host.tld/and/a/path").unwrap();
         assert_eq!(Scheme::Http, http.scheme());
     }
 
     #[test]
-    fn should_parse_https_uri() {
+    fn parse_https_uri() {
         let http = Http::from_str("https://my.host.tld/and/a/path").unwrap();
         assert_eq!(Scheme::Https, http.scheme());
         Https::from_str("https://my.host.tld/and/a/path").unwrap();
+    }
+
+    #[test]
+    fn https_eq()  {
+        assert_eq!(
+            Https::from_str("https://example.com/some/stuff").unwrap(),
+            Https::from_str("https://example.com/some/stuff").unwrap(),
+        );
+        assert_eq!(
+            Https::from_str("htTps://eXAMple.coM/some/stuff").unwrap(),
+            Https::from_str("https://example.com/some/stuff").unwrap(),
+        );
+        assert_eq!(
+            Https::from_str("https://example.com").unwrap(),
+            Https::from_str("https://example.com").unwrap(),
+        );
+        assert_eq!(
+            Https::from_str("https://example.com").unwrap(),
+            Https::from_str("htTps://eXAMple.coM").unwrap(),
+        );
+        assert_ne!(
+            Https::from_str("htTps://eXAMple.coM/some/stuff").unwrap(),
+            Https::from_str("https://example.com/Some/stuff").unwrap(),
+        );
+        assert_ne!(
+            Https::from_str("https://example.com/some/stuff").unwrap(),
+            Https::from_str("https://example.com/Some/stuff").unwrap(),
+        );
+        assert_ne!(
+            Https::from_str("https://example.com/some/stuff").unwrap(),
+            Https::from_str("https://example.com/Some/stufF").unwrap(),
+        );
+    }
+
+    #[test]
+    fn https_hash() {
+        fn hash<T: hash::Hash>(t: T) -> u64 {
+            use std::hash::Hasher;
+
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            t.hash(&mut hasher);
+            hasher.finish()
+        }
+        
+        assert_eq!(
+            hash(Https::from_str("https://example.com/some/stuff").unwrap()),
+            hash(Https::from_str("https://example.com/some/stuff").unwrap()),
+        );
+        assert_eq!(
+            hash(Https::from_str("htTps://eXAMple.coM/some/stuff").unwrap()),
+            hash(Https::from_str("https://example.com/some/stuff").unwrap()),
+        );
+        assert_eq!(
+            hash(Https::from_str("https://example.com").unwrap()),
+            hash(Https::from_str("https://example.com").unwrap()),
+        );
+        assert_eq!(
+            hash(Https::from_str("https://example.com").unwrap()),
+            hash(Https::from_str("htTps://eXAMple.coM").unwrap()),
+        );
+        assert_ne!(
+            hash(Https::from_str("htTps://eXAMple.coM/some/stuff").unwrap()),
+            hash(Https::from_str("https://example.com/Some/stuff").unwrap()),
+        );
+        assert_ne!(
+            hash(Https::from_str("https://example.com/some/stuff").unwrap()),
+            hash(Https::from_str("https://example.com/Some/stuff").unwrap()),
+        );
+        assert_ne!(
+            hash(Https::from_str("https://example.com/some/stuff").unwrap()),
+            hash(Https::from_str("https://example.com/Some/stufF").unwrap()),
+        );
+
     }
 }
