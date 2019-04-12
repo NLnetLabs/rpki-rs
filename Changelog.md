@@ -10,6 +10,9 @@ Breaking
 
 New
 
+* `uri::Rsync` and `uri::Https` now compare the authority part ignoring
+  ASCII-case. [(###)]
+
 Bug Fixes
 
 * Add `CertBuilder::ca_repository` for the CA Repository Subject

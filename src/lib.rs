@@ -28,8 +28,10 @@ extern crate chrono;
 extern crate hex;
 #[macro_use] extern crate log;
 #[cfg(feature = "softkeys")] extern crate openssl;
+extern crate quick_xml;
 extern crate ring;
 #[cfg(feature = "softkeys")] extern crate slab;
+extern crate uuid;
 extern crate untrusted;
 
 pub mod cert;
@@ -39,8 +41,9 @@ pub mod manifest;
 pub mod oid;
 pub mod resources;
 pub mod roa;
-pub mod uri;
+pub mod rrdp;
 pub mod sigobj;
 pub mod tal;
+pub mod uri;
 pub mod x509;
-
+pub mod xml;

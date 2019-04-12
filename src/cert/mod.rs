@@ -774,7 +774,7 @@ mod test {
     #[test]
     fn decode_tal() {
         Cert::decode(
-            &include_bytes!("../../test/afrinic-tal.cer")[..]
+            include_bytes!("../../test-data/afrinic-tal.cer").as_ref()
         ).unwrap();
     }
 }
