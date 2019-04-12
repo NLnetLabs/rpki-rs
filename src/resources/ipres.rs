@@ -459,6 +459,17 @@ impl str::FromStr for IpBlock {
 }
 
 
+//--- PartialEq and Eq
+
+impl PartialEq for IpBlock {
+    fn eq(&self, other: &Self) -> bool {
+        self.min() == other.min() && self.max() == other.max()
+    }
+}
+
+impl Eq for IpBlock { }
+
+
 //--- Block
 
 impl Block for IpBlock {
@@ -665,6 +676,12 @@ impl AddressRange {
 
 
 //--- From and FromStr
+
+impl From<(Addr, Addr)> for AddressRange {
+    fn from((min, max): (Addr, Addr)) -> Self {
+        AddressRange::new(min, max)
+    }
+}
 
 impl From<Prefix> for AddressRange {
     fn from(prefix: Prefix) -> Self {
@@ -1147,6 +1164,81 @@ pub enum FromStrError {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn ip_block_from_v4_str() {
+        assert_eq!(
+            IpBlock::from_v4_str("127.0.0.0/8").unwrap(),
+            IpBlock::Prefix(Prefix::new(Addr(127 << 120), 8))
+        );
+        assert_eq!(
+            IpBlock::from_v4_str("127.0.0.0-199.0.0.0").unwrap(),
+            IpBlock::Range((Addr(127 << 120), Addr(199 << 120)).into())
+        );
+        assert_eq!(
+            IpBlock::from_v4_str("127.0.0.0").unwrap(),
+            IpBlock::Range((Addr(127 << 120), Addr(127 << 120)).into())
+        );
+        assert!(IpBlock::from_v4_str("127.0.0.0/82").is_err());
+        assert!(IpBlock::from_v4_str("127.0.0.0/282").is_err());
+        assert!(IpBlock::from_v4_str("127.0.0.0/-282").is_err());
+        assert!(IpBlock::from_v4_str("::32/82").is_err());
+        assert!(IpBlock::from_v4_str("::32-::1").is_err());
+    }
+
+    #[test]
+    fn ip_block_from_v6_str() {
+        assert_eq!(
+            IpBlock::from_v6_str("7f00::").unwrap(),
+            IpBlock::Range((Addr(127 << 120), Addr(127 << 120)).into())
+        );
+        assert_eq!(
+            IpBlock::from_v6_str("7f00::/8").unwrap(),
+            IpBlock::Prefix(Prefix::new(Addr(127 << 120), 8))
+        );
+        assert_eq!(
+            IpBlock::from_v6_str("7f00::-c700::").unwrap(),
+            IpBlock::Range((Addr(127 << 120), Addr(199 << 120)).into())
+        );
+        assert!(IpBlock::from_v6_str("f700::/282").is_err());
+        assert!(IpBlock::from_v6_str("f700:/-282").is_err());
+        assert!(IpBlock::from_v6_str("127.0.0.0/8").is_err());
+        assert!(IpBlock::from_v6_str("127.0.0.0-199.0.0.0").is_err());
+    }
+
+    #[test]
+    fn ip_block_from_str() {
+        assert_eq!(
+            IpBlock::from_str("127.0.0.0/8").unwrap(),
+            IpBlock::Prefix(Prefix::new(Addr(127 << 120), 8))
+        );
+        assert_eq!(
+            IpBlock::from_str("127.0.0.0-199.0.0.0").unwrap(),
+            IpBlock::Range((Addr(127 << 120), Addr(199 << 120)).into())
+        );
+        assert_eq!(
+            IpBlock::from_str("127.0.0.0").unwrap(),
+            IpBlock::Range((Addr(127 << 120), Addr(127 << 120)).into())
+        );
+        assert_eq!(
+            IpBlock::from_str("7f00::").unwrap(),
+            IpBlock::Range((Addr(127 << 120), Addr(127 << 120)).into())
+        );
+        assert_eq!(
+            IpBlock::from_str("7f00::/8").unwrap(),
+            IpBlock::Prefix(Prefix::new(Addr(127 << 120), 8))
+        );
+        assert_eq!(
+            IpBlock::from_str("7f00::-c700::").unwrap(),
+            IpBlock::Range((Addr(127 << 120), Addr(199 << 120)).into())
+        );
+
+        assert!(IpBlock::from_str("127.0.0.0/82").is_err());
+        assert!(IpBlock::from_str("127.0.0.0/282").is_err());
+        assert!(IpBlock::from_str("127.0.0.0/-282").is_err());
+        assert!(IpBlock::from_str("f700::/282").is_err());
+        assert!(IpBlock::from_str("f700:/-282").is_err());
+    }
 
     #[test]
     fn addr_from() {
