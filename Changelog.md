@@ -6,9 +6,14 @@ Breaking
 
 New
 
+* Conversion from strings and formatting for the various forms of IP
+  resources. [(#32)]
+
 Bug Fixes
 
 Dependencies
+
+[(#32)]: https://github.com/NLnetLabs/rpki-rs/pull/32
 
 
 ## 0.3.3
