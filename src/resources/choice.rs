@@ -2,6 +2,7 @@
 ///
 /// This is a private module used only internally.
 
+use std::fmt;
 use crate::x509::ValidationError;
 
 
@@ -64,6 +65,18 @@ impl<T> ResourcesChoice<T> {
         match self {
             ResourcesChoice::Inherit => ResourcesChoice::Inherit,
             ResourcesChoice::Blocks(t) => ResourcesChoice::Blocks(f(t))
+        }
+    }
+}
+
+
+//--- Display
+
+impl<T: fmt::Display> fmt::Display for ResourcesChoice<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            ResourcesChoice::Inherit => write!(f, "inherit"),
+            ResourcesChoice::Blocks(ref inner) => inner.fmt(f)
         }
     }
 }

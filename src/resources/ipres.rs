@@ -7,9 +7,11 @@
 //! value is not used for an address family, the set of addresses must be
 //! non-empty.
 
-use std::{io, iter, mem};
+use std::{fmt, io, iter, mem, str};
 use std::iter::FromIterator;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{AddrParseError, IpAddr, Ipv4Addr, Ipv6Addr};
+use std::num::ParseIntError;
+use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, OctetString, Tag};
 use bcder::encode::PrimitiveContent;
@@ -321,6 +323,34 @@ pub enum IpBlock {
 }
 
 impl IpBlock {
+    /// Creates a new block from an IPv4 representation.
+    pub fn from_v4_str(s: &str) -> Result<Self, FromStrError> {
+        if let Some(sep) = s.find('/') {
+            Prefix::from_v4_str_sep(s, sep).map(IpBlock::Prefix)
+        }
+        else if let Some(sep) = s.find('-') {
+            AddressRange::from_v4_str_sep(s, sep).map(IpBlock::Range)
+        }
+        else {
+            let addr = Ipv4Addr::from_str(s)?.into();
+            Ok(IpBlock::Range(AddressRange::new(addr, addr)))
+        }
+    }
+
+    /// Creates a new block from an IPv6 representation.
+    pub fn from_v6_str(s: &str) -> Result<Self, FromStrError> {
+        if let Some(sep) = s.find('/') {
+            Prefix::from_v6_str_sep(s, sep).map(IpBlock::Prefix)
+        }
+        else if let Some(sep) = s.find('-') {
+            AddressRange::from_v6_str_sep(s, sep).map(IpBlock::Range)
+        }
+        else {
+            let addr = Ipv6Addr::from_str(s)?.into();
+            Ok(IpBlock::Range(AddressRange::new(addr, addr)))
+        }
+    }
+
     /// The smallest address of the block.
     pub fn min(&self) -> Addr {
         match *self {
@@ -334,6 +364,22 @@ impl IpBlock {
         match *self {
             IpBlock::Prefix(ref inner) => inner.max(),
             IpBlock::Range(ref inner) => inner.max(),
+        }
+    }
+
+    /// Formats the block as a IPv4 block.
+    pub fn fmt_v4(self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            IpBlock::Prefix(prefix) => prefix.fmt_v4(f),
+            IpBlock::Range(range) => range.fmt_v4(f),
+        }
+    }
+
+    /// Formats the block as a IPv4 block.
+    pub fn fmt_v6(self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            IpBlock::Prefix(prefix) => prefix.fmt_v6(f),
+            IpBlock::Range(range) => range.fmt_v6(f),
         }
     }
 }
@@ -372,7 +418,7 @@ impl IpBlock {
 }
 
 
-//--- From
+//--- From and FromStr
 
 impl From<Prefix> for IpBlock {
     fn from(prefix: Prefix) -> Self {
@@ -391,6 +437,23 @@ impl From<(Addr, Addr)> for IpBlock {
         match AddressRange::new(range.0, range.1).into_prefix() {
             Ok(prefix) => prefix.into(),
             Err(range) => range.into(),
+        }
+    }
+}
+
+impl str::FromStr for IpBlock {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(sep) = s.find('/') {
+            Prefix::from_str_sep(s, sep).map(IpBlock::Prefix)
+        }
+        else if let Some(sep) = s.find('-') {
+            AddressRange::from_str_sep(s, sep).map(IpBlock::Range)
+        }
+        else {
+            let addr = IpAddr::from_str(s)?.into();
+            Ok(IpBlock::Range(AddressRange::new(addr, addr)))
         }
     }
 }
@@ -449,6 +512,46 @@ impl AddressRange {
         AddressRange { min, max }
     }
 
+    /// Creates a new range from a string with known separator position.
+    fn from_str_sep(s: &str, sep: usize) -> Result<Self, FromStrError> {
+        let min = IpAddr::from_str(&s[..sep])?;
+        let max = IpAddr::from_str(&s[sep + 1..])?;
+        match (min.is_ipv4(), max.is_ipv4()) {
+            (true, true) | (false, false) => {
+                Ok(Self::new(min.into(), max.into()))
+            }
+            _ => Err(FromStrError::FamilyMismatch)
+        }
+    }
+
+    /// Creates a new range from an IPv4 string with known separator.
+    fn from_v4_str_sep(s: &str, sep: usize) -> Result<Self, FromStrError> {
+        Ok(Self::new(
+            Ipv4Addr::from_str(&s[..sep])?.into(),
+            Ipv4Addr::from_str(&s[sep + 1..])?.into()
+        ))
+    }
+
+    /// Creates a new range from an IPv4 string.
+    pub fn from_v4_str(s: &str) -> Result<Self, FromStrError> {
+        let sep = s.find('-').ok_or(FromStrError::MissingSeparator)?;
+        Self::from_v4_str_sep(s, sep)
+    }
+
+    /// Creates a new range from an IPv6 string with known separator.
+    fn from_v6_str_sep(s: &str, sep: usize) -> Result<Self, FromStrError> {
+        Ok(Self::new(
+            Ipv6Addr::from_str(&s[..sep])?.into(),
+            Ipv6Addr::from_str(&s[sep + 1..])?.into()
+        ))
+    }
+
+    /// Creates a new range from an IPv4 string.
+    pub fn from_v6_str(s: &str) -> Result<Self, FromStrError> {
+        let sep = s.find('-').ok_or(FromStrError::MissingSeparator)?;
+        Self::from_v6_str_sep(s, sep)
+    }
+
     /// Returns the smallest IP address that is part of this range.
     pub fn min(&self) -> Addr {
         self.min
@@ -503,6 +606,16 @@ impl AddressRange {
             Err(self)
         }
     }
+
+    /// Formats the range as an IPv4 range.
+    pub fn fmt_v4(self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}-{}", self.min.to_v4(), self.max.to_v4())
+    }
+
+    /// Formats the range as an IPv6 range.
+    pub fn fmt_v6(self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}-{}", self.min.to_v6(), self.max.to_v6())
+    }
 }
 
 impl AddressRange {
@@ -551,11 +664,20 @@ impl AddressRange {
 }
 
 
-//--- From
+//--- From and FromStr
 
 impl From<Prefix> for AddressRange {
     fn from(prefix: Prefix) -> Self {
         AddressRange::new(prefix.min(), prefix.max())
+    }
+}
+
+impl FromStr for AddressRange {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let sep = s.find('-').ok_or(FromStrError::MissingSeparator)?;
+        Self::from_str_sep(s, sep)
     }
 }
 
@@ -628,6 +750,59 @@ impl Prefix {
         Ok(Self::new(addr, src.bit_len() as u8))
     }
 
+    /// Creates a prefix from a string with a known position of the slash.
+    fn from_str_sep(s: &str, sep: usize) -> Result<Self, FromStrError> {
+        let addr = IpAddr::from_str(&s[..sep])?;
+        let len = u8::from_str(&s[sep + 1..])?;
+        if addr.is_ipv4() {
+            if len > 32 {
+                // XXX Produce an artifical overflow error.
+                let _ = u8::from_str("256")?;
+            }
+        }
+        else {
+            if len > 128 {
+                // XXX Produce an artifical overflow error.
+                let _ = u8::from_str("256")?;
+            }
+        }
+        Ok(Prefix::new(addr, len))
+    }
+
+    /// Creates a prefix from a IPv4 string with a known position of the slash.
+    fn from_v4_str_sep(s: &str, sep: usize) -> Result<Self, FromStrError> {
+        let addr = Ipv4Addr::from_str(&s[..sep])?;
+        let len = u8::from_str(&s[sep + 1..])?;
+        if len > 32 {
+            // XXX Produce an artifical overflow error.
+            let _ = u8::from_str("256")?;
+        }
+        Ok(Prefix::new(addr, len))
+    }
+
+    /// Creates a prefix from an IPv4 string.
+    pub fn from_v4_str(s: &str) -> Result<Self, FromStrError> {
+        let sep = s.find('/').ok_or(FromStrError::MissingSeparator)?;
+        Self::from_v4_str_sep(s, sep)
+    }
+
+    /// Creates a prefix from a IPv6 string with a known position of the slash.
+    fn from_v6_str_sep(s: &str, sep: usize) -> Result<Self, FromStrError> {
+        let addr = Ipv6Addr::from_str(&s[..sep])?;
+        let len = u8::from_str(&s[sep + 1..])?;
+        if len > 128 {
+            // XXX Produce an artifical overflow error.
+            let _ = u8::from_str("256")?;
+        }
+        Ok(Prefix::new(addr, len))
+    }
+
+    /// Creates a prefix from an IPv6 string.
+    pub fn from_v6_str(s: &str) -> Result<Self, FromStrError> {
+        let sep = s.find('/').ok_or(FromStrError::MissingSeparator)?;
+        Self::from_v6_str_sep(s, sep)
+    }
+
     /// Returns the raw address of the prefix.
     pub fn addr(self) -> Addr {
         self.addr
@@ -646,6 +821,18 @@ impl Prefix {
     /// Converts the prefix into an IPv6 address.
     pub fn to_v6(self) -> Ipv6Addr {
         self.addr.into()
+    }
+
+    /// Formats the prefix as an IPv4 prefix.
+    pub fn fmt_v4(self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.addr.fmt_v4(f)?;
+        write!(f, "/{}", self.len)
+    }
+
+    /// Formats the prefix as an IPv4 prefix.
+    pub fn fmt_v6(self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.addr.fmt_v6(f)?;
+        write!(f, "/{}", self.len)
     }
 
     /// Returns the range of addresses covered by this prefix.
@@ -684,6 +871,21 @@ impl Prefix {
         )?)
     }
 }
+
+
+//--- FromStr
+
+impl FromStr for Prefix {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let sep = s.find('/').ok_or(FromStrError::MissingSeparator)?;
+        Self::from_str_sep(s, sep)
+    }
+}
+
+
+//--- PrimitiveContent
 
 impl encode::PrimitiveContent for Prefix {
     const TAG: Tag = Tag::BIT_STRING;
@@ -741,6 +943,16 @@ impl Addr {
         Addr::from_bits(u128::from(addr))
     }
 
+    /// Creates a new address from a IPv4 string representation.
+    pub fn from_v4_str(s: &str) -> Result<Self, AddrParseError> {
+        Ipv4Addr::from_str(s).map(Into::into)
+    }
+
+    /// Creates a new address from a IPv4 string representation.
+    pub fn from_v6_str(s: &str) -> Result<Self, AddrParseError> {
+        Ipv6Addr::from_str(s).map(Into::into)
+    }
+
     /// Returns the raw bits of the underlying integer.
     pub fn to_bits(self) -> u128 {
         self.0
@@ -788,10 +1000,21 @@ impl Addr {
             Addr(self.0 | (!0 >> prefix_len as usize))
         }
     }
+
+    /// Formats the address as a IPv4 address.
+    pub fn fmt_v4(self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(&Ipv4Addr::from(self), f)
+    }
+
+    /// Formats the address as a IPv4 address.
+    pub fn fmt_v6(self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(&Ipv6Addr::from(self), f)
+    }
+
 }
 
 
-//--- From
+//--- From and FromStr
 
 impl From<u128> for Addr {
     fn from(addr: u128) -> Addr {
@@ -837,6 +1060,16 @@ impl From<Addr> for Ipv6Addr {
         addr.to_v6()
     }
 }
+
+
+impl FromStr for Addr {
+    type Err = AddrParseError;
+
+    fn from_str(s: &str) -> Result<Self, AddrParseError> {
+        IpAddr::from_str(s).map(Into::into)
+    }
+}
+
 
 
 //------------ AddressFamily -------------------------------------------------
@@ -888,6 +1121,24 @@ impl AddressFamily {
             }
         )
     }
+}
+
+
+//------------ FromStrError --------------------------------------------------
+
+#[derive(Clone, Debug, Display, Eq, From, PartialEq)]
+pub enum FromStrError {
+    #[display(fmt="{}", _0)]
+    Addr(AddrParseError),
+
+    #[display(fmt="bad prefix length: {}", _0)]
+    PrefixLen(ParseIntError),
+
+    #[display(fmt="missing separator")]
+    MissingSeparator,
+
+    #[display(fmt="address family mismatch")]
+    FamilyMismatch,
 }
 
 
