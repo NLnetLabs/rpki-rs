@@ -29,8 +29,10 @@ extern crate hex;
 #[macro_use] extern crate log;
 #[cfg(feature = "softkeys")] extern crate openssl;
 extern crate ring;
+extern crate serde;
 #[cfg(feature = "softkeys")] extern crate slab;
 extern crate untrusted;
+extern crate core;
 
 pub mod cert;
 pub mod crl;

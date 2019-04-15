@@ -22,9 +22,12 @@ pub use self::ipres::{
     Addr, AddressFamily, IpBlocks, IpBlocksBuilder, IpResources,
     IpResourcesBuilder, Prefix
 };
+pub use self::inrset::{
+    InrSet, ExplicitInrSet
+};
 
 mod asres;
 mod chain;
 mod choice;
+mod inrset;
 mod ipres;
-

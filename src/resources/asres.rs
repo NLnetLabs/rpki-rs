@@ -15,6 +15,7 @@
 
 use std::{fmt, iter, ops};
 use std::iter::FromIterator;
+use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::Tag;
 use bcder::encode::PrimitiveContent;
@@ -129,7 +130,6 @@ impl AsResources {
         )
     }
 }
-
 
 //------------ AsResourcesBuilder --------------------------------------------
 
@@ -276,13 +276,31 @@ impl AsBlocks {
 }
 
 
+//--- Display
+
+impl fmt::Display for AsBlocks {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut first = true;
+        for el in self.iter() {
+            if ! first {
+                write!(f, ", ")?;
+            } else {
+                first = false;
+            }
+            el.fmt(f)?;
+        }
+        Ok(())
+    }
+}
+
+
 //------------ AsBlocksBuilder -----------------------------------------------
 
 #[derive(Clone, Debug)]
 pub struct AsBlocksBuilder(Vec<AsBlock>);
 
 impl AsBlocksBuilder {
-    fn new() -> Self {
+    pub fn new() -> Self {
         AsBlocksBuilder(Vec::new())
     }
 
@@ -408,7 +426,7 @@ impl AsBlock {
 }
 
 
-//--- From
+//--- From and FromStr
 
 impl From<AsId> for AsBlock {
     fn from(id: AsId) -> Self {
@@ -425,6 +443,28 @@ impl From<AsRange> for AsBlock {
 impl From<(AsId, AsId)> for AsBlock {
     fn from(range: (AsId, AsId)) -> Self {
         AsBlock::Range(AsRange::new(range.0, range.1))
+    }
+}
+
+impl FromStr for AsBlock {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.contains('-') {
+            let mut els = s.split('-');
+            let min = els.next().ok_or_else(|| FromStrError::RangeSyntaxError)?;
+            let max = els.next().ok_or_else(|| FromStrError::RangeSyntaxError)?;
+            if els.next().is_some() {
+                return Err(FromStrError::RangeSyntaxError);
+            }
+
+            let min = AsId::from_str(&min)?;
+            let max = AsId::from_str(&max)?;
+
+            Ok(AsBlock::Range(AsRange::new(min, max)))
+        } else {
+            Ok(AsBlock::Id(AsId::from_str(s)?))
+        }
     }
 }
 
@@ -453,6 +493,17 @@ impl Block for AsBlock {
 
     fn next(item: Self::Item) -> Option<Self::Item> {
         item.0.checked_add(1).map(AsId)
+    }
+}
+
+//--- Display
+
+impl fmt::Display for AsBlock {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            AsBlock::Id(id) => id.fmt(f),
+            AsBlock::Range(range) => range.fmt(f)
+        }
     }
 }
 
@@ -545,6 +596,14 @@ impl Block for AsRange {
     }
 }
 
+//--- Display
+
+impl fmt::Display for AsRange {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}-{}", self.min, self.max)
+    }
+}
+
 
 //------------ AsId ----------------------------------------------------------
 
@@ -608,6 +667,24 @@ impl From<AsId> for u32 {
     }
 }
 
+//--- FromStr
+
+impl FromStr for AsId {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let nr_str = if (s.starts_with('a') || s.starts_with('A')) && s.len() > 2 {
+           &s[2..]
+        } else {
+            &s
+        };
+
+        let id = u32::from_str(nr_str)
+            .map_err(|_| FromStrError::BadAsn(s.to_string()))?;
+        Ok(AsId(id))
+    }
+}
+
 
 //--- Add
 
@@ -628,3 +705,14 @@ impl fmt::Display for AsId {
     }
 }
 
+
+//------------ FromStrError --------------------------------------------------
+
+#[derive(Clone, Debug, Display, Eq, From, PartialEq)]
+pub enum FromStrError {
+    #[display(fmt="Bad AS number: {}", _0)]
+    BadAsn(String),
+
+    #[display(fmt="AS range syntax error")]
+    RangeSyntaxError,
+}

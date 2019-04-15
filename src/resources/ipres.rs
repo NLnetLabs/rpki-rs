@@ -8,6 +8,7 @@
 //! non-empty.
 
 use std::{fmt, io, iter, mem, str};
+use std::fmt::Display;
 use std::iter::FromIterator;
 use std::net::{AddrParseError, IpAddr, Ipv4Addr, Ipv6Addr};
 use std::num::ParseIntError;
@@ -287,6 +288,26 @@ impl IpBlocks {
     pub fn encode(self) -> impl encode::Values {
         encode::sequence(encode::slice(self.0, |block| block.encode()))
     }
+
+    pub fn fmt_for_fam(
+        &self,
+        f: &mut fmt::Formatter,
+        fam: &AddressFamily
+    ) -> fmt::Result {
+        let mut first = true;
+        for el in self.iter() {
+            if ! first {
+                write!(f, ", ")?;
+            } else {
+                first = false;
+            }
+            match fam {
+                AddressFamily::Ipv4 => el.fmt_v4(f)?,
+                AddressFamily::Ipv6 => el.fmt_v6(f)?
+            }
+        }
+        Ok(())
+    }
 }
 
 
@@ -296,7 +317,7 @@ impl IpBlocks {
 pub struct IpBlocksBuilder(Vec<IpBlock>);
 
 impl IpBlocksBuilder {
-    fn new() -> Self {
+    pub fn new() -> Self {
         IpBlocksBuilder(Vec::new())
     }
 
@@ -620,12 +641,26 @@ impl AddressRange {
 
     /// Formats the range as an IPv4 range.
     pub fn fmt_v4(self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}-{}", self.min.to_v4(), self.max.to_v4())
+        let min = self.min.to_v4();
+        let max = self.max.to_v4();
+
+        if min == max {
+            min.fmt(f)
+        } else {
+            write!(f, "{}-{}", min, max)
+        }
     }
 
     /// Formats the range as an IPv6 range.
     pub fn fmt_v6(self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}-{}", self.min.to_v6(), self.max.to_v6())
+        let min = self.min.to_v6();
+        let max = self.max.to_v6();
+
+        if min == max {
+            min.fmt(f)
+        } else {
+            write!(f, "{}-{}", min, max)
+        }
     }
 }
 
