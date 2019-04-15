@@ -7,7 +7,7 @@ Breaking
 New
 
 * Conversion from strings and formatting for the various forms of IP
-  resources. [(#32)]
+  and AS resources. [(#32)]
 
 Bug Fixes
 
