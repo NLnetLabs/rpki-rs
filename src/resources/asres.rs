@@ -300,6 +300,7 @@ impl fmt::Display for AsBlocks {
 pub struct AsBlocksBuilder(Vec<AsBlock>);
 
 impl AsBlocksBuilder {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         AsBlocksBuilder(Vec::new())
     }

@@ -289,10 +289,10 @@ impl IpBlocks {
         encode::sequence(encode::slice(self.0, |block| block.encode()))
     }
 
-    pub fn fmt_for_fam(
+    pub fn fmt_for_family(
         &self,
         f: &mut fmt::Formatter,
-        fam: &AddressFamily
+        fam: AddressFamily
     ) -> fmt::Result {
         let mut first = true;
         for el in self.iter() {
@@ -317,6 +317,7 @@ impl IpBlocks {
 pub struct IpBlocksBuilder(Vec<IpBlock>);
 
 impl IpBlocksBuilder {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         IpBlocksBuilder(Vec::new())
     }
@@ -812,11 +813,9 @@ impl Prefix {
                 let _ = u8::from_str("256")?;
             }
         }
-        else {
-            if len > 128 {
-                // XXX Produce an artifical overflow error.
-                let _ = u8::from_str("256")?;
-            }
+        else if len > 128 {
+            // XXX Produce an artifical overflow error.
+            let _ = u8::from_str("256")?;
         }
         Ok(Prefix::new(addr, len))
     }
