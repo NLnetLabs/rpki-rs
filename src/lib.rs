@@ -31,6 +31,7 @@ extern crate hex;
 extern crate ring;
 #[cfg(feature = "softkeys")] extern crate slab;
 extern crate untrusted;
+extern crate core;
 
 pub mod cert;
 pub mod crl;

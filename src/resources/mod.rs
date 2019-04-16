@@ -19,12 +19,11 @@ pub use self::asres::{
 };
 pub use self::choice::ResourcesChoice;
 pub use self::ipres::{
-    Addr, AddressFamily, IpBlocks, IpBlocksBuilder, IpResources,
-    IpResourcesBuilder, Prefix
+    Addr, AddressFamily, IpBlocks, IpBlocksBuilder, IpBlocksForFamily,
+    IpResources, IpResourcesBuilder, Prefix
 };
 
 mod asres;
 mod chain;
 mod choice;
 mod ipres;
-
