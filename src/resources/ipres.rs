@@ -1199,12 +1199,21 @@ pub enum FromStrError {
 mod test {
     use super::*;
 
-    struct IpBlocksForFamily {
+    struct IpBlocksForFamily<'a> {
         family: AddressFamily,
-        blocks: IpBlocks
+        blocks: &'a IpBlocks
     }
 
-    impl fmt::Display for IpBlocksForFamily {
+    impl<'a> IpBlocksForFamily<'a> {
+        fn v4(blocks: &'a IpBlocks) -> Self {
+            IpBlocksForFamily {
+                family: AddressFamily::Ipv4,
+                blocks
+            }
+        }
+    }
+
+    impl<'a> fmt::Display for IpBlocksForFamily<'a> {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self.family {
                 AddressFamily::Ipv4 => self.blocks.fmt_for_family(f, AddressFamily::Ipv4),
@@ -1222,10 +1231,7 @@ mod test {
         let blocks = builder.finalize();
 
         let expected_str = "10.0.0.0, 10.1.0.0-10.1.2.255, 192.168.0.0/16";
-        let blocks_for_fam = IpBlocksForFamily {
-            family: AddressFamily::Ipv4,
-            blocks
-        };
+        let blocks_for_fam = IpBlocksForFamily::v4(&blocks);
 
         assert_eq!(expected_str, &blocks_for_fam.to_string())
     }
