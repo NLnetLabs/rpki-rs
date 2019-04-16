@@ -305,6 +305,7 @@ impl FromStr for AsBlocks {
         let mut builder = AsBlocksBuilder::default();
 
         for el in s.split(',') {
+            let el = el.trim();
             let block = AsBlock::from_str(&el)?;
             builder.push(block);
         }
