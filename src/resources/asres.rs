@@ -280,16 +280,36 @@ impl AsBlocks {
 
 impl fmt::Display for AsBlocks {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut first = true;
-        for el in self.iter() {
-            if ! first {
-                write!(f, ", ")?;
-            } else {
-                first = false;
-            }
+
+        let mut iter = self.iter();
+
+        if let Some(el) = iter.next() {
             el.fmt(f)?;
         }
+
+        for el in iter {
+            write!(f, ", ")?;
+            el.fmt(f)?;
+        }
+
         Ok(())
+    }
+}
+
+//--- FromStr
+
+impl FromStr for AsBlocks {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut builder = AsBlocksBuilder::default();
+
+        for el in s.split(',') {
+            let block = AsBlock::from_str(&el)?;
+            builder.push(block);
+        }
+
+        Ok(builder.finalize())
     }
 }
 
@@ -456,20 +476,18 @@ impl FromStr for AsBlock {
     type Err = FromStrError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.contains('-') {
-            let mut els = s.split('-');
-            let min = els.next().ok_or_else(|| FromStrError::RangeSyntaxError)?;
-            let max = els.next().ok_or_else(|| FromStrError::RangeSyntaxError)?;
-            if els.next().is_some() {
-                return Err(FromStrError::RangeSyntaxError);
-            }
 
-            let min = AsId::from_str(&min)?;
-            let max = AsId::from_str(&max)?;
+        let mut iter = s.split('-');
 
-            Ok(AsBlock::Range(AsRange::new(min, max)))
+        let min = iter.next().ok_or_else(|| FromStrError::EmptyStringError)?;
+        let min = AsId::from_str(min)?;
+
+        if let Some(max) = iter.next() {
+            let max = AsId::from_str(max)?;
+
+            Ok(AsBlock::Range(AsRange { min, max }))
         } else {
-            Ok(AsBlock::Id(AsId::from_str(s)?))
+            Ok(AsBlock::Id(min))
         }
     }
 }
@@ -679,15 +697,14 @@ impl FromStr for AsId {
     type Err = FromStrError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let nr_str = if (s.starts_with('a') || s.starts_with('A')) && s.len() > 2 {
-           &s[2..]
-        } else {
-            &s
-        };
 
-        let id = u32::from_str(nr_str)
-            .map_err(|_| FromStrError::BadAsn(s.to_string()))?;
-        Ok(AsId(id))
+        if s.len() < 3 || ! s[..2].eq_ignore_ascii_case("as") {
+            Err(FromStrError::BadAsn(s.to_string()))
+        } else {
+            let id = u32::from_str(&s[2..])
+                .map_err(|_| FromStrError::BadAsn(s.to_string()))?;
+            Ok(AsId(id))
+        }
     }
 }
 
@@ -716,9 +733,46 @@ impl fmt::Display for AsId {
 
 #[derive(Clone, Debug, Display, Eq, From, PartialEq)]
 pub enum FromStrError {
-    #[display(fmt="Bad AS number: {}", _0)]
+    #[display(fmt="Bad AS number. Expected format: AS#, got: {}", _0)]
     BadAsn(String),
 
     #[display(fmt="AS range syntax error")]
     RangeSyntaxError,
+
+    #[display(fmt="Cannot create ASN from empty string")]
+    EmptyStringError,
+}
+
+//============ Tests =========================================================
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn as_id_from_str() {
+        let as1 = AsId::from_str("AS1").unwrap();
+        assert_eq!(as1, AsId(1))
+    }
+
+    #[test]
+    fn as_block_from_range_str() {
+        let expected_str = "AS1-AS3";
+        let block = AsBlock::from_str(expected_str).unwrap();
+        assert_eq!(expected_str, &block.to_string())
+    }
+
+    #[test]
+    fn as_block_from_asid_str() {
+        let expected_str = "AS1";
+        let block = AsBlock::from_str(expected_str).unwrap();
+        assert_eq!(expected_str, &block.to_string())
+    }
+
+    #[test]
+    fn as_blocks_from_str() {
+        let expected_str = "AS1, AS3-AS7";
+        let blocks = AsBlocks::from_str(expected_str).unwrap();
+        assert_eq!(expected_str, &blocks.to_string())
+    }
 }
