@@ -477,17 +477,21 @@ impl FromStr for AsBlock {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
 
-        let mut iter = s.split('-');
-
-        let min = iter.next().ok_or_else(|| FromStrError::EmptyStringError)?;
-        let min = AsId::from_str(min)?;
-
-        if let Some(max) = iter.next() {
-            let max = AsId::from_str(max)?;
-
-            Ok(AsBlock::Range(AsRange { min, max }))
-        } else {
-            Ok(AsBlock::Id(min))
+        match s.find('-') {
+            None => Ok(AsBlock::Id(AsId::from_str(s)?)),
+            Some(pos) => {
+                if s.len() < pos + 2 {
+                    Err(FromStrError::BadRange)
+                } else {
+                    let min_str = &s[..pos];
+                    let max_str = &s[pos + 1 ..];
+                    let min = AsId::from_str(min_str)
+                        .map_err(|_| FromStrError::BadRange)?;
+                    let max = AsId::from_str(max_str)
+                        .map_err(|_| FromStrError::BadRange)?;
+                    Ok(AsBlock::Range(AsRange { min, max }))
+                }
+            }
         }
     }
 }
@@ -699,10 +703,10 @@ impl FromStr for AsId {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
 
         if s.len() < 3 || ! s[..2].eq_ignore_ascii_case("as") {
-            Err(FromStrError::BadAsn(s.to_string()))
+            Err(FromStrError::BadAsn)
         } else {
             let id = u32::from_str(&s[2..])
-                .map_err(|_| FromStrError::BadAsn(s.to_string()))?;
+                .map_err(|_| FromStrError::BadAsn)?;
             Ok(AsId(id))
         }
     }
@@ -733,14 +737,11 @@ impl fmt::Display for AsId {
 
 #[derive(Clone, Debug, Display, Eq, From, PartialEq)]
 pub enum FromStrError {
-    #[display(fmt="Bad AS number. Expected format: AS#, got: {}", _0)]
-    BadAsn(String),
+    #[display(fmt="Bad AS number. Expected format: AS#")]
+    BadAsn,
 
-    #[display(fmt="AS range syntax error")]
-    RangeSyntaxError,
-
-    #[display(fmt="Cannot create ASN from empty string")]
-    EmptyStringError,
+    #[display(fmt="Bad AS range. Expected format: AS#-AS#")]
+    BadRange,
 }
 
 //============ Tests =========================================================
@@ -761,6 +762,14 @@ mod test {
         let block = AsBlock::from_str(expected_str).unwrap();
         assert_eq!(expected_str, &block.to_string())
     }
+
+    #[test]
+    fn as_block_from_wrong_range_str() {
+        let expected_str = "AS1-";
+        let block_err = AsBlock::from_str(expected_str).err();
+        assert_eq!(Some(FromStrError::BadRange), block_err)
+    }
+
 
     #[test]
     fn as_block_from_asid_str() {
