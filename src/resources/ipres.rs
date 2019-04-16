@@ -178,6 +178,53 @@ impl Default for IpResourcesBuilder {
 }
 
 
+
+//------------ IpBlocksForFamily ---------------------------------------------
+
+/// IpBlocks for a specific family, to help formatting
+pub struct IpBlocksForFamily<'a> {
+    family: AddressFamily,
+    blocks: &'a IpBlocks
+}
+
+impl<'a> IpBlocksForFamily<'a> {
+    pub fn v4(blocks: &'a IpBlocks) -> Self {
+        IpBlocksForFamily {
+            family: AddressFamily::Ipv4,
+            blocks
+        }
+    }
+    pub fn v6(blocks: &'a IpBlocks) -> Self {
+        IpBlocksForFamily {
+            family: AddressFamily::Ipv6,
+            blocks
+        }
+    }
+}
+
+impl<'a> fmt::Display for IpBlocksForFamily<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut blocks_iter = self.blocks.iter();
+
+        if let Some(el) = blocks_iter.next() {
+            match self.family {
+                AddressFamily::Ipv4 => el.fmt_v4(f)?,
+                AddressFamily::Ipv6 => el.fmt_v6(f)?,
+            }
+        }
+
+        for el in blocks_iter {
+            write!(f, ", ")?;
+            match self.family {
+                AddressFamily::Ipv4 => el.fmt_v4(f)?,
+                AddressFamily::Ipv6 => el.fmt_v6(f)?,
+            }
+        }
+
+        Ok(())
+    }
+}
+
 //------------ IpBlocks ------------------------------------------------------
 
 /// A sequence of address ranges for one address family.
@@ -289,24 +336,56 @@ impl IpBlocks {
         encode::sequence(encode::slice(self.0, |block| block.encode()))
     }
 
-    pub fn fmt_for_family(
-        &self,
-        f: &mut fmt::Formatter,
-        fam: AddressFamily
-    ) -> fmt::Result {
-        let mut first = true;
-        for el in self.iter() {
-            if ! first {
-                write!(f, ", ")?;
-            } else {
-                first = false;
-            }
-            match fam {
-                AddressFamily::Ipv4 => el.fmt_v4(f)?,
-                AddressFamily::Ipv6 => el.fmt_v6(f)?
+    /// Returns an IpBlocksForFamily for IPv4 for this,
+    /// to help formatting.
+    pub fn as_v4(&self) -> IpBlocksForFamily {
+        IpBlocksForFamily::v4(&self)
+    }
+
+    /// Returns an IpBlocksForFamily for IPv4 for this,
+    /// to help formatting.
+    pub fn as_v6(&self) -> IpBlocksForFamily {
+        IpBlocksForFamily::v6(&self)
+    }
+}
+
+impl FromStr for IpBlocks {
+    type Err = FromStrError;
+
+    /// This parses comma separated IpBlocks (ranges, prefixes
+    /// and single addresses). This will throw an error if the
+    /// input contains a mix of AddressFamily.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+
+        let family = if s.contains('.') {
+            AddressFamily::Ipv4
+        } else {
+            AddressFamily::Ipv6
+        };
+
+        let mut builder = IpBlocksBuilder::default();
+
+        for el in s.split(',') {
+            let s = el.trim();
+            match family {
+                AddressFamily::Ipv4 => {
+                    if let Ok(block) = IpBlock::from_v4_str(&s) {
+                        builder.push(block)
+                    } else {
+                        return Err(FromStrError::FamilyMismatch)
+                    }
+                },
+                AddressFamily::Ipv6 => {
+                    if let Ok(block) = IpBlock::from_v6_str(&s) {
+                        builder.push(block)
+                    } else {
+                        return Err(FromStrError::FamilyMismatch)
+                    }
+                }
             }
         }
-        Ok(())
+
+        Ok(builder.finalize())
     }
 }
 
@@ -1203,42 +1282,29 @@ pub enum FromStrError {
 mod test {
     use super::*;
 
-    struct IpBlocksForFamily<'a> {
-        family: AddressFamily,
-        blocks: &'a IpBlocks
-    }
-
-    impl<'a> IpBlocksForFamily<'a> {
-        fn v4(blocks: &'a IpBlocks) -> Self {
-            IpBlocksForFamily {
-                family: AddressFamily::Ipv4,
-                blocks
-            }
-        }
-    }
-
-    impl<'a> fmt::Display for IpBlocksForFamily<'a> {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            match self.family {
-                AddressFamily::Ipv4 => self.blocks.fmt_for_family(f, AddressFamily::Ipv4),
-                AddressFamily::Ipv6 => self.blocks.fmt_for_family(f, AddressFamily::Ipv6),
-            }
-        }
+    #[test]
+    fn ip_blocks_to_v4_str() {
+        let expected_str = "10.0.0.0, 10.1.0.0-10.1.2.255, 192.168.0.0/16";
+        let blocks = IpBlocks::from_str(expected_str).unwrap();
+        assert_eq!(expected_str, &blocks.as_v4().to_string())
     }
 
     #[test]
-    fn ip_blocks_to_v4_str() {
-        let mut builder = IpBlocksBuilder::new();
-        builder.push(IpBlock::from_v4_str("10.1.0.0-10.1.2.255").unwrap());
-        builder.push(IpBlock::from_v4_str("192.168.0.0/16").unwrap());
-        builder.push(IpBlock::from_v4_str("10.0.0.0").unwrap());
-        let blocks = builder.finalize();
-
-        let expected_str = "10.0.0.0, 10.1.0.0-10.1.2.255, 192.168.0.0/16";
-        let blocks_for_fam = IpBlocksForFamily::v4(&blocks);
-
-        assert_eq!(expected_str, &blocks_for_fam.to_string())
+    fn ip_blocks_to_v6_str() {
+        let expected_str = "::1, 2001:db8::/32";
+        let blocks = IpBlocks::from_str(expected_str).unwrap();
+        assert_eq!(expected_str, &blocks.as_v6().to_string())
     }
+
+    #[test]
+    fn ip_blocks_cannot_parse_mix() {
+        let input = "10.0.0.0, ::1, 2001:db8::/32";
+        assert_eq!(
+            IpBlocks::from_str(input).err(),
+            Some(FromStrError::FamilyMismatch)
+        );
+    }
+
 
     #[test]
     fn ip_block_from_v4_str() {
