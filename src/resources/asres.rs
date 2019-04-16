@@ -300,7 +300,6 @@ impl fmt::Display for AsBlocks {
 pub struct AsBlocksBuilder(Vec<AsBlock>);
 
 impl AsBlocksBuilder {
-    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         AsBlocksBuilder(Vec::new())
     }
@@ -311,6 +310,12 @@ impl AsBlocksBuilder {
 
     pub fn finalize(self) -> AsBlocks {
         AsBlocks(SharedChain::from_iter(self.0.into_iter()))
+    }
+}
+
+impl Default for AsBlocksBuilder {
+    fn default() -> Self {
+        AsBlocksBuilder::new()
     }
 }
 

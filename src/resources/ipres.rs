@@ -317,7 +317,6 @@ impl IpBlocks {
 pub struct IpBlocksBuilder(Vec<IpBlock>);
 
 impl IpBlocksBuilder {
-    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         IpBlocksBuilder(Vec::new())
     }
@@ -331,6 +330,11 @@ impl IpBlocksBuilder {
     }
 }
 
+impl Default for IpBlocksBuilder {
+    fn default() -> Self {
+        IpBlocksBuilder::new()
+    }
+}
 
 //------------ IpBlock -------------------------------------------------------
 
