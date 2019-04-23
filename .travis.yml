@@ -2,10 +2,9 @@ language: rust
 rust:
   - stable
   - beta
-  - 1.30.0
+  - 1.34.0
 before_script:
-  # Get clippy-preview if clippy is not available for 1.30.0 not to break
-  - rustup component add clippy || rustup component add clippy-preview
+  - rustup component add clippy
 script:
   - cargo build --verbose --all --all-features
   - cargo clippy --all --all-features -- -D warnings

@@ -126,6 +126,9 @@ pub struct CertBuilder {
     //  file of a CA. We only support one of each and simply add whatever is
     //  there.
 
+    /// Subject Information Access of type `id-ad-caRepository`
+    ca_repository: Option<uri::Rsync>,
+
     /// Subject Information Access of type `id-ad-rpkiManifest`
     rpki_manifest: Option<uri::Rsync>,
 
@@ -133,7 +136,7 @@ pub struct CertBuilder {
     signed_object: Option<uri::Rsync>,
 
     /// Subject Information Access of type `id-ad-rpkiNotify`
-    rpki_notify: Option<uri::Http>,
+    rpki_notify: Option<uri::Https>,
 
     //  Certificate Policies
     //
@@ -175,6 +178,7 @@ impl CertBuilder {
             authority_key_identifier: None,
             crl_distribution: None,
             authority_info_access: None,
+            ca_repository: None,
             rpki_manifest: None,
             signed_object: None,
             rpki_notify: None,
@@ -206,6 +210,11 @@ impl CertBuilder {
         self
     }
 
+    pub fn ca_repository(&mut self, uri: uri::Rsync) -> &mut Self {
+        self.ca_repository = Some(uri);
+        self
+    }
+
     pub fn rpki_manifest(&mut self, uri: uri::Rsync) -> &mut Self {
         self.rpki_manifest = Some(uri);
         self
@@ -216,7 +225,7 @@ impl CertBuilder {
         self
     }
 
-    pub fn rpki_notify(&mut self, uri: uri::Http) -> &mut Self {
+    pub fn rpki_notify(&mut self, uri: uri::Https) -> &mut Self {
         self.rpki_notify = Some(uri);
         self
     }
@@ -371,6 +380,12 @@ impl CertBuilder {
                 extension(
                     &oid::PE_SUBJECT_INFO_ACCESS, false,
                     encode::sequence((
+                        self.ca_repository.as_ref().map(|uri| {
+                            encode::sequence((
+                                oid::AD_CA_REPOSITORY.encode(),
+                                uri.encode_general_name()
+                            ))
+                        }),
                         self.rpki_manifest.as_ref().map(|uri| {
                             encode::sequence((
                                 oid::AD_RPKI_MANIFEST.encode(),
@@ -461,6 +476,7 @@ mod signer_test {
             12, pubkey.to_subject_name(), Validity::from_secs(86400), true
         );
         builder
+            .ca_repository(uri.clone())
             .rpki_manifest(uri.clone())
             .v4_blocks(|blocks| blocks.push(Prefix::new(0, 0)))
             .as_blocks(|blocks| blocks.push((AsId::MIN, AsId::MAX)));
