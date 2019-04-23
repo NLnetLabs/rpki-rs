@@ -15,6 +15,7 @@
 
 use std::{fmt, iter, ops};
 use std::iter::FromIterator;
+use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::Tag;
 use bcder::encode::PrimitiveContent;
@@ -129,7 +130,6 @@ impl AsResources {
         )
     }
 }
-
 
 //------------ AsResourcesBuilder --------------------------------------------
 
@@ -276,13 +276,52 @@ impl AsBlocks {
 }
 
 
+//--- Display
+
+impl fmt::Display for AsBlocks {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+
+        let mut iter = self.iter();
+
+        if let Some(el) = iter.next() {
+            el.fmt(f)?;
+        }
+
+        for el in iter {
+            write!(f, ", ")?;
+            el.fmt(f)?;
+        }
+
+        Ok(())
+    }
+}
+
+//--- FromStr
+
+impl FromStr for AsBlocks {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut builder = AsBlocksBuilder::default();
+
+        for el in s.split(',') {
+            let el = el.trim();
+            let block = AsBlock::from_str(&el)?;
+            builder.push(block);
+        }
+
+        Ok(builder.finalize())
+    }
+}
+
+
 //------------ AsBlocksBuilder -----------------------------------------------
 
 #[derive(Clone, Debug)]
 pub struct AsBlocksBuilder(Vec<AsBlock>);
 
 impl AsBlocksBuilder {
-    fn new() -> Self {
+    pub fn new() -> Self {
         AsBlocksBuilder(Vec::new())
     }
 
@@ -292,6 +331,12 @@ impl AsBlocksBuilder {
 
     pub fn finalize(self) -> AsBlocks {
         AsBlocks(SharedChain::from_iter(self.0.into_iter()))
+    }
+}
+
+impl Default for AsBlocksBuilder {
+    fn default() -> Self {
+        AsBlocksBuilder::new()
     }
 }
 
@@ -408,7 +453,7 @@ impl AsBlock {
 }
 
 
-//--- From
+//--- From and FromStr
 
 impl From<AsId> for AsBlock {
     fn from(id: AsId) -> Self {
@@ -425,6 +470,30 @@ impl From<AsRange> for AsBlock {
 impl From<(AsId, AsId)> for AsBlock {
     fn from(range: (AsId, AsId)) -> Self {
         AsBlock::Range(AsRange::new(range.0, range.1))
+    }
+}
+
+impl FromStr for AsBlock {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+
+        match s.find('-') {
+            None => Ok(AsBlock::Id(AsId::from_str(s)?)),
+            Some(pos) => {
+                if s.len() < pos + 2 {
+                    Err(FromStrError::BadRange)
+                } else {
+                    let min_str = &s[..pos];
+                    let max_str = &s[pos + 1 ..];
+                    let min = AsId::from_str(min_str)
+                        .map_err(|_| FromStrError::BadRange)?;
+                    let max = AsId::from_str(max_str)
+                        .map_err(|_| FromStrError::BadRange)?;
+                    Ok(AsBlock::Range(AsRange { min, max }))
+                }
+            }
+        }
     }
 }
 
@@ -453,6 +522,17 @@ impl Block for AsBlock {
 
     fn next(item: Self::Item) -> Option<Self::Item> {
         item.0.checked_add(1).map(AsId)
+    }
+}
+
+//--- Display
+
+impl fmt::Display for AsBlock {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            AsBlock::Id(id) => id.fmt(f),
+            AsBlock::Range(range) => range.fmt(f)
+        }
     }
 }
 
@@ -545,6 +625,14 @@ impl Block for AsRange {
     }
 }
 
+//--- Display
+
+impl fmt::Display for AsRange {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}-{}", self.min, self.max)
+    }
+}
+
 
 //------------ AsId ----------------------------------------------------------
 
@@ -608,6 +696,23 @@ impl From<AsId> for u32 {
     }
 }
 
+//--- FromStr
+
+impl FromStr for AsId {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+
+        if s.len() < 3 || ! s[..2].eq_ignore_ascii_case("as") {
+            Err(FromStrError::BadAsn)
+        } else {
+            let id = u32::from_str(&s[2..])
+                .map_err(|_| FromStrError::BadAsn)?;
+            Ok(AsId(id))
+        }
+    }
+}
+
 
 //--- Add
 
@@ -628,3 +733,56 @@ impl fmt::Display for AsId {
     }
 }
 
+
+//------------ FromStrError --------------------------------------------------
+
+#[derive(Clone, Debug, Display, Eq, From, PartialEq)]
+pub enum FromStrError {
+    #[display(fmt="Bad AS number. Expected format: AS#")]
+    BadAsn,
+
+    #[display(fmt="Bad AS range. Expected format: AS#-AS#")]
+    BadRange,
+}
+
+//============ Tests =========================================================
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn as_id_from_str() {
+        let as1 = AsId::from_str("AS1").unwrap();
+        assert_eq!(as1, AsId(1))
+    }
+
+    #[test]
+    fn as_block_from_range_str() {
+        let expected_str = "AS1-AS3";
+        let block = AsBlock::from_str(expected_str).unwrap();
+        assert_eq!(expected_str, &block.to_string())
+    }
+
+    #[test]
+    fn as_block_from_wrong_range_str() {
+        let expected_str = "AS1-";
+        let block_err = AsBlock::from_str(expected_str).err();
+        assert_eq!(Some(FromStrError::BadRange), block_err)
+    }
+
+
+    #[test]
+    fn as_block_from_asid_str() {
+        let expected_str = "AS1";
+        let block = AsBlock::from_str(expected_str).unwrap();
+        assert_eq!(expected_str, &block.to_string())
+    }
+
+    #[test]
+    fn as_blocks_from_str() {
+        let expected_str = "AS1, AS3-AS7";
+        let blocks = AsBlocks::from_str(expected_str).unwrap();
+        assert_eq!(expected_str, &blocks.to_string())
+    }
+}

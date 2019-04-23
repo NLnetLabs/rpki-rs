@@ -10,6 +10,8 @@ Breaking
 
 New
 
+* Conversion from strings and formatting for the various forms of IP
+  and AS resources. [(#32)]
 * `uri::Rsync` and `uri::Https` now compare the authority part ignoring
   ASCII-case. [(###)]
 
@@ -20,6 +22,8 @@ Bug Fixes
   certificates. [(###)]
 
 Dependencies
+
+[(#32)]: https://github.com/NLnetLabs/rpki-rs/pull/32
 
 
 ## 0.3.3
