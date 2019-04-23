@@ -450,7 +450,7 @@ mod test {
     #[test]
     fn ripe_notification() {
         NotificationFile::parse(
-            include_bytes!("../../test-data/ripe-notification.xml").as_ref()
+            include_bytes!("../test-data/ripe-notification.xml").as_ref()
         ).unwrap();
     }
 
@@ -458,7 +458,7 @@ mod test {
     fn ripe_snapshot() {
         <Test as ProcessSnapshot>::process(
             &mut Test,
-            include_bytes!("../../test-data/ripe-snapshot.xml").as_ref()
+            include_bytes!("../test-data/ripe-snapshot.xml").as_ref()
         ).unwrap();
     }
 
@@ -466,7 +466,7 @@ mod test {
     fn ripe_delta() {
         <Test as ProcessDelta>::process(
             &mut Test,
-            include_bytes!("../../test-data/ripe-delta.xml").as_ref()
+            include_bytes!("../test-data/ripe-delta.xml").as_ref()
         ).unwrap();
     }
 }
