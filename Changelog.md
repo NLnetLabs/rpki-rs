@@ -6,24 +6,27 @@ Breaking
 
 * Restructured how certificate’s SubjectAccessInfo is parsed and accessed.
   It now keeps the first mandatory URI of the four relevant access methods
-  readily available. [(###)]
+  readily available. [(#34)]
 
 New
 
 * Conversion from strings and formatting for the various forms of IP
   and AS resources. [(#32)]
 * `uri::Rsync` and `uri::Https` now compare the authority part ignoring
-  ASCII-case. [(###)]
+  ASCII-case. [(#34)]
+* new modules `xml` with support for XML parsing and `rrdp` with support
+  for RRDP parsing. [(#34)]
 
 Bug Fixes
 
 * Add `CertBuilder::ca_repository` for the CA Repository Subject
   Information Access value in order to be able to build valid CA
-  certificates. [(###)]
+  certificates. [(#34)]
 
 Dependencies
 
 [(#32)]: https://github.com/NLnetLabs/rpki-rs/pull/32
+[(#34)]: https://github.com/NLnetLabs/rpki-rs/pull/34
 
 
 ## 0.3.3
