@@ -4,6 +4,7 @@
 
 Breaking
 
+* The minimum supported Rust version is now 1.34.0. [(#34)]
 * Restructured how certificate’s SubjectAccessInfo is parsed and accessed.
   It now keeps the first mandatory URI of the four relevant access methods
   readily available. [(#34)]
@@ -24,6 +25,7 @@ Bug Fixes
   certificates. [(#34)]
 
 Dependencies
+
 
 [(#32)]: https://github.com/NLnetLabs/rpki-rs/pull/32
 [(#34)]: https://github.com/NLnetLabs/rpki-rs/pull/34
