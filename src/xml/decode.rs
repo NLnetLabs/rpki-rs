@@ -64,7 +64,7 @@ impl<R: io::BufRead> Reader<R> {
             match self.reader.read_event(&mut self.buf)? {
                 Event::Eof => return Ok(()),
                 Event::Comment(_) => { }
-                _ => return Err(Error::Malformed.into())
+                _ => return Err(Error::Malformed)
             }
         }
     }
@@ -86,7 +86,7 @@ impl<'b, 'n> Element<'b, 'n> {
     }
 
     /// Returns the name of the element.
-    pub fn name<'s>(&'s self) -> Name<'s, 's> {
+    pub fn name(&self) -> Name {
         Name::new(self.ns, self.start.local_name())
     }
 
@@ -228,7 +228,7 @@ impl Content {
                     return Ok(())
                 }
                 Event::Comment(_) => { }
-                _ => return Err(Error::Malformed.into())
+                _ => return Err(Error::Malformed)
             }
         }
     }
@@ -313,7 +313,7 @@ impl<'a> Text<'a> {
         match self.0.unescaped()? {
             Cow::Borrowed(s) => {
                 Ok(Cow::Borrowed(
-                    unsafe { str::from_utf8_unchecked(s.as_ref()) }
+                    unsafe { str::from_utf8_unchecked(s) }
                 ))
             }
             Cow::Owned(s) => {
