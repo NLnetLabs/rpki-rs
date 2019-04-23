@@ -26,9 +26,13 @@ Bug Fixes
 
 Dependencies
 
+* Update to [*ring*] 0.14. [(#35)]
 
+
+[*ring*]: https://github.com/briansmith/ring
 [(#32)]: https://github.com/NLnetLabs/rpki-rs/pull/32
 [(#34)]: https://github.com/NLnetLabs/rpki-rs/pull/34
+[(#35)]: https://github.com/NLnetLabs/rpki-rs/pull/35
 
 
 ## 0.3.3
