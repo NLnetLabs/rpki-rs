@@ -10,29 +10,13 @@ use crate::xml::decode::{Reader, Name, Error};
 //------------ NotificationFile ----------------------------------------------
 
 pub struct NotificationFile {
-    session_id: Uuid,
-    serial: usize,
-    snapshot: UriAndHash,
-    deltas: Vec<(usize, UriAndHash)>,
+    pub session_id: Uuid,
+    pub serial: usize,
+    pub snapshot: UriAndHash,
+    pub deltas: Vec<(usize, UriAndHash)>,
 }
 
 impl NotificationFile {
-    pub fn session_id(&self) -> &Uuid {
-        &self.session_id
-    }
-
-    pub fn serial(&self) -> usize {
-        self.serial
-    }
-
-    pub fn snapshot(&self) -> &UriAndHash {
-        &self.snapshot
-    }
-
-    pub fn deltas(&self) -> &[(usize, UriAndHash)] {
-        self.deltas.as_ref()
-    }
-
     pub fn parse<R: io::BufRead>(reader: R) -> Result<Self, Error> {
         let mut reader = Reader::new(reader);
 
