@@ -396,14 +396,14 @@ impl str::FromStr for Http {
 
 //--- Serialize and Deserialize
 
-impl Serialize for Rsync {
+impl Serialize for Http {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where S: Serializer {
         self.to_string().serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for Rsync {
+impl<'de> Deserialize<'de> for Http {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de> {
         Self::from_string(String::deserialize(deserializer)?)
