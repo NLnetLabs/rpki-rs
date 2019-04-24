@@ -15,8 +15,9 @@ New
   and AS resources. [(#32)]
 * `uri::Rsync` and `uri::Https` now compare the authority part ignoring
   ASCII-case. [(#34)]
-* new modules `xml` with support for XML parsing and `rrdp` with support
+* New modules `xml` with support for XML parsing and `rrdp` with support
   for RRDP parsing. [(#34)]
+* Implement *serde* traits for URI types. [(#37)]
 
 Bug Fixes
 
@@ -33,6 +34,7 @@ Dependencies
 [(#32)]: https://github.com/NLnetLabs/rpki-rs/pull/32
 [(#34)]: https://github.com/NLnetLabs/rpki-rs/pull/34
 [(#35)]: https://github.com/NLnetLabs/rpki-rs/pull/35
+[(#37)]: https://github.com/NLnetLabs/rpki-rs/pull/37
 
 
 ## 0.3.3
