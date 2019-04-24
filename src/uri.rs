@@ -1,6 +1,7 @@
 //! URIs.
 
 use std::{fmt, hash, io, str};
+use std::str::FromStr;
 use bcder::encode;
 use bcder::{Mode, Tag};
 use bcder::encode::PrimitiveContent;
