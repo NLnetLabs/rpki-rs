@@ -474,10 +474,6 @@ impl Https {
         Self::from_bytes(slice.into())
     }
 
-    pub fn from_str(s: &str) -> Result<Self, Error> {
-        Self::from_string(s.into())
-    }
-
     pub fn from_bytes(bytes: Bytes) -> Result<Self, Error> {
         if !is_uri_ascii(&bytes) {
             return Err(Error::NotAscii)
