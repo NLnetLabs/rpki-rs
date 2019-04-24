@@ -5,6 +5,8 @@ use bcder::encode;
 use bcder::{Mode, Tag};
 use bcder::encode::PrimitiveContent;
 use bytes::{BufMut, Bytes, BytesMut};
+use serde::de;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 
 //------------ Rsync ---------------------------------------------------------
@@ -169,6 +171,24 @@ impl str::FromStr for Rsync {
 
     fn from_str(s: &str) -> Result<Self, Error> {
         Self::from_bytes(Bytes::from(s))
+    }
+}
+
+
+//--- Serialize and Deserialize
+
+impl Serialize for Rsync {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        self.to_string().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Rsync {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        Self::from_string(String::deserialize(deserializer)?)
+            .map_err(de::Error::custom)
     }
 }
 
@@ -374,6 +394,24 @@ impl str::FromStr for Http {
 }
 
 
+//--- Serialize and Deserialize
+
+impl Serialize for Rsync {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        self.to_string().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Rsync {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        Self::from_string(String::deserialize(deserializer)?)
+            .map_err(de::Error::custom)
+    }
+}
+
+
 //--- PrimitiveContent
 
 impl<'a> encode::PrimitiveContent for &'a Http {
@@ -434,6 +472,10 @@ impl Https {
 
     pub fn from_slice(slice: &[u8]) -> Result<Self, Error> {
         Self::from_bytes(slice.into())
+    }
+
+    pub fn from_str(s: &str) -> Result<Self, Error> {
+        Self::from_string(s.into())
     }
 
     pub fn from_bytes(bytes: Bytes) -> Result<Self, Error> {
@@ -523,6 +565,24 @@ impl hash::Hash for Https {
             ch.to_ascii_lowercase().hash(state)
         }
         self.uri[self.path_idx..].hash(state)
+    }
+}
+
+
+//--- Serialize and Deserialize
+
+impl Serialize for Https {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        self.as_str().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Https {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        Self::from_str(Deserialize::deserialize(deserializer)?)
+            .map_err(de::Error::custom)
     }
 }
 
@@ -798,5 +858,32 @@ mod tests {
             hash(Https::from_str("https://example.com/Some/stufF").unwrap()),
         );
 
+    }
+
+    #[test]
+    fn rsync_serde() {
+        use serde_json::{from_str, to_string};
+
+        let uri = Rsync::from_str("rsync://localhost/mod_b/a/b").unwrap();
+        let res = from_str(&to_string(&uri).unwrap()).unwrap();
+        assert_eq!(uri, res);
+    }
+
+    #[test]
+    fn http_serde() {
+        use serde_json::{from_str, to_string};
+
+        let uri = Http::from_str("https://example.com/some/stuff").unwrap();
+        let res = from_str(&to_string(&uri).unwrap()).unwrap();
+        assert_eq!(uri, res);
+    }
+
+    #[test]
+    fn https_serde() {
+        use serde_json::{from_str, to_string};
+
+        let uri = Https::from_str("https://example.com/some/stuff").unwrap();
+        let res = from_str(&to_string(&uri).unwrap()).unwrap();
+        assert_eq!(uri, res);
     }
 }

@@ -30,10 +30,14 @@ extern crate hex;
 #[cfg(feature = "softkeys")] extern crate openssl;
 extern crate quick_xml;
 extern crate ring;
+extern crate serde;
 #[cfg(feature = "softkeys")] extern crate slab;
 extern crate uuid;
 extern crate untrusted;
 extern crate core;
+
+#[cfg(test)]
+extern crate serde_json;
 
 pub mod cert;
 pub mod crl;
