@@ -386,7 +386,7 @@ impl<'a> fmt::Display for IpBlocksForFamily<'a> {
 //------------ IpBlocks ------------------------------------------------------
 
 /// A sequence of address ranges for one address family.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IpBlocks(SharedChain<IpBlock>);
 
 impl IpBlocks {
@@ -549,27 +549,6 @@ impl FromStr for IpBlocks {
         Ok(builder.finalize())
     }
 }
-
-//--- PartialEq
-
-impl PartialEq for IpBlocks {
-    fn eq(&self, other: &IpBlocks) -> bool {
-        // Relying on the fact that blocks are kept in order
-        let mut other_iter = other.iter();
-        for my_block in self.iter() {
-            if let Some(other_block) = other_iter.next() {
-                if my_block.min() != other_block.min() || my_block.max() != other_block.max() {
-                    return false
-                }
-            } else {
-                return false
-            }
-        }
-        true
-    }
-}
-
-impl Eq for IpBlocks {}
 
 
 //------------ IpBlocksBuilder -----------------------------------------------
@@ -750,7 +729,7 @@ impl str::FromStr for IpBlock {
 
 impl PartialEq for IpBlock {
     fn eq(&self, other: &Self) -> bool {
-        self.min() == other.min() && self.max() == other.max()
+        self.is_equivalent(other)
     }
 }
 

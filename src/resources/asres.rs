@@ -206,7 +206,7 @@ impl Default for AsResourcesBuilder {
 //------------ AsBlocks ------------------------------------------------------
 
 /// A possibly empty sequence of consecutive sets of AS numbers.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AsBlocks(SharedChain<AsBlock>);
 
 impl AsBlocks {
@@ -347,27 +347,6 @@ impl FromStr for AsBlocks {
         Ok(builder.finalize())
     }
 }
-
-//--- PartialEq
-
-impl PartialEq for AsBlocks {
-    fn eq(&self, other: &AsBlocks) -> bool {
-        // Relying on the fact that blocks are kept in order
-        let mut other_iter = other.iter();
-        for my_block in self.iter() {
-            if let Some(other_block) = other_iter.next() {
-                if my_block.min() != other_block.min() || my_block.max() != other_block.max() {
-                    return false
-                }
-            } else {
-                return false
-            }
-        }
-        true
-    }
-}
-
-impl Eq for AsBlocks {}
 
 //--- Serialize
 
@@ -568,6 +547,14 @@ impl FromStr for AsBlock {
         }
     }
 }
+
+impl PartialEq for AsBlock {
+    fn eq(&self, other: &AsBlock) -> bool {
+        self.is_equivalent(other)
+    }
+}
+
+impl Eq for AsBlock {}
 
 
 //--- Block
