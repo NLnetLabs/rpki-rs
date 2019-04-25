@@ -31,6 +31,7 @@ extern crate hex;
 extern crate quick_xml;
 extern crate ring;
 extern crate serde;
+#[macro_use] extern crate serde_derive;
 #[cfg(feature = "softkeys")] extern crate slab;
 extern crate uuid;
 extern crate untrusted;
