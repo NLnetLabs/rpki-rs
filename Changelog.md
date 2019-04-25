@@ -18,6 +18,8 @@ New
 * New modules `xml` with support for XML parsing and `rrdp` with support
   for RRDP parsing. [(#34)]
 * Implement *serde* traits for URI types. [(#37)]
+* Implement *serde* traits, equality comparison, `FromStr` and `Display`
+  for resources. [(#38)]
 
 Bug Fixes
 
@@ -31,6 +33,7 @@ Dependencies
 [(#32)]: https://github.com/NLnetLabs/rpki-rs/pull/32
 [(#34)]: https://github.com/NLnetLabs/rpki-rs/pull/34
 [(#37)]: https://github.com/NLnetLabs/rpki-rs/pull/37
+[(#38)]: https://github.com/NLnetLabs/rpki-rs/pull/38
 
 
 ## 0.3.3
