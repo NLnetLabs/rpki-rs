@@ -8,20 +8,169 @@
 //! non-empty.
 
 use std::{fmt, io, iter, mem, str};
-use std::fmt::Display;
+use std::fmt::{Display, Formatter};
 use std::iter::FromIterator;
 use std::net::{AddrParseError, IpAddr, Ipv4Addr, Ipv6Addr};
 use std::num::ParseIntError;
+use std::ops::Deref;
 use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, OctetString, Tag};
 use bcder::encode::PrimitiveContent;
+use serde::de;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::cert::Overclaim;
 use crate::roa::RoaIpAddress;
 use crate::x509::ValidationError;
 use super::chain::{Block, SharedChain};
 use super::choice::ResourcesChoice;
 
+//------------ Ipv4Resources -------------------------------------------------
+
+/// The IPv4 Address Resources of an RPKI Certificate.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Ipv4Resources(IpResources);
+
+impl Ipv4Resources {
+    /// Creates a new IpResources with a ResourcesChoice::Inherit
+    pub fn inherit() -> Self {
+        Ipv4Resources(IpResources(ResourcesChoice::Inherit))
+    }
+
+    /// Creates a new IpResources for the given blocks.
+    pub fn blocks(blocks: IpBlocks) -> Self {
+        Ipv4Resources(IpResources(ResourcesChoice::Blocks(blocks)))
+    }
+}
+
+//--- Deref
+
+impl Deref for Ipv4Resources {
+    type Target = IpResources;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+//--- Display
+
+impl fmt::Display for Ipv4Resources {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match &self.0.as_blocks() {
+            None => write!(f, "inherit"),
+            Some(blocks) => blocks.as_v4().fmt(f)
+        }
+    }
+}
+
+//--- FromStr
+
+impl FromStr for Ipv4Resources {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "inherit" {
+            Ok(Ipv4Resources(IpResources(ResourcesChoice::Inherit)))
+        } else if s.contains(':') {
+            Err(FromStrError::FamilyMismatch)
+        } else {
+            let blocks = IpBlocks::from_str(s)?;
+            Ok(Ipv4Resources(IpResources(ResourcesChoice::Blocks(blocks))))
+        }
+    }
+}
+
+//--- Serialize
+
+impl Serialize for Ipv4Resources {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        self.to_string().serialize(serializer)
+    }
+}
+
+//--- Deserialize
+
+impl<'de> Deserialize<'de> for Ipv4Resources {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+        let string = String::deserialize(deserializer)?;
+        Ok(Self::from_str(&string).map_err(de::Error::custom)?)
+    }
+}
+
+
+//------------ Ipv6Resources -------------------------------------------------
+
+/// The IPv6 Address Resources of an RPKI Certificate.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Ipv6Resources(IpResources);
+
+impl Ipv6Resources {
+    /// Creates a new IpResources with a ResourcesChoice::Inherit
+    pub fn inherit() -> Self {
+        Ipv6Resources(IpResources(ResourcesChoice::Inherit))
+    }
+
+    /// Creates a new IpResources for the given blocks.
+    pub fn blocks(blocks: IpBlocks) -> Self {
+        Ipv6Resources(IpResources(ResourcesChoice::Blocks(blocks)))
+    }
+}
+
+//--- Deref
+
+impl Deref for Ipv6Resources {
+    type Target = IpResources;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+//--- Display
+
+impl fmt::Display for Ipv6Resources {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match &self.0.as_blocks() {
+            None => write!(f, "inherit"),
+            Some(blocks) => blocks.as_v6().fmt(f)
+        }
+    }
+}
+
+//--- FromStr
+
+impl FromStr for Ipv6Resources {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "inherit" {
+            Ok(Ipv6Resources(IpResources(ResourcesChoice::Inherit)))
+        } else if s.contains('.') {
+            Err(FromStrError::FamilyMismatch)
+        } else {
+            let blocks = IpBlocks::from_str(s)?;
+            Ok(Ipv6Resources(IpResources(ResourcesChoice::Blocks(blocks))))
+        }
+    }
+}
+
+//--- Serialize
+
+impl Serialize for Ipv6Resources {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        self.to_string().serialize(serializer)
+    }
+}
+
+//--- Deserialize
+
+impl<'de> Deserialize<'de> for Ipv6Resources {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+        let string = String::deserialize(deserializer)?;
+        Ok(Self::from_str(&string).map_err(de::Error::custom)?)
+    }
+}
 
 //------------ IpResources ---------------------------------------------------
 
@@ -29,10 +178,20 @@ use super::choice::ResourcesChoice;
 ///
 /// This type contains the resources for one of the address families that can
 /// be contained in the certificate.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IpResources(ResourcesChoice<IpBlocks>);
 
 impl IpResources {
+    /// Creates a new IpResources with a ResourcesChoice::Inherit
+    pub fn inherit() -> Self {
+        IpResources(ResourcesChoice::Inherit)
+    }
+
+    /// Creates a new IpResources for the given blocks.
+    pub fn blocks(blocks: IpBlocks) -> Self {
+        IpResources(ResourcesChoice::Blocks(blocks))
+    }
+
     /// Returns whether the resources are of the inherited variant.
     pub fn is_inherited(&self) -> bool {
         self.0.is_inherited()
@@ -178,7 +337,6 @@ impl Default for IpResourcesBuilder {
 }
 
 
-
 //------------ IpBlocksForFamily ---------------------------------------------
 
 /// IpBlocks for a specific family, to help formatting
@@ -228,7 +386,7 @@ impl<'a> fmt::Display for IpBlocksForFamily<'a> {
 //------------ IpBlocks ------------------------------------------------------
 
 /// A sequence of address ranges for one address family.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IpBlocks(SharedChain<IpBlock>);
 
 impl IpBlocks {
@@ -367,6 +525,9 @@ impl FromStr for IpBlocks {
 
         for el in s.split(',') {
             let s = el.trim();
+            if s.is_empty() {
+                continue
+            }
             match family {
                 AddressFamily::Ipv4 => {
                     if let Ok(block) = IpBlock::from_v4_str(&s) {
@@ -568,7 +729,7 @@ impl str::FromStr for IpBlock {
 
 impl PartialEq for IpBlock {
     fn eq(&self, other: &Self) -> bool {
-        self.min() == other.min() && self.max() == other.max()
+        self.is_equivalent(other)
     }
 }
 
@@ -1273,6 +1434,9 @@ pub enum FromStrError {
 
     #[display(fmt="address family mismatch")]
     FamilyMismatch,
+
+    #[display(fmt="Cannot parse blocks.")]
+    BadBlocks,
 }
 
 
@@ -1281,6 +1445,50 @@ pub enum FromStrError {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn ipv4_resources_inherit_serde() {
+        let resources_str = "inherit";
+        let ipv4_resources = Ipv4Resources::from_str(resources_str).unwrap();
+
+        let json = serde_json::to_string(&ipv4_resources).unwrap();
+        let deser_ipv4_resources = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(ipv4_resources, deser_ipv4_resources)
+    }
+
+    #[test]
+    fn ipv4_resources_concrete_serde() {
+        let resources_str = "10.0.0.0, 10.1.0.0-10.1.2.255, 192.168.0.0/16";
+        let ipv4_resources = Ipv4Resources::from_str(resources_str).unwrap();
+
+        let json = serde_json::to_string(&ipv4_resources).unwrap();
+        let deser_ipv4_resources = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(ipv4_resources, deser_ipv4_resources)
+    }
+
+    #[test]
+    fn ipv6_resources_inherit_serde() {
+        let resources_str = "inherit";
+        let ipv6_resources = Ipv6Resources::from_str(resources_str).unwrap();
+
+        let json = serde_json::to_string(&ipv6_resources).unwrap();
+        let deser_ipv6_resources = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(ipv6_resources, deser_ipv6_resources)
+    }
+
+    #[test]
+    fn ipv6_resources_concrete_serde() {
+        let resources_str = "::1, 2001:db8::/32";
+        let ipv6_resources = Ipv6Resources::from_str(resources_str).unwrap();
+
+        let json = serde_json::to_string(&ipv6_resources).unwrap();
+        let deser_ipv6_resources = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(ipv6_resources, deser_ipv6_resources)
+    }
 
     #[test]
     fn ip_blocks_to_v4_str() {
@@ -1305,6 +1513,13 @@ mod test {
         );
     }
 
+    #[test]
+    fn ip_blocks_from_empty_str() {
+        let expected_str = "";
+        let blocks = IpBlocks::from_str("").unwrap();
+        assert_eq!(expected_str, blocks.as_v4().to_string());
+        assert_eq!(expected_str, blocks.as_v6().to_string());
+    }
 
     #[test]
     fn ip_block_from_v4_str() {

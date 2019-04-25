@@ -30,7 +30,7 @@ extern crate hex;
 #[cfg(feature = "softkeys")] extern crate openssl;
 extern crate quick_xml;
 extern crate ring;
-extern crate serde;
+#[macro_use] extern crate serde;
 #[cfg(feature = "softkeys")] extern crate slab;
 extern crate uuid;
 extern crate untrusted;

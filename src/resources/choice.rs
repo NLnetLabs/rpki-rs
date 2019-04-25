@@ -3,6 +3,7 @@
 /// This is a private module used only internally.
 
 use std::fmt;
+use std::str::FromStr;
 use crate::x509::ValidationError;
 
 
@@ -11,7 +12,7 @@ use crate::x509::ValidationError;
 /// The option to either include or inherit resources.
 ///
 /// This is generic over the type of included resources.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ResourcesChoice<T> {
     /// Resources are to be inherited from the issuer.
     Inherit,
@@ -81,3 +82,25 @@ impl<T: fmt::Display> fmt::Display for ResourcesChoice<T> {
     }
 }
 
+//--- FromStr
+
+impl<T: FromStr> FromStr for ResourcesChoice<T> {
+    type Err = FromStrErr;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "inherit" {
+            Ok(ResourcesChoice::Inherit)
+        } else {
+            let blocks = T::from_str(s).map_err(|_| FromStrErr::BlocksFromStr)?;
+            Ok(ResourcesChoice::Blocks(blocks))
+        }
+    }
+}
+
+//------------ FromStrError --------------------------------------------------
+
+#[derive(Clone, Debug, Display, Eq, PartialEq)]
+pub enum FromStrErr {
+    #[display(fmt="Cannot parse blocks")]
+    BlocksFromStr,
+}

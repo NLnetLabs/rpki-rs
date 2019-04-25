@@ -19,6 +19,8 @@ use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::Tag;
 use bcder::encode::PrimitiveContent;
+use serde::de;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::cert::Overclaim;
 use crate::x509::ValidationError;
 use super::chain::{Block, SharedChain};
@@ -37,10 +39,20 @@ use super::choice::ResourcesChoice;
 /// be an actual set of AS numbers associated with the certificate – this is
 /// the `AsResources::Blocks` variant –, or the AS resources of the issuer can
 /// be inherited – the `AsResources::Inherit` variant.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AsResources(ResourcesChoice<AsBlocks>);
 
 impl AsResources {
+    /// Creates a new AsResources with a ResourcesChoice::Inherit
+    pub fn inherit() -> Self {
+        AsResources(ResourcesChoice::Inherit)
+    }
+
+    /// Creates a new AsResources for the given blocks.
+    pub fn blocks(blocks: AsBlocks) -> Self {
+        AsResources(ResourcesChoice::Blocks(blocks))
+    }
+
     /// Returns whether the resources are of the inherited variant.
     pub fn is_inherited(&self) -> bool {
         self.0.is_inherited()
@@ -131,6 +143,26 @@ impl AsResources {
     }
 }
 
+//--- Display
+
+impl fmt::Display for AsResources {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+//--- FromStr
+
+impl FromStr for AsResources {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let choice = ResourcesChoice::from_str(s).map_err(|_| FromStrError::BadBlocks)?;
+        Ok(AsResources(choice))
+    }
+}
+
+
 //------------ AsResourcesBuilder --------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -174,7 +206,7 @@ impl Default for AsResourcesBuilder {
 //------------ AsBlocks ------------------------------------------------------
 
 /// A possibly empty sequence of consecutive sets of AS numbers.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AsBlocks(SharedChain<AsBlock>);
 
 impl AsBlocks {
@@ -306,11 +338,30 @@ impl FromStr for AsBlocks {
 
         for el in s.split(',') {
             let el = el.trim();
-            let block = AsBlock::from_str(&el)?;
-            builder.push(block);
+            if !el.is_empty() {
+                let block = AsBlock::from_str(&el)?;
+                builder.push(block);
+            }
         }
 
         Ok(builder.finalize())
+    }
+}
+
+//--- Serialize
+
+impl Serialize for AsBlocks {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        self.to_string().serialize(serializer)
+    }
+}
+
+//--- Deserialize
+
+impl<'de> Deserialize<'de> for AsBlocks {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+        let string = String::deserialize(deserializer)?;
+        Ok(Self::from_str(&string).map_err(de::Error::custom)?)
     }
 }
 
@@ -496,6 +547,14 @@ impl FromStr for AsBlock {
         }
     }
 }
+
+impl PartialEq for AsBlock {
+    fn eq(&self, other: &AsBlock) -> bool {
+        self.is_equivalent(other)
+    }
+}
+
+impl Eq for AsBlock {}
 
 
 //--- Block
@@ -743,6 +802,9 @@ pub enum FromStrError {
 
     #[display(fmt="Bad AS range. Expected format: AS#-AS#")]
     BadRange,
+
+    #[display(fmt="Cannot parse blocks.")]
+    BadBlocks,
 }
 
 //============ Tests =========================================================
@@ -784,5 +846,34 @@ mod test {
         let expected_str = "AS1, AS3-AS7";
         let blocks = AsBlocks::from_str(expected_str).unwrap();
         assert_eq!(expected_str, &blocks.to_string())
+    }
+
+    #[test]
+    fn as_blocks_from_empty_str() {
+        let expected_str = "";
+        let blocks = AsBlocks::from_str(expected_str).unwrap();
+        assert_eq!(expected_str, &blocks.to_string())
+    }
+
+    #[test]
+    fn as_resources_inherit_serde() {
+        let resources_str = "inherit";
+        let as_resources = AsResources::from_str(resources_str).unwrap();
+
+        let json = serde_json::to_string(&as_resources).unwrap();
+        let deser_as_resources = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(as_resources, deser_as_resources)
+    }
+
+    #[test]
+    fn as_resources_concrete_serde() {
+        let resources_str = "AS6500-AS65005, AS65007";
+        let as_resources = AsResources::from_str(resources_str).unwrap();
+
+        let json = serde_json::to_string(&as_resources).unwrap();
+        let deser_as_resources = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(as_resources, deser_as_resources)
     }
 }

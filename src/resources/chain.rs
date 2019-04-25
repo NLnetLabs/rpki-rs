@@ -72,6 +72,12 @@ pub trait Block: Clone {
             None
         }
     }
+
+    /// Returns whether a block is equivalent to another block, with
+    /// regards to the min and max values of both.
+    fn is_equivalent(&self, other: &Self) -> bool {
+        self.min() == other.min() && self.max() == other.max()
+    }
 }
 
 
@@ -291,6 +297,29 @@ impl<T: Block> AsRef<[T]> for Chain<T> {
 }
 
 
+//--- PartialEq, Eq
+
+impl<T: Block> PartialEq for Chain<T> {
+    fn eq(&self, other: &Chain<T>) -> bool {
+        // This code relies on the property that a chain is an
+        // ordered, non-overlapping, non-continuous sequence of blocks.
+        let mut other_iter = other.iter();
+        for my_block in self.iter() {
+            if let Some(other_block) = other_iter.next() {
+                if my_block.min() != other_block.min() || my_block.max() != other_block.max() {
+                    return false
+                }
+            } else {
+                return false
+            }
+        }
+        true
+    }
+}
+
+impl<T: Block> Eq for Chain<T> {}
+
+
 //------------ OwnedChain ----------------------------------------------------
 
 /// An owned version of a chain.
@@ -298,7 +327,7 @@ impl<T: Block> AsRef<[T]> for Chain<T> {
 //  Note: This isn’t a `Box<Chain<T>>` because converting a vec to a box
 //        likely means re-allocating to drop down from capacity. We don’t
 //        want to force that upon users, so we keep the vec.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OwnedChain<T: Block>(Vec<T>);
 
 impl<T: Block> OwnedChain<T> {
@@ -433,7 +462,7 @@ impl<T: Block> AsRef<[T]> for OwnedChain<T> {
 ///
 /// This is essentially an owned chain inside of an arc with an optimization
 /// so that empty chains never get actually allocated.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SharedChain<T: Block + 'static>(Option<Arc<OwnedChain<T>>>);
 
 impl<T: Block + 'static> SharedChain<T> {
