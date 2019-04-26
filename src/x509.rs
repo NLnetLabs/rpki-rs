@@ -1,9 +1,10 @@
 //! Types common to all things X.509.
 
 use std::{io, ops, str};
+use std::convert::TryInto;
 use std::str::FromStr;
 use bcder::{decode, encode};
-use bcder::{BitString, Captured, Mode, Oid, Tag};
+use bcder::{BitString, Captured, Mode, Oid, Tag, Unsigned};
 use bcder::string::PrintableString;
 use bcder::decode::Source;
 use bcder::encode::PrimitiveContent;
@@ -133,6 +134,60 @@ impl Name {
 
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         &self.0
+    }
+}
+
+
+//------------ Serial --------------------------------------------------------
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Serial(u128);
+
+impl Serial {
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        Unsigned::take_from(cons)?.try_into()
+            .map(Serial)
+            .map_err(|_| decode::Unimplemented.into())
+    }
+
+    pub fn encode(self) -> impl encode::Values {
+        self.0.encode()
+    }
+}
+
+impl From<u128> for Serial {
+    fn from(value: u128) -> Self {
+        Self(value)
+    }
+}
+
+impl From<u64> for Serial {
+    fn from(value: u64) -> Self {
+        Self(value.into())
+    }
+}
+
+impl From<Serial> for u128 {
+    fn from(serial: Serial) -> Self {
+        serial.0
+    }
+}
+
+impl PrimitiveContent for Serial {
+    const TAG: Tag = Tag::INTEGER;
+
+    fn encoded_len(&self, mode: Mode) -> usize {
+        self.0.encoded_len(mode)
+    }
+
+    fn write_encoded<W: io::Write>(
+        &self,
+        mode: Mode,
+        target: &mut W
+    ) -> Result<(), io::Error> {
+        self.0.write_encoded(mode, target)
     }
 }
 

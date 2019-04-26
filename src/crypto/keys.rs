@@ -163,6 +163,12 @@ impl PublicKey {
     }
 }
 
+impl AsRef<[u8]> for PublicKey {
+    fn as_ref(&self) -> &[u8] {
+        self.bits()
+    }
+}
+
 
 //------------ PublicKeyCn ---------------------------------------------------
 
