@@ -579,6 +579,7 @@ pub struct TbsCert {
 ///
 impl TbsCert {
     /// Creates a new value from the necessary data.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         serial_number: Serial,
         signature: SignatureAlgorithm,

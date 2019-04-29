@@ -151,7 +151,7 @@ impl SignedObject {
         //
         // c. cert is an EE cert with the SubjectKeyIdentifer matching
         //    the sid field of the SignerInfo.
-        if &self.signer_info.sid != self.cert.subject_key_identifier() {
+        if self.signer_info.sid != *self.cert.subject_key_identifier() {
             return Err(ValidationError)
         }
         // h. eContentType equals the OID in the value of the content-type
