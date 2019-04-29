@@ -141,7 +141,7 @@ impl Crl {
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         // This relies on signed_data always being in sync with the other
         // elements!
-        self.signed_data.encode()
+        self.signed_data.encode_ref()
     }
 }
 

@@ -19,14 +19,14 @@ use super::keys::PublicKeyFormat;
 /// enum.
 ///
 /// [RFC 7935]: https://tools.ietf.org/html/rfc7935
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct SignatureAlgorithm;
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct SignatureAlgorithm(());
 
 
 impl SignatureAlgorithm {
     /// Returns the preferred public key format for this algorithm.
     pub fn public_key_format(self) -> PublicKeyFormat {
-        PublicKeyFormat
+        PublicKeyFormat::default()
     }
 }
 
@@ -80,7 +80,7 @@ impl SignatureAlgorithm {
     ) -> Result<Self, S::Err> {
         oid::SHA256_WITH_RSA_ENCRYPTION.skip_if(cons)?;
         cons.take_opt_null()?;
-        Ok(SignatureAlgorithm)
+        Ok(SignatureAlgorithm::default())
     }
 
     /// Takes a signature algorithm identifier for CMS objects.
@@ -103,7 +103,7 @@ impl SignatureAlgorithm {
             return Err(decode::Malformed.into())
         }
         cons.take_opt_null()?;
-        Ok(SignatureAlgorithm)
+        Ok(SignatureAlgorithm::default())
     }
 
     /// Provides an encoder for X.509 objects.

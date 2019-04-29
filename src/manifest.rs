@@ -433,7 +433,7 @@ mod signer_test {
     #[test]
     fn encode_manifest() {
         let mut signer = OpenSslSigner::new();
-        let key = signer.create_key(PublicKeyFormat).unwrap();
+        let key = signer.create_key(PublicKeyFormat::default()).unwrap();
         let pubkey = signer.get_key_info(&key).unwrap();
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
 
@@ -445,13 +445,15 @@ mod signer_test {
             .as_blocks(|blocks| blocks.push((AsId::MIN, AsId::MAX)));
 
         let mut builder = ManifestBuilder::new(
-            12, Time::now(), Time::now(), DigestAlgorithm, cert
+            12, Time::now(), Time::now(), DigestAlgorithm::default(), cert
         );
         builder.push_pair(b"file.name", b"123");
         builder.push_pair(b"file.name", b"123");
         let captured = builder.encode().encode(
-            &signer, &key, SignatureAlgorithm, DigestAlgorithm,
-            SignatureAlgorithm
+            &signer, &key,
+            SignatureAlgorithm::default(),
+            DigestAlgorithm::default(),
+            SignatureAlgorithm::default()
         ).unwrap().to_captured(Mode::Der);
 
         let _roa = Manifest::decode(captured.as_slice(), true).unwrap();

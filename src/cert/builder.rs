@@ -292,10 +292,10 @@ impl CertBuilder {
             encode::sequence_as(Tag::CTX_0, 2.encode()), // version
             self.serial_number.encode(),
             alg.x509_encode(),
-            self.issuer.encode(),
-            self.validity.encode(),
+            self.issuer.encode_ref(),
+            self.validity.encode_ref(),
             match self.subject.as_ref() {
-                Some(subject) => encode::Choice2::One(subject.encode()),
+                Some(subject) => encode::Choice2::One(subject.encode_ref()),
                 None => {
                     encode::Choice2::Two(
                         public_key.encode_subject_name()
@@ -468,7 +468,7 @@ mod signer_test {
     #[test]
     fn ta_cert() {
         let mut signer = OpenSslSigner::new();
-        let key = signer.create_key(PublicKeyFormat).unwrap();
+        let key = signer.create_key(PublicKeyFormat::default()).unwrap();
         let pubkey = signer.get_key_info(&key).unwrap();
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
 
@@ -481,7 +481,7 @@ mod signer_test {
             .v4_blocks(|blocks| blocks.push(Prefix::new(0, 0)))
             .as_blocks(|blocks| blocks.push((AsId::MIN, AsId::MAX)));
         let captured = builder.encode(
-            &signer, &key, SignatureAlgorithm, &pubkey
+            &signer, &key, SignatureAlgorithm::default(), &pubkey
         ).unwrap().to_captured(Mode::Der);
         let cert = Cert::decode(captured.as_slice()).unwrap();
         let talinfo = TalInfo::from_name("foo".into()).into_arc();

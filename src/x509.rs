@@ -132,7 +132,7 @@ impl Name {
         Name(Captured::from_values(Mode::Der, values))
     }
 
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         &self.0
     }
 }
@@ -201,6 +201,10 @@ pub struct SignedData {
 }
 
 impl SignedData {
+    pub fn new(data: Captured, signature: Signature) -> Self {
+        Self { data, signature }
+    }
+
     pub fn signature(&self) -> &Signature {
         &self.signature
     }
@@ -244,7 +248,7 @@ impl SignedData {
         ).map_err(Into::into)
     }
 
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence((
             &self.data,
             self.signature.algorithm().x509_encode(),
@@ -520,7 +524,7 @@ mod test {
         let data = include_bytes!("../test-data/id_publisher_ta.cer");
         let obj = SignedData::decode(data.as_ref()).unwrap();
         let mut encoded = Vec::new();
-        obj.encode().write_encoded(Mode::Der, &mut encoded).unwrap();
+        obj.encode_ref().write_encoded(Mode::Der, &mut encoded).unwrap();
         assert_eq!(data.len(), encoded.len());
         assert_eq!(data.as_ref(), AsRef::<[u8]>::as_ref(&encoded));
     }

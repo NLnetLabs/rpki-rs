@@ -604,7 +604,7 @@ mod signer_test {
     #[test]
     fn encode_roa() {
         let mut signer = OpenSslSigner::new();
-        let key = signer.create_key(PublicKeyFormat).unwrap();
+        let key = signer.create_key(PublicKeyFormat::default()).unwrap();
         let pubkey = signer.get_key_info(&key).unwrap();
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
 
@@ -618,8 +618,10 @@ mod signer_test {
         let mut builder = RoaBuilder::new(64496.into(), cert);
         builder.push_v4_addr(Ipv4Addr::new(192, 0, 2, 0), 24, None);
         let captured = builder.encode().encode(
-            &signer, &key, SignatureAlgorithm, DigestAlgorithm,
-            SignatureAlgorithm
+            &signer, &key,
+            SignatureAlgorithm::default(),
+            DigestAlgorithm::default(),
+            SignatureAlgorithm::default()
         ).unwrap().to_captured(Mode::Der);
 
         let _roa = Roa::decode(captured.as_slice(), true).unwrap();

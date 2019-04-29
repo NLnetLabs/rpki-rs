@@ -27,7 +27,9 @@ use std::{borrow, ops};
 use std::sync::Arc;
 use bcder::{decode, encode};
 use bcder::encode::PrimitiveContent;
-use bcder::{BitString, Captured, Ia5String, Mode, OctetString, Oid, Tag};
+use bcder::{
+    BitString, Captured, ConstOid, Ia5String, Mode, OctetString, Oid, Tag
+};
 use bytes::Bytes;
 use chrono::{Duration, Utc};
 use crate::oid;
@@ -37,10 +39,10 @@ use crate::uri;
 use crate::x509::{
     Name, SignedData, Serial, Time, ValidationError, update_once
 };
-use crate::crypto::{PublicKey, SignatureAlgorithm};
+use crate::crypto::{PublicKey, SignatureAlgorithm, Signer, SigningError};
 use crate::resources::{
-    AsBlocksBuilder, AsResources, AsResourcesBuilder, IpBlocksBuilder,
-    IpResources, IpResourcesBuilder
+    AddressFamily, AsBlocksBuilder, AsResources, AsResourcesBuilder,
+    IpBlocksBuilder, IpResources, IpResourcesBuilder
 };
 
 
@@ -91,7 +93,7 @@ pub struct Cert {
 }
 
 
-/// # Decoding
+/// # Decoding and Encoding
 ///
 impl Cert {
     /// Decodes a source as a certificate.
@@ -116,6 +118,16 @@ impl Cert {
         let signed_data = SignedData::from_constructed(cons)?;
         let tbs = signed_data.data().clone().decode(TbsCert::from_constructed)?;
         Ok(Self { signed_data, tbs })
+    }
+
+    /// Returns a value encoder for a reference to the certificate.
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        self.signed_data.encode_ref()
+    }
+
+    /// Returns a captured encoding of the certificate.
+    pub fn to_captured(&self) -> Captured {
+        Captured::from_values(Mode::Der, self.encode_ref())
     }
 }
 
@@ -305,7 +317,8 @@ impl Cert {
         
         // 4.8.2. Subject Key Identifer. Must be the SHA-1 hash of the octets
         // of the subjectPublicKey.
-        if self.subject_key_identifier().ne(self.subject_public_key_info()) {
+        if *self.subject_key_identifier() != 
+                             self.subject_public_key_info().key_identifier() {
             return Err(ValidationError)
         }
 
@@ -397,7 +410,7 @@ impl Cert {
         {
             return Err(ValidationError)
         }
-        
+
         Ok(())
     }
 
@@ -486,13 +499,13 @@ pub struct TbsCert {
     /// It isn’t really relevant in RPKI.
     issuer: Name,
 
+    /// The validity of the certificate.
+    validity: Validity,
+
     /// The name of the subject of this certificate.
     ///
     /// This isn’t really relevant in RPKI.
     subject: Name,
-
-    /// The validity of the certificate.
-    validity: Validity,
 
     /// Information about the public key of this certificate.
     subject_public_key_info: PublicKey,
@@ -562,6 +575,67 @@ pub struct TbsCert {
 }
 
 
+/// # Creation and Conversion
+///
+impl TbsCert {
+    /// Creates a new value from the necessary data.
+    pub fn new(
+        serial_number: Serial,
+        signature: SignatureAlgorithm,
+        issuer: Name,
+        validity: Validity,
+        subject: Option<Name>,
+        subject_public_key_info: PublicKey,
+        key_usage: KeyUsage,
+        overclaim: Overclaim,
+    ) -> Self {
+        Self {
+            serial_number,
+            signature,
+            issuer,
+            validity,
+            subject: {
+                subject.unwrap_or_else(||
+                    subject_public_key_info.to_subject_name()
+                )
+            },
+            subject_key_identifier: {
+                KeyIdentifier::from_public_key(&subject_public_key_info)
+            },
+            subject_public_key_info,
+            basic_ca: None,
+            authority_key_identifier: None,
+            key_usage,
+            extended_key_usage: None,
+            crl_uri: None,
+            ca_issuer: None,
+            ca_repository: None,
+            rpki_manifest: None,
+            signed_object: None,
+            rpki_notify: None,
+            overclaim,
+            v4_resources: None,
+            v6_resources: None,
+            as_resources: None,
+        }
+    }
+
+    /// Converts the value into a signed certificate.
+    pub fn into_cert<S: Signer>(
+        self,
+        signer: &S,
+        key: &S::KeyId,
+    ) -> Result<Cert, SigningError<S::Error>> {
+        let data = Captured::from_values(Mode::Der, self.encode_ref());
+        let signature = signer.sign(key, self.signature, &data)?;
+        Ok(Cert {
+            signed_data: SignedData::new(data, signature),
+            tbs: self
+        })
+    }
+}
+
+
 /// # Data Access
 ///
 impl TbsCert {
@@ -585,6 +659,15 @@ impl TbsCert {
         self.issuer = name
     }
 
+    /// Returns a reference to the validity.
+    pub fn validity(&self) -> &Validity {
+        &self.validity
+    }
+
+    /// Sets the validity.
+    pub fn set_validity(&mut self, validity: Validity) {
+        self.validity = validity
+    }
 
     /// Returns a reference to the subject.
     pub fn subject(&self) -> &Name {
@@ -594,17 +677,6 @@ impl TbsCert {
     /// Sets the subject.
     pub fn set_subject(&mut self, subject: Name) {
         self.subject = subject
-    }
-
-    /// Returns a reference to the validity.
-    pub fn validity(&self) -> &Validity {
-        &self.validity
-    }
-
-
-    /// Sets the validity.
-    pub fn set_validity(&mut self, validity: Validity) {
-        self.validity = validity
     }
 
     /// Returns a reference to the public key.
@@ -792,6 +864,11 @@ impl TbsCert {
         self.set_v6_resources(builder.finalize())
     }
 
+    /// Returns whether the certificate has any IP resources at all.
+    pub fn has_ip_resources(&self) -> bool {
+        self.v4_resources.is_some() || self.v6_resources().is_some()
+    }
+
     /// Returns a reference to the AS resources if present.
     pub fn as_resources(&self) -> Option<&AsResources> {
         self.as_resources.as_ref()
@@ -817,7 +894,7 @@ impl TbsCert {
 }
 
 
-/// # Decoding
+/// # Decoding and Encoding
 ///
 impl TbsCert {
     /// Parses the content of a Certificate sequence.
@@ -1013,7 +1090,7 @@ impl TbsCert {
 
     /// Parses the Authority Key Identifer extension.
     ///
-    /// ```
+    /// ```text
     /// AuthorityKeyIdentifier ::= SEQUENCE {
     ///   keyIdentifier             [0] KeyIdentifier           OPTIONAL,
     ///   authorityCertIssuer       [1] GeneralNames            OPTIONAL,
@@ -1323,14 +1400,173 @@ impl TbsCert {
             AsResources::take_from(cons)
         })
     }
+
+    /// Returns an encoder for the value.
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence((
+            encode::sequence_as(Tag::CTX_0, 2.encode()), // version
+            self.serial_number.encode(),
+            self.signature.x509_encode(),
+            self.issuer.encode_ref(),
+            self.validity.encode_ref(),
+            self.subject.encode_ref(),
+            self.subject_public_key_info.encode_ref(),
+            // no issuerUniqueID
+            // no subjetUniqueID
+            // extensions
+            encode::sequence_as(Tag::CTX_3, encode::sequence((
+                // Basic Constraints
+                self.basic_ca.map(|ca| {
+                    extension(
+                        &oid::CE_BASIC_CONSTRAINTS, true,
+                        encode::sequence(ca.encode())
+                    )
+                }),
+
+                // Subject Key Identifier
+                extension(
+                    &oid::CE_SUBJECT_KEY_IDENTIFIER, false,
+                    self.subject_key_identifier.encode_ref(),
+                ),
+
+                // Authority Key Identifier
+                self.authority_key_identifier.as_ref().map(|id| {
+                    extension(
+                        &oid::CE_AUTHORITY_KEY_IDENTIFIER, false,
+                        encode::sequence(id.encode_ref_as(Tag::CTX_0))
+                    )
+                }),
+
+                // Key Usage
+                extension(
+                    &oid::CE_KEY_USAGE, true,
+                    self.key_usage.encode()
+                ),
+
+                // Extended Key Usage
+                self.extended_key_usage.as_ref().map(|captured| {
+                    extension(
+                        &oid::CE_EXTENDED_KEY_USAGE, false,
+                        encode::sequence(captured)
+                    )
+                }),
+
+                // CRL Distribution Points
+                self.crl_uri.as_ref().map(|uri| {
+                    extension(
+                        &oid::CE_CRL_DISTRIBUTION_POINTS, false,
+                        encode::sequence( // CRLDistributionPoints
+                            encode::sequence( // DistributionPoint
+                                encode::sequence_as(Tag::CTX_0, // distrib.Pt.
+                                    encode::sequence_as(Tag::CTX_0, // fullName
+                                        encode::sequence( // GeneralNames
+                                            uri.encode_general_name()
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                }),
+
+                // Authority Information Access
+                self.ca_issuer.as_ref().map(|uri| {
+                    extension(
+                    &oid::PE_AUTHORITY_INFO_ACCESS, false,
+                        encode::sequence(
+                            encode::sequence((
+                                oid::AD_CA_ISSUERS.encode(),
+                                uri.encode_general_name()
+                            ))
+                        )
+                    )
+                }),
+
+                // Subject Information Access
+                extension(
+                    &oid::PE_SUBJECT_INFO_ACCESS, false,
+                    encode::sequence((
+                        self.ca_repository.as_ref().map(|uri| {
+                            encode::sequence((
+                                oid::AD_CA_REPOSITORY.encode(),
+                                uri.encode_general_name()
+                            ))
+                        }),
+                        self.rpki_manifest.as_ref().map(|uri| {
+                            encode::sequence((
+                                oid::AD_RPKI_MANIFEST.encode(),
+                                uri.encode_general_name()
+                            ))
+                        }),
+                        self.signed_object.as_ref().map(|uri| {
+                            encode::sequence((
+                                oid::AD_SIGNED_OBJECT.encode(),
+                                uri.encode_general_name()
+                            ))
+                        }),
+                        self.rpki_notify.as_ref().map(|uri| {
+                            encode::sequence((
+                                oid::AD_RPKI_NOTIFY.encode(),
+                                uri.encode_general_name()
+                            ))
+                        })
+                    ))
+                ),
+
+                // Certificate Policies
+                extension(
+                    &oid::CE_CERTIFICATE_POLICIES, true,
+                    encode::sequence(
+                        encode::sequence(
+                            self.overclaim.policy_id().encode()
+                            // policyQualifiers sequence is optional
+                        )
+                    )
+                ),
+
+                // IP Resources
+                if self.has_ip_resources() {
+                    Some(extension(
+                        self.overclaim.ip_res_id(), true,
+                        encode::sequence((
+                            self.v4_resources.as_ref().map(|v4| {
+                                encode::sequence((
+                                    AddressFamily::Ipv4.encode(),
+                                    v4.encode_ref()
+                                ))
+                            }),
+                            self.v6_resources.as_ref().map(|v6| {
+                                encode::sequence((
+                                    AddressFamily::Ipv6.encode(),
+                                    v6.encode_ref()
+                                ))
+                            }),
+                        ))
+                    ))
+                }
+                else {
+                    None
+                },
+
+                // AS Resources
+                self.as_resources.as_ref().map(|res| {
+                    extension(
+                        self.overclaim.as_res_id(), true,
+                        res.encode_ref()
+                    )
+                })
+
+            )))
+        ))
+    }
 }
 
 
-//------------ Helpers for Decoding ------------------------------------------
+//------------ Helpers for Decoding and Encoding -----------------------------
 
 /// Parses a URI from the content of a GeneralNames sequence.
 ///
-/// ```
+/// ```text
 /// GeneralNames ::= SEQUENCE SIZE (1..MAX) OF GeneralName
 ///
 /// GeneralName ::= CHOICE {
@@ -1372,6 +1608,19 @@ struct Sia {
     rpki_manifest: Option<uri::Rsync>,
     signed_object: Option<uri::Rsync>,
     rpki_notify: Option<uri::Https>,
+}
+
+/// Returns an encoder for a single certificate extension.
+fn extension<V: encode::Values>(
+    oid: &'static ConstOid,
+    critical: bool,
+    content: V
+) -> impl encode::Values {
+    encode::sequence((
+        oid.encode(),
+        critical.encode(),
+        OctetString::encode_wrapped(Mode::Der, content)
+    ))
 }
 
 
@@ -1506,7 +1755,7 @@ impl Validity {
         Ok(())
     }
 
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence((
             self.not_before.encode(),
             self.not_after.encode(),
@@ -1613,6 +1862,17 @@ pub enum KeyUsage {
     Ee,
 }
 
+impl KeyUsage {
+    /// Returns a value encoder for the key usage.
+    pub fn encode(self) -> impl encode::Values {
+        let s = match self {
+            KeyUsage::Ca => b"\x01\x06", // Bits 5 and 6
+            KeyUsage::Ee => b"\x07\x80", // Bit 0
+        };
+        s.encode_as(Tag::BIT_STRING)
+    }
+}
+
 
 //------------ Overclaim -----------------------------------------------------
 
@@ -1676,6 +1936,27 @@ impl Overclaim {
             None
         }
     }
+
+    pub fn policy_id(self) -> &'static ConstOid {
+        match self {
+            Overclaim::Refuse => &oid::CP_IPADDR_ASNUMBER,
+            Overclaim::Trim => &oid::CP_IPADDR_ASNUMBER_V2
+        }
+    }
+
+    pub fn ip_res_id(self) -> &'static ConstOid {
+        match self {
+            Overclaim::Refuse => &oid::PE_IP_ADDR_BLOCK,
+            Overclaim::Trim => &oid::PE_IP_ADDR_BLOCK_V2
+        }
+    }
+
+    pub fn as_res_id(self) -> &'static ConstOid {
+        match self {
+            Overclaim::Refuse => &oid::PE_AUTONOMOUS_SYS_IDS,
+            Overclaim::Trim => &oid::PE_AUTONOMOUS_SYS_IDS_V2
+        }
+    }
 }
 
 
@@ -1686,9 +1967,47 @@ mod test {
     use super::*;
 
     #[test]
-    fn decode_tal() {
+    fn decode_certs() {
         Cert::decode(
             include_bytes!("../../test-data/afrinic-tal.cer").as_ref()
         ).unwrap();
+        Cert::decode(
+            include_bytes!("../../test-data/some.cer").as_ref()
+        ).unwrap();
+    }
+}
+
+
+#[cfg(all(test, feature="softkeys"))]
+mod signer_test {
+    use std::str::FromStr;
+    use crate::cert::Cert;
+    use crate::crypto::PublicKeyFormat;
+    use crate::crypto::softsigner::OpenSslSigner;
+    use crate::resources::{AsId, Prefix};
+    use crate::tal::TalInfo;
+    use super::*;
+
+    #[test]
+    fn build_ta_cert() {
+        let mut signer = OpenSslSigner::new();
+        let key = signer.create_key(PublicKeyFormat::default()).unwrap();
+        let pubkey = signer.get_key_info(&key).unwrap();
+        let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
+        let mut cert = TbsCert::new(
+            12u64.into(), Default::default(), pubkey.to_subject_name(),
+            Validity::from_secs(86400), None, pubkey, KeyUsage::Ca,
+            Overclaim::Trim
+        );
+        cert.set_basic_ca(Some(true));
+        cert.set_ca_repository(Some(uri.clone()));
+        cert.set_rpki_manifest(Some(uri.clone()));
+        cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
+        cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
+        cert.build_as_resource_blocks(|b| b.push((AsId::MIN, AsId::MAX)));
+        let cert = cert.into_cert(&signer, &key).unwrap().to_captured();
+        let cert = Cert::decode(cert.as_slice()).unwrap();
+        let talinfo = TalInfo::from_name("foo".into()).into_arc();
+        cert.validate_ta(talinfo, true).unwrap();
     }
 }

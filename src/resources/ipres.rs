@@ -294,6 +294,15 @@ impl IpResources {
             }
         }
     }
+
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        match self.0 {
+            ResourcesChoice::Inherit => encode::Choice2::One(().encode()),
+            ResourcesChoice::Blocks(ref blocks) => {
+                encode::Choice2::Two(blocks.encode_ref())
+            }
+        }
+    }
 }
 
 
@@ -492,6 +501,10 @@ impl IpBlocks {
 
     pub fn encode(self) -> impl encode::Values {
         encode::sequence(encode::slice(self.0, |block| block.encode()))
+    }
+
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence(encode::slice(&self.0, |block| block.encode()))
     }
 
     /// Returns an IpBlocksForFamily for IPv4 for this,

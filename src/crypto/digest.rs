@@ -21,8 +21,8 @@ pub use ring::digest::Digest;
 /// algorithms are ever introduced in the future, it will change into an enum.
 ///
 /// [RFC 7935]: https://tools.ietf.org/html/rfc7935
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct DigestAlgorithm;
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct DigestAlgorithm(());
 
 
 /// # Creating Digest Values
@@ -103,7 +103,7 @@ impl DigestAlgorithm {
     ) -> Result<Self, S::Err> {
         oid::SHA256.skip_if(cons)?;
         cons.take_opt_null()?;
-        Ok(DigestAlgorithm)
+        Ok(DigestAlgorithm::default())
     }
 
     /// Parses a SET OF DigestAlgorithmIdentifiers.

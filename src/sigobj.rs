@@ -595,7 +595,7 @@ mod signer_test {
     #[test]
     fn encode_signed_object() {
         let mut signer = OpenSslSigner::new();
-        let key = signer.create_key(PublicKeyFormat).unwrap();
+        let key = signer.create_key(PublicKeyFormat::default()).unwrap();
         let pubkey = signer.get_key_info(&key).unwrap();
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
 
@@ -612,8 +612,11 @@ mod signer_test {
             cert
         );
         let captured = builder.encode(
-            &signer, &key, SignatureAlgorithm, DigestAlgorithm,
-            SignatureAlgorithm
+            &signer,
+            &key,
+            SignatureAlgorithm::default(),
+            DigestAlgorithm::default(),
+            SignatureAlgorithm::default()
         ).unwrap().to_captured(Mode::Der);
 
         let _sigobj = SignedObject::decode(captured.as_slice(), true).unwrap();
