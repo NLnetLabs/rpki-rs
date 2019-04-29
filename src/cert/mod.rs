@@ -37,7 +37,8 @@ use crate::resources::{AsBlocks, IpBlocks};
 use crate::tal::TalInfo;
 use crate::uri;
 use crate::x509::{
-    Name, SignedData, Serial, Time, ValidationError, update_once
+    Name, SignedData, Serial, Time, ValidationError, encode_extension,
+    update_once
 };
 use crate::crypto::{PublicKey, SignatureAlgorithm, Signer, SigningError};
 use crate::resources::{
@@ -661,8 +662,8 @@ impl TbsCert {
     }
 
     /// Returns a reference to the validity.
-    pub fn validity(&self) -> &Validity {
-        &self.validity
+    pub fn validity(&self) -> Validity {
+        self.validity
     }
 
     /// Sets the validity.
@@ -1409,7 +1410,7 @@ impl TbsCert {
             self.serial_number.encode(),
             self.signature.x509_encode(),
             self.issuer.encode_ref(),
-            self.validity.encode_ref(),
+            self.validity.encode(),
             self.subject.encode_ref(),
             self.subject_public_key_info.encode_ref(),
             // no issuerUniqueID
@@ -1418,35 +1419,35 @@ impl TbsCert {
             encode::sequence_as(Tag::CTX_3, encode::sequence((
                 // Basic Constraints
                 self.basic_ca.map(|ca| {
-                    extension(
+                    encode_extension(
                         &oid::CE_BASIC_CONSTRAINTS, true,
                         encode::sequence(ca.encode())
                     )
                 }),
 
                 // Subject Key Identifier
-                extension(
+                encode_extension(
                     &oid::CE_SUBJECT_KEY_IDENTIFIER, false,
                     self.subject_key_identifier.encode_ref(),
                 ),
 
                 // Authority Key Identifier
                 self.authority_key_identifier.as_ref().map(|id| {
-                    extension(
+                    encode_extension(
                         &oid::CE_AUTHORITY_KEY_IDENTIFIER, false,
                         encode::sequence(id.encode_ref_as(Tag::CTX_0))
                     )
                 }),
 
                 // Key Usage
-                extension(
+                encode_extension(
                     &oid::CE_KEY_USAGE, true,
                     self.key_usage.encode()
                 ),
 
                 // Extended Key Usage
                 self.extended_key_usage.as_ref().map(|captured| {
-                    extension(
+                    encode_extension(
                         &oid::CE_EXTENDED_KEY_USAGE, false,
                         encode::sequence(captured)
                     )
@@ -1454,7 +1455,7 @@ impl TbsCert {
 
                 // CRL Distribution Points
                 self.crl_uri.as_ref().map(|uri| {
-                    extension(
+                    encode_extension(
                         &oid::CE_CRL_DISTRIBUTION_POINTS, false,
                         encode::sequence( // CRLDistributionPoints
                             encode::sequence( // DistributionPoint
@@ -1472,7 +1473,7 @@ impl TbsCert {
 
                 // Authority Information Access
                 self.ca_issuer.as_ref().map(|uri| {
-                    extension(
+                    encode_extension(
                     &oid::PE_AUTHORITY_INFO_ACCESS, false,
                         encode::sequence(
                             encode::sequence((
@@ -1484,7 +1485,7 @@ impl TbsCert {
                 }),
 
                 // Subject Information Access
-                extension(
+                encode_extension(
                     &oid::PE_SUBJECT_INFO_ACCESS, false,
                     encode::sequence((
                         self.ca_repository.as_ref().map(|uri| {
@@ -1515,7 +1516,7 @@ impl TbsCert {
                 ),
 
                 // Certificate Policies
-                extension(
+                encode_extension(
                     &oid::CE_CERTIFICATE_POLICIES, true,
                     encode::sequence(
                         encode::sequence(
@@ -1527,7 +1528,7 @@ impl TbsCert {
 
                 // IP Resources
                 if self.has_ip_resources() {
-                    Some(extension(
+                    Some(encode_extension(
                         self.overclaim.ip_res_id(), true,
                         encode::sequence((
                             self.v4_resources.as_ref().map(|v4| {
@@ -1551,7 +1552,7 @@ impl TbsCert {
 
                 // AS Resources
                 self.as_resources.as_ref().map(|res| {
-                    extension(
+                    encode_extension(
                         self.overclaim.as_res_id(), true,
                         res.encode_ref()
                     )
@@ -1609,19 +1610,6 @@ struct Sia {
     rpki_manifest: Option<uri::Rsync>,
     signed_object: Option<uri::Rsync>,
     rpki_notify: Option<uri::Https>,
-}
-
-/// Returns an encoder for a single certificate extension.
-fn extension<V: encode::Values>(
-    oid: &'static ConstOid,
-    critical: bool,
-    content: V
-) -> impl encode::Values {
-    encode::sequence((
-        oid.encode(),
-        critical.encode(),
-        OctetString::encode_wrapped(Mode::Der, content)
-    ))
 }
 
 
@@ -1701,7 +1689,7 @@ impl AsRef<Cert> for ResourceCert {
 
 //------------ Validity ------------------------------------------------------
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
 pub struct Validity {
     not_before: Time,
     not_after: Time,
@@ -1727,11 +1715,11 @@ impl Validity {
         Self::from_duration(Duration::seconds(secs))
     }
 
-    pub fn not_before(&self) -> Time {
+    pub fn not_before(self) -> Time {
         self.not_before
     }
 
-    pub fn not_after(&self) -> Time {
+    pub fn not_after(self) -> Time {
         self.not_after
     }
 
@@ -1746,17 +1734,17 @@ impl Validity {
         })
     }
 
-    pub fn validate(&self) -> Result<(), ValidationError> {
+    pub fn validate(self) -> Result<(), ValidationError> {
         self.validate_at(Time::now())
     }
 
-    pub fn validate_at(&self, now: Time) -> Result<(), ValidationError> {
+    pub fn validate_at(self, now: Time) -> Result<(), ValidationError> {
         self.not_before.validate_not_before(now)?;
         self.not_after.validate_not_after(now)?;
         Ok(())
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode(self) -> impl encode::Values {
         encode::sequence((
             self.not_before.encode(),
             self.not_after.encode(),
@@ -1970,10 +1958,10 @@ mod test {
     #[test]
     fn decode_certs() {
         Cert::decode(
-            include_bytes!("../../test-data/afrinic-tal.cer").as_ref()
+            include_bytes!("../../test-data/ta.cer").as_ref()
         ).unwrap();
         Cert::decode(
-            include_bytes!("../../test-data/some.cer").as_ref()
+            include_bytes!("../../test-data/ca1.cer").as_ref()
         ).unwrap();
     }
 }
@@ -2012,3 +2000,4 @@ mod signer_test {
         cert.validate_ta(talinfo, true).unwrap();
     }
 }
+

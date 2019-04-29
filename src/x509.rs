@@ -4,7 +4,9 @@ use std::{io, ops, str};
 use std::convert::TryInto;
 use std::str::FromStr;
 use bcder::{decode, encode};
-use bcder::{BitString, Captured, Mode, Oid, Tag, Unsigned};
+use bcder::{
+    BitString, Captured, ConstOid, Mode, OctetString, Oid, Tag, Unsigned
+};
 use bcder::string::PrintableString;
 use bcder::decode::Source;
 use bcder::encode::PrimitiveContent;
@@ -27,6 +29,19 @@ where F: FnOnce() -> Result<T, E>, E: From<decode::Error> {
         *opt = Some(op()?);
         Ok(())
     }
+}
+
+/// Returns an encoder for a single certificate or CRL extension.
+pub fn encode_extension<V: encode::Values>(
+    oid: &'static ConstOid,
+    critical: bool,
+    content: V
+) -> impl encode::Values {
+    encode::sequence((
+        oid.encode(),
+        critical.encode(),
+        OctetString::encode_wrapped(Mode::Der, content)
+    ))
 }
 
 
@@ -521,7 +536,7 @@ mod test {
 
     #[test]
     fn signed_data_decode_then_encode() {
-        let data = include_bytes!("../test-data/id_publisher_ta.cer");
+        let data = include_bytes!("../test-data/ta.cer");
         let obj = SignedData::decode(data.as_ref()).unwrap();
         let mut encoded = Vec::new();
         obj.encode_ref().write_encoded(Mode::Der, &mut encoded).unwrap();

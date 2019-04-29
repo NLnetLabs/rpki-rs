@@ -293,7 +293,7 @@ impl CertBuilder {
             self.serial_number.encode(),
             alg.x509_encode(),
             self.issuer.encode_ref(),
-            self.validity.encode_ref(),
+            self.validity.encode(),
             match self.subject.as_ref() {
                 Some(subject) => encode::Choice2::One(subject.encode_ref()),
                 None => {

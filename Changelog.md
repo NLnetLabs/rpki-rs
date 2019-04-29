@@ -10,12 +10,14 @@ Breaking
   readily available. [(#34)]
 * `Cert` has completely changed, `CertBuilder` is gone and has been
   replace by `TbsCert` which can be used for building. [(#XX)]
-* `cert::Validity`, `x509::Name`, `x509::SignedData`: `encode` renamed to
+* `crl::Crl`, `x509::Name`, `x509::SignedData`: `encode` renamed to
   `encode_ref` to comply with standard naming scheme. [(#XX)]
 * `DigestAlgorithm`, `PublicKeyFormat`, and `SignatureAlgorithm` are not
   unit structs anymore. They impl `Default` which should be used to get
   the recommended (read: only available) values. This is so we can
   transparently change them into enums later on if necessary. [(#XX)]
+* `cert::Validity` is now `Copy` and isn’t returned or used by reference
+  anymore. [(#XX)]
 
 New
 
