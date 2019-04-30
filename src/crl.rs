@@ -14,6 +14,7 @@
 //! [`Crl`]: struct.Crl.html
 //! [`CrlStore`]: struct.CrlStore.html
 
+use std::ops;
 use std::collections::HashSet;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Oid, Tag};
@@ -45,6 +46,42 @@ pub struct Crl {
     /// An optional cache of the serial numbers in the CRL.
     serials: Option<HashSet<Serial>>,
 }
+
+/// # Data Access
+///
+impl Crl {
+    /// Returns a reference to the signed data wrapper.
+    pub fn signed_data(&self) -> &SignedData {
+        &self.signed_data
+    }
+
+    /// Returns a reference to the payload.
+    ///
+    /// This also available via the `AsRef` and `Deref` impls.
+    pub fn as_cert_list(&self) -> &TbsCertList<RevokedCertificates> {
+        &self.tbs
+    }
+
+    /// Caches the serial numbers in the CRL.
+    ///
+    /// Doing this will speed up calls to `contains` later on at the price
+    /// of additional memory consumption.
+    pub fn cache_serials(&mut self) {
+        self.serials = Some(
+            self.tbs.revoked_certs.iter().map(|entry| entry.user_certificate)
+                .collect()
+        );
+    }
+
+    /// Returns whether the given serial number is on this revocation list.
+    pub fn contains(&self, serial: Serial) -> bool {
+        match self.serials {
+            Some(ref set) => set.contains(&serial),
+            None => self.tbs.revoked_certs.contains(serial)
+        }
+    }
+}
+
 
 /// # Decode, Validate, and Encode
 ///
@@ -94,26 +131,19 @@ impl Crl {
 }
 
 
-/// # Working with Revoked Certificates
-///
-impl Crl {
-    /// Caches the serial numbers in the CRL.
-    ///
-    /// Doing this will speed up calls to `contains` later on at the price
-    /// of additional memory consumption.
-    pub fn cache_serials(&mut self) {
-        self.serials = Some(
-            self.tbs.revoked_certs.iter().map(|entry| entry.user_certificate)
-                .collect()
-        );
-    }
+//--- Deref and AsRef
 
-    /// Returns whether the given serial number is on this revocation list.
-    pub fn contains(&self, serial: Serial) -> bool {
-        match self.serials {
-            Some(ref set) => set.contains(&serial),
-            None => self.tbs.revoked_certs.contains(serial)
-        }
+impl ops::Deref for Crl {
+    type Target = TbsCertList<RevokedCertificates>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.tbs
+    }
+}
+
+impl AsRef<TbsCertList<RevokedCertificates>> for Crl {
+    fn as_ref(&self) -> &TbsCertList<RevokedCertificates> {
+        &self.tbs
     }
 }
 
