@@ -31,14 +31,13 @@ use bcder::{
     BitString, Captured, ConstOid, Ia5String, Mode, OctetString, Oid, Tag
 };
 use bytes::Bytes;
-use chrono::{Duration, Utc};
 use crate::oid;
 use crate::resources::{AsBlocks, IpBlocks};
 use crate::tal::TalInfo;
 use crate::uri;
 use crate::x509::{
-    Name, SignedData, Serial, Time, ValidationError, encode_extension,
-    update_once
+    KeyIdentifier, Name, SignedData, Serial, Time, Validity, ValidationError,
+    encode_extension, update_once
 };
 use crate::crypto::{PublicKey, SignatureAlgorithm, Signer, SigningError};
 use crate::resources::{
@@ -1687,158 +1686,6 @@ impl AsRef<Cert> for ResourceCert {
 }
 
 
-//------------ Validity ------------------------------------------------------
-
-#[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
-pub struct Validity {
-    not_before: Time,
-    not_after: Time,
-}
-
-impl Validity {
-    pub fn new(not_before: Time, not_after: Time) -> Self {
-        Validity { not_before, not_after }
-    }
-
-    pub fn from_duration(duration: Duration) -> Self {
-        let not_before = Time::now();
-        let not_after = Time::new(Utc::now() + duration);
-        if not_before < not_after {
-            Validity { not_before, not_after }
-        }
-        else {
-            Validity { not_after, not_before }
-        }
-    }
-
-    pub fn from_secs(secs: i64) -> Self {
-        Self::from_duration(Duration::seconds(secs))
-    }
-
-    pub fn not_before(self) -> Time {
-        self.not_before
-    }
-
-    pub fn not_after(self) -> Time {
-        self.not_after
-    }
-
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_sequence(|cons| {
-            Ok(Validity::new(
-                Time::take_from(cons)?,
-                Time::take_from(cons)?,
-            ))
-        })
-    }
-
-    pub fn validate(self) -> Result<(), ValidationError> {
-        self.validate_at(Time::now())
-    }
-
-    pub fn validate_at(self, now: Time) -> Result<(), ValidationError> {
-        self.not_before.validate_not_before(now)?;
-        self.not_after.validate_not_after(now)?;
-        Ok(())
-    }
-
-    pub fn encode(self) -> impl encode::Values {
-        encode::sequence((
-            self.not_before.encode(),
-            self.not_after.encode(),
-        ))
-    }
-}
-
-
-//------------ KeyIdentifier -------------------------------------------------
-
-/// A key identifier.
-///
-/// This is the SHA-1 hash over the public key’s bits.
-#[derive(Clone, Debug, Eq, Hash)]
-pub struct KeyIdentifier(Bytes);
-
-impl KeyIdentifier {
-    /// Creates a new identifier for the given key.
-    pub fn from_public_key(key: &PublicKey) -> Self {
-        Self(Bytes::from(key.key_identifier().as_ref()))
-    }
-
-    pub fn as_bytes(&self) -> &Bytes {
-        &self.0
-    }
-
-    pub fn into_bytes(self) -> Bytes {
-        self.0
-    }
-
-    pub fn as_slice(&self) -> &[u8] {
-        self.0.as_ref()
-    }
-
-    /// Takes an encoded key identifier from a constructed value.
-    ///
-    /// ```text
-    /// KeyIdentifier ::= OCTET STRING
-    /// ```
-    ///
-    /// The content of the octet string needs to be a SHA-1 hash, so it must
-    /// be exactly 20 octets long.
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_value_if(Tag::OCTET_STRING, Self::from_content)
-    }
-
-    pub fn from_content<S: decode::Source>(
-        content: &mut decode::Content<S>
-    ) -> Result<Self, S::Err> {
-        let res = OctetString::from_content(content)?;
-        if res.len() != 20 {
-            return Err(decode::Malformed.into())
-        }
-        Ok(Self(res.into_bytes()))
-    }
-
-    pub fn encode(self) -> impl encode::Values {
-        OctetString::new(self.0).encode()
-    }
-
-    pub fn encode_as(self, tag: Tag) -> impl encode::Values {
-        OctetString::new(self.0).encode_as(tag)
-    }
-
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
-        OctetString::encode_slice(self.0.as_ref())
-    }
-
-    pub fn encode_ref_as<'a>(&'a self, tag: Tag) -> impl encode::Values + 'a {
-        OctetString::encode_slice_as(self.0.as_ref(), tag)
-    }
-}
-
-impl AsRef<Bytes> for KeyIdentifier {
-    fn as_ref(&self) -> &Bytes {
-        &self.0
-    }
-}
-
-impl AsRef<[u8]> for KeyIdentifier {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
-    }
-}
-
-impl<T: AsRef<[u8]>> PartialEq<T> for KeyIdentifier {
-    fn eq(&self, other: &T) -> bool {
-        self.0.as_ref().eq(other.as_ref())
-    }
-}
-
-
 //------------ KeyUsage ------------------------------------------------------
 
 /// The allowed key usages of a resource certificate.
@@ -1965,7 +1812,6 @@ mod test {
         ).unwrap();
     }
 }
-
 
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
