@@ -36,6 +36,8 @@ Bug Fixes
 * Add `CertBuilder::ca_repository` for the CA Repository Subject
   Information Access value in order to be able to build valid CA
   certificates. [(#34)]
+* Fix `uri::Https::encode_general_name` and `uri::Https::encode_general_name`
+  to not wrap the URI in a sequence. [(#XX)]
 
 Dependencies
 

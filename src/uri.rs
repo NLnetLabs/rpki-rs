@@ -358,7 +358,7 @@ impl Http {
     }
 
     pub fn encode_general_name<'a>(&'a self) -> impl encode::Values + 'a {
-        encode::sequence_as(Tag::CTX_6, self.encode())
+        self.encode_as(Tag::CTX_6)
     }
 }
 
@@ -502,7 +502,7 @@ impl Https {
     }
 
     pub fn encode_general_name<'a>(&'a self) -> impl encode::Values + 'a {
-        encode::sequence_as(Tag::CTX_6, self.encode())
+        self.encode_as(Tag::CTX_6)
     }
 }
 
