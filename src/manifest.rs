@@ -426,11 +426,6 @@ mod signer_test {
         cert.build_as_resource_blocks(|b| b.push((AsId::MIN, AsId::MAX)));
         let cert = unwrap!(cert.into_cert(&signer, &key));
 
-        let sigobj = SignedObjectBuilder::new(
-            12u64.into(), Validity::from_secs(86400), uri.clone(),
-            uri.clone(), uri.clone()
-        );
-
         let content = ManifestContent::new(
             12u64.into(), Time::now(), Time::now(),
             DigestAlgorithm::default(),
@@ -441,7 +436,11 @@ mod signer_test {
         );
 
         let manifest = unwrap!(content.into_manifest(
-            sigobj, &signer, &key, &cert
+            SignedObjectBuilder::new(
+                12u64.into(), Validity::from_secs(86400), uri.clone(),
+                uri.clone(), uri.clone()
+            ),
+            &signer, &key, &cert
         ));
         let manifest = manifest.encode_ref().to_captured(Mode::Der);
 

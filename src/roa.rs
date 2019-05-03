@@ -626,16 +626,15 @@ mod signer_test {
         cert.build_as_resource_blocks(|b| b.push((AsId::MIN, AsId::MAX)));
         let cert = unwrap!(cert.into_cert(&signer, &key));
 
-        let sigobj = SignedObjectBuilder::new(
-            12u64.into(), Validity::from_secs(86400), uri.clone(),
-            uri.clone(), uri.clone()
-        );
-
         let mut roa = RoaBuilder::new(64496.into());
         roa.push_v4_addr(Ipv4Addr::new(192, 0, 2, 0), 24, None);
 
         let roa = unwrap!(roa.finalize(
-            sigobj, &signer, &key, &cert
+            SignedObjectBuilder::new(
+                12u64.into(), Validity::from_secs(86400), uri.clone(),
+                uri.clone(), uri.clone()
+            ),
+            &signer, &key, &cert
         ));
         let roa = roa.encode_ref().to_captured(Mode::Der);
 
