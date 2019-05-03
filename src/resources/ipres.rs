@@ -563,6 +563,12 @@ impl FromStr for IpBlocks {
     }
 }
 
+impl FromIterator<IpBlock> for IpBlocks {
+    fn from_iter<I: IntoIterator<Item = IpBlock>>(iter: I) -> Self {
+        Self(SharedChain::from_iter(iter))
+    }
+}
+
 
 //------------ IpBlocksBuilder -----------------------------------------------
 
@@ -579,7 +585,7 @@ impl IpBlocksBuilder {
     }
 
     pub fn finalize(self) -> IpBlocks {
-        IpBlocks(SharedChain::from_iter(self.0.into_iter()))
+        IpBlocks::from_iter(self.0.into_iter())
     }
 }
 

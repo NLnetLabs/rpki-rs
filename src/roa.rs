@@ -2,19 +2,23 @@
 //!
 //! For details, see RFC 6482.
 
-use std::{mem, ops};
+use std::mem;
+use std::iter::FromIterator;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use bcder::{decode, encode};
-use bcder::{Captured, Mode, OctetString, Tag};
+use bcder::{Captured, Mode, OctetString, Oid, Tag};
 use bcder::decode::Source;
-use bcder::encode::PrimitiveContent;
-use super::cert::{Cert, CertBuilder, ResourceCert};
-use super::oid;
-use super::resources::{Addr, AddressFamily, AsId, Prefix};
-use super::sigobj::{SignedObject, SignedObjectBuilder};
-use super::tal::TalInfo;
-use super::x509::ValidationError;
+use bcder::encode::{PrimitiveContent, Values};
+use crate::oid;
+use crate::cert::{Cert, ResourceCert, TbsCert};
+use crate::crypto::{Signer, SigningError};
+use crate::resources::{
+    Addr, AddressFamily, AsId, IpBlocks, IpResources, Prefix
+};
+use crate::sigobj::{SignedObject, SignedObjectBuilder};
+use crate::tal::TalInfo;
+use crate::x509::ValidationError;
 
 
 //------------ Roa -----------------------------------------------------------
@@ -52,67 +56,10 @@ impl Roa {
         self.content.validate(cert)?;
         Ok(self.content)
     }
-}
 
-
-//------------ RoaBuilder ----------------------------------------------------
-
-pub struct RoaBuilder(SignedObjectBuilder<AttestationBuilder>);
-
-impl RoaBuilder {
-    pub fn new(as_id: AsId, cert: CertBuilder) -> Self {
-        RoaBuilder(
-            SignedObjectBuilder::new(
-                oid::ROUTE_ORIGIN_AUTHZ,
-                AttestationBuilder::new(as_id),
-                cert
-            )
-        )
-    }
-
-    pub fn encode(self) -> SignedObjectBuilder<impl encode::Values> {
-        self.0.map(AttestationBuilder::encode)
-    }
-}
-
-
-//--- Deref, DerefMut, AsRef, and AsMut
-
-impl ops::Deref for RoaBuilder {
-    type Target = SignedObjectBuilder<AttestationBuilder>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl ops::DerefMut for RoaBuilder {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl AsRef<SignedObjectBuilder<AttestationBuilder>> for RoaBuilder {
-    fn as_ref(&self) -> &SignedObjectBuilder<AttestationBuilder> {
-        &self.0
-    }
-}
-
-impl AsMut<SignedObjectBuilder<AttestationBuilder>> for RoaBuilder {
-    fn as_mut(&mut self) -> &mut SignedObjectBuilder<AttestationBuilder> {
-        &mut self.0
-    }
-}
-
-impl AsRef<AttestationBuilder> for RoaBuilder {
-    fn as_ref(&self) -> &AttestationBuilder {
-        self.0.content()
-    }
-}
-
-impl AsMut<AttestationBuilder> for RoaBuilder {
-    fn as_mut(&mut self) -> &mut AttestationBuilder {
-        self.0.content_mut()
+    /// Returns a value encoder for a reference to a ROA.
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        self.signed.encode_ref()
     }
 }
 
@@ -240,99 +187,18 @@ impl RouteOriginAttestation {
         self.status = RoaStatus::Valid { cert };
         Ok(())
     }
-}
 
-
-//------------ AttestationBuilder --------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct AttestationBuilder {
-    as_id: AsId,
-    v4: RoaIpAddressesBuilder,
-    v6: RoaIpAddressesBuilder,
-}
-
-impl AttestationBuilder {
-    pub fn new(as_id: AsId) -> Self {
-        AttestationBuilder {
-            as_id,
-            v4: RoaIpAddressesBuilder::new(),
-            v6: RoaIpAddressesBuilder::new(),
-        }
-    }
-
-    pub fn v4(&self) -> &RoaIpAddressesBuilder {
-        &self.v4
-    }
-
-    pub fn v4_mut(&mut self) -> &mut RoaIpAddressesBuilder {
-        &mut self.v4
-    }
-
-    pub fn v6(&self) -> &RoaIpAddressesBuilder {
-        &self.v6
-    }
-
-    pub fn v6_mut(&mut self) -> &mut RoaIpAddressesBuilder {
-        &mut self.v6
-    }
-    
-    pub fn push_addr(
-        &mut self, addr: IpAddr, len: u8, max_len: Option<u8>
-    ) {
-        match addr {
-            IpAddr::V4(addr) => self.push_v4_addr(addr, len, max_len),
-            IpAddr::V6(addr) => self.push_v6_addr(addr, len, max_len)
-        }
-    }
-
-    pub fn push_v4(&mut self, addr: RoaIpAddress) {
-        self.v4_mut().push(addr)
-    }
-
-    pub fn push_v4_addr(
-        &mut self, addr: Ipv4Addr, len: u8, max_len: Option<u8>
-    ) {
-        self.v4_mut().push_addr(IpAddr::V4(addr), len, max_len)
-    }
-
-    pub fn extend_v4_from_slice(&mut self, addrs: &[RoaIpAddress]) {
-        self.v4_mut().extend_from_slice(addrs)
-    }
-
-    pub fn push_v6(&mut self, addr: RoaIpAddress) {
-        self.v6_mut().push(addr)
-    }
-
-    pub fn push_v6_addr(
-        &mut self, addr: Ipv6Addr, len: u8, max_len: Option<u8>
-    ) {
-        self.v6_mut().push_addr(IpAddr::V6(addr), len, max_len)
-    }
-
-    pub fn extend_v6_from_slice(&mut self, addrs: &[RoaIpAddress]) {
-        self.v6_mut().extend_from_slice(addrs)
-    }
-
-    pub fn finalize(self) -> RouteOriginAttestation {
-        RouteOriginAttestation {
-            as_id: self.as_id,
-            v4_addrs: self.v4.finalize(),
-            v6_addrs: self.v6.finalize(),
-            status: RoaStatus::Unknown,
-        }
-    }
-
-    pub fn encode(self) -> impl encode::Values {
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence((
             0u8.encode_as(Tag::CTX_0),
             self.as_id.encode(),
             encode::sequence((
-                self.v4.encode_family([0x00, 0x01]),
-                self.v6.encode_family([0x00, 0x02]),
+                self.v4_addrs.encode_ref_family([0x00, 0x01]),
+                self.v6_addrs.encode_ref_family([0x00, 0x02]),
             ))
         ))
     }
+
 }
 
 
@@ -360,6 +226,22 @@ impl RoaIpAddresses {
     pub fn iter(&self) -> RoaIpAddressIter {
         RoaIpAddressIter(self.0.as_ref())
     }
+
+    fn encode_ref_family<'a>(
+        &'a self,
+        family: [u8; 2]
+    ) -> Option<impl encode::Values + 'a> {
+        if self.0.is_empty() {
+            None
+        }
+        else {
+            Some(encode::sequence((
+                OctetString::encode_slice(family),
+                &self.0
+            )))
+        }
+    }
+
 }
 
 
@@ -380,72 +262,6 @@ impl<'a> Iterator for RoaIpAddressIter<'a> {
                 RoaIpAddress::take_opt_from(cons)
             }).unwrap()
         }
-    }
-}
-
-
-//------------ RoaIpAddressesBuilder -----------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct RoaIpAddressesBuilder {
-    addrs: Vec<RoaIpAddress>,
-}
-
-impl RoaIpAddressesBuilder {
-    pub fn new() -> Self {
-        RoaIpAddressesBuilder {
-            addrs: Vec::new()
-        }
-    }
-
-    pub fn push(&mut self, addr: RoaIpAddress) {
-        self.addrs.push(addr)
-    }
-
-    pub fn push_addr(&mut self, addr: IpAddr, len: u8, max_len: Option<u8>) {
-        self.push(RoaIpAddress::new_addr(addr, len, max_len))
-    }
-
-    pub fn extend_from_slice(&mut self, addrs: &[RoaIpAddress]) {
-        self.addrs.extend_from_slice(addrs)
-    }
-
-    pub fn finalize(self) -> RoaIpAddresses {
-        RoaIpAddresses(Captured::from_values(Mode::Der, self.encode()))
-    }
-
-    pub fn encode(self) -> impl encode::Values {
-        encode::sequence(
-            encode::slice(self.addrs, |v| v.encode())
-        )
-    }
-
-    fn encode_family(
-        self,
-        family: [u8; 2]
-    ) -> Option<impl encode::Values> {
-        if self.addrs.is_empty() {
-            None
-        }
-        else {
-            Some(encode::sequence((
-                OctetString::encode_slice(family),
-                self.encode()
-            )))
-        }
-    }
-}
-
-impl Default for RoaIpAddressesBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Extend<RoaIpAddress> for RoaIpAddressesBuilder {
-    fn extend<T>(&mut self, iter: T)
-    where T: IntoIterator<Item=RoaIpAddress> {
-        self.addrs.extend(iter)
     }
 }
 
@@ -582,6 +398,196 @@ impl RoaStatus {
 }
 
 
+//------------ RoaBuilder ----------------------------------------------------
+
+pub struct RoaBuilder {
+    as_id: AsId,
+    v4: RoaIpAddressesBuilder,
+    v6: RoaIpAddressesBuilder,
+}
+
+impl RoaBuilder {
+    pub fn new(as_id: AsId) -> Self {
+        Self::with_addresses(
+            as_id,
+            RoaIpAddressesBuilder::new(),
+            RoaIpAddressesBuilder::new(),
+        )
+    }
+
+    pub fn with_addresses(
+        as_id: AsId,
+        v4: RoaIpAddressesBuilder,
+        v6: RoaIpAddressesBuilder
+    ) -> Self {
+        Self { as_id, v4, v6 }
+    }
+
+    pub fn as_id(&self) -> AsId {
+        self.as_id
+    }
+
+    pub fn set_as_id(&mut self, as_id: AsId) {
+        self.as_id = as_id
+    }
+
+    pub fn v4(&self) -> &RoaIpAddressesBuilder {
+        &self.v4
+    }
+
+    pub fn v4_mut(&mut self) -> &mut RoaIpAddressesBuilder {
+        &mut self.v4
+    }
+
+    pub fn v6(&self) -> &RoaIpAddressesBuilder {
+        &self.v6
+    }
+
+    pub fn v6_mut(&mut self) -> &mut RoaIpAddressesBuilder {
+        &mut self.v6
+    }
+    
+    pub fn push_addr(
+        &mut self, addr: IpAddr, len: u8, max_len: Option<u8>
+    ) {
+        match addr {
+            IpAddr::V4(addr) => self.push_v4_addr(addr, len, max_len),
+            IpAddr::V6(addr) => self.push_v6_addr(addr, len, max_len)
+        }
+    }
+
+    pub fn push_v4(&mut self, addr: RoaIpAddress) {
+        self.v4_mut().push(addr)
+    }
+
+    pub fn push_v4_addr(
+        &mut self, addr: Ipv4Addr, len: u8, max_len: Option<u8>
+    ) {
+        self.v4_mut().push_addr(IpAddr::V4(addr), len, max_len)
+    }
+
+    pub fn extend_v4_from_slice(&mut self, addrs: &[RoaIpAddress]) {
+        self.v4_mut().extend_from_slice(addrs)
+    }
+
+    pub fn push_v6(&mut self, addr: RoaIpAddress) {
+        self.v6_mut().push(addr)
+    }
+
+    pub fn push_v6_addr(
+        &mut self, addr: Ipv6Addr, len: u8, max_len: Option<u8>
+    ) {
+        self.v6_mut().push_addr(IpAddr::V6(addr), len, max_len)
+    }
+
+    pub fn extend_v6_from_slice(&mut self, addrs: &[RoaIpAddress]) {
+        self.v6_mut().extend_from_slice(addrs)
+    }
+
+    pub fn to_attestation(&self) -> RouteOriginAttestation {
+        RouteOriginAttestation {
+            as_id: self.as_id,
+            v4_addrs: self.v4.to_addresses(),
+            v6_addrs: self.v6.to_addresses(),
+            status: RoaStatus::Unknown,
+        }
+    }
+
+    /// Finalizes the builder into a ROA.
+    ///
+    /// # Panic
+    ///
+    /// This method will panic if both the IPv4 and IPv6 addresses are empty
+    /// as that is not allowed and would lead to a malformed ROA.
+    pub fn finalize<S: Signer>(
+        self,
+        mut sigobj: SignedObjectBuilder,
+        signer: &S,
+        issuer_key: &S::KeyId,
+        issuer: &TbsCert,
+    ) -> Result<Roa, SigningError<S::Error>> {
+        let content = self.to_attestation();
+        let v4 = self.v4.to_resources();
+        let v6 = self.v6.to_resources();
+        // There must be some resources in order to make a valid ROA.
+        assert!(v4.is_some() || v6.is_none());
+        sigobj.set_v4_resources(v4);
+        sigobj.set_v6_resources(v6);
+        let signed = sigobj.finalize(
+            Oid(oid::ROUTE_ORIGIN_AUTHZ.0.into()),
+            content.encode_ref().to_captured(Mode::Der).into_bytes(),
+            signer,
+            issuer_key,
+            issuer
+        )?;
+        Ok(Roa { signed, content })
+    }
+}
+
+
+//------------ RoaIpAddressesBuilder -----------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct RoaIpAddressesBuilder {
+    addrs: Vec<RoaIpAddress>,
+}
+
+impl RoaIpAddressesBuilder {
+    pub fn new() -> Self {
+        RoaIpAddressesBuilder {
+            addrs: Vec::new()
+        }
+    }
+
+    pub fn push(&mut self, addr: RoaIpAddress) {
+        self.addrs.push(addr)
+    }
+
+    pub fn push_addr(&mut self, addr: IpAddr, len: u8, max_len: Option<u8>) {
+        self.push(RoaIpAddress::new_addr(addr, len, max_len))
+    }
+
+    pub fn extend_from_slice(&mut self, addrs: &[RoaIpAddress]) {
+        self.addrs.extend_from_slice(addrs)
+    }
+
+    pub fn to_addresses(&self) -> RoaIpAddresses {
+        RoaIpAddresses(Captured::from_values(Mode::Der, self.encode_ref()))
+    }
+
+    pub fn to_resources(&self) -> Option<IpResources> {
+        let blocks = IpBlocks::from_iter(
+            self.addrs.iter().map(|addr| addr.prefix.into())
+        );
+        if blocks.is_empty() {
+            None
+        }
+        else {
+            Some(IpResources::blocks(blocks))
+        }
+    }
+
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence(
+            encode::slice(self.addrs.as_slice(), |v: &RoaIpAddress| v.encode())
+        )
+    }
+}
+
+impl Default for RoaIpAddressesBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Extend<RoaIpAddress> for RoaIpAddressesBuilder {
+    fn extend<T>(&mut self, iter: T)
+    where T: IntoIterator<Item=RoaIpAddress> {
+        self.addrs.extend(iter)
+    }
+}
+
+
 //============ Tests =========================================================
 
 #[cfg(test)]
@@ -592,39 +598,52 @@ mod test {
 mod signer_test {
     use std::str::FromStr;
     use bcder::encode::Values;
-    use crate::cert::Validity;
-    use crate::crypto::{
-        DigestAlgorithm, PublicKeyFormat, SignatureAlgorithm, Signer
-    };
+    use crate::cert::{KeyUsage, Overclaim};
+    use crate::crypto::{PublicKeyFormat, Signer};
     use crate::crypto::softsigner::OpenSslSigner;
     use crate::resources::{AsId, Prefix};
     use crate::uri;
+    use crate::x509::Validity;
     use super::*;
 
     #[test]
     fn encode_roa() {
         let mut signer = OpenSslSigner::new();
-        let key = signer.create_key(PublicKeyFormat::default()).unwrap();
-        let pubkey = signer.get_key_info(&key).unwrap();
-        let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
+        let key = unwrap!(signer.create_key(PublicKeyFormat::default()));
+        let pubkey = unwrap!(signer.get_key_info(&key));
+        let uri = unwrap!(uri::Rsync::from_str("rsync://example.com/m/p"));
 
-        let mut cert = CertBuilder::new(
-            12, pubkey.to_subject_name(), Validity::from_secs(86400), true
+        let mut cert = TbsCert::new(
+            12u64.into(), pubkey.to_subject_name(),
+            Validity::from_secs(86400), None, pubkey, KeyUsage::Ca,
+            Overclaim::Trim
         );
-        cert.signed_object(uri.clone())
-            .v4_blocks(|blocks| blocks.push(Prefix::new(0, 0)))
-            .as_blocks(|blocks| blocks.push((AsId::MIN, AsId::MAX)));
+        cert.set_basic_ca(Some(true));
+        cert.set_ca_repository(Some(uri.clone()));
+        cert.set_rpki_manifest(Some(uri.clone()));
+        cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
+        cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
+        cert.build_as_resource_blocks(|b| b.push((AsId::MIN, AsId::MAX)));
+        let cert = unwrap!(cert.into_cert(&signer, &key));
 
-        let mut builder = RoaBuilder::new(64496.into(), cert);
-        builder.push_v4_addr(Ipv4Addr::new(192, 0, 2, 0), 24, None);
-        let captured = builder.encode().encode(
-            &signer, &key,
-            SignatureAlgorithm::default(),
-            DigestAlgorithm::default(),
-            SignatureAlgorithm::default()
-        ).unwrap().to_captured(Mode::Der);
+        let sigobj = SignedObjectBuilder::new(
+            12u64.into(), Validity::from_secs(86400), uri.clone(),
+            uri.clone(), uri.clone()
+        );
 
-        let _roa = Roa::decode(captured.as_slice(), true).unwrap();
+        let mut roa = RoaBuilder::new(64496.into());
+        roa.push_v4_addr(Ipv4Addr::new(192, 0, 2, 0), 24, None);
+
+        let roa = unwrap!(roa.finalize(
+            sigobj, &signer, &key, &cert
+        ));
+        let roa = roa.encode_ref().to_captured(Mode::Der);
+
+        let roa = unwrap!(Roa::decode(roa.as_slice(), true));
+        let cert = unwrap!(cert.validate_ta(
+            TalInfo::from_name("foo".into()).into_arc(), true
+        ));
+        unwrap!(roa.process(&cert, true, |_| Ok(())));
     }
 }
 

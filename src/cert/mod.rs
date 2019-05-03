@@ -116,7 +116,9 @@ impl Cert {
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         let signed_data = SignedData::from_constructed(cons)?;
-        let tbs = signed_data.data().clone().decode(TbsCert::from_constructed)?;
+        let tbs = signed_data.data().clone().decode(
+            TbsCert::from_constructed
+        )?;
         Ok(Self { signed_data, tbs })
     }
 
@@ -582,7 +584,6 @@ impl TbsCert {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         serial_number: Serial,
-        signature: SignatureAlgorithm,
         issuer: Name,
         validity: Validity,
         subject: Option<Name>,
@@ -592,7 +593,7 @@ impl TbsCert {
     ) -> Self {
         Self {
             serial_number,
-            signature,
+            signature: SignatureAlgorithm::default(),
             issuer,
             validity,
             subject: {
@@ -1460,9 +1461,7 @@ impl TbsCert {
                             encode::sequence( // DistributionPoint
                                 encode::sequence_as(Tag::CTX_0, // distrib.Pt.
                                     encode::sequence_as(Tag::CTX_0, // fullName
-                                        encode::sequence( // GeneralNames
-                                            uri.encode_general_name()
-                                        )
+                                        uri.encode_general_name()
                                     )
                                 )
                             )
@@ -1830,7 +1829,7 @@ mod signer_test {
         let pubkey = signer.get_key_info(&key).unwrap();
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
         let mut cert = TbsCert::new(
-            12u64.into(), Default::default(), pubkey.to_subject_name(),
+            12u64.into(), pubkey.to_subject_name(),
             Validity::from_secs(86400), None, pubkey, KeyUsage::Ca,
             Overclaim::Trim
         );

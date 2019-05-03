@@ -10,16 +10,15 @@
 //! [`Manifest`]: struct.Manifest.html
 //! [`ManifestContent`]: struct.ManifestContent.html
 
-use std::ops;
 use bcder::{decode, encode};
-use bcder::{BitString, Captured, Mode, OctetString, Tag, Unsigned};
-use bcder::encode::PrimitiveContent;
-use super::uri;
-use super::cert::{CertBuilder, ResourceCert};
-use super::crypto::DigestAlgorithm;
-use super::sigobj::{SignedObject, SignedObjectBuilder};
-use super::x509::{Time, ValidationError};
-use crate::oid;
+use bcder::{BitString, Captured, Ia5String, Mode, OctetString, Oid, Tag};
+use bcder::encode::{PrimitiveContent, Values};
+use bytes::Bytes;
+use crate::{oid, uri};
+use crate::cert::{ResourceCert, TbsCert};
+use crate::crypto::{DigestAlgorithm, Signer, SigningError};
+use crate::sigobj::{SignedObject, SignedObjectBuilder};
+use crate::x509::{Serial, Time, ValidationError};
 
 
 //------------ Manifest ------------------------------------------------------
@@ -46,7 +45,7 @@ impl Manifest {
             return Err(decode::Malformed.into())
         }
         let content = signed.decode_content(
-            |cons| ManifestContent::decode(cons)
+            |cons| ManifestContent::take_from(cons)
         )?;
         Ok(Manifest { signed, content })
     }
@@ -73,75 +72,10 @@ impl Manifest {
         let cert = self.signed.validate_at(cert, strict, now)?;
         Ok((cert, self.content))
     }
-}
 
-
-//------------ ManifestBuilder -----------------------------------------------
-
-pub struct ManifestBuilder(SignedObjectBuilder<ManifestContentBuilder>);
-
-impl ManifestBuilder {
-    pub fn new(
-        manifest_number: u128,
-        this_update: Time,
-        next_update: Time,
-        file_hash_alg: DigestAlgorithm,
-        cert: CertBuilder,
-    ) -> Self {
-        ManifestBuilder(
-            SignedObjectBuilder::new(
-                oid::CT_RPKI_MANIFEST,
-                ManifestContentBuilder::new(
-                    manifest_number, this_update, next_update, file_hash_alg
-                ),
-                cert
-            )
-        )
-    }
-
-    pub fn encode(self) -> SignedObjectBuilder<impl encode::Values> {
-        self.0.map(ManifestContentBuilder::encode)
-    }
-}
-
-
-//--- Deref, DerefMut, AsRef, and AsMut
-
-impl ops::Deref for ManifestBuilder {
-    type Target = SignedObjectBuilder<ManifestContentBuilder>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl ops::DerefMut for ManifestBuilder {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl AsRef<SignedObjectBuilder<ManifestContentBuilder>> for ManifestBuilder {
-    fn as_ref(&self) -> &SignedObjectBuilder<ManifestContentBuilder> {
-        &self.0
-    }
-}
-
-impl AsMut<SignedObjectBuilder<ManifestContentBuilder>> for ManifestBuilder {
-    fn as_mut(&mut self) -> &mut SignedObjectBuilder<ManifestContentBuilder> {
-        &mut self.0
-    }
-}
-
-impl AsRef<ManifestContentBuilder> for ManifestBuilder {
-    fn as_ref(&self) -> &ManifestContentBuilder {
-        self.0.content()
-    }
-}
-
-impl AsMut<ManifestContentBuilder> for ManifestBuilder {
-    fn as_mut(&mut self) -> &mut ManifestContentBuilder {
-        self.0.content_mut()
+    /// Returns a value encoder for a reference to the manifest.
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        self.signed.encode_ref()
     }
 }
 
@@ -149,15 +83,10 @@ impl AsMut<ManifestContentBuilder> for ManifestBuilder {
 //------------ ManifestContent -----------------------------------------------
 
 /// The content of an RPKI manifest.
-///
-/// A manifests consists chiefly of a list of files and their hash value. You
-/// can access this list via the `iter_uris` method.
 #[derive(Clone, Debug)]
 pub struct ManifestContent {
     /// The number of this manifest.
-    ///
-    /// These numbers are similar to the serial numbers of certificates.
-    manifest_number: Unsigned,
+    manifest_number: Serial,
 
     /// The time this iteration of the manifest was created.
     this_update: Time,
@@ -165,16 +94,112 @@ pub struct ManifestContent {
     /// The time the next iteration of the manifest is likely to be created.
     next_update: Time,
 
-    /// The list of files in its encoded form.
+    /// The digest algorithm used for the file hash.
+    file_hash_alg: DigestAlgorithm,
+
+    /// The list of files.
+    ///
+    /// This contains the content of the fileList sequence, i.e, not the
+    /// outer sequence object.
     file_list: Captured,
 
-    /// The number of entries in the file list.
+    /// The length of the list.
     len: usize,
 }
 
+
+/// # Creation and Conversion
+///
 impl ManifestContent {
-    /// Decodes the manifest content from its encoded form.
-    fn decode<S: decode::Source>(
+    pub fn new<I, FH, F, H>(
+        manifest_number: Serial,
+        this_update: Time,
+        next_update: Time,
+        file_hash_alg: DigestAlgorithm,
+        iter: I,
+    ) -> Self
+    where
+        I: Iterator<Item = FH>,
+        FH: AsRef<FileAndHash<F, H>>,
+        F: AsRef<[u8]>,
+        H: AsRef<[u8]>,
+    {
+        let mut len = 0;
+        let mut file_list = Captured::empty(Mode::Der);
+        for item in iter {
+            file_list.extend(item.as_ref().encode_ref());
+            len += 1;
+        }
+        Self {
+            manifest_number,
+            this_update,
+            next_update,
+            file_hash_alg,
+            file_list,
+            len
+        }
+    }
+
+    pub fn into_manifest<S: Signer>(
+        self,
+        mut sigobj: SignedObjectBuilder,
+        signer: &S,
+        issuer_key: &S::KeyId,
+        issuer: &TbsCert,
+    ) -> Result<Manifest, SigningError<S::Error>> {
+        sigobj.set_v4_resources_inherit();
+        sigobj.set_v6_resources_inherit();
+        sigobj.set_as_resources_inherit();
+        let signed = sigobj.finalize(
+            Oid(oid::CT_RPKI_MANIFEST.0.into()),
+            self.encode_ref().to_captured(Mode::Der).into_bytes(),
+            signer,
+            issuer_key,
+            issuer
+        )?;
+        Ok(Manifest { signed, content: self })
+    }
+}
+
+
+/// # Data Access
+///
+impl ManifestContent {
+    /// Returns an iterator over the file list.
+    pub fn iter(&self) -> FileListIter {
+        FileListIter(self.file_list.clone())
+    }
+
+    /// Returns an iterator over URL and hash pairs.
+    ///
+    /// The iterator assumes that all files referred to in the manifest are
+    /// relative to the given rsync URI.
+    pub fn iter_uris(
+        &self,
+        base: uri::Rsync
+    ) -> impl Iterator<Item = (uri::Rsync, Bytes)> {
+        self.iter().map(move |item| {
+            let (file, hash) = item.into_pair();
+            (base.join(file.as_ref()), hash)
+        })
+    }
+
+    /// Returns the length of the file list.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Returns whether the file list is empty.
+    pub fn is_empty(&self) -> bool {
+        self.file_list.is_empty()
+    }
+}
+
+/// # Decoding and Encoding
+///
+impl ManifestContent {
+    /// Takes the content from the beginning of an encoded constructed value.
+    pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
@@ -186,13 +211,15 @@ impl ManifestContent {
                     Ok(())
                 }
             })?;
-            let manifest_number = Unsigned::take_from(cons)?;
+
+            let manifest_number = Serial::take_from(cons)?;
             let this_update = Time::take_from(cons)?;
             let next_update = Time::take_from(cons)?;
+            let file_hash_alg = DigestAlgorithm::take_oid_from(cons)?;
             if this_update > next_update {
                 xerr!(return Err(decode::Malformed.into()));
             }
-            oid::SHA256.skip_if(cons)?;
+
             let mut len = 0;
             let file_list = cons.take_sequence(|cons| {
                 cons.capture(|cons| {
@@ -202,113 +229,21 @@ impl ManifestContent {
                     Ok(())
                 })
             })?;
-            Ok(ManifestContent {
-                manifest_number, this_update, next_update, file_list, len
+ 
+            Ok(Self {
+                manifest_number,
+                this_update,
+                next_update,
+                file_hash_alg,
+                file_list,
+                len
             })
         })
     }
 
-    /// Returns an iterator over the files in the manifest.
-    ///
-    /// Since the manifest only contains file names, the iterator needs a base
-    /// URI to produce complete URIs. It is taken from `base`.
-    ///
-    /// The returned iterator returns a pair of the file URI and the SHA256
-    /// hash of the file.
-    pub fn iter_uris(&self, base: uri::Rsync) -> ManifestIter {
-        ManifestIter { base, file_list: self.file_list.clone() }
-    }
 
-    /// Returns the number of entries in the file list.
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
-    /// Returns whether the file list is empty.
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
-    /// Returns whether the manifest is stale.
-    ///
-    /// A manifest is stale if it’s nextUpdate time has passed.
-    pub fn is_stale(&self) -> bool {
-        self.next_update < Time::now()
-    }
-}
-
-
-//------------ ManifestIter --------------------------------------------------
-
-/// An iterator over the files in the manifest.
-///
-/// The iterator returns pairs of the absolute URIs of the files and their
-/// SHA256 hash values.
-#[derive(Clone, Debug)]
-pub struct ManifestIter{
-    base: uri::Rsync,
-    file_list: Captured,
-}
-
-impl Iterator for ManifestIter {
-    type Item = Result<(uri::Rsync, ManifestHash), ValidationError>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.file_list.is_empty() {
-            None
-        }
-        else {
-            self.file_list.decode_partial(|cons| {
-                FileAndHash::take_opt_from(cons)
-            }).unwrap().map(|item| {
-                item.into_uri_etc(&self.base)
-            })
-        }
-    }
-}
-
-
-//------------ ManifestContentBuilder ----------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct ManifestContentBuilder {
-    manifest_number: u128,
-    this_update: Time,
-    next_update: Time,
-    file_hash_alg: DigestAlgorithm,
-    file_list: Captured,
-}
-
-impl ManifestContentBuilder {
-    pub fn new(
-        manifest_number: u128,
-        this_update: Time,
-        next_update: Time,
-        file_hash_alg: DigestAlgorithm,
-    ) -> Self {
-        ManifestContentBuilder {
-            manifest_number,
-            this_update,
-            next_update,
-            file_hash_alg,
-            file_list: Captured::empty(Mode::Der),
-        }
-    }
-
-    pub fn push(&mut self, item: &FileAndHash) {
-        self.file_list.extend(item.encode_ref())
-    }
-
-    pub fn push_pair<D: AsRef<[u8]>>(&mut self, file: &[u8], hash: &D) {
-        self.file_list.extend(
-            encode::sequence((
-                OctetString::encode_slice_as(file, Tag::IA5_STRING),
-                BitString::encode_slice(hash, 0),
-            ))
-        )
-    }
-
-    pub fn encode(self) -> impl encode::Values {
+    /// Returns a value encoder for a reference to the content.
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence((
             0u8.encode_as(Tag::CTX_0),
             self.manifest_number.encode(),
@@ -316,26 +251,72 @@ impl ManifestContentBuilder {
             self.next_update.encode(),
             self.file_hash_alg.encode_oid(),
             encode::sequence(
-                self.file_list
+                &self.file_list
             )
         ))
     }
 }
 
 
-//------------ FileAndHash ---------------------------------------------------
+//------------ FileListIter --------------------------------------------------
 
-/// An entry in the list of a manifest.
+/// An iterator over the content of a file list.
 #[derive(Clone, Debug)]
-pub struct FileAndHash {
-    /// The name of the file.
-    file: OctetString,
+pub struct FileListIter(Captured);
 
-    /// A SHA256 hash over the file’s content.
-    hash: ManifestHash,
+impl Iterator for FileListIter {
+    type Item = FileAndHash<Bytes, Bytes>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        unwrap!(self.0.decode_partial(|cons| {
+            FileAndHash::take_opt_from(cons)
+        }))
+    }
 }
 
-impl FileAndHash {
+
+//------------ FileAndHash ---------------------------------------------------
+
+/// An entry in the manifest file list.
+///
+/// This type contains a file name and a hash over the file. Both are
+/// expressed through generic types for superiour flexibility.
+#[derive(Clone, Debug)]
+pub struct FileAndHash<F, H> {
+    /// The name of a file.
+    file: F,
+
+    /// The hash over the file’s content.
+    hash: H
+}
+
+/// # Data Access
+impl<F, H> FileAndHash<F, H> {
+    /// Creates a new value.
+    pub fn new(file: F, hash: H) -> Self {
+        FileAndHash { file, hash }
+    }
+
+    /// Returns a reference to the file name.
+    pub fn file(&self) -> &F {
+        &self.file
+    }
+
+    /// Returns a reference to the hash.
+    pub fn hash(&self) -> &H {
+        &self.hash
+    }
+
+    /// Returns a pair of the file and the hash.
+    pub fn into_pair(self) -> (F, H) {
+        (self.file, self.hash)
+    }
+}
+
+
+/// # Decoding and Encoding
+///
+impl FileAndHash<Bytes, Bytes> {
     /// Skips over an optional value in a constructed value.
     fn skip_opt_in<S: decode::Source>(
         cons: &mut decode::Constructed<S>
@@ -356,57 +337,29 @@ impl FileAndHash {
     ) -> Result<Option<Self>, S::Err> {
         cons.take_opt_sequence(|cons| {
             Ok(FileAndHash {
-                file: cons.take_value_if(
-                    Tag::IA5_STRING,
-                    OctetString::from_content
-                )?,
-                hash: ManifestHash(BitString::take_from(cons)?)
+                file: Ia5String::take_from(cons)?.into_bytes(),
+                hash: BitString::take_from(cons)?.octet_bytes(),
             })
         })
     }
+}
 
-    /// Converts a value into a pair of an absolute URI and its hash.
-    fn into_uri_etc(
-        self,
-        base: &uri::Rsync
-    ) -> Result<(uri::Rsync, ManifestHash), ValidationError> {
-        let name = self.file.into_bytes();
-        if !name.is_ascii() {
-            return Err(ValidationError)
-        }
-        Ok((base.join(&name), self.hash))
-    }
-
-    fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+impl<F: AsRef<[u8]>, H: AsRef<[u8]>> FileAndHash<F, H> {
+    /// Returns a value encoder for a reference.
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence((
-            self.file.encode_ref_as(Tag::IA5_STRING),
-            self.hash.0.encode_ref()
+            OctetString::encode_slice_as(self.file.as_ref(), Tag::IA5_STRING),
+            BitString::encode_slice(self.hash.as_ref(), 0),
         ))
     }
 }
 
 
-//------------ ManifestHash --------------------------------------------------
+//--- AsRef
 
-/// A manifest hash.
-///
-/// This is a SHA256 hash.
-#[derive(Clone, Debug)]
-pub struct ManifestHash(BitString);
-
-impl ManifestHash {
-    /// Check that `bytes` has the same hash value as `this`.
-    pub fn verify<B: AsRef<[u8]>>(
-        &self,
-        bytes: B
-    ) -> Result<(), ValidationError> {
-        ::ring::constant_time::verify_slices_are_equal(
-            self.0.octet_slice().unwrap(),
-            ::ring::digest::digest(
-                &::ring::digest::SHA256,
-                bytes.as_ref()
-            ).as_ref()
-        ).map_err(|_| ValidationError)
+impl<F: AsRef<[u8]>, H: AsRef<[u8]>> AsRef<Self> for FileAndHash<F, H> {
+    fn as_ref(&self) -> &Self {
+        self
     }
 }
 
@@ -415,84 +368,88 @@ impl ManifestHash {
 
 #[cfg(test)]
 mod test {
+    use crate::cert::Cert;
+    use crate::tal::TalInfo;
+    use super::*;
+
+    #[test]
+    fn decode() {
+        let talinfo = TalInfo::from_name("foo".into()).into_arc();
+        let at = Time::utc(2019, 5, 1, 0, 0, 0);
+        let issuer = Cert::decode(
+            include_bytes!("../test-data/ta.cer").as_ref()
+        ).unwrap();
+        let issuer = unwrap!(issuer.validate_ta_at(talinfo, false, at));
+        let obj = unwrap!(Manifest::decode(
+            include_bytes!("../test-data/ta.mft").as_ref(),
+            false
+        ));
+        unwrap!(obj.validate_at(&issuer, false, at));
+        let obj = unwrap!(Manifest::decode(
+            include_bytes!("../test-data/ca1.mft").as_ref(),
+            false
+        ));
+        assert!(obj.validate_at(&issuer, false, at).is_err());
+    }
 }
 
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
     use std::str::FromStr;
     use bcder::encode::Values;
-    use crate::cert::Validity;
-    use crate::crypto::{
-        DigestAlgorithm, PublicKeyFormat, SignatureAlgorithm, Signer
-    };
+    use crate::cert::{KeyUsage, Overclaim};
+    use crate::crypto::{PublicKeyFormat, Signer};
     use crate::crypto::softsigner::OpenSslSigner;
     use crate::resources::{AsId, Prefix};
     use crate::uri;
+    use crate::tal::TalInfo;
+    use crate::x509::Validity;
     use super::*;
 
     #[test]
     fn encode_manifest() {
         let mut signer = OpenSslSigner::new();
-        let key = signer.create_key(PublicKeyFormat::default()).unwrap();
-        let pubkey = signer.get_key_info(&key).unwrap();
-        let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
+        let key = unwrap!(signer.create_key(PublicKeyFormat::default()));
+        let pubkey = unwrap!(signer.get_key_info(&key));
+        let uri = unwrap!(uri::Rsync::from_str("rsync://example.com/m/p"));
 
-        let mut cert = CertBuilder::new(
-            12, pubkey.to_subject_name(), Validity::from_secs(86400), true
+        let mut cert = TbsCert::new(
+            12u64.into(), pubkey.to_subject_name(),
+            Validity::from_secs(86400), None, pubkey, KeyUsage::Ca,
+            Overclaim::Trim
         );
-        cert.signed_object(uri.clone())
-            .v4_blocks(|blocks| blocks.push(Prefix::new(0, 0)))
-            .as_blocks(|blocks| blocks.push((AsId::MIN, AsId::MAX)));
+        cert.set_basic_ca(Some(true));
+        cert.set_ca_repository(Some(uri.clone()));
+        cert.set_rpki_manifest(Some(uri.clone()));
+        cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
+        cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
+        cert.build_as_resource_blocks(|b| b.push((AsId::MIN, AsId::MAX)));
+        let cert = unwrap!(cert.into_cert(&signer, &key));
 
-        let mut builder = ManifestBuilder::new(
-            12, Time::now(), Time::now(), DigestAlgorithm::default(), cert
+        let sigobj = SignedObjectBuilder::new(
+            12u64.into(), Validity::from_secs(86400), uri.clone(),
+            uri.clone(), uri.clone()
         );
-        builder.push_pair(b"file.name", b"123");
-        builder.push_pair(b"file.name", b"123");
-        let captured = builder.encode().encode(
-            &signer, &key,
-            SignatureAlgorithm::default(),
+
+        let content = ManifestContent::new(
+            12u64.into(), Time::now(), Time::now(),
             DigestAlgorithm::default(),
-            SignatureAlgorithm::default()
-        ).unwrap().to_captured(Mode::Der);
+            [
+                FileAndHash::new(b"file".as_ref(), b"hash".as_ref()),
+                FileAndHash::new(b"file".as_ref(), b"hash".as_ref()),
+            ].iter()
+        );
 
-        let _roa = Manifest::decode(captured.as_slice(), true).unwrap();
+        let manifest = unwrap!(content.into_manifest(
+            sigobj, &signer, &key, &cert
+        ));
+        let manifest = manifest.encode_ref().to_captured(Mode::Der);
+
+        let manifest = unwrap!(Manifest::decode(manifest.as_slice(), true));
+        let cert = unwrap!(cert.validate_ta(
+            TalInfo::from_name("foo".into()).into_arc(), true
+        ));
+        unwrap!(manifest.validate(&cert, true));
     }
 }
 
-
-//============ Specification Documentation ===================================
-
-/// Manifest Specification.
-///
-/// This is a documentation-only module. It summarizes the specification for
-/// ROAs, how they are parsed and constructed.
-///
-/// A manifest is a [signed object] that lists all the objects published by
-/// an RPKI certificate authority. It is specified in [RFC 6486].
-///
-/// The content of a manifest signed object is of type `Manifest` which is
-/// defined as follows:
-///
-/// ```txt
-/// Manifest            ::= SEQUENCE {
-///     version             [0] INTEGER DEFAULT 0,
-///     manifestNumber      INTEGER (0..MAX),
-///     thisUpdate          GeneralizedTime,
-///     nextUpdate          GeneralizedTime,
-///     fileHashAlg         OBJECT IDENTIFIER,
-///     fileList            SEQUENCE SIZE (0..MAX) OF FileAndHash
-/// }
-///
-/// FileAndHash         ::= SEQUENCE {
-///     file                IA5String,
-///     hash                BIT STRING
-/// }
-/// ```
-///
-/// The _version_ must be 0. Both the time values must be UTC times as
-/// specified for certificates.
-///
-/// [signed object]: ../../sigobj/spec/index.html
-/// [RFC 6486]: https://tools.ietf.org/html/rfc6486
-pub mod spec { }

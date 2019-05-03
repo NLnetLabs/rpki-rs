@@ -124,6 +124,14 @@ impl DigestAlgorithm {
         })
     }
 
+    /// Takes a single algorithm object identifier from a constructed value.
+    pub fn take_oid_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+    ) -> Result<Self, S::Err> {
+        oid::SHA256.skip_if(cons)?;
+        Ok(Self::default())
+    }
+
     /// Provides an encoder for a single algorithm identifier.
     pub fn encode(self) -> impl encode::Values {
         encode::sequence((
