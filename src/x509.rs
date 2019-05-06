@@ -1,7 +1,6 @@
 //! Types common to all things X.509.
 
 use std::{io, ops, str};
-use std::convert::TryInto;
 use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{
@@ -263,54 +262,72 @@ impl Name {
 
 //------------ Serial --------------------------------------------------------
 
+/// A certificate serial number.
+//
+//  We encode the serial number in 20 octets left padded.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Serial(u128);
+pub struct Serial([u8; 20]);
 
 impl Serial {
+    /// Creates a serial number from a octet slice.
+    pub fn from_slice(s: &[u8]) -> Result<Self, decode::Error> {
+        // Empty slice is malformed.
+        if s.is_empty() {
+            return Err(decode::Malformed)
+        }
+        // We do not support more than 20 octets or exactly 20 octets if the
+        // sign bit is set.
+        if s.len() > 20 || (s.len() == 20 && s[0] & 0x80 != 0) {
+            return Err(decode::Unimplemented)
+        }
+        let mut res = <[u8; 20]>::default();
+        res[20 - s.len()..].copy_from_slice(s);
+        Ok(Self(res))
+    }
+
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        Unsigned::take_from(cons)?.try_into()
-            .map(Serial)
-            .map_err(|_| decode::Unimplemented.into())
+        Unsigned::take_from(cons).and_then(|s| {
+            Self::from_slice(s.as_ref()).map_err(Into::into)
+        })
+            
     }
 
-    pub fn encode(self) -> impl encode::Values {
-        self.0.encode()
+    /// Returns the index of the first octet to encode.
+    fn start(self) -> usize {
+        self.0.iter().enumerate().find_map(|(idx, &val)| {
+            if val == 0 { None }
+            else { Some(idx) }
+        }).unwrap_or(19)
     }
 }
 
 impl From<u128> for Serial {
     fn from(value: u128) -> Self {
-        Self(value)
+        Self::from_slice(value.to_be_bytes().as_ref()).unwrap()
     }
 }
 
 impl From<u64> for Serial {
     fn from(value: u64) -> Self {
-        Self(value.into())
-    }
-}
-
-impl From<Serial> for u128 {
-    fn from(serial: Serial) -> Self {
-        serial.0
+        Self::from_slice(value.to_be_bytes().as_ref()).unwrap()
     }
 }
 
 impl PrimitiveContent for Serial {
     const TAG: Tag = Tag::INTEGER;
 
-    fn encoded_len(&self, mode: Mode) -> usize {
-        self.0.encoded_len(mode)
+    fn encoded_len(&self, _mode: Mode) -> usize {
+        20 - self.start()
     }
 
     fn write_encoded<W: io::Write>(
         &self,
-        mode: Mode,
+        _mode: Mode,
         target: &mut W
     ) -> Result<(), io::Error> {
-        self.0.write_encoded(mode, target)
+        target.write_all(&self.0[self.start()..])
     }
 }
 
@@ -706,6 +723,7 @@ impl From<VerificationError> for ValidationError {
 #[cfg(test)]
 mod test {
     use super::*;
+    use bcder::decode::Constructed;
     use bcder::encode::Values;
 
     #[test]
@@ -716,6 +734,45 @@ mod test {
         obj.encode_ref().write_encoded(Mode::Der, &mut encoded).unwrap();
         assert_eq!(data.len(), encoded.len());
         assert_eq!(data.as_ref(), AsRef::<[u8]>::as_ref(&encoded));
+    }
+
+    #[test]
+    fn serial_from_slice() {
+        assert_eq!(
+            unwrap!(Serial::from_slice(b"\x01\x02\x03")),
+            Serial([0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1,2,3])
+        );
+        assert_eq!(
+            Serial::from(0x10203u64),
+            Serial([0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1,2,3])
+        );
+    }
+
+    #[test]
+    fn serial_take_from() {
+        assert_eq!(
+            unwrap!(
+                Constructed::decode(
+                    b"\x02\x03\x01\x02\x03".as_ref(),
+                    Mode::Der,
+                    Serial::take_from
+                )
+            ),
+            Serial([0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1,2,3])
+        );
+    }
+
+    #[test]
+    fn serial_encode() {
+        let mut target = Vec::new();
+        unwrap!(
+            Serial([0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1,2,3])
+                .encode().write_encoded(Mode::Der, &mut target)
+        );
+        assert_eq!(
+            target,
+            b"\x02\x03\x01\x02\x03"
+        )
     }
 }
 
