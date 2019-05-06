@@ -269,8 +269,11 @@ impl Cert {
         // 4.8.8.  Subject Information Access. We need the signed object
         // but not the other ones.
         if self.ca_repository.is_some() || self.rpki_manifest.is_some()
-            || self.signed_object.is_none() || self.rpki_notify.is_some()
+            || self.signed_object.is_none()
         {
+            return Err(ValidationError)
+        }
+        if self.rpki_notify.is_some() && strict {
             return Err(ValidationError)
         }
 
@@ -1318,33 +1321,6 @@ impl TbsCert {
                 })? { }
                 Ok(())
             })?;
-            // Check that we have a valid combination.
-            if sia.ca_repository.is_some() {
-                // CA Certificate
-                //
-                // Requires also rpki_manifest. rpki_notify is optional.
-                //
-                // RFC 6487 doesn’t say that others aren’t allowed in CA
-                // certificates but it does say so for EE certificates so I
-                // guess it must be fine to have others in CA certificates.
-                if sia.rpki_manifest.is_none() {
-                    return xerr!(Err(decode::Malformed.into()))
-                }
-            }
-            else {
-                // EE Certificate
-                //
-                // Only signed_object. Note that signed_object is not required
-                // in EE certificates for router keys etc. So we shouldn’t
-                // check that here.
-                //
-                // RFC 6487 says that others aren’t allowed
-                if sia.rpki_manifest.is_some() || sia.rpki_notify.is_some()
-                    || others_seen
-                {
-                    return xerr!(Err(decode::Malformed.into()))
-                }
-            }
             Ok(sia)
         })
     }
