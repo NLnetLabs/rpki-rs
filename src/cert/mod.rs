@@ -37,7 +37,7 @@ use crate::tal::TalInfo;
 use crate::uri;
 use crate::x509::{
     KeyIdentifier, Name, SignedData, Serial, Time, Validity, ValidationError,
-    encode_extension, update_once
+    encode_extension, update_first, update_once
 };
 use crate::crypto::{PublicKey, SignatureAlgorithm, Signer, SigningError};
 use crate::resources::{
@@ -1281,29 +1281,29 @@ impl TbsCert {
                 while let Some(()) = cons.take_opt_sequence(|cons| {
                     let oid = Oid::take_from(cons)?;
                     if oid == oid::AD_CA_REPOSITORY {
-                        update_once(&mut sia.ca_repository, || {
-                            take_general_names_content(
+                        update_first(&mut sia.ca_repository, || {
+                            take_general_name(
                                 cons, uri::Rsync::from_bytes
                             )
                         })
                     }
                     else if oid == oid::AD_RPKI_MANIFEST {
-                        update_once(&mut sia.rpki_manifest, || {
-                            take_general_names_content(
+                        update_first(&mut sia.rpki_manifest, || {
+                            take_general_name(
                                 cons, uri::Rsync::from_bytes
                             )
                         })
                     }
                     else if oid == oid::AD_SIGNED_OBJECT {
-                        update_once(&mut sia.signed_object, || {
-                            take_general_names_content(
+                        update_first(&mut sia.signed_object, || {
+                            take_general_name(
                                 cons, uri::Rsync::from_bytes
                             )
                         })
                     }
                     else if oid == oid::AD_RPKI_NOTIFY {
-                        update_once(&mut sia.rpki_notify, || {
-                            take_general_names_content(
+                        update_first(&mut sia.rpki_notify, || {
+                            take_general_name(
                                 cons, uri::Https::from_bytes
                             )
                         })
@@ -1600,6 +1600,17 @@ where F: FnMut(Bytes) -> Result<T, E> {
     }
 }
 
+fn take_general_name<S: decode::Source, F, T, E>(
+    cons: &mut decode::Constructed<S>,
+    mut op: F
+) -> Result<Option<T>, S::Err>
+where F: FnMut(Bytes) -> Result<T, E> {
+    cons.take_value_if(Tag::CTX_6, |content| {
+        Ia5String::from_content(content).and_then(|uri| {
+            Ok(op(uri.into_bytes()).ok())
+        })
+    })
+}
 
 /// Internal helper type for parsing Subject Information Access.
 #[derive(Default)]

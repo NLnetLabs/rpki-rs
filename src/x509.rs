@@ -23,6 +23,9 @@ use crate::oid;
 
 //------------ Functions -----------------------------------------------------
 
+/// Updates an optional value once.
+///
+/// If another update is tried, returns a malformed error instead.
 pub fn update_once<F, T, E>(opt: &mut Option<T>, op: F) -> Result<(), E>
 where F: FnOnce() -> Result<T, E>, E: From<decode::Error> {
     if opt.is_some() {
@@ -32,6 +35,20 @@ where F: FnOnce() -> Result<T, E>, E: From<decode::Error> {
         *opt = Some(op()?);
         Ok(())
     }
+}
+
+/// Updates an optional value the first time.
+///
+/// Always runs `op` but only assigns its result to `opt` if that doesn’t hold
+/// a value yet.
+pub fn update_first<F, T, E>(opt: &mut Option<T>, op: F) -> Result<(), E>
+where F: FnOnce() -> Result<Option<T>, E> {
+    if let Some(value) = op()? {
+        if opt.is_none() {
+            *opt = Some(value);
+        }
+    }
+    Ok(())
 }
 
 /// Returns an encoder for a single certificate or CRL extension.
