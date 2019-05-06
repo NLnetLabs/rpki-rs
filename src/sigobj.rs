@@ -867,8 +867,9 @@ mod signer_test {
 ///     content                 [0] EXPLICIT ANY DEFINED BY contentType }
 /// ```
 ///
-/// The _contentType_ must be `oid::SIGNED_DATA` and the _content_ a
-/// _SignedData_ object (however, note the `[0] EXPLICIT` there) as follows:
+/// For a signed object, the _contentType_ must be `oid::SIGNED_DATA` and the
+/// _content_ a _SignedData_ object (however, note the `[0] EXPLICIT` there)
+/// as follows:
 ///
 /// ```txt
 /// SignedData              ::= SEQUENCE {
@@ -987,7 +988,8 @@ mod signer_test {
 /// For the object identifiers of the attributes, see the [`oid`] module.
 ///
 /// The _signature_ field of the signed object contains a signature over the
-/// DER encoding of the _signedAttrs_ field.
+/// DER encoding of the _signedAttrs_ field. When calculating the signature,
+/// the normal tag for the SET is used instead of the implicit `[0]`.
 ///
 /// [RFC 5652]: https://tools.ietf.org/html/rfc5652
 /// [RFC 6488]: https://tools.ietf.org/html/rfc6488
