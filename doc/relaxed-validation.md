@@ -34,6 +34,17 @@ attributes. This seems justified since RPKI explicitly does not use these
 fields.
 
 
+### Subject Information Access
+
+RFC 6487 forbids any access methods other than id-ad-signedObject for EE
+certificates. However, there is CAs that also the id-ad-rpkiNotify method
+for RRDP to these certificates which are declared for certificate
+authority use by RFC 81821.
+
+In relaxed mode, we tolerate id-ad-rpkiNotify access methods in EE
+certificates.
+
+
 ## Signed Objects (RFC 6488)
 
 Signed objects are defined as a profile on CMS messages defined in RFC

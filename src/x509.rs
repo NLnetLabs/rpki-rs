@@ -3,11 +3,16 @@
 use std::{io, ops, str};
 use std::str::FromStr;
 use bcder::{decode, encode};
-use bcder::{BitString, Captured, Mode, Oid, Tag};
+use bcder::{
+    BitString, Captured, ConstOid, Mode, OctetString, Oid, Tag, Unsigned
+};
 use bcder::string::PrintableString;
 use bcder::decode::Source;
 use bcder::encode::PrimitiveContent;
-use chrono::{Datelike, DateTime, LocalResult, Timelike, TimeZone, Utc};
+use bytes::Bytes;
+use chrono::{
+    Datelike, DateTime, Duration, LocalResult, Timelike, TimeZone, Utc
+};
 use hex;
 use crate::crypto::{
     PublicKey, Signature, SignatureAlgorithm, VerificationError
@@ -17,6 +22,9 @@ use crate::oid;
 
 //------------ Functions -----------------------------------------------------
 
+/// Updates an optional value once.
+///
+/// If another update is tried, returns a malformed error instead.
 pub fn update_once<F, T, E>(opt: &mut Option<T>, op: F) -> Result<(), E>
 where F: FnOnce() -> Result<T, E>, E: From<decode::Error> {
     if opt.is_some() {
@@ -27,6 +35,121 @@ where F: FnOnce() -> Result<T, E>, E: From<decode::Error> {
         Ok(())
     }
 }
+
+/// Updates an optional value the first time.
+///
+/// Always runs `op` but only assigns its result to `opt` if that doesn’t hold
+/// a value yet.
+pub fn update_first<F, T, E>(opt: &mut Option<T>, op: F) -> Result<(), E>
+where F: FnOnce() -> Result<Option<T>, E> {
+    if let Some(value) = op()? {
+        if opt.is_none() {
+            *opt = Some(value);
+        }
+    }
+    Ok(())
+}
+
+/// Returns an encoder for a single certificate or CRL extension.
+pub fn encode_extension<V: encode::Values>(
+    oid: &'static ConstOid,
+    critical: bool,
+    content: V
+) -> impl encode::Values {
+    encode::sequence((
+        oid.encode(),
+        critical.encode(),
+        OctetString::encode_wrapped(Mode::Der, content)
+    ))
+}
+
+
+//------------ KeyIdentifier -------------------------------------------------
+
+/// A key identifier.
+///
+/// This is the SHA-1 hash over the public key’s bits.
+#[derive(Clone, Debug, Eq, Hash)]
+pub struct KeyIdentifier(Bytes);
+
+impl KeyIdentifier {
+    /// Creates a new identifier for the given key.
+    pub fn from_public_key(key: &PublicKey) -> Self {
+        Self(Bytes::from(key.key_identifier().as_ref()))
+    }
+
+    pub fn as_bytes(&self) -> &Bytes {
+        &self.0
+    }
+
+    pub fn into_bytes(self) -> Bytes {
+        self.0
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+
+    /// Takes an encoded key identifier from a constructed value.
+    ///
+    /// ```text
+    /// KeyIdentifier ::= OCTET STRING
+    /// ```
+    ///
+    /// The content of the octet string needs to be a SHA-1 hash, so it must
+    /// be exactly 20 octets long.
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        cons.take_value_if(Tag::OCTET_STRING, Self::from_content)
+    }
+
+    pub fn from_content<S: decode::Source>(
+        content: &mut decode::Content<S>
+    ) -> Result<Self, S::Err> {
+        let res = OctetString::from_content(content)?;
+        if res.len() != 20 {
+            return Err(decode::Malformed.into())
+        }
+        Ok(Self(res.into_bytes()))
+    }
+
+    pub fn encode(self) -> impl encode::Values {
+        OctetString::new(self.0).encode()
+    }
+
+    pub fn encode_as(self, tag: Tag) -> impl encode::Values {
+        OctetString::new(self.0).encode_as(tag)
+    }
+
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        OctetString::encode_slice(self.0.as_ref())
+    }
+
+    pub fn encode_ref_as<'a>(&'a self, tag: Tag) -> impl encode::Values + 'a {
+        OctetString::encode_slice_as(self.0.as_ref(), tag)
+    }
+}
+
+impl AsRef<Bytes> for KeyIdentifier {
+    fn as_ref(&self) -> &Bytes {
+        &self.0
+    }
+}
+
+impl AsRef<[u8]> for KeyIdentifier {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl<T: AsRef<[u8]>> PartialEq<T> for KeyIdentifier {
+    fn eq(&self, other: &T) -> bool {
+        self.0.as_ref().eq(other.as_ref())
+    }
+}
+
+
 
 
 //------------ Name ----------------------------------------------------------
@@ -131,8 +254,80 @@ impl Name {
         Name(Captured::from_values(Mode::Der, values))
     }
 
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         &self.0
+    }
+}
+
+
+//------------ Serial --------------------------------------------------------
+
+/// A certificate serial number.
+//
+//  We encode the serial number in 20 octets left padded.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Serial([u8; 20]);
+
+impl Serial {
+    /// Creates a serial number from a octet slice.
+    pub fn from_slice(s: &[u8]) -> Result<Self, decode::Error> {
+        // Empty slice is malformed.
+        if s.is_empty() {
+            return Err(decode::Malformed)
+        }
+        // We do not support more than 20 octets or exactly 20 octets if the
+        // sign bit is set.
+        if s.len() > 20 || (s.len() == 20 && s[0] & 0x80 != 0) {
+            return Err(decode::Unimplemented)
+        }
+        let mut res = <[u8; 20]>::default();
+        res[20 - s.len()..].copy_from_slice(s);
+        Ok(Self(res))
+    }
+
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        Unsigned::take_from(cons).and_then(|s| {
+            Self::from_slice(s.as_ref()).map_err(Into::into)
+        })
+            
+    }
+
+    /// Returns the index of the first octet to encode.
+    fn start(self) -> usize {
+        self.0.iter().enumerate().find_map(|(idx, &val)| {
+            if val == 0 { None }
+            else { Some(idx) }
+        }).unwrap_or(19)
+    }
+}
+
+impl From<u128> for Serial {
+    fn from(value: u128) -> Self {
+        Self::from_slice(value.to_be_bytes().as_ref()).unwrap()
+    }
+}
+
+impl From<u64> for Serial {
+    fn from(value: u64) -> Self {
+        Self::from_slice(value.to_be_bytes().as_ref()).unwrap()
+    }
+}
+
+impl PrimitiveContent for Serial {
+    const TAG: Tag = Tag::INTEGER;
+
+    fn encoded_len(&self, _mode: Mode) -> usize {
+        20 - self.start()
+    }
+
+    fn write_encoded<W: io::Write>(
+        &self,
+        _mode: Mode,
+        target: &mut W
+    ) -> Result<(), io::Error> {
+        target.write_all(&self.0[self.start()..])
     }
 }
 
@@ -146,6 +341,10 @@ pub struct SignedData {
 }
 
 impl SignedData {
+    pub fn new(data: Captured, signature: Signature) -> Self {
+        Self { data, signature }
+    }
+
     pub fn signature(&self) -> &Signature {
         &self.signature
     }
@@ -189,7 +388,7 @@ impl SignedData {
         ).map_err(Into::into)
     }
 
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence((
             &self.data,
             self.signature.algorithm().x509_encode(),
@@ -434,6 +633,72 @@ fn read_four_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Err> {
 }
 
 
+//------------ Validity ------------------------------------------------------
+
+#[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
+pub struct Validity {
+    not_before: Time,
+    not_after: Time,
+}
+
+impl Validity {
+    pub fn new(not_before: Time, not_after: Time) -> Self {
+        Validity { not_before, not_after }
+    }
+
+    pub fn from_duration(duration: Duration) -> Self {
+        let not_before = Time::now();
+        let not_after = Time::new(Utc::now() + duration);
+        if not_before < not_after {
+            Validity { not_before, not_after }
+        }
+        else {
+            Validity { not_after, not_before }
+        }
+    }
+
+    pub fn from_secs(secs: i64) -> Self {
+        Self::from_duration(Duration::seconds(secs))
+    }
+
+    pub fn not_before(self) -> Time {
+        self.not_before
+    }
+
+    pub fn not_after(self) -> Time {
+        self.not_after
+    }
+
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        cons.take_sequence(|cons| {
+            Ok(Validity::new(
+                Time::take_from(cons)?,
+                Time::take_from(cons)?,
+            ))
+        })
+    }
+
+    pub fn validate(self) -> Result<(), ValidationError> {
+        self.validate_at(Time::now())
+    }
+
+    pub fn validate_at(self, now: Time) -> Result<(), ValidationError> {
+        self.not_before.validate_not_before(now)?;
+        self.not_after.validate_not_after(now)?;
+        Ok(())
+    }
+
+    pub fn encode(self) -> impl encode::Values {
+        encode::sequence((
+            self.not_before.encode(),
+            self.not_after.encode(),
+        ))
+    }
+}
+
+
 //------------ ValidationError -----------------------------------------------
 
 #[derive(Clone, Copy, Debug, Display, Eq, PartialEq)]
@@ -458,16 +723,56 @@ impl From<VerificationError> for ValidationError {
 #[cfg(test)]
 mod test {
     use super::*;
+    use bcder::decode::Constructed;
     use bcder::encode::Values;
 
     #[test]
     fn signed_data_decode_then_encode() {
-        let data = include_bytes!("../test-data/id_publisher_ta.cer");
+        let data = include_bytes!("../test-data/ta.cer");
         let obj = SignedData::decode(data.as_ref()).unwrap();
         let mut encoded = Vec::new();
-        obj.encode().write_encoded(Mode::Der, &mut encoded).unwrap();
+        obj.encode_ref().write_encoded(Mode::Der, &mut encoded).unwrap();
         assert_eq!(data.len(), encoded.len());
         assert_eq!(data.as_ref(), AsRef::<[u8]>::as_ref(&encoded));
+    }
+
+    #[test]
+    fn serial_from_slice() {
+        assert_eq!(
+            unwrap!(Serial::from_slice(b"\x01\x02\x03")),
+            Serial([0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1,2,3])
+        );
+        assert_eq!(
+            Serial::from(0x10203u64),
+            Serial([0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1,2,3])
+        );
+    }
+
+    #[test]
+    fn serial_take_from() {
+        assert_eq!(
+            unwrap!(
+                Constructed::decode(
+                    b"\x02\x03\x01\x02\x03".as_ref(),
+                    Mode::Der,
+                    Serial::take_from
+                )
+            ),
+            Serial([0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1,2,3])
+        );
+    }
+
+    #[test]
+    fn serial_encode() {
+        let mut target = Vec::new();
+        unwrap!(
+            Serial([0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1,2,3])
+                .encode().write_encoded(Mode::Der, &mut target)
+        );
+        assert_eq!(
+            target,
+            b"\x02\x03\x01\x02\x03"
+        )
     }
 }
 

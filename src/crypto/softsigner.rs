@@ -138,7 +138,7 @@ impl KeyPair {
         )?;
         signer.update(data)?;
         Ok(Signature::new(
-            SignatureAlgorithm,
+            SignatureAlgorithm::default(),
             signer.sign_to_vec()?.into()
         ))
     }
@@ -155,17 +155,17 @@ pub mod tests {
     #[test]
     fn info_sign_delete() {
         let mut s = OpenSslSigner::new();
-        let ki = s.create_key(PublicKeyFormat).unwrap();
+        let ki = s.create_key(PublicKeyFormat::default()).unwrap();
         let data = b"foobar";
         let _ = s.get_key_info(&ki).unwrap();
-        let _ = s.sign(&ki, SignatureAlgorithm, data).unwrap();
+        let _ = s.sign(&ki, SignatureAlgorithm::default(), data).unwrap();
         s.destroy_key(&ki).unwrap();
     }
     
     #[test]
     fn one_off() {
         let s = OpenSslSigner::new();
-        s.sign_one_off(SignatureAlgorithm, b"foobar").unwrap();
+        s.sign_one_off(SignatureAlgorithm::default(), b"foobar").unwrap();
     }
 }
 

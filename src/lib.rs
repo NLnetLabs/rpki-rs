@@ -34,6 +34,7 @@ extern crate ring;
 #[cfg(feature = "softkeys")] extern crate slab;
 extern crate uuid;
 extern crate untrusted;
+#[macro_use] extern crate unwrap;
 extern crate core;
 
 #[cfg(test)]
@@ -52,3 +53,4 @@ pub mod tal;
 pub mod uri;
 pub mod x509;
 pub mod xml;
+

@@ -294,6 +294,15 @@ impl IpResources {
             }
         }
     }
+
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        match self.0 {
+            ResourcesChoice::Inherit => encode::Choice2::One(().encode()),
+            ResourcesChoice::Blocks(ref blocks) => {
+                encode::Choice2::Two(blocks.encode_ref())
+            }
+        }
+    }
 }
 
 
@@ -494,6 +503,10 @@ impl IpBlocks {
         encode::sequence(encode::slice(self.0, |block| block.encode()))
     }
 
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence(encode::slice(&self.0, |block| block.encode()))
+    }
+
     /// Returns an IpBlocksForFamily for IPv4 for this,
     /// to help formatting.
     pub fn as_v4(&self) -> IpBlocksForFamily {
@@ -550,6 +563,12 @@ impl FromStr for IpBlocks {
     }
 }
 
+impl FromIterator<IpBlock> for IpBlocks {
+    fn from_iter<I: IntoIterator<Item = IpBlock>>(iter: I) -> Self {
+        Self(SharedChain::from_iter(iter))
+    }
+}
+
 
 //------------ IpBlocksBuilder -----------------------------------------------
 
@@ -566,7 +585,7 @@ impl IpBlocksBuilder {
     }
 
     pub fn finalize(self) -> IpBlocks {
-        IpBlocks(SharedChain::from_iter(self.0.into_iter()))
+        IpBlocks::from_iter(self.0.into_iter())
     }
 }
 

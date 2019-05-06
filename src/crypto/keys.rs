@@ -4,6 +4,7 @@ use std::io;
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, Tag};
 use bcder::encode::{PrimitiveContent, Values};
+use bytes::Bytes;
 use ring::{digest, signature};
 use ring::error::Unspecified;
 use untrusted::Input;
@@ -20,8 +21,8 @@ use super::signature::Signature;
 /// of 2048 bits. However, as that might change in the future, we are not
 /// hard-coding that format but rather use this type – which for the time
 /// being is zero-sized.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PublicKeyFormat;
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PublicKeyFormat(());
 
 /// # ASN.1 Algorithm Identifiers
 ///
@@ -59,7 +60,7 @@ impl PublicKeyFormat{
     ) -> Result<Self, S::Err> {
         oid::RSA_ENCRYPTION.skip_if(cons)?;
         cons.take_opt_null()?;
-        Ok(PublicKeyFormat)
+        Ok(PublicKeyFormat::default())
     }
 
     /// Provides an encoder for the algorihm identifier.
@@ -160,6 +161,11 @@ impl PublicKey {
 
     pub fn to_subject_name(&self) -> Name {
         Name::from_captured(self.encode_subject_name().to_captured(Mode::Der))
+    }
+
+    /// Returns a bytes values of the encoded the *subjectPublicKeyInfo*.
+    pub fn to_info_bytes(&self) -> Bytes {
+        self.encode_ref().to_captured(Mode::Der).into_bytes()
     }
 }
 

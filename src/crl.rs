@@ -14,14 +14,17 @@
 //! [`Crl`]: struct.Crl.html
 //! [`CrlStore`]: struct.CrlStore.html
 
+use std::ops;
 use std::collections::HashSet;
 use bcder::{decode, encode};
-use bcder::{Captured, Mode, OctetString, Oid, Tag, Unsigned};
-use crate::oid;
-use crate::uri;
-use crate::x509::{Name, SignedData, Time, ValidationError};
-use crate::crypto::{PublicKey, SignatureAlgorithm};
-use crate::cert::ext::{AuthorityKeyIdentifier, CrlNumber};
+use bcder::{Captured, Mode, OctetString, Oid, Tag};
+use bcder::encode::PrimitiveContent;
+use crate::{oid, uri};
+use crate::crypto::{PublicKey, SignatureAlgorithm, Signer, SigningError};
+use crate::x509::{
+    KeyIdentifier, Name, Serial, SignedData, Time, ValidationError,
+    encode_extension, update_once
+};
 
 
 //------------ Crl -----------------------------------------------------------
@@ -36,30 +39,51 @@ pub struct Crl {
     /// The outer structure of the CRL.
     signed_data: SignedData,
 
-    /// The algorithm used for signing the certificate.
-    signature: SignatureAlgorithm,
-
-    /// The name of the issuer.
-    ///
-    /// This isn’t really used in RPKI at all.
-    issuer: Name,
-
-    /// The time this version of the CRL was created.
-    this_update: Time,
-
-    /// The time the next version of the CRL is likely to be created.
-    next_update: Option<Time>,
-
-    /// The list of revoked certificates.
-    revoked_certs: RevokedCertificates,
-
-    /// The CRL extensions.
-    extensions: Extensions,
+    /// The payload of the CRL.
+    tbs: TbsCertList<RevokedCertificates>,
 
     /// An optional cache of the serial numbers in the CRL.
-    serials: Option<HashSet<Unsigned>>,
+    serials: Option<HashSet<Serial>>,
 }
 
+/// # Data Access
+///
+impl Crl {
+    /// Returns a reference to the signed data wrapper.
+    pub fn signed_data(&self) -> &SignedData {
+        &self.signed_data
+    }
+
+    /// Returns a reference to the payload.
+    ///
+    /// This also available via the `AsRef` and `Deref` impls.
+    pub fn as_cert_list(&self) -> &TbsCertList<RevokedCertificates> {
+        &self.tbs
+    }
+
+    /// Caches the serial numbers in the CRL.
+    ///
+    /// Doing this will speed up calls to `contains` later on at the price
+    /// of additional memory consumption.
+    pub fn cache_serials(&mut self) {
+        self.serials = Some(
+            self.tbs.revoked_certs.iter().map(|entry| entry.user_certificate)
+                .collect()
+        );
+    }
+
+    /// Returns whether the given serial number is on this revocation list.
+    pub fn contains(&self, serial: Serial) -> bool {
+        match self.serials {
+            Some(ref set) => set.contains(&serial),
+            None => self.tbs.revoked_certs.contains(serial)
+        }
+    }
+}
+
+
+/// # Decode, Validate, and Encode
+///
 impl Crl {
     /// Parses a source as a certificate revocation list.
     pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
@@ -78,25 +102,8 @@ impl Crl {
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         let signed_data = SignedData::from_constructed(cons)?;
-
-        signed_data.data().clone().decode(|cons| {
-            cons.take_sequence(|cons| {
-                cons.skip_u8_if(1)?; // v2 => 1
-                Ok(Crl {
-                    signed_data,
-                    signature: SignatureAlgorithm::x509_take_from(cons)?,
-                    issuer: Name::take_from(cons)?,
-                    this_update: Time::take_from(cons)?,
-                    next_update: Time::take_opt_from(cons)?,
-                    revoked_certs: RevokedCertificates::take_from(cons)?,
-                    extensions: cons.take_constructed_if(
-                        Tag::CTX_0,
-                        Extensions::take_from
-                    )?,
-                    serials: None,
-                })
-            })
-        }).map_err(Into::into)
+        let tbs = signed_data.data().clone().decode(TbsCertList::take_from)?;
+        Ok(Self { signed_data, tbs, serials: None })
     }
 
     /// Validates the certificate revocation list.
@@ -106,31 +113,151 @@ impl Crl {
         &self,
         public_key: &PublicKey
     ) -> Result<(), ValidationError> {
-        if self.signature != self.signed_data.signature().algorithm() {
+        if self.tbs.signature != self.signed_data.signature().algorithm() {
             return Err(ValidationError)
         }
         self.signed_data.verify_signature(public_key)
     }
 
-    /// Caches the serial numbers in the CRL.
-    ///
-    /// Doing this will speed up calls to `contains` later on at the price
-    /// of additional memory consumption.
-    pub fn cache_serials(&mut self) {
-        self.serials = Some(
-            self.revoked_certs.iter().map(|entry| entry.user_certificate)
-                .collect()
-        );
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        self.signed_data.encode_ref()
     }
 
-    /// Returns whether the given serial number is on this revocation list.
-    pub fn contains(&self, serial: &Unsigned) -> bool {
-        match self.serials {
-            Some(ref set) => {
-                set.contains(serial)
-            }
-            None => self.revoked_certs.contains(serial)
+    /// Returns a captured encoding of the CRL.
+    pub fn to_captured(&self) -> Captured {
+        Captured::from_values(Mode::Der, self.encode_ref())
+    }
+}
+
+
+//--- Deref and AsRef
+
+impl ops::Deref for Crl {
+    type Target = TbsCertList<RevokedCertificates>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.tbs
+    }
+}
+
+impl AsRef<TbsCertList<RevokedCertificates>> for Crl {
+    fn as_ref(&self) -> &TbsCertList<RevokedCertificates> {
+        &self.tbs
+    }
+}
+
+
+//------------ TbsCertList ---------------------------------------------------
+
+/// The payload of a certificate revocation list.
+///
+/// This type is generic over the list of revoked certificates.
+#[derive(Clone, Debug)]
+pub struct TbsCertList<C> {
+    /// The algorithm used for signing the certificate.
+    signature: SignatureAlgorithm,
+
+    /// The name of the issuer.
+    ///
+    /// This isn’t really used in RPKI at all.
+    issuer: Name,
+
+    /// The time this version of the CRL was created.
+    this_update: Time,
+
+    /// The time the next version of the CRL is likely to be created.
+    next_update: Option<Time>,
+
+    /// The list of revoked certificates.
+    revoked_certs: C,
+
+    /// Authority Key Identifier
+    authority_key_id: KeyIdentifier,
+
+    /// CRL Number
+    crl_number: Serial,
+}
+
+/// # Creating and Converting
+///
+impl<C> TbsCertList<C> {
+    /// Creates a new value from the necessary data.
+    pub fn new(
+        signature: SignatureAlgorithm,
+        issuer: Name,
+        this_update: Time,
+        revoked_certs: C,
+        authority_key_id: KeyIdentifier,
+        crl_number: Serial
+    ) -> Self {
+        Self {
+            signature,
+            issuer,
+            this_update,
+            next_update: None,
+            revoked_certs,
+            authority_key_id,
+            crl_number
         }
+    }
+
+    /// Converts the value into a signed CRL.
+    pub fn into_crl<S: Signer>(
+        self,
+        signer: &S,
+        key: &S::KeyId
+    ) -> Result<Crl, SigningError<S::Error>>
+    where
+        C: IntoIterator<Item=CrlEntry>,
+        <C as IntoIterator>::IntoIter: Clone
+    {
+        let tbs: TbsCertList<RevokedCertificates> = self.into();
+        let data = Captured::from_values(Mode::Der, tbs.encode_ref());
+        let signature = signer.sign(key, tbs.signature, &data)?;
+        Ok(Crl {
+            signed_data: SignedData::new(data, signature),
+            tbs,
+            serials: None,
+        })
+    }
+}
+
+/// # Data Access
+///
+impl<C> TbsCertList<C> {
+    /// Returns the algorithm used by the issuer to sign the CRL.
+    pub fn signature(&self) -> SignatureAlgorithm {
+        self.signature
+    }
+
+    /// Sets the signature algorithm.
+    pub fn set_signature(&mut self, signature: SignatureAlgorithm) {
+        self.signature = signature
+    }
+
+    /// Returns a reference to the issuer name of the CRL.
+    pub fn issuer(&self) -> &Name {
+        &self.issuer
+    }
+
+    /// Sets the issuer name.
+    pub fn set_issuer(&mut self, issuer: Name) {
+        self.issuer = issuer
+    }
+
+    /// Returns the update time of this CRL.
+    pub fn this_update(&self) -> Time {
+        self.this_update
+    }
+
+    /// Sets the update time of this CRL.
+    pub fn set_this_update(&mut self, this_update: Time) {
+        self.this_update = this_update
+    }
+
+    /// Returns the time of next update if present.
+    pub fn next_update(&self) -> Option<Time> {
+        self.next_update
     }
 
     /// Returns whether the CRL’s nextUpdate time has passed.
@@ -138,14 +265,177 @@ impl Crl {
         self.next_update.map(|t| t < Time::now()).unwrap_or(false)
     }
 
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        // This relies on signed_data always being in sync with the other
-        // elements!
-        self.signed_data.encode()
+    /// Sets the time of next update.
+    pub fn set_next_update(&mut self, next_update: Option<Time>) {
+        self.next_update = next_update
+    }
+
+    /// Returns a reference to the list of revoked certificates.
+    pub fn revoked_certs(&self) -> &C {
+        &self.revoked_certs
+    }
+
+    /// Returns a mutable reference to the list of revoked certificates.
+    pub fn revoked_certs_mut(&mut self) -> &mut C {
+        &mut self.revoked_certs
+    }
+
+    /// Sets the list of revoked certificates.
+    pub fn set_revoked_certs(&mut self, revoked_certs: C) {
+        self.revoked_certs = revoked_certs
+    }
+
+    /// Returns a reference to the authority key identifier if present.
+    pub fn authority_key_identifier(&self) -> &KeyIdentifier {
+        &self.authority_key_id
+    }
+
+    /// Sets the authority key identifer.
+    pub fn set_authority_key_identifier(&mut self, id: KeyIdentifier) {
+        self.authority_key_id = id
+    }
+
+    /// Returns the CRL number.
+    pub fn crl_number(&self) -> Serial {
+        self.crl_number
+    }
+
+    /// Sets the CRL number.
+    pub fn set_crl_number(&mut self, crl_number: Serial) {
+        self.crl_number = crl_number
     }
 }
 
 
+/// # Decoding and Encoding
+///
+impl TbsCertList<RevokedCertificates> {
+    /// Takes a value from the beginning of a encoded constructed value.
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        cons.take_sequence(|cons| {
+            // version. Technically it is optional but we need v2, so it must
+            // actually be there. v2 is encoded as an integer of value 1.
+            cons.skip_u8_if(1)?;
+            let signature = SignatureAlgorithm::x509_take_from(cons)?;
+            let issuer = Name::take_from(cons)?;
+            let this_update = Time::take_from(cons)?;
+            let next_update = Time::take_opt_from(cons)?;
+            let revoked_certs = RevokedCertificates::take_from(cons)?;
+            let mut authority_key_id = None;
+            let mut crl_number = None;
+            cons.take_constructed_if(Tag::CTX_0, |cons| {
+                cons.take_sequence(|cons| {
+                    while let Some(()) = cons.take_opt_sequence(|cons| {
+                        let id = Oid::take_from(cons)?;
+                        let _critical = cons.take_opt_bool()?.unwrap_or(false);
+                        let value = OctetString::take_from(cons)?;
+                        Mode::Der.decode(value.to_source(), |content| {
+                            if id == oid::CE_AUTHORITY_KEY_IDENTIFIER {
+                                Self::take_authority_key_identifier(
+                                    content, &mut authority_key_id
+                                )
+                            }
+                            else if id == oid::CE_CRL_NUMBER {
+                                Self::take_crl_number(
+                                    content, &mut crl_number
+                                )
+                            }
+                            else {
+                                // RFC 6487 says that no other extensions are
+                                // allowed. So we fail even if there is only
+                                // non-critical extension.
+                                xerr!(Err(decode::Malformed))
+                            }
+                        }).map_err(Into::into)
+                    })? { }
+                    Ok(())
+                })
+            })?;
+            let authority_key_id = authority_key_id.ok_or(decode::Malformed)?;
+            let crl_number = crl_number.ok_or(decode::Malformed)?;
+            Ok(Self {
+                signature,
+                issuer,
+                this_update,
+                next_update,
+                revoked_certs,
+                authority_key_id,
+                crl_number
+            })
+        })
+    }
+
+    /// Parses the Authority Key Identifier extension.
+    fn take_authority_key_identifier<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+        authority_key_id: &mut Option<KeyIdentifier>,
+    ) -> Result<(), S::Err> {
+        update_once(authority_key_id, || {
+            cons.take_sequence(|cons| {
+                cons.take_value_if(Tag::CTX_0, KeyIdentifier::from_content)
+            })
+        })
+    }
+
+    /// Parses the CRL Number extension.
+    fn take_crl_number<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+        crl_number: &mut Option<Serial>,
+    ) -> Result<(), S::Err> {
+        update_once(crl_number, || {
+            Serial::take_from(cons)
+        })
+    }
+
+    /// Returns a value encoder for a reference to this value.
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence((
+            1.encode(), // version
+            self.signature.x509_encode(),
+            self.issuer.encode_ref(),
+            self.this_update.encode(),
+            self.next_update.map(|time| time.encode()),
+            self.revoked_certs.encode_ref(),
+            encode::sequence_as(Tag::CTX_0, 
+                encode::sequence((
+                    encode_extension(
+                        &oid::CE_AUTHORITY_KEY_IDENTIFIER, false,
+                        encode::sequence(
+                            self.authority_key_id.encode_ref_as(Tag::CTX_0)
+                        )
+                    ),
+                    encode_extension(
+                        &oid::CE_CRL_NUMBER, false,
+                        self.crl_number.encode()
+                    ),
+                ))
+            )
+        ))
+    }
+}
+
+
+//--- From
+
+impl<C> From<TbsCertList<C>> for TbsCertList<RevokedCertificates>
+where
+    C: IntoIterator<Item = CrlEntry>,
+    <C as IntoIterator>::IntoIter: Clone
+{
+    fn from(list: TbsCertList<C>) -> Self {
+        Self {
+            signature: list.signature,
+            issuer: list.issuer,
+            this_update: list.this_update,
+            next_update: list.next_update,
+            revoked_certs: RevokedCertificates::from_iter(list.revoked_certs),
+            authority_key_id: list.authority_key_id,
+            crl_number: list.crl_number,
+        }
+    }
+}
 
 //------------ RevokedCertificates ------------------------------------------
 
@@ -178,10 +468,10 @@ impl RevokedCertificates {
     ///
     /// The method walks over the list, decoding it on the fly and checking
     /// each entry.
-    pub fn contains(&self, serial: &Unsigned) -> bool {
+    pub fn contains(&self, serial: Serial) -> bool {
         Mode::Der.decode(self.0.as_ref(), |cons| {
             while let Some(entry) = CrlEntry::take_opt_from(cons).unwrap() {
-                if entry.user_certificate == *serial {
+                if entry.user_certificate == serial {
                     return Ok(true)
                 }
             }
@@ -192,6 +482,27 @@ impl RevokedCertificates {
     /// Returns an iterator over the entries in the list.
     pub fn iter(&self) -> RevokedCertificatesIter {
         RevokedCertificatesIter(self.0.clone())
+    }
+
+    /// Returns a value encoder for a reference to the value.
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        &self.0
+    }
+
+    /// Create a value from an iterator over CRL entries.
+    ///
+    /// This can’t be the `FromIterator` trait because of the `Clone`
+    /// requirement on `I::IntoIter`
+    fn from_iter<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = CrlEntry>,
+        <I as IntoIterator>::IntoIter: Clone
+    {
+        RevokedCertificates(Captured::from_values(
+            Mode::Der, encode::iter(
+                iter.into_iter().map(CrlEntry::encode)
+            )
+        ))
     }
 }
 
@@ -214,10 +525,10 @@ impl Iterator for RevokedCertificatesIter {
 //------------ CrlEntry ------------------------------------------------------
 
 /// An entry in the revoked certificates list.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct CrlEntry {
     /// The serial number of the revoked certificate.
-    user_certificate: Unsigned,
+    user_certificate: Serial,
 
     /// The time of revocation.
     revocation_date: Time,
@@ -243,71 +554,18 @@ impl CrlEntry {
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         Ok(CrlEntry {
-            user_certificate: Unsigned::take_from(cons)?,
+            user_certificate: Serial::take_from(cons)?,
             revocation_date: Time::take_from(cons)?,
             // crlEntryExtensions are forbidden by RFC 6487.
         })
     }
-}
 
-
-//------------ Extensions ----------------------------------------------------
-
-/// Extensions of a RPKI certificate revocation list.
-///
-/// Only two extension are allowed to be present: the authority key
-/// identifier extension which contains the key identifier of the certificate
-/// this CRL is associated with, and the CRL number which is the serial
-/// number of this version of the CRL.
-#[derive(Clone, Debug)]
-pub struct Extensions {
-    /// Authority Key Identifier
-    ///
-    /// May be omitted in CRLs included in protocol messages.
-    authority_key_id: Option<AuthorityKeyIdentifier>,
-
-    /// CRL Number
-    crl_number: CrlNumber,
-}
-
-impl Extensions {
-    /// Takes the CRL extension from the beginning of a constructed value.
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_sequence(|cons| {
-            let mut authority_key_id = None;
-            let mut crl_number = None;
-            while let Some(()) = cons.take_opt_sequence(|cons| {
-                let id = Oid::take_from(cons)?;
-                let critical = cons.take_opt_bool()?.unwrap_or(false);
-                let value = OctetString::take_from(cons)?;
-                Mode::Der.decode(value.to_source(), |cons| {
-                    if id == oid::CE_AUTHORITY_KEY_IDENTIFIER {
-                        AuthorityKeyIdentifier::take(
-                            cons, critical, &mut authority_key_id
-                        )
-                    }
-                    else if id == oid::CE_CRL_NUMBER {
-                        CrlNumber::take(cons, critical, &mut crl_number)
-                    }
-                    else {
-                        // RFC 6487 says that no other extensions are
-                        // allowed. So we fail even if there is only
-                        // non-critical extension.
-                        xerr!(Err(decode::Malformed))
-                    }
-                }).map_err(Into::into)
-            })? { }
-            let crl_number = match crl_number {
-                Some(some) => some,
-                None => return Err(decode::Malformed.into())
-            };
-            Ok(Extensions {
-                authority_key_id,
-                crl_number
-            })
-        })
+    /// Returns a value encoder for the entry.
+    pub fn encode(self) -> impl encode::Values {
+        encode::sequence((
+            self.user_certificate.encode(),
+            self.revocation_date.encode(),
+        ))
     }
 }
 
@@ -368,6 +626,45 @@ impl CrlStore {
 impl Default for CrlStore {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+
+//============ Tests =========================================================
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn decode_certs() {
+        Crl::decode(
+            include_bytes!("../test-data/ta.crl").as_ref()
+        ).unwrap();
+        Crl::decode(
+            include_bytes!("../test-data/ca1.crl").as_ref()
+        ).unwrap();
+    }
+}
+
+#[cfg(all(test, feature="softkeys"))]
+mod signer_test {
+    use crate::crypto::PublicKeyFormat;
+    use crate::crypto::softsigner::OpenSslSigner;
+    use super::*;
+
+    #[test]
+    fn build_ta_cert() {
+        let mut signer = OpenSslSigner::new();
+        let key = signer.create_key(PublicKeyFormat::default()).unwrap();
+        let pubkey = signer.get_key_info(&key).unwrap();
+        let crl = TbsCertList::new(
+            Default::default(), pubkey.to_subject_name(), Time::now(),
+            Vec::<CrlEntry>::new(), KeyIdentifier::from_public_key(&pubkey),
+            12u64.into()
+        );
+        let crl = crl.into_crl(&signer, &key).unwrap().to_captured();
+        let _crl = Crl::decode(crl.as_slice()).unwrap();
     }
 }
 

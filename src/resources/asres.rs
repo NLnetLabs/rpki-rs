@@ -141,6 +141,21 @@ impl AsResources {
             )
         )
     }
+
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence(
+            encode::sequence_as(Tag::CTX_0,
+                match self.0 {
+                    ResourcesChoice::Inherit => {
+                        encode::Choice2::One(().encode())
+                    }
+                    ResourcesChoice::Blocks(ref blocks) => {
+                        encode::Choice2::Two(blocks.encode_ref())
+                    }
+                }
+            )
+        )
+    }
 }
 
 //--- Display
@@ -304,6 +319,10 @@ impl AsBlocks {
 
     pub fn encode(self) -> impl encode::Values {
         encode::slice(self.0, |block| block.encode())
+    }
+
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::slice(&self.0, |block| block.encode())
     }
 }
 

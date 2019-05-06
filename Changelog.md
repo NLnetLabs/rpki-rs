@@ -8,6 +8,20 @@ Breaking
 * Restructured how certificate’s SubjectAccessInfo is parsed and accessed.
   It now keeps the first mandatory URI of the four relevant access methods
   readily available. [(#34)]
+* `Cert` has completely changed, `CertBuilder` is gone and has been
+  replaced by `TbsCert` which can be used for building. [(#39)]
+* Similarly, `Crl` has completely changed, `CrlBuilder` is gone and has been
+  replaced by `TbsCertList` which can be used for building. [(#39)]
+* How `SignedObject`, `Manifest`, and `Roa` are being built has completely
+  changed. [(#39)]
+* `crl::Crl`, `x509::Name`, `x509::SignedData`: `encode` renamed to
+  `encode_ref` to comply with standard naming scheme. [(#39)]
+* `DigestAlgorithm`, `PublicKeyFormat`, and `SignatureAlgorithm` are not
+  unit structs anymore. They impl `Default` which should be used to get
+  the recommended (read: only available) values. This is so we can
+  transparently change them into enums later on if necessary. [(#39)]
+* `cert::Validity` is now `Copy` and isn’t returned or used by reference
+  anymore. [(#39)]
 
 New
 
@@ -20,12 +34,15 @@ New
 * Implement *serde* traits for URI types. [(#37)]
 * Implement *serde* traits, equality comparison, `FromStr` and `Display`
   for resources. [(#38)]
+* New constant size type `Serial` wrapping serial numbers. [(#39)]
 
 Bug Fixes
 
 * Add `CertBuilder::ca_repository` for the CA Repository Subject
   Information Access value in order to be able to build valid CA
   certificates. [(#34)]
+* Fix `uri::Https::encode_general_name` and `uri::Https::encode_general_name`
+  to not wrap the URI in a sequence. [(#39)]
 
 Dependencies
 

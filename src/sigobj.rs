@@ -1,43 +1,53 @@
-//! Signed Objects
+// Signed objects.
 
-use std::ops;
 use bcder::{decode, encode};
-use bcder::{Captured, ConstOid, Mode, Oid, Tag};
+use bcder::{Captured, Mode, OctetString, Oid, Tag};
 use bcder::encode::PrimitiveContent;
-use bcder::string::{OctetString, OctetStringSource};
+use bcder::string::OctetStringSource;
 use bytes::Bytes;
-use crate::cert::{Cert, CertBuilder, ResourceCert};
-use crate::oid;
-use crate::x509::{Time, ValidationError, update_once};
+use crate::{oid, uri};
+use crate::cert::{Cert, KeyUsage, Overclaim, ResourceCert, TbsCert};
 use crate::crypto::{
-    DigestAlgorithm, Signature, SignatureAlgorithm, Signer, SigningError
+    Digest, DigestAlgorithm, Signature, SignatureAlgorithm, Signer,
+    SigningError
+};
+use crate::resources::{
+    AsBlocksBuilder, AsResources, AsResourcesBuilder, IpBlocksBuilder,
+    IpResources, IpResourcesBuilder
+};
+use crate::x509::{
+    KeyIdentifier, Name, Serial, Time, ValidationError, Validity, update_once
 };
 
 
 //------------ SignedObject --------------------------------------------------
 
 /// A signed object.
-///
-/// Signed objects are a more strict profile of a CMS signed-data object.
-/// They are specified in [RFC 6088] while CMS is specified in [RFC 5652].
 #[derive(Clone, Debug)]
 pub struct SignedObject {
+    //--- From SignedData
+    //
+    digest_algorithm: DigestAlgorithm,
     content_type: Oid<Bytes>,
     content: OctetString,
     cert: Cert,
-    signer_info: SignerInfo,
+
+    //--- From SignerInfo
+    //
+    sid: KeyIdentifier,
+    signed_attrs: SignedAttrs,
+    signature: Signature,
+
+    //--- SignedAttributes
+    //
+    message_digest: MessageDigest,
+    signing_time: Option<Time>,
+    binary_signing_time: Option<u64>,
 }
 
+/// # Data Access
+///
 impl SignedObject {
-    pub fn decode<S: decode::Source>(
-        source: S,
-        strict: bool
-    ) -> Result<Self, S::Err> {
-        if strict { Mode::Der }
-        else { Mode::Ber }
-            .decode(source, Self::take_from)
-    }
-
     /// Returns a reference to the object’s content type.
     pub fn content_type(&self) -> &Oid<Bytes> {
         &self.content_type
@@ -48,6 +58,7 @@ impl SignedObject {
         &self.content
     }
 
+    /// Decodes the object’s content.
     pub fn decode_content<F, T>(&self, op: F) -> Result<T, decode::Error>
     where F: FnOnce(&mut decode::Constructed<OctetStringSource>)
                     -> Result<T, decode::Error> {
@@ -61,65 +72,93 @@ impl SignedObject {
     }
 }
 
-
+/// # Decoding, Validation, and Encoding
+///
 impl SignedObject {
+    /// Decodes a signed object from the given source.
+    pub fn decode<S: decode::Source>(
+        source: S,
+        strict: bool
+    ) -> Result<Self, S::Err> {
+        if strict { Mode::Der }
+        else { Mode::Ber }
+            .decode(source, Self::take_from)
+    }
+
+    /// Takes a signed object from an encoded constructed value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        cons.take_sequence(|cons| {
+        cons.take_sequence(|cons| { // ContentInfo
             oid::SIGNED_DATA.skip_if(cons)?; // contentType
-            cons.take_constructed_if(Tag::CTX_0, Self::take_signed_data)
-        })
-    }
-
-    /// Parses a SignedData value.
-    fn take_signed_data<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_sequence(|cons| {
-            cons.skip_u8_if(3)?; // version -- must be 3
-            DigestAlgorithm::skip_set(cons)?; // digestAlgorithms
-            let (content_type, content)
-                = Self::take_encap_content_info(cons)?;
-            let cert = Self::take_certificates(cons)?;
-            let signer_info = SignerInfo::take_set_from(cons)?;
-            Ok(SignedObject {
-                content_type, content, cert, signer_info
+            cons.take_constructed_if(Tag::CTX_0, |cons| { // content
+                cons.take_sequence(|cons| { // SignedData
+                    cons.skip_u8_if(3)?; // version -- must be 3
+                    let digest_algorithm =
+                        DigestAlgorithm::take_set_from(cons)?;
+                    let (content_type, content) = {
+                        cons.take_sequence(|cons| { // encapContentInfo
+                            Ok((
+                                Oid::take_from(cons)?,
+                                cons.take_constructed_if(
+                                    Tag::CTX_0,
+                                    OctetString::take_from
+                                )?
+                            ))
+                        })?
+                    };
+                    let cert = cons.take_constructed_if( // certificates
+                        Tag::CTX_0,
+                        Cert::take_from
+                    )?;
+                    // no crls
+                    let (sid, attrs, signature) = { // signerInfos
+                        cons.take_set(|cons| {
+                            cons.take_sequence(|cons| {
+                                cons.skip_u8_if(3)?;
+                                let sid = cons.take_value_if(
+                                    Tag::CTX_0, |content| {
+                                        KeyIdentifier::from_content(content)
+                                    }
+                                )?;
+                                let alg = DigestAlgorithm::take_from(cons)?;
+                                if alg != digest_algorithm {
+                                    return Err(decode::Malformed.into())
+                                }
+                                let attrs = SignedAttrs::take_from(cons)?;
+                                if attrs.2 != content_type {
+                                    return Err(decode::Malformed.into())
+                                }
+                                let signature = Signature::new(
+                                    SignatureAlgorithm::cms_take_from(cons)?,
+                                    OctetString::take_from(cons)?.into_bytes()
+                                );
+                                // no unsignedAttributes
+                                Ok((sid, attrs, signature))
+                            })
+                        })?
+                    };
+                    Ok(Self {
+                        digest_algorithm,
+                        content_type,
+                        content,
+                        cert,
+                        sid,
+                        signed_attrs: attrs.0,
+                        signature,
+                        message_digest: attrs.1,
+                        signing_time: attrs.3,
+                        binary_signing_time: attrs.4
+                    })
+                })
             })
         })
     }
 
-    /// Parses an EncapsulatedContentInfo value.
-    ///
-    /// For a ROA, `eContentType` must be `oid:::ROUTE_ORIGIN_AUTH`.
-    pub fn take_encap_content_info<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<(Oid<Bytes>, OctetString), S::Err> {
-        cons.take_sequence(|cons| {
-            Ok((
-                Oid::take_from(cons)?,
-                cons.take_constructed_if(
-                    Tag::CTX_0,
-                    OctetString::take_from
-                )?
-            ))
-        })
-    }
-
-    /// Parse a certificates field of a SignedData value.
-    fn take_certificates<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Cert, S::Err> {
-        cons.take_constructed_if(Tag::CTX_0, Cert::take_from)
-    }
-
     /// Validates the signed object.
     ///
-    /// The requirements for an object to be valid are given in section 3
-    /// of [RFC 6488].
-    ///
-    /// Upon success, the method returns the validated certificate and the
-    /// content.
+    /// Upon success, the method returns the validated EE certificate of the
+    /// object.
     pub fn validate(
         self,
         issuer: &ResourceCert,
@@ -128,6 +167,7 @@ impl SignedObject {
         self.validate_at(issuer, strict, Time::now())
     }
 
+    /// Validates the signed object at he given time.
     pub fn validate_at(
         self,
         issuer: &ResourceCert,
@@ -146,17 +186,12 @@ impl SignedObject {
         &self,
         _strict: bool
     ) -> Result<(), ValidationError> {
-        // Sub-items a, b, d, e, f, g, i, j, k, l have been validated while
+        // Sub-items a, b, d, e, f, g, h, i, j, k, l have been validated while
         // parsing. This leaves these:
         //
         // c. cert is an EE cert with the SubjectKeyIdentifer matching
         //    the sid field of the SignerInfo.
-        if &self.signer_info.sid != self.cert.subject_key_identifier() {
-            return Err(ValidationError)
-        }
-        // h. eContentType equals the OID in the value of the content-type
-        //    signed attribute.
-        if self.content_type != self.signer_info.signed_attrs.content_type {
+        if self.sid != *self.cert.subject_key_identifier() {
             return Err(ValidationError)
         }
         Ok(())
@@ -167,153 +202,186 @@ impl SignedObject {
     /// This is item 2 of [RFC 6488]’s section 3.
     fn verify_signature(&self, _strict: bool) -> Result<(), ValidationError> {
         let digest = {
-            let mut context = self.signer_info.digest_algorithm().start();
+            let mut context = self.digest_algorithm.start();
             self.content.iter().for_each(|x| context.update(x));
             context.finish()
         };
-        if digest.as_ref() != self.signer_info.message_digest() {
+        if digest.as_ref() != self.message_digest.as_ref() {
             return Err(ValidationError)
         }
-        let msg = self.signer_info.signed_attrs.encode_verify();
+        let msg = self.signed_attrs.encode_verify();
         self.cert.subject_public_key_info().verify(
             &msg,
-            &self.signer_info.signature()
+            &self.signature
         ).map_err(Into::into)
     }
-}
 
-
-//------------ SignerInfo ----------------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct SignerInfo {
-    sid: OctetString,
-    digest_algorithm: DigestAlgorithm,
-    signed_attrs: SignedAttributes,
-    signature: Signature,
-}
-
-impl SignerInfo {
-    pub fn signed_attrs(&self) -> &SignedAttributes {
-        &self.signed_attrs
-    }
-
-    pub fn digest_algorithm(&self) -> DigestAlgorithm {
-        self.digest_algorithm
-    }
-
-    pub fn signature(&self) -> &Signature {
-        &self.signature
-    }
-
-    pub fn take_set_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_set(Self::take_from)
-    }
-
-    /// Parses a SignerInfo.
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_sequence(|cons| {
-            cons.skip_u8_if(3)?;
-            Ok(SignerInfo {
-                sid: cons.take_value_if(Tag::CTX_0, |content| {
-                    OctetString::from_content(content)
-                })?,
-                digest_algorithm: DigestAlgorithm::take_from(cons)?,
-                signed_attrs: SignedAttributes::take_from(cons)?,
-                signature: Signature::new(
-                    SignatureAlgorithm::cms_take_from(cons)?,
-                    OctetString::take_from(cons)?.to_bytes()
-                )
-            })
-        })
-    }
-
-    pub fn message_digest(&self) -> Bytes {
-        self.signed_attrs.message_digest.to_bytes()
-    }
-}
-
-
-//------------ SignedAttributes ----------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct SignedAttributes {
-    raw: Captured,
-    message_digest: OctetString,
-    content_type: Oid<Bytes>,
-    signing_time: Option<Time>,
-    binary_signing_time: Option<u64>,
-}
-
-impl SignedAttributes {
-    /// Parses Signed Attributes.
-    ///
-    /// ```text
-    /// This appears in the SignerInfo as:
-    ///    signedAttrs [0] IMPLICIT SignedAttributes OPTIONAL,
-    ///
-    /// Where:
-    ///
-    ///         SignedAttributes ::= SET SIZE (1..MAX) OF Attribute
-    ///
-    ///         Attribute ::= SEQUENCE {
-    ///           attrType OBJECT IDENTIFIER,
-    ///           attrValues SET OF AttributeValue }
-    ///
-    ///         AttributeValue ::= ANY
-    ///
-    /// See section 2.1.6.4 of RFC 6488 for specifications.
-    /// ```
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        let raw = cons.take_constructed_if(Tag::CTX_0, |c| c.capture_all())?;
-        raw.clone().decode(|cons| {
-            let mut message_digest = None;
-            let mut content_type = None;
-            let mut signing_time = None;
-            let mut binary_signing_time = None;
-            while let Some(()) = cons.take_opt_sequence(|cons| {
-                let oid = Oid::take_from(cons)?;
-                if oid == oid::CONTENT_TYPE {
-                    Self::take_content_type(cons, &mut content_type)
-                }
-                else if oid == oid::MESSAGE_DIGEST {
-                    Self::take_message_digest(cons, &mut message_digest)
-                }
-                else if oid == oid::SIGNING_TIME {
-                    Self::take_signing_time(cons, &mut signing_time)
-                }
-                else if oid == oid::AA_BINARY_SIGNING_TIME {
-                    Self::take_bin_signing_time(
-                        cons,
-                        &mut binary_signing_time
+    /// Returns a value encoder for a reference to a signed object.
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence((
+            oid::SIGNED_DATA.encode(), // contentType
+            encode::sequence_as(Tag::CTX_0, // content
+                encode::sequence((
+                    3u8.encode(), // version
+                    self.digest_algorithm.encode_set(), // digestAlgorithms
+                    encode::sequence(( // encapContentInfo
+                        self.content_type.encode_ref(),
+                        encode::sequence_as(Tag::CTX_0,
+                            self.content.encode_ref()
+                        ),
+                    )),
+                    encode::sequence_as(Tag::CTX_0, // certificates
+                        self.cert.encode_ref(),
+                    ),
+                    // crl -- omitted
+                    encode::set( // signerInfo
+                        encode::sequence(( // SignerInfo
+                            3u8.encode(), // version
+                            self.sid.encode_ref_as(Tag::CTX_0),
+                            self.digest_algorithm.encode(), // digestAlgorithm
+                            self.signed_attrs.encode_ref(), // signedAttrs
+                            self.signature.algorithm().cms_encode(),
+                                                        // signatureAlgorithm
+                            OctetString::encode_slice( // signature
+                                self.signature.value().as_ref()
+                            ),
+                            // unsignedAttrs omitted
+                        ))
                     )
-                }
-                else {
-                    xerr!(Err(decode::Malformed))
-                }
-            })? { }
-            let message_digest = match message_digest {
-                Some(some) => some,
-                None => return Err(decode::Malformed)
-            };
-            let content_type = match content_type {
-                Some(some) => some,
-                None => return Err(decode::Malformed)
-            };
-            Ok(SignedAttributes {
-                raw,
-                message_digest,
-                content_type,
-                signing_time,
-                binary_signing_time,
+                ))
+            )
+        ))
+    }
+}
+
+
+//------------ SignedAttrs ---------------------------------------------------
+
+/// A private helper type that contains the raw signed attributes content.
+///
+/// These attributes, in their DER encoded form, are what the signature is
+/// calculated over. Annoyingly, the encoding uses the signed attribute set
+/// with a tag for SET OF, not [0] as it would be found in the actual data.
+///
+/// Technically, signed objects need to be DER encoded, anyway, so we would
+/// not need to re-encode the signed attributes other than sticking the SET OF
+/// tag and length in front of them. While we do allow BER encoded objects in
+/// relaxed mode, those that we have encountered have their signed attributes
+/// in DER encoding still, so we don’t re-encode.
+///
+/// A `SignedAttrs` value contains the captured content of the signed
+/// attributes set. That is, it does not contain the tag and length values of
+/// the outer set object, only two to four sequences of the actual
+/// attributes.
+///
+/// In order to make sticking tag and length in front of the value easier, we
+/// allow a maximum length of the s content of 65536 octets.
+#[derive(Clone, Debug)]
+struct SignedAttrs(Captured);
+
+impl SignedAttrs {
+    fn new(
+        content_type: &Oid<Bytes>,
+        digest: &MessageDigest,
+        signing_time: Option<Time>,
+        binary_signing_time: Option<u64>,
+    ) -> Self {
+        // The inner captured is only the attributes, not the outer set.
+        SignedAttrs(Captured::from_values(Mode::Der, (
+            // Content Type
+            encode::sequence((
+                oid::CONTENT_TYPE.encode(),
+                encode::set(
+                    content_type.encode_ref(),
+                )
+            )),
+
+            // Message Digest
+            encode::sequence((
+                oid::MESSAGE_DIGEST.encode(),
+                encode::set(
+                    digest.encode_ref(),
+                )
+            )),
+
+            // Signing Time
+            signing_time.map(|time| {
+                encode::sequence((
+                    oid::SIGNING_TIME.encode(),
+                    encode::set(
+                        time.encode(),
+                    )
+                ))
+            }),
+
+            // Binary Signing Time
+            binary_signing_time.map(|time| {
+                encode::sequence((
+                    oid::AA_BINARY_SIGNING_TIME.encode(),
+                    encode::set(
+                        time.encode()
+                    )
+                ))
             })
-        }).map_err(Into::into)
+        )))
+    }
+
+    /// Takes the signed attributes from the beginning of a constructed value.
+    ///
+    /// Returns the raw signed attrs, the message digest, the content type
+    /// object identifier, and the two optional signing times.
+    #[allow(clippy::type_complexity)]
+    fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<
+        (Self, MessageDigest, Oid<Bytes>, Option<Time>, Option<u64>),
+        S::Err
+    > {
+        let mut message_digest = None;
+        let mut content_type = None;
+        let mut signing_time = None;
+        let mut binary_signing_time = None;
+        let raw = cons.take_constructed_if(Tag::CTX_0, |cons| {
+            cons.capture(|cons| {
+                while let Some(()) = cons.take_opt_sequence(|cons| {
+                    let oid = Oid::take_from(cons)?;
+                    if oid == oid::CONTENT_TYPE {
+                        Self::take_content_type(cons, &mut content_type)
+                    }
+                    else if oid == oid::MESSAGE_DIGEST {
+                        Self::take_message_digest(cons, &mut message_digest)
+                    }
+                    else if oid == oid::SIGNING_TIME {
+                        Self::take_signing_time(cons, &mut signing_time)
+                    }
+                    else if oid == oid::AA_BINARY_SIGNING_TIME {
+                        Self::take_bin_signing_time(
+                            cons,
+                            &mut binary_signing_time
+                        )
+                    }
+                    else {
+                        xerr!(Err(decode::Malformed.into()))
+                    }
+                })? { }
+                Ok(())
+            })
+        })?;
+        if raw.len() > 0xFFFF {
+            return Err(decode::Unimplemented.into())
+        }
+        let message_digest = match message_digest {
+            Some(some) => MessageDigest(some.into_bytes()),
+            None => return Err(decode::Malformed.into())
+        };
+        let content_type = match content_type {
+            Some(some) => some,
+            None => return Err(decode::Malformed.into())
+        };
+        Ok((
+            Self(raw), message_digest, content_type, signing_time,
+            binary_signing_time
+        ))
     }
 
     /// Parses the Content Type attribute.
@@ -356,11 +424,15 @@ impl SignedAttributes {
         })
     }
 
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        encode::sequence_as(Tag::CTX_0, &self.0)
+    }
+
+    /// Creates the message for verification.
     pub fn encode_verify(&self) -> Vec<u8> {
-        // XXX This may be outdated. Check!
-        let mut res = Vec::new();
+        let len = self.0.len();
+        let mut res = Vec::with_capacity(len + 4);
         res.push(0x31); // SET
-        let len = self.raw.len();
         if len < 128 {
             res.push(len as u8)
         }
@@ -372,8 +444,39 @@ impl SignedAttributes {
         else {
             panic!("overly long signed attrs");
         }
-        res.extend_from_slice(self.raw.as_ref());
+        res.extend_from_slice(self.0.as_ref());
         res
+    }
+}
+
+impl AsRef<[u8]> for SignedAttrs {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+
+//------------ MessageDigest -------------------------------------------------
+
+/// A private helper type that contains the message digest attribute.
+#[derive(Clone, Debug)]
+struct MessageDigest(Bytes);
+
+impl MessageDigest {
+    fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        OctetString::encode_slice(self.0.as_ref())
+    }
+}
+
+impl From<Digest> for MessageDigest {
+    fn from(digest: Digest) -> Self {
+        MessageDigest(Bytes::from(digest.as_ref()))
+    }
+}
+
+impl AsRef<[u8]> for MessageDigest {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
     }
 }
 
@@ -381,197 +484,282 @@ impl SignedAttributes {
 //------------ SignedObjectBuilder -------------------------------------------
 
 #[derive(Clone, Debug)]
-pub struct SignedObjectBuilder<C> {
-    content_type: ConstOid,
-    content: C,
-    cert: CertBuilder,
+pub struct SignedObjectBuilder {
+    /// The digest algorithm to be used for the message digest attribute.
+    ///
+    /// By default, this will be the default algorithm.
+    digest_algorithm: DigestAlgorithm,
+
+    /// The serial number of the EE certificate.
+    ///
+    /// Must be provided.
+    serial_number: Serial,
+
+    /// The validity of the EE certificate.
+    ///
+    /// Must be provided.
+    validity: Validity,
+
+    /// The subject name of the EE certificate.
+    ///
+    /// If this is `None` (the default), it will be generated from the key
+    /// identifier of the EE certificate’s key.
+    subject: Option<Name>,
+
+    /// The URI of CRL for the EE certificate.
+    ///
+    /// Must be provided.
+    crl_uri: uri::Rsync,
+
+    /// The URI of the CA certificate issuing the EE certificate.
+    ///
+    /// Must be provided.
+    ca_issuer: uri::Rsync,
+
+    /// The URI of the signed object itself.
+    ///
+    /// Must be provided.
+    signed_object: uri::Rsync,
+
+    /// The IPv4 resources of the EE certificate.
+    ///
+    /// Defaults to not having any.
+    v4_resources: Option<IpResources>,
+
+    /// The IPv6 resources of the EE certificate.
+    ///
+    /// Defaults to not having any.
+    v6_resources: Option<IpResources>,
+
+    /// The AS resources of the EE certificate.
+    ///
+    /// Defaults to not having any.
+    as_resources: Option<AsResources>,
+
+    /// The signing time attribute of the signed object.
+    ///
+    /// This is optional and by default omitted.
     signing_time: Option<Time>,
-    binary_signing_time: Option<Time>,
+
+    /// The binary signing time attribute of the signed object.
+    ///
+    /// This is optional and by default omitted.
+    binary_signing_time: Option<u64>,
 }
 
-impl<C> SignedObjectBuilder<C> {
+impl SignedObjectBuilder {
     pub fn new(
-        content_type: ConstOid,
-        content: C,
-        cert: CertBuilder
+        serial_number: Serial,
+        validity: Validity,
+        crl_uri: uri::Rsync,
+        ca_issuer: uri::Rsync,
+        signed_object: uri::Rsync
     ) -> Self {
-        SignedObjectBuilder {
-            content_type,
-            content,
-            cert,
+        Self {
+            digest_algorithm: DigestAlgorithm::default(),
+            serial_number,
+            validity,
+            subject: None,
+            crl_uri,
+            ca_issuer,
+            signed_object,
+            v4_resources: None,
+            v6_resources: None,
+            as_resources: None,
             signing_time: None,
             binary_signing_time: None,
         }
     }
 
-    pub fn content(&self) -> &C {
-        &self.content
+    pub fn digest_algorithm(&self) -> DigestAlgorithm {
+        self.digest_algorithm
     }
 
-    pub fn content_mut(&mut self) -> &mut C {
-        &mut self.content
+    pub fn set_digest_algorithm(&mut self, algorithm: DigestAlgorithm) {
+        self.digest_algorithm = algorithm
     }
 
-    pub fn cert(&self) -> &CertBuilder {
-        &self.cert
+    pub fn serial_number(&self) -> Serial {
+        self.serial_number
     }
 
-    pub fn cert_mut(&mut self) -> &mut CertBuilder {
-        &mut self.cert
+    pub fn set_serial_number(&mut self, serial: Serial) {
+        self.serial_number = serial
     }
 
-    pub fn signing_time(&mut self, time: Time) {
-        self.signing_time = Some(time)
+    pub fn validity(&self) -> Validity {
+        self.validity
     }
 
-    pub fn binary_signing_time(&mut self, time: Time) {
-        self.binary_signing_time = Some(time)
+    pub fn set_validity(&mut self, validity: Validity) {
+        self.validity = validity
     }
 
-    pub fn map<U, F>(self, f: F) -> SignedObjectBuilder<U>
-    where F: FnOnce(C) -> U {
-        SignedObjectBuilder {
-            content_type: self.content_type,
-            content: f(self.content),
-            cert: self.cert,
-            signing_time: self.signing_time,
-            binary_signing_time: self.binary_signing_time
-        }
+    pub fn subject(&self) -> Option<&Name> {
+        self.subject.as_ref()
     }
 
-}
+    pub fn set_subject(&mut self, name: Option<Name>) {
+        self.subject = name
+    }
 
-impl<C: encode::Values> SignedObjectBuilder<C> {
-    pub fn encode<S: Signer>(
+    pub fn crl_uri(&self) -> &uri::Rsync {
+        &self.crl_uri
+    }
+
+    pub fn set_crl_uri(&mut self, uri: uri::Rsync) {
+        self.crl_uri = uri
+    }
+
+    pub fn ca_issuer(&self) -> &uri::Rsync {
+        &self.ca_issuer
+    }
+
+    pub fn set_ca_issuer(&mut self, uri: uri::Rsync) {
+        self.ca_issuer = uri
+    }
+
+    pub fn signed_object(&self) -> &uri::Rsync {
+        &self.signed_object
+    }
+
+    pub fn set_signed_object(&mut self, uri: uri::Rsync) {
+        self.signed_object = uri
+    }
+
+    /// Returns a reference to the IPv4 address resources if present.
+    pub fn v4_resources(&self) -> Option<&IpResources> {
+        self.v4_resources.as_ref()
+    }
+
+    /// Set the IPv4 address resources.
+    pub fn set_v4_resources(&mut self, resources: Option<IpResources>) {
+        self.v4_resources = resources
+    }
+
+    /// Sets the IPv4 address resources to inherit.
+    pub fn set_v4_resources_inherit(&mut self) {
+        self.set_v4_resources(Some(IpResources::inherit()))
+    }
+
+    /// Builds the blocks IPv4 address resources.
+    pub fn build_v4_resource_blocks<F>(&mut self, op: F)
+    where F: FnOnce(&mut IpBlocksBuilder) {
+        let mut builder = IpResourcesBuilder::new();
+        builder.blocks(op);
+        self.set_v4_resources(builder.finalize())
+    }
+
+    /// Returns a reference to the IPv6 address resources if present.
+    pub fn v6_resources(&self) -> Option<&IpResources> {
+        self.v6_resources.as_ref()
+    }
+
+    /// Set the IPv6 address resources.
+    pub fn set_v6_resources(&mut self, resources: Option<IpResources>) {
+        self.v6_resources = resources
+    }
+
+    /// Sets the IPv6 address resources to inherit.
+    pub fn set_v6_resources_inherit(&mut self) {
+        self.set_v6_resources(Some(IpResources::inherit()))
+    }
+
+    /// Builds the blocks IPv6 address resources.
+    pub fn build_v6_resource_blocks<F>(&mut self, op: F)
+    where F: FnOnce(&mut IpBlocksBuilder) {
+        let mut builder = IpResourcesBuilder::new();
+        builder.blocks(op);
+        self.set_v6_resources(builder.finalize())
+    }
+
+    /// Returns whether the certificate has any IP resources at all.
+    pub fn has_ip_resources(&self) -> bool {
+        self.v4_resources.is_some() || self.v6_resources().is_some()
+    }
+
+    /// Returns a reference to the AS resources if present.
+    pub fn as_resources(&self) -> Option<&AsResources> {
+        self.as_resources.as_ref()
+    }
+
+    /// Set the AS resources.
+    pub fn set_as_resources(&mut self, resources: Option<AsResources>) {
+        self.as_resources = resources
+    }
+
+    /// Sets the AS resources to inherit.
+    pub fn set_as_resources_inherit(&mut self) {
+        self.set_as_resources(Some(AsResources::inherit()))
+    }
+
+    /// Builds the blocks AS resources.
+    pub fn build_as_resource_blocks<F>(&mut self, op: F)
+    where F: FnOnce(&mut AsBlocksBuilder) {
+        let mut builder = AsResourcesBuilder::new();
+        builder.blocks(op);
+        self.set_as_resources(builder.finalize())
+    }
+
+    pub fn finalize<S: Signer>(
         self,
+        content_type: Oid<Bytes>,
+        content: Bytes,
         signer: &S,
-        cert_key: &S::KeyId,
-        cert_alg: SignatureAlgorithm,
-        digest_alg: DigestAlgorithm,
-        obj_alg: SignatureAlgorithm,
-    ) -> Result<impl encode::Values, SigningError<S::Error>> {
+        issuer_key: &S::KeyId,
+        issuer: &TbsCert,
+    ) -> Result<SignedObject, SigningError<S::Error>> {
         // Produce signed attributes.
-        let signed_attrs = self.encode_signed_attrs(digest_alg);
+        let message_digest = self.digest_algorithm.digest(&content).into();
+        let signed_attrs = SignedAttrs::new(
+            &content_type,
+            &message_digest,
+            self.signing_time,
+            self.binary_signing_time
+        );
 
         // Sign signed attributes with a one-off key.
         let (signature, key_info) = signer.sign_one_off(
-            obj_alg, &signed_attrs
+            SignatureAlgorithm::default(), &signed_attrs.encode_verify()
         )?;
-        let (obj_alg, signature) = signature.unwrap();
+        let sid = KeyIdentifier::from_public_key(&key_info);
 
-        // Complete the certificate.
-        let cert = self.cert.encode(signer, cert_key, cert_alg, &key_info)?;
+        // Make the certificate.
+        let mut cert = TbsCert::new(
+            self.serial_number,
+            issuer.subject().clone(),
+            self.validity,
+            self.subject,
+            key_info,
+            KeyUsage::Ee,
+            Overclaim::Refuse,
+        );
+        cert.set_authority_key_identifier(
+            Some(issuer.subject_key_identifier().clone())
+        );
+        cert.set_crl_uri(Some(self.crl_uri));
+        cert.set_ca_issuer(Some(self.ca_issuer));
+        cert.set_signed_object(Some(self.signed_object));
+        cert.set_v4_resources(self.v4_resources);
+        cert.set_v6_resources(self.v6_resources);
+        cert.set_as_resources(self.as_resources);
+        let cert = cert.into_cert(signer, issuer_key)?;
 
-        Ok(encode::sequence((
-            oid::SIGNED_DATA.encode(), // contentType
-            encode::sequence_as(Tag::CTX_0, // content
-                encode::sequence((
-                    3u8.encode(), // version
-                    digest_alg.encode_set(), // digestAlgorithms
-                    encode::sequence(( // encapContentInfo
-                        self.content_type.encode(),
-                        encode::sequence_as(Tag::CTX_0,
-                            OctetString::encode_wrapped(
-                                Mode::Der, self.content
-                            )
-                        ),
-                    )),
-                    encode::sequence_as(Tag::CTX_0, // certificates
-                        cert
-                    ),
-                    // crl -- omitted
-                    encode::set( // signerInfo
-                        encode::sequence(( // SignerInfo
-                            3u8.encode(), // version
-                            OctetString::encode_slice_as( // sid
-                                key_info.key_identifier(),
-                                Tag::CTX_0,
-                            ),
-                            digest_alg.encode(), // digestAlgorithm
-                            signed_attrs, // signedAttrs
-                            obj_alg.cms_encode(), // signatureAlgorithm
-                            OctetString::encode_slice( // signature
-                                signature
-                            ),
-                            // unsignedAttrs omitted
-                        ))
-                    )
-                ))
-            )
-        )))
+        Ok(SignedObject {
+            digest_algorithm: self.digest_algorithm,
+            content_type,
+            content: OctetString::new(content),
+            cert,
+            sid,
+            signed_attrs,
+            signature,
+            message_digest,
+            signing_time: self.signing_time,
+            binary_signing_time: self.binary_signing_time,
+        })
     }
 
-    fn encode_signed_attrs(&self, digest_alg: DigestAlgorithm) -> Captured {
-        let mut digest = digest_alg.start();
-        self.content.write_encoded(Mode::Der, &mut digest).unwrap();
-        let digest = digest.finish();
-        Captured::from_values(Mode::Der, encode::sequence_as(Tag::CTX_0, (
-            // Content Type
-            encode::sequence((
-                oid::CONTENT_TYPE.encode(),
-                encode::set(
-                    self.content_type.encode_ref(),
-                )
-            )),
 
-            // Message Digest
-            encode::sequence((
-                oid::MESSAGE_DIGEST.encode(),
-                encode::set(
-                    OctetString::encode_slice(digest),
-                )
-            )),
-
-            // Signing Time
-            self.signing_time.map(|time| {
-                encode::sequence((
-                    oid::SIGNING_TIME.encode(),
-                    encode::set(
-                        time.encode(),
-                    )
-                ))
-            }),
-
-            // Binary Signing Time
-            self.binary_signing_time.map(|time| {
-                encode::sequence((
-                    oid::AA_BINARY_SIGNING_TIME.encode(),
-                    encode::set(
-                        time.to_binary_time().encode()
-                    )
-                ))
-            })
-        )))
-    }
-}
-
-
-//--- Deref, DerefMut, AsRef, and AsMut
-
-impl<C> ops::Deref for SignedObjectBuilder<C> {
-    type Target = C;
-
-    fn deref(&self) -> &Self::Target {
-        &self.content
-    }
-}
-
-impl<C> ops::DerefMut for SignedObjectBuilder<C> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.content
-    }
-}
-
-impl<C> AsRef<C> for SignedObjectBuilder<C> {
-    fn as_ref(&self) -> &C {
-        &self.content
-    }
-}
-
-impl<C> AsMut<C> for SignedObjectBuilder<C> {
-    fn as_mut(&mut self) -> &mut C {
-        &mut self.content
-    }
 }
 
 
@@ -579,44 +767,81 @@ impl<C> AsMut<C> for SignedObjectBuilder<C> {
 
 #[cfg(test)]
 mod test {
+    use crate::tal::TalInfo;
+    use super::*;
+
+    #[test]
+    fn decode() {
+        let talinfo = TalInfo::from_name("foo".into()).into_arc();
+        let at = Time::utc(2019, 5, 1, 0, 0, 0);
+        let issuer = Cert::decode(
+            include_bytes!("../test-data/ta.cer").as_ref()
+        ).unwrap();
+        let issuer = unwrap!(issuer.validate_ta_at(talinfo, false, at));
+        let obj = unwrap!(SignedObject::decode(
+            include_bytes!("../test-data/ta.mft").as_ref(),
+            false
+        ));
+        unwrap!(obj.validate_at(&issuer, false, at));
+        let obj = unwrap!(SignedObject::decode(
+            include_bytes!("../test-data/ca1.mft").as_ref(),
+            false
+        ));
+        assert!(obj.validate_at(&issuer, false, at).is_err());
+    }
 }
 
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
     use std::str::FromStr;
+    use bcder::Oid;
     use bcder::encode::Values;
-    use crate::cert::Validity;
+    use crate::uri;
     use crate::crypto::PublicKeyFormat;
     use crate::crypto::softsigner::OpenSslSigner;
     use crate::resources::{AsId, Prefix};
-    use crate::uri;
+    use crate::tal::TalInfo;
     use super::*;
         
     #[test]
     fn encode_signed_object() {
         let mut signer = OpenSslSigner::new();
-        let key = signer.create_key(PublicKeyFormat).unwrap();
-        let pubkey = signer.get_key_info(&key).unwrap();
-        let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
+        let key = unwrap!(signer.create_key(PublicKeyFormat::default()));
+        let pubkey = unwrap!(signer.get_key_info(&key));
+        let uri = unwrap!(uri::Rsync::from_str("rsync://example.com/m/p"));
 
-        let mut cert = CertBuilder::new(
-            12, pubkey.to_subject_name(), Validity::from_secs(86400), true
+        let mut cert = TbsCert::new(
+            12u64.into(), pubkey.to_subject_name(),
+            Validity::from_secs(86400), None, pubkey, KeyUsage::Ca,
+            Overclaim::Trim
         );
-        cert.signed_object(uri.clone())
-            .v4_blocks(|blocks| blocks.push(Prefix::new(0, 0)))
-            .as_blocks(|blocks| blocks.push((AsId::MIN, AsId::MAX)));
+        cert.set_basic_ca(Some(true));
+        cert.set_ca_repository(Some(uri.clone()));
+        cert.set_rpki_manifest(Some(uri.clone()));
+        cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
+        cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
+        cert.build_as_resource_blocks(|b| b.push((AsId::MIN, AsId::MAX)));
+        let cert = unwrap!(cert.into_cert(&signer, &key));
 
-        let builder = SignedObjectBuilder::new(
-            oid::SIGNED_DATA, // yeah, I know. Whatever.
-            b"1234".encode(),
-            cert
+        let mut sigobj = SignedObjectBuilder::new(
+            12u64.into(), Validity::from_secs(86400), uri.clone(),
+            uri.clone(), uri.clone()
         );
-        let captured = builder.encode(
-            &signer, &key, SignatureAlgorithm, DigestAlgorithm,
-            SignatureAlgorithm
-        ).unwrap().to_captured(Mode::Der);
+        sigobj.set_v4_resources_inherit();
+        let sigobj = unwrap!(sigobj.finalize(
+            Oid(oid::SIGNED_DATA.0.into()),
+            Bytes::from(b"1234".as_ref()),
+            &signer,
+            &key,
+            &cert,
+        ));
+        let sigobj = sigobj.encode_ref().to_captured(Mode::Der);
 
-        let _sigobj = SignedObject::decode(captured.as_slice(), true).unwrap();
+        let sigobj = unwrap!(SignedObject::decode(sigobj.as_slice(), true));
+        let cert = unwrap!(cert.validate_ta(
+            TalInfo::from_name("foo".into()).into_arc(), true
+        ));
+        unwrap!(sigobj.validate(&cert, true));
     }
 }
 
@@ -632,7 +857,7 @@ mod signer_test {
 /// the options of the various fields. They are specified in [RFC 6488] while
 /// CMS is specified in [RFC 5652].
 ///
-/// A signed object is a CMS object with a single signed data obhect in it.
+/// A signed object is a CMS object with a single signed data object in it.
 ///
 /// A CMS object is:
 ///
@@ -642,8 +867,9 @@ mod signer_test {
 ///     content                 [0] EXPLICIT ANY DEFINED BY contentType }
 /// ```
 ///
-/// The _contentType_ must be `oid::SIGNED_DATA` and the _content_ a
-/// _SignedData_ object (however, note the `[0] EXPLICIT` there) as follows:
+/// For a signed object, the _contentType_ must be `oid::SIGNED_DATA` and the
+/// _content_ a _SignedData_ object (however, note the `[0] EXPLICIT` there)
+/// as follows:
 ///
 /// ```txt
 /// SignedData              ::= SEQUENCE {
@@ -677,8 +903,8 @@ mod signer_test {
 ///   definitions (the latter via `take_set_from` and `encode_set`).
 /// * The _eContentType_ field of _encapContentInfo_ defines the type of an
 ///   object. Check the specific signed objects for their matching object ID.
-/// * The _eContent_ field of _encapContentInfo_ must be present and contains
-///   actual content of the signed object.
+/// * The _eContent_ field of _encapContentInfo_ must be present and contain
+///   the actual content of the signed object.
 /// * There must be exactly one certificate in the `certificates` set. It must
 ///   be of the _certificate_ choice (that’s not exactly in RFC 6488, but it
 ///   is the only logical choice for ‘the RPKI end-entity (EE) certificate
@@ -762,7 +988,8 @@ mod signer_test {
 /// For the object identifiers of the attributes, see the [`oid`] module.
 ///
 /// The _signature_ field of the signed object contains a signature over the
-/// DER encoding of the _signedAttrs_ field.
+/// DER encoding of the _signedAttrs_ field. When calculating the signature,
+/// the normal tag for the SET is used instead of the implicit `[0]`.
 ///
 /// [RFC 5652]: https://tools.ietf.org/html/rfc5652
 /// [RFC 6488]: https://tools.ietf.org/html/rfc6488
@@ -771,4 +998,5 @@ mod signer_test {
 /// [`DigestAlgorithm`]: ../../crypto/keys/struct.DigestAlgorithm.html
 /// [`oid`]: ../../oid/index.html
 pub mod spec { }
+
 

@@ -1,6 +1,7 @@
 //! URIs.
 
 use std::{fmt, hash, io, str};
+use std::convert::TryFrom;
 use std::str::FromStr;
 use bcder::encode;
 use bcder::{Mode, Tag};
@@ -165,7 +166,15 @@ impl Rsync {
 }
 
 
-//--- FromStr
+//--- TryFrom and FromStr
+
+impl TryFrom<String> for Rsync {
+    type Error = Error;
+
+    fn try_from(s: String) -> Result<Self, Error> {
+        Self::from_string(s)
+    }
+}
 
 impl str::FromStr for Rsync {
     type Err = Error;
@@ -188,8 +197,7 @@ impl Serialize for Rsync {
 impl<'de> Deserialize<'de> for Rsync {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de> {
-        Self::from_string(String::deserialize(deserializer)?)
-            .map_err(de::Error::custom)
+        deserializer.deserialize_string(UriVisitor::<Rsync>::default())
     }
 }
 
@@ -358,7 +366,7 @@ impl Http {
     }
 
     pub fn encode_general_name<'a>(&'a self) -> impl encode::Values + 'a {
-        encode::sequence_as(Tag::CTX_6, self.encode())
+        self.encode_as(Tag::CTX_6)
     }
 }
 
@@ -384,7 +392,15 @@ impl AsRef<[u8]> for Http {
 }
 
 
-//--- FromStr
+//--- TryFrom and FromStr
+
+impl TryFrom<String> for Http {
+    type Error = Error;
+
+    fn try_from(s: String) -> Result<Self, Error> {
+        Self::from_string(s)
+    }
+}
 
 impl str::FromStr for Http {
     type Err = Error;
@@ -407,8 +423,7 @@ impl Serialize for Http {
 impl<'de> Deserialize<'de> for Http {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de> {
-        Self::from_string(String::deserialize(deserializer)?)
-            .map_err(de::Error::custom)
+        deserializer.deserialize_string(UriVisitor::<Http>::default())
     }
 }
 
@@ -502,7 +517,7 @@ impl Https {
     }
 
     pub fn encode_general_name<'a>(&'a self) -> impl encode::Values + 'a {
-        encode::sequence_as(Tag::CTX_6, self.encode())
+        self.encode_as(Tag::CTX_6)
     }
 }
 
@@ -528,7 +543,15 @@ impl AsRef<[u8]> for Https {
 }
 
 
-//--- FromStr
+//--- TryFrom and FromStr
+
+impl TryFrom<String> for Https {
+    type Error = Error;
+
+    fn try_from(s: String) -> Result<Self, Error> {
+        Self::from_string(s)
+    }
+}
 
 impl str::FromStr for Https {
     type Err = Error;
@@ -578,8 +601,7 @@ impl Serialize for Https {
 impl<'de> Deserialize<'de> for Https {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de> {
-        Self::from_str(Deserialize::deserialize(deserializer)?)
-            .map_err(de::Error::custom)
+        deserializer.deserialize_string(UriVisitor::<Https>::default())
     }
 }
 
@@ -692,6 +714,41 @@ impl Scheme {
 impl fmt::Display for Scheme {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}://", self.as_str())
+    }
+}
+
+
+//------------ UriVisitor ----------------------------------------------------
+
+/// Private helper type for implementing deserialization.
+struct UriVisitor<V>(std::marker::PhantomData<V>);
+
+impl<V> Default for UriVisitor<V> {
+    fn default() -> Self {
+        UriVisitor(std::marker::PhantomData)
+    }
+}
+
+impl<'de, V> serde::de::Visitor<'de> for UriVisitor<V>
+where
+    V: FromStr + TryFrom<String>,
+    <V as FromStr>::Err: fmt::Display,
+    <V as TryFrom<String>>::Error: fmt::Display,
+{
+    type Value = V;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "a string containing a URI")
+    }
+
+    fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+    where E: de::Error {
+        V::from_str(s).map_err(de::Error::custom)
+    }
+
+    fn visit_string<E>(self, s: String) -> Result<Self::Value, E>
+    where E: de::Error {
+        V::try_from(s).map_err(de::Error::custom)
     }
 }
 
@@ -876,11 +933,21 @@ mod tests {
     }
 
     #[test]
-    fn https_serde() {
+    fn https_serde_string() {
         use serde_json::{from_str, to_string};
 
         let uri = Https::from_str("https://example.com/some/stuff").unwrap();
         let res = from_str(&to_string(&uri).unwrap()).unwrap();
         assert_eq!(uri, res);
+    }
+
+    #[test]
+    fn https_serde_reader() {
+        let uri = Https::from_str("https://example.com/some/stuff").unwrap();
+        let json = serde_json::to_string(&uri).unwrap();
+        let deser_uri: Https = serde_json::from_reader(
+            json.as_bytes()
+        ).unwrap();
+        assert_eq!(uri, deser_uri);
     }
 }
