@@ -197,6 +197,13 @@ impl ManifestContent {
     pub fn is_empty(&self) -> bool {
         self.file_list.is_empty()
     }
+
+    /// Returns whether the manifest is stale.
+    ///
+    /// A manifest is stale if it’s nextUpdate time has passed.
+    pub fn is_stale(&self) -> bool {
+        self.next_update < Time::now()
+    }
 }
 
 /// # Decoding and Encoding
