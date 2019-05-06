@@ -174,10 +174,10 @@ impl ManifestContent {
     ///
     /// The iterator assumes that all files referred to in the manifest are
     /// relative to the given rsync URI.
-    pub fn iter_uris(
-        &self,
-        base: uri::Rsync
-    ) -> impl Iterator<Item = (uri::Rsync, ManifestHash)> {
+    pub fn iter_uris<'a>(
+        &'a self,
+        base: &'a uri::Rsync
+    ) -> impl Iterator<Item = (uri::Rsync, ManifestHash)> + 'a {
         let alg = self.file_hash_alg;
         self.iter().map(move |item| {
             let (file, hash) = item.into_pair();
