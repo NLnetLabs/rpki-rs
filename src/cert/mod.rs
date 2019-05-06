@@ -1684,6 +1684,12 @@ impl AsRef<Cert> for ResourceCert {
     }
 }
 
+impl AsRef<TbsCert> for ResourceCert {
+    fn as_ref(&self) -> &TbsCert {
+        self.as_cert().as_ref()
+    }
+}
+
 
 //------------ KeyUsage ------------------------------------------------------
 
