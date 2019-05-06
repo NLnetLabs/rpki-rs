@@ -177,10 +177,14 @@ impl ManifestContent {
     pub fn iter_uris(
         &self,
         base: uri::Rsync
-    ) -> impl Iterator<Item = (uri::Rsync, Bytes)> {
+    ) -> impl Iterator<Item = (uri::Rsync, ManifestHash)> {
+        let alg = self.file_hash_alg;
         self.iter().map(move |item| {
             let (file, hash) = item.into_pair();
-            (base.join(file.as_ref()), hash)
+            (
+                base.join(file.as_ref()),
+                ManifestHash::new(hash, alg)
+            )
         })
     }
 
@@ -360,6 +364,37 @@ impl<F: AsRef<[u8]>, H: AsRef<[u8]>> FileAndHash<F, H> {
 impl<F: AsRef<[u8]>, H: AsRef<[u8]>> AsRef<Self> for FileAndHash<F, H> {
     fn as_ref(&self) -> &Self {
         self
+    }
+}
+
+
+//------------ ManifestHash --------------------------------------------------
+
+/// A file hash value gained from a manifest.
+///
+/// This type knows the hash value itself plus the digest algorithm used for
+/// this hash and thus can verify objects.
+#[derive(Clone, Debug)]
+pub struct ManifestHash {
+    hash: Bytes,
+    algorithm: DigestAlgorithm,
+}
+
+impl ManifestHash {
+    /// Creates a new manifest hash from the hash and algorithm.
+    pub fn new(hash: Bytes, algorithm: DigestAlgorithm) -> Self {
+        Self { hash, algorithm }
+    }
+
+    /// Verifies whether an octet sequence is matched by this hash.
+    pub fn verify<T: AsRef<[u8]>>(
+        &self,
+        t: T
+    ) -> Result<(), ValidationError> {
+        ring::constant_time::verify_slices_are_equal(
+            self.hash.as_ref(),
+            self.algorithm.digest(t.as_ref()).as_ref()
+        ).map_err(|_| ValidationError)
     }
 }
 
