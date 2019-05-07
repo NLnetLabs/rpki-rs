@@ -54,6 +54,11 @@ pub trait Signer {
         algorithm: SignatureAlgorithm,
         data: &D
     ) -> Result<(Signature, PublicKey), Self::Error>;
+
+    /// Creates random data.
+    ///
+    /// The method fills the provide bytes slice with random data.
+    fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error>;
 }
 
 

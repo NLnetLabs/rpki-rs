@@ -5,10 +5,12 @@
 //! software keys to sign things, such as an RPKI Certificate Authority or
 //! Publication Server. In particular, this is not required when validating.
 
+use std::io;
 use openssl::rsa::Rsa;
 use openssl::pkey::{PKey, Private};
 use openssl::hash::MessageDigest;
-use openssl::error::ErrorStack;
+use ring::rand;
+use ring::rand::SecureRandom;
 use slab::Slab;
 use super::keys::{PublicKey, PublicKeyFormat};
 use super::signature::{Signature, SignatureAlgorithm};
@@ -21,22 +23,23 @@ use super::signer::{KeyError, Signer, SigningError};
 /// An OpenSSL based signer.
 ///
 /// Keeps the keys in memory (for now).
-#[derive(Default)]
 pub struct OpenSslSigner {
     keys: Slab<KeyPair>,
+    rng: rand::SystemRandom,
 }
 
 impl OpenSslSigner {
     pub fn new() -> OpenSslSigner {
         OpenSslSigner {
-            keys: Slab::new()
+            keys: Slab::new(),
+            rng: rand::SystemRandom::new(),
         }
     }
 }
 
 impl Signer for OpenSslSigner {
     type KeyId = KeyId;
-    type Error = ErrorStack;
+    type Error = io::Error;
 
     fn create_key(
         &mut self, algorithm: PublicKeyFormat
@@ -49,7 +52,11 @@ impl Signer for OpenSslSigner {
         id: &Self::KeyId
     ) -> Result<PublicKey, KeyError<Self::Error>> {
         match self.keys.get(id.0) {
-            Some(key) => Ok(key.get_key_info()?),
+            Some(key) => {
+                key.get_key_info().map_err(|err|
+                    KeyError::Signer(err)
+                )
+            }
             None => Err(KeyError::KeyNotFound),
         }
     }
@@ -73,7 +80,7 @@ impl Signer for OpenSslSigner {
         data: &D
     ) -> Result<Signature, SigningError<Self::Error>> {
         match self.keys.get(key.0) {
-            Some(key) => key.sign(algorithm, data.as_ref()),
+            Some(key) => key.sign(algorithm, data.as_ref()).map_err(Into::into),
             None => Err(SigningError::KeyNotFound)
         }
     }
@@ -85,13 +92,21 @@ impl Signer for OpenSslSigner {
     ) -> Result<(Signature, PublicKey), Self::Error> {
         let key = KeyPair::new(algorithm.public_key_format())?;
         let info = key.get_key_info()?;
-        let sig = key.sign(algorithm, data.as_ref()).map_err(|err| {
-            match err {
-                SigningError::Signer(err) => err,
-                _ => unreachable!()
-            }
-        })?;
+        let sig = key.sign(algorithm, data.as_ref())?;
         Ok((sig, info))
+    }
+
+    fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error> {
+        self.rng.fill(target).map_err(|_|
+            io::Error::new(io::ErrorKind::Other, "rng error")
+        )
+    }
+}
+
+
+impl Default for OpenSslSigner {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -112,7 +127,7 @@ pub struct KeyId(usize);
 struct KeyPair(PKey<Private>);
 
 impl KeyPair {
-    fn new(_algorithm: PublicKeyFormat) -> Result<Self, ErrorStack> {
+    fn new(_algorithm: PublicKeyFormat) -> Result<Self, io::Error> {
         // Issues unwrapping this indicate a bug in the openssl library.
         // So, there is no way to recover.
         let rsa = Rsa::generate(2048)?;
@@ -120,7 +135,7 @@ impl KeyPair {
         Ok(KeyPair(pkey))
     }
 
-    fn get_key_info(&self) -> Result<PublicKey, ErrorStack>
+    fn get_key_info(&self) -> Result<PublicKey, io::Error>
     {
         // Issues unwrapping this indicate a bug in the openssl
         // library. So, there is no way to recover.
@@ -132,7 +147,7 @@ impl KeyPair {
         &self,
         _algorithm: SignatureAlgorithm,
         data: &[u8]
-    ) -> Result<Signature, SigningError<ErrorStack>> {
+    ) -> Result<Signature, io::Error> {
         let mut signer = ::openssl::sign::Signer::new(
             MessageDigest::sha256(), &self.0
         )?;

@@ -22,6 +22,8 @@ Breaking
   transparently change them into enums later on if necessary. [(#39)]
 * `cert::Validity` is now `Copy` and isn’t returned or used by reference
   anymore. [(#39)]
+* `Signer` has gained another mandatory method `rand` that can be used to
+  generate random data. [(#41)]
 
 New
 
@@ -51,6 +53,7 @@ Dependencies
 [(#34)]: https://github.com/NLnetLabs/rpki-rs/pull/34
 [(#37)]: https://github.com/NLnetLabs/rpki-rs/pull/37
 [(#38)]: https://github.com/NLnetLabs/rpki-rs/pull/38
+[(#41)]: https://github.com/NLnetLabs/rpki-rs/pull/41
 
 
 ## 0.3.3
