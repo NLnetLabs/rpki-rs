@@ -296,10 +296,16 @@ impl Serial {
 
     /// Returns the index of the first octet to encode.
     fn start(self) -> usize {
-        self.0.iter().enumerate().find_map(|(idx, &val)| {
+        let start = self.0.iter().enumerate().find_map(|(idx, &val)| {
             if val == 0 { None }
             else { Some(idx) }
-        }).unwrap_or(19)
+        }).unwrap_or(19);
+        if self.0[start] & 0x80 != 0 {
+            start - 1
+        }
+        else {
+            start
+        }
     }
 }
 
@@ -772,7 +778,17 @@ mod test {
         assert_eq!(
             target,
             b"\x02\x03\x01\x02\x03"
-        )
+        );
+
+        let mut target = Vec::new();
+        unwrap!(
+            Serial([0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0x81,2,3])
+                .encode().write_encoded(Mode::Der, &mut target)
+        );
+        assert_eq!(
+            target,
+            b"\x02\x04\x00\x81\x02\x03"
+        );
     }
 }
 
