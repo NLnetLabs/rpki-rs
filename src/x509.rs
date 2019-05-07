@@ -15,7 +15,7 @@ use chrono::{
 };
 use hex;
 use crate::crypto::{
-    PublicKey, Signature, SignatureAlgorithm, VerificationError
+    PublicKey, Signature, SignatureAlgorithm, Signer, VerificationError
 };
 use crate::oid;
 
@@ -282,6 +282,32 @@ impl Serial {
         }
         let mut res = <[u8; 20]>::default();
         res[20 - s.len()..].copy_from_slice(s);
+        Ok(Self(res))
+    }
+
+    /// Creates a random new serial number.
+    pub fn random<S: Signer>(signer: &S) -> Result<Self, S::Error> {
+        let mut res = <[u8; 20]>::default();
+        signer.rand(&mut res)?;
+        res[0] &= 0x7F;
+        Ok(Self(res))
+    }
+
+    /// Creates a random serial number of a given length.
+    ///
+    /// The `len` argument provides the number of octets (!) of randomness
+    /// the serial should have.
+    ///
+    /// # Panics
+    ///
+    /// The function panics if `len` is more than 20.
+    pub fn short_random<S: Signer>(
+        signer: &S,
+        len: usize
+    ) -> Result<Self, S::Error> {
+        let mut res = <[u8; 20]>::default();
+        signer.rand(&mut res[len..])?;
+        res[0] &= 0x7F;
         Ok(Self(res))
     }
 
