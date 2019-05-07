@@ -54,7 +54,7 @@ impl Signer for OpenSslSigner {
         match self.keys.get(id.0) {
             Some(key) => {
                 key.get_key_info().map_err(|err|
-                    KeyError::Signer(err.into())
+                    KeyError::Signer(err)
                 )
             }
             None => Err(KeyError::KeyNotFound),
