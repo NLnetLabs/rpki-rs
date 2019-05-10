@@ -31,6 +31,7 @@ use bcder::{
     BitString, Captured, ConstOid, Ia5String, Mode, OctetString, Oid, Tag
 };
 use bytes::Bytes;
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use crate::oid;
 use crate::resources::{AsBlocks, IpBlocks};
 use crate::tal::TalInfo;
@@ -44,7 +45,6 @@ use crate::resources::{
     AddressFamily, AsBlocksBuilder, AsResources, AsResourcesBuilder,
     IpBlocksBuilder, IpResources, IpResourcesBuilder
 };
-use serde::{Serialize, Serializer, Deserialize, Deserializer};
 
 
 //------------ Cert ----------------------------------------------------------
@@ -1837,6 +1837,17 @@ mod test {
             include_bytes!("../../test-data/ca1.cer").as_ref()
         ).unwrap();
     }
+
+    #[test]
+    fn serde_cert() {
+        let der = include_bytes!("../../test-data/ta.cer");
+        let cert = Cert::decode(Bytes::from_static(der)).unwrap();
+
+        let serialize = serde_json::to_string(&cert).unwrap();
+        let des_cert: Cert = serde_json::from_str(&serialize).unwrap();
+
+        assert_eq!(cert, des_cert);
+    }
 }
 
 #[cfg(all(test, feature="softkeys"))]
@@ -1871,17 +1882,6 @@ mod signer_test {
         let cert = Cert::decode(cert.as_slice()).unwrap();
         let talinfo = TalInfo::from_name("foo".into()).into_arc();
         cert.validate_ta(talinfo, true).unwrap();
-    }
-
-    #[test]
-    fn serde_cert() {
-        let der = include_bytes!("../../test-data/ta.cer");
-        let cert = Cert::decode(Bytes::from_static(der)).unwrap();
-
-        let serialize = serde_json::to_string(&cert).unwrap();
-        let des_cert: Cert = serde_json::from_str(&serialize).unwrap();
-
-        assert_eq!(cert, des_cert);
     }
 }
 
