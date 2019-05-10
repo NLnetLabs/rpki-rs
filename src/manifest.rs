@@ -14,6 +14,7 @@ use bcder::{decode, encode};
 use bcder::{BitString, Captured, Ia5String, Mode, OctetString, Oid, Tag};
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use crate::{oid, uri};
 use crate::cert::{ResourceCert, TbsCert};
 use crate::crypto::{DigestAlgorithm, Signer, SigningError};
@@ -77,8 +78,45 @@ impl Manifest {
     pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         self.signed.encode_ref()
     }
+
+    /// Returns a DER encoded Captured for this.
+    pub fn to_captured(&self) -> Captured {
+        self.encode_ref().to_captured(Mode::Der)
+    }
 }
 
+
+//--- Deserialize and Serialize
+
+impl Serialize for Manifest {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        let bytes = self.to_captured().into_bytes();
+        let b64 = base64::encode(&bytes);
+        b64.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Manifest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+        use serde::de;
+
+        let string = String::deserialize(deserializer)?;
+        let decoded = base64::decode(&string).map_err(de::Error::custom)?;
+        let bytes = Bytes::from(decoded);
+        Manifest::decode(bytes, true).map_err(de::Error::custom)
+    }
+}
+
+
+//--- Eq and PartialEq
+
+impl PartialEq for Manifest {
+    fn eq(&self, other: &Manifest) -> bool {
+        self.to_captured().into_bytes() == other.to_captured().into_bytes()
+    }
+}
+
+impl Eq for Manifest {}
 
 //------------ ManifestContent -----------------------------------------------
 
@@ -448,8 +486,7 @@ mod signer_test {
     use crate::x509::Validity;
     use super::*;
 
-    #[test]
-    fn encode_manifest() {
+    fn make_test_manifest() -> Manifest {
         let mut signer = OpenSslSigner::new();
         let key = unwrap!(signer.create_key(PublicKeyFormat::default()));
         let pubkey = unwrap!(signer.get_key_info(&key));
@@ -490,7 +527,23 @@ mod signer_test {
         let cert = unwrap!(cert.validate_ta(
             TalInfo::from_name("foo".into()).into_arc(), true
         ));
-        unwrap!(manifest.validate(&cert, true));
+        unwrap!(manifest.clone().validate(&cert, true));
+
+        manifest
+    }
+
+    #[test]
+    fn encode_manifest() {
+        make_test_manifest();
+    }
+
+    #[test]
+    fn serde_manifest() {
+        let mft = make_test_manifest();
+        let serialized = serde_json::to_string(&mft).unwrap();
+        let deser_mft: Manifest = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(mft, deser_mft);
     }
 }
 
