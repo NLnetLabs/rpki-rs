@@ -108,16 +108,6 @@ impl<'de> Deserialize<'de> for Manifest {
 }
 
 
-//--- Eq and PartialEq
-
-impl PartialEq for Manifest {
-    fn eq(&self, other: &Manifest) -> bool {
-        self.to_captured().into_bytes() == other.to_captured().into_bytes()
-    }
-}
-
-impl Eq for Manifest {}
-
 //------------ ManifestContent -----------------------------------------------
 
 /// The content of an RPKI manifest.
@@ -543,7 +533,10 @@ mod signer_test {
         let serialized = serde_json::to_string(&mft).unwrap();
         let deser_mft: Manifest = serde_json::from_str(&serialized).unwrap();
 
-        assert_eq!(mft, deser_mft);
+        assert_eq!(
+            mft.to_captured().into_bytes(),
+            deser_mft.to_captured().into_bytes()
+        );
     }
 }
 

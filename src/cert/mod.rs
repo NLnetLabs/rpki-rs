@@ -511,17 +511,6 @@ impl<'de> Deserialize<'de> for Cert {
 }
 
 
-//--- Eq and PartialEq
-
-impl PartialEq for Cert {
-    fn eq(&self, other: &Cert) -> bool {
-        self.to_captured().into_bytes() == other.to_captured().into_bytes()
-    }
-}
-
-impl Eq for Cert {}
-
-
 //------------ TbsCert -------------------------------------------------------
 
 /// The data of a resource certificate.
@@ -1846,7 +1835,8 @@ mod test {
         let serialize = serde_json::to_string(&cert).unwrap();
         let des_cert: Cert = serde_json::from_str(&serialize).unwrap();
 
-        assert_eq!(cert, des_cert);
+        assert_eq!(cert.to_captured().into_bytes(), des_cert.to_captured().into_bytes());
+
     }
 }
 

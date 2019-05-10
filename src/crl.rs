@@ -171,16 +171,6 @@ impl<'de> Deserialize<'de> for Crl {
 }
 
 
-//--- Eq and PartialEq
-
-impl PartialEq for Crl {
-    fn eq(&self, other: &Crl) -> bool {
-        self.to_captured().into_bytes() == other.to_captured().into_bytes()
-    }
-}
-
-impl Eq for Crl {}
-
 //------------ TbsCertList ---------------------------------------------------
 
 /// The payload of a certificate revocation list.
@@ -686,9 +676,12 @@ mod test {
         let crl = Crl::decode(Bytes::from_static(der)).unwrap();
 
         let serialized = serde_json::to_string(&crl).unwrap();
-        let deser_crl = serde_json::from_str(&serialized).unwrap();
+        let deser_crl: Crl = serde_json::from_str(&serialized).unwrap();
 
-        assert_eq!(crl, deser_crl);
+        assert_eq!(
+            crl.to_captured().into_bytes(),
+            deser_crl.to_captured().into_bytes()
+        );
     }
 }
 
