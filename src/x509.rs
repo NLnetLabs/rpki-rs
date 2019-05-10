@@ -465,6 +465,36 @@ impl Time {
         Self::new(Utc::now())
     }
 
+    pub fn tomorrow() -> Self {
+        Self::now().plus(Duration::days(1))
+    }
+
+    pub fn next_week() -> Self {
+        Self::now().plus(Duration::weeks(1))
+    }
+
+    pub fn next_year() -> Self {
+        Self::years_from_now(1)
+    }
+
+    pub fn years_from_now(years: i32) -> Self {
+        let now = Utc::now();
+
+        let year = now.year();
+        let month = now.month();
+        let day = now.day();
+
+        let hour = now.hour();
+        let min = now.minute();
+        let sec = now.second();
+
+        Self::utc(year + years, month, day, hour, min, sec)
+    }
+
+    pub fn plus(self, duration: Duration) -> Self {
+        Self::new(self.0 + duration)
+    }
+
     pub fn utc(
         year: i32, month: u32, day: u32, hour: u32, min: u32, sec: u32
     ) -> Self {
