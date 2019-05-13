@@ -19,6 +19,8 @@ use std::collections::HashSet;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Oid, Tag};
 use bcder::encode::PrimitiveContent;
+use bytes::Bytes;
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use crate::{oid, uri};
 use crate::crypto::{PublicKey, SignatureAlgorithm, Signer, SigningError};
 use crate::x509::{
@@ -143,6 +145,28 @@ impl ops::Deref for Crl {
 impl AsRef<TbsCertList<RevokedCertificates>> for Crl {
     fn as_ref(&self) -> &TbsCertList<RevokedCertificates> {
         &self.tbs
+    }
+}
+
+
+//--- Deserialize and Serialize
+
+impl Serialize for Crl {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        let bytes = self.to_captured().into_bytes();
+        let b64 = base64::encode(&bytes);
+        b64.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Crl {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+        use serde::de;
+
+        let string = String::deserialize(deserializer)?;
+        let decoded = base64::decode(&string).map_err(de::Error::custom)?;
+        let bytes = Bytes::from(decoded);
+        Crl::decode(bytes).map_err(de::Error::custom)
     }
 }
 
@@ -644,6 +668,20 @@ mod test {
         Crl::decode(
             include_bytes!("../test-data/ca1.crl").as_ref()
         ).unwrap();
+    }
+
+    #[test]
+    fn serde_crl() {
+        let der = include_bytes!("../test-data/ta.crl");
+        let crl = Crl::decode(Bytes::from_static(der)).unwrap();
+
+        let serialized = serde_json::to_string(&crl).unwrap();
+        let deser_crl: Crl = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(
+            crl.to_captured().into_bytes(),
+            deser_crl.to_captured().into_bytes()
+        );
     }
 }
 

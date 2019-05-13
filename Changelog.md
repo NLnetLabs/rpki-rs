@@ -37,6 +37,8 @@ New
 * Implement *serde* traits, equality comparison, `FromStr` and `Display`
   for resources. [(#38)]
 * New constant size type `Serial` wrapping serial numbers. [(#39)]
+* Added `serde` traits for certificates, CRLs, manifests, and ROAs via a
+  base64 encoded string. [(#42)]
 
 Bug Fixes
 
@@ -54,6 +56,7 @@ Dependencies
 [(#37)]: https://github.com/NLnetLabs/rpki-rs/pull/37
 [(#38)]: https://github.com/NLnetLabs/rpki-rs/pull/38
 [(#41)]: https://github.com/NLnetLabs/rpki-rs/pull/41
+[(#42)]: https://github.com/NLnetLabs/rpki-rs/pull/42
 
 
 ## 0.3.3

@@ -10,6 +10,8 @@ use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Oid, Tag};
 use bcder::decode::Source;
 use bcder::encode::{PrimitiveContent, Values};
+use bytes::Bytes;
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use crate::oid;
 use crate::cert::{Cert, ResourceCert, TbsCert};
 use crate::crypto::{Signer, SigningError};
@@ -61,8 +63,34 @@ impl Roa {
     pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         self.signed.encode_ref()
     }
+
+    /// Returns a DER encoded Captured for this.
+    pub fn to_captured(&self) -> Captured {
+        self.encode_ref().to_captured(Mode::Der)
+    }
 }
 
+
+//--- Deserialize and Serialize
+
+impl Serialize for Roa {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        let bytes = self.to_captured().into_bytes();
+        let b64 = base64::encode(&bytes);
+        b64.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Roa {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+        use serde::de;
+
+        let string = String::deserialize(deserializer)?;
+        let decoded = base64::decode(&string).map_err(de::Error::custom)?;
+        let bytes = Bytes::from(decoded);
+        Roa::decode(bytes, true).map_err(de::Error::custom)
+    }
+}
 
 
 //------------ RouteOriginAttestation ----------------------------------------
@@ -606,8 +634,7 @@ mod signer_test {
     use crate::x509::Validity;
     use super::*;
 
-    #[test]
-    fn encode_roa() {
+    fn make_roa() -> Roa {
         let mut signer = OpenSslSigner::new();
         let key = unwrap!(signer.create_key(PublicKeyFormat::default()));
         let pubkey = unwrap!(signer.get_key_info(&key));
@@ -642,7 +669,27 @@ mod signer_test {
         let cert = unwrap!(cert.validate_ta(
             TalInfo::from_name("foo".into()).into_arc(), true
         ));
-        unwrap!(roa.process(&cert, true, |_| Ok(())));
+        unwrap!(roa.clone().process(&cert, true, |_| Ok(())));
+
+        roa
+    }
+
+    #[test]
+    fn encode_roa() {
+        make_roa();
+    }
+
+    #[test]
+    fn serde_roa() {
+        let roa = make_roa();
+
+        let serialized = serde_json::to_string(&roa).unwrap();
+        let deser_roa: Roa = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(
+            roa.to_captured().into_bytes(),
+            deser_roa.to_captured().into_bytes()
+        )
     }
 }
 
