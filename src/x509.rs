@@ -1,6 +1,7 @@
 //! Types common to all things X.509.
 
 use std::{io, ops, str};
+use std::ops::Add;
 use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{
@@ -466,11 +467,11 @@ impl Time {
     }
 
     pub fn tomorrow() -> Self {
-        Self::now().plus(Duration::days(1))
+        Self::now().add(Duration::days(1))
     }
 
     pub fn next_week() -> Self {
-        Self::now().plus(Duration::weeks(1))
+        Self::now().add(Duration::weeks(1))
     }
 
     pub fn next_year() -> Self {
@@ -489,10 +490,6 @@ impl Time {
         let sec = now.second();
 
         Self::utc(year + years, month, day, hour, min, sec)
-    }
-
-    pub fn plus(self, duration: Duration) -> Self {
-        Self::new(self.0 + duration)
     }
 
     pub fn utc(
@@ -658,6 +655,14 @@ impl PrimitiveContent for Time {
             self.0.year(), self.0.month(), self.0.day(),
             self.0.hour(), self.0.minute(), self.0.second()
         )
+    }
+}
+
+impl Add<Duration> for Time {
+    type Output = Self;
+
+    fn add(self, duration: Duration) -> Self::Output {
+        Self::new(self.0 + duration)
     }
 }
 
