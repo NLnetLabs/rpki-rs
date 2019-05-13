@@ -31,6 +31,7 @@ use bcder::{
     BitString, Captured, ConstOid, Ia5String, Mode, OctetString, Oid, Tag
 };
 use bytes::Bytes;
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use crate::oid;
 use crate::resources::{AsBlocks, IpBlocks};
 use crate::tal::TalInfo;
@@ -484,6 +485,28 @@ impl AsRef<TbsCert> for Cert {
 impl borrow::Borrow<TbsCert> for Cert {
     fn borrow(&self) -> &TbsCert {
         &self.tbs
+    }
+}
+
+
+//--- Deserialize and Serialize
+
+impl Serialize for Cert {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        let bytes = self.to_captured().into_bytes();
+        let b64 = base64::encode(&bytes);
+        b64.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Cert {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+        use serde::de;
+
+        let string = String::deserialize(deserializer)?;
+        let decoded = base64::decode(&string).map_err(de::Error::custom)?;
+        let bytes = Bytes::from(decoded);
+        Cert::decode(bytes).map_err(de::Error::custom)
     }
 }
 
@@ -1803,6 +1826,18 @@ mod test {
             include_bytes!("../../test-data/ca1.cer").as_ref()
         ).unwrap();
     }
+
+    #[test]
+    fn serde_cert() {
+        let der = include_bytes!("../../test-data/ta.cer");
+        let cert = Cert::decode(Bytes::from_static(der)).unwrap();
+
+        let serialize = serde_json::to_string(&cert).unwrap();
+        let des_cert: Cert = serde_json::from_str(&serialize).unwrap();
+
+        assert_eq!(cert.to_captured().into_bytes(), des_cert.to_captured().into_bytes());
+
+    }
 }
 
 #[cfg(all(test, feature="softkeys"))]
@@ -1814,6 +1849,7 @@ mod signer_test {
     use crate::resources::{AsId, Prefix};
     use crate::tal::TalInfo;
     use super::*;
+
 
     #[test]
     fn build_ta_cert() {
