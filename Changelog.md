@@ -39,6 +39,7 @@ New
 * New constant size type `Serial` wrapping serial numbers. [(#39)]
 * Added `serde` traits for certificates, CRLs, manifests, and ROAs via a
   base64 encoded string. [(#42)]
+* More convenience for dealing with `x509::Time`. [(#43)]
 
 Bug Fixes
 
@@ -57,6 +58,7 @@ Dependencies
 [(#38)]: https://github.com/NLnetLabs/rpki-rs/pull/38
 [(#41)]: https://github.com/NLnetLabs/rpki-rs/pull/41
 [(#42)]: https://github.com/NLnetLabs/rpki-rs/pull/42
+[(#43)]: https://github.com/NLnetLabs/rpki-rs/pull/43
 
 
 ## 0.3.3

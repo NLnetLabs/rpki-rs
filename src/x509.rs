@@ -465,6 +465,32 @@ impl Time {
         Self::new(Utc::now())
     }
 
+    pub fn tomorrow() -> Self {
+        Self::now() + Duration::days(1)
+    }
+
+    pub fn next_week() -> Self {
+        Self::now() + Duration::weeks(1)
+    }
+
+    pub fn next_year() -> Self {
+        Self::years_from_now(1)
+    }
+
+    pub fn years_from_now(years: i32) -> Self {
+        let now = Utc::now();
+
+        let year = now.year();
+        let month = now.month();
+        let day = now.day();
+
+        let hour = now.hour();
+        let min = now.minute();
+        let sec = now.second();
+
+        Self::utc(year + years, month, day, hour, min, sec)
+    }
+
     pub fn utc(
         year: i32, month: u32, day: u32, hour: u32, min: u32, sec: u32
     ) -> Self {
@@ -628,6 +654,14 @@ impl PrimitiveContent for Time {
             self.0.year(), self.0.month(), self.0.day(),
             self.0.hour(), self.0.minute(), self.0.second()
         )
+    }
+}
+
+impl ops::Add<Duration> for Time {
+    type Output = Self;
+
+    fn add(self, duration: Duration) -> Self::Output {
+        Self::new(self.0 + duration)
     }
 }
 
