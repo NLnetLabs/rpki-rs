@@ -688,9 +688,11 @@ mod test {
 
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
+    use super::*;
+    use chrono::Duration;
+    use x509::Validity;
     use crate::crypto::PublicKeyFormat;
     use crate::crypto::softsigner::OpenSslSigner;
-    use super::*;
 
     #[test]
     fn build_ta_cert() {
@@ -698,8 +700,12 @@ mod signer_test {
         let key = signer.create_key(PublicKeyFormat::default()).unwrap();
         let pubkey = signer.get_key_info(&key).unwrap();
         let crl = TbsCertList::new(
-            Default::default(), pubkey.to_subject_name(), Time::now(),
-            Vec::<CrlEntry>::new(), KeyIdentifier::from_public_key(&pubkey),
+            Default::default(),
+            pubkey.to_subject_name(),
+            Time::now(),
+            Validity::from_duration(Duration::days(1)).not_after(), // change to Time::tomorrow() when merged
+            Vec::<CrlEntry>::new(),
+            KeyIdentifier::from_public_key(&pubkey),
             12u64.into()
         );
         let crl = crl.into_crl(&signer, &key).unwrap().to_captured();
