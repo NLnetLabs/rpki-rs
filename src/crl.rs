@@ -190,7 +190,7 @@ pub struct TbsCertList<C> {
     this_update: Time,
 
     /// The time the next version of the CRL is likely to be created.
-    next_update: Option<Time>,
+    next_update: Time,
 
     /// The list of revoked certificates.
     revoked_certs: C,
@@ -210,6 +210,7 @@ impl<C> TbsCertList<C> {
         signature: SignatureAlgorithm,
         issuer: Name,
         this_update: Time,
+        next_update: Time,
         revoked_certs: C,
         authority_key_id: KeyIdentifier,
         crl_number: Serial
@@ -218,7 +219,7 @@ impl<C> TbsCertList<C> {
             signature,
             issuer,
             this_update,
-            next_update: None,
+            next_update,
             revoked_certs,
             authority_key_id,
             crl_number
@@ -280,17 +281,17 @@ impl<C> TbsCertList<C> {
     }
 
     /// Returns the time of next update if present.
-    pub fn next_update(&self) -> Option<Time> {
+    pub fn next_update(&self) -> Time {
         self.next_update
     }
 
     /// Returns whether the CRL’s nextUpdate time has passed.
     pub fn is_stale(&self) -> bool {
-        self.next_update.map(|t| t < Time::now()).unwrap_or(false)
+        self.next_update < Time::now()
     }
 
     /// Sets the time of next update.
-    pub fn set_next_update(&mut self, next_update: Option<Time>) {
+    pub fn set_next_update(&mut self, next_update: Time) {
         self.next_update = next_update
     }
 
@@ -345,7 +346,7 @@ impl TbsCertList<RevokedCertificates> {
             let signature = SignatureAlgorithm::x509_take_from(cons)?;
             let issuer = Name::take_from(cons)?;
             let this_update = Time::take_from(cons)?;
-            let next_update = Time::take_opt_from(cons)?;
+            let next_update = Time::take_from(cons)?;
             let revoked_certs = RevokedCertificates::take_from(cons)?;
             let mut authority_key_id = None;
             let mut crl_number = None;
@@ -420,7 +421,7 @@ impl TbsCertList<RevokedCertificates> {
             self.signature.x509_encode(),
             self.issuer.encode_ref(),
             self.this_update.encode(),
-            self.next_update.map(|time| time.encode()),
+            self.next_update.encode(),
             self.revoked_certs.encode_ref(),
             encode::sequence_as(Tag::CTX_0, 
                 encode::sequence((
