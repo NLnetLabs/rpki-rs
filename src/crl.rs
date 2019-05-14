@@ -703,7 +703,7 @@ mod signer_test {
             Default::default(),
             pubkey.to_subject_name(),
             Time::now(),
-            Validity::from_duration(Duration::days(1)).not_after(), // change to Time::tomorrow() when merged
+            Time::tomorrow(),
             Vec::<CrlEntry>::new(),
             KeyIdentifier::from_public_key(&pubkey),
             12u64.into()
