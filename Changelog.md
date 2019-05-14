@@ -24,6 +24,7 @@ Breaking
   anymore. [(#39)]
 * `Signer` has gained another mandatory method `rand` that can be used to
   generate random data. [(#41)]
+* `Crl::next_update` field is now mandatory as per RFC 5280. [(#44)]
 
 New
 
@@ -59,6 +60,7 @@ Dependencies
 [(#41)]: https://github.com/NLnetLabs/rpki-rs/pull/41
 [(#42)]: https://github.com/NLnetLabs/rpki-rs/pull/42
 [(#43)]: https://github.com/NLnetLabs/rpki-rs/pull/43
+[(#44)]: https://github.com/NLnetLabs/rpki-rs/pull/44
 
 
 ## 0.3.3
