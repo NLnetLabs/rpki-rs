@@ -2,7 +2,7 @@ extern crate rpki;
 
 use std::{env, fs};
 use std::io::Read;
-//use rpki::manifest::Manifest;
+use rpki::manifest::Manifest;
 
 
 fn main() {
@@ -26,15 +26,13 @@ fn main() {
         return;
     }
 
-    /*
-    let _cert = match Manifest::decode(data.as_ref(), true) {
+    let _cert = match Manifest::decode(data.as_ref(), false) {
         Ok(cert) => cert,
         Err(err) => {
             println!("Can’t decode manifest: {}", err);
             return
         }
     };
-    */
 }
 
 
