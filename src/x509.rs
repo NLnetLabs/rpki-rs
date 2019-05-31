@@ -1,6 +1,7 @@
 //! Types common to all things X.509.
 
 use std::{io, ops, str};
+use std::convert::{TryFrom, TryInto};
 use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{
@@ -9,7 +10,6 @@ use bcder::{
 use bcder::string::PrintableString;
 use bcder::decode::Source;
 use bcder::encode::PrimitiveContent;
-use bytes::Bytes;
 use chrono::{
     Datelike, DateTime, Duration, LocalResult, Timelike, TimeZone, Utc
 };
@@ -69,23 +69,16 @@ pub fn encode_extension<V: encode::Values>(
 /// A key identifier.
 ///
 /// This is the SHA-1 hash over the public key’s bits.
-#[derive(Clone, Debug, Eq, Hash)]
-pub struct KeyIdentifier(Bytes);
+#[derive(Clone, Copy, Debug, Eq, Hash)]
+pub struct KeyIdentifier([u8; 20]);
 
 impl KeyIdentifier {
     /// Creates a new identifier for the given key.
     pub fn from_public_key(key: &PublicKey) -> Self {
-        Self(Bytes::from(key.key_identifier().as_ref()))
+        Self(unwrap!(key.key_identifier().as_ref().try_into()))
     }
 
-    pub fn as_bytes(&self) -> &Bytes {
-        &self.0
-    }
-
-    pub fn into_bytes(self) -> Bytes {
-        self.0
-    }
-
+    /// Returns an octet slice of the key identifer’s value.
     pub fn as_slice(&self) -> &[u8] {
         self.0.as_ref()
     }
@@ -104,38 +97,62 @@ impl KeyIdentifier {
         cons.take_value_if(Tag::OCTET_STRING, Self::from_content)
     }
 
+    /// Parses an encoded key identifer from a encoded content.
     pub fn from_content<S: decode::Source>(
         content: &mut decode::Content<S>
     ) -> Result<Self, S::Err> {
-        let res = OctetString::from_content(content)?;
-        if res.len() != 20 {
-            return Err(decode::Malformed.into())
+        let content = OctetString::from_content(content)?;
+        if let Some(slice) = content.as_slice() {
+            Self::try_from(slice).map_err(|_| decode::Malformed.into())
         }
-        Ok(Self(res.into_bytes()))
-    }
-
-    pub fn encode(self) -> impl encode::Values {
-        OctetString::new(self.0).encode()
-    }
-
-    pub fn encode_as(self, tag: Tag) -> impl encode::Values {
-        OctetString::new(self.0).encode_as(tag)
-    }
-
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
-        OctetString::encode_slice(self.0.as_ref())
-    }
-
-    pub fn encode_ref_as<'a>(&'a self, tag: Tag) -> impl encode::Values + 'a {
-        OctetString::encode_slice_as(self.0.as_ref(), tag)
+        else if content.len() != 20 {
+            Err(decode::Malformed.into())
+        }
+        else {
+            let mut res = KeyIdentifier(Default::default());
+            let mut pos = 0;
+            for slice in &content {
+                let end = pos + slice.len();
+                res.0[pos .. end].copy_from_slice(slice);
+                pos = end;
+            }
+            Ok(res)
+        }
     }
 }
 
-impl AsRef<Bytes> for KeyIdentifier {
-    fn as_ref(&self) -> &Bytes {
-        &self.0
+
+//--- TryFrom and FromStr
+
+impl<'a> TryFrom<&'a [u8]> for KeyIdentifier {
+    type Error = RepresentationError;
+
+    fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
+        value.try_into().map(KeyIdentifier).map_err(|_| RepresentationError)
     }
 }
+
+impl FromStr for KeyIdentifier {
+    type Err = RepresentationError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        if value.len() != 40 || !value.is_ascii() {
+            return Err(RepresentationError)
+        }
+        let mut res = KeyIdentifier(Default::default());
+        let mut pos = 0;
+        for ch in value.as_bytes().chunks(2) {
+            let ch = unsafe { str::from_utf8_unchecked(ch) };
+            res.0[pos] = u8::from_str_radix(ch, 16)
+                            .map_err(|_| RepresentationError)?;
+            pos += 1;
+        }
+        Ok(res)
+    }
+}
+
+
+//--- AsRef
 
 impl AsRef<[u8]> for KeyIdentifier {
     fn as_ref(&self) -> &[u8] {
@@ -149,6 +166,24 @@ impl<T: AsRef<[u8]>> PartialEq<T> for KeyIdentifier {
     }
 }
 
+
+//--- PrimitiveContent
+
+impl PrimitiveContent for KeyIdentifier {
+    const TAG: Tag = Tag::OCTET_STRING;
+
+    fn encoded_len(&self, _mode: Mode) -> usize {
+        20
+    }
+
+    fn write_encoded<W: io::Write>(
+        &self,
+        _mode: Mode,
+        target: &mut W
+    ) -> Result<(), io::Error> {
+        target.write_all(&self.0)
+    }
+}
 
 
 
@@ -763,6 +798,14 @@ impl Validity {
         ))
     }
 }
+
+
+//------------ RepresentationError -------------------------------------------
+
+/// A souce value is not correctly formated for converting into a value.
+#[derive(Clone, Copy, Debug, Display, Eq, PartialEq)]
+#[display(fmt="wrong representation format")]
+pub struct RepresentationError;
 
 
 //------------ ValidationError -----------------------------------------------
