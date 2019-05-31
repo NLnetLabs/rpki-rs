@@ -1,5 +1,16 @@
 # Change Log
 
+# Unreleased next version
+
+Breaking
+
+New
+
+Bug Fixes
+
+Dependencies
+
+
 # 0.4.0
 
 Breaking
