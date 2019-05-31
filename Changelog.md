@@ -1,6 +1,6 @@
 # Change Log
 
-# Unreleased next version
+# 0.4.0
 
 Breaking
 
@@ -49,8 +49,6 @@ Bug Fixes
   certificates. [(#34)]
 * Fix `uri::Https::encode_general_name` and `uri::Https::encode_general_name`
   to not wrap the URI in a sequence. [(#39)]
-
-Dependencies
 
 
 [(#32)]: https://github.com/NLnetLabs/rpki-rs/pull/32
