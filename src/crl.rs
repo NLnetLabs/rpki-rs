@@ -560,6 +560,11 @@ pub struct CrlEntry {
 }
 
 impl CrlEntry {
+    /// Creates a new CrlEntry for inclusion on a new Crl
+    pub fn new(user_certificate: Serial, revocation_date: Time) -> Self {
+        CrlEntry { user_certificate, revocation_date }
+    }
+
     /// Takes a single CRL entry from the beginning of a constructed value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
