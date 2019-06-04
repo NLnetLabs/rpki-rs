@@ -239,18 +239,22 @@ impl ManifestContent {
 /// # Data Access
 ///
 impl ManifestContent {
+    /// Returns the manifest number.
     pub fn manifest_number(&self) -> Serial {
         self.manifest_number
     }
 
+    /// Returns the time when this manifest was created.
     pub fn this_update(&self) -> Time {
         self.this_update
     }
 
+    /// Returns the time when the next update to the manifest should appear.
     pub fn next_update(&self) -> Time {
         self.next_update
     }
 
+    /// Returns the hash algorithm for the file list entries.
     pub fn file_hash_alg(&self) -> DigestAlgorithm {
         self.file_hash_alg
     }
