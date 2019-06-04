@@ -10,6 +10,7 @@
 //! [`Manifest`]: struct.Manifest.html
 //! [`ManifestContent`]: struct.ManifestContent.html
 
+use std::{borrow, ops};
 use bcder::{decode, encode};
 use bcder::{BitString, Captured, Ia5String, Mode, OctetString, Oid, Tag};
 use bcder::encode::{PrimitiveContent, Values};
@@ -20,6 +21,7 @@ use crate::cert::{ResourceCert, TbsCert};
 use crate::crypto::{DigestAlgorithm, Signer, SigningError};
 use crate::sigobj::{SignedObject, SignedObjectBuilder};
 use crate::x509::{Serial, Time, ValidationError};
+use cert::Cert;
 
 
 //------------ Manifest ------------------------------------------------------
@@ -83,13 +85,55 @@ impl Manifest {
     pub fn to_captured(&self) -> Captured {
         self.encode_ref().to_captured(Mode::Der)
     }
+
+    /// Returns a reference to the EE certificate of this manifest.
+    pub fn cert(&self) -> &Cert {
+        self.signed.cert()
+    }
+
+    /// Returns a reference to the manifest content.
+    pub fn content(&self) -> &ManifestContent {
+        &self.content
+    }
+}
+
+
+//--- Deref, AsRef, and Borrow
+
+impl ops::Deref for Manifest {
+    type Target = ManifestContent;
+
+    fn deref(&self) -> &Self::Target {
+        &self.content
+    }
+}
+
+impl AsRef<Manifest> for Manifest {
+    fn as_ref(&self) -> &Self {
+        self
+    }
+}
+
+impl AsRef<ManifestContent> for Manifest {
+    fn as_ref(&self) -> &ManifestContent {
+        &self.content
+    }
+}
+
+impl borrow::Borrow<ManifestContent> for Manifest {
+    fn borrow(&self) -> &ManifestContent {
+        &self.content
+    }
 }
 
 
 //--- Deserialize and Serialize
 
 impl Serialize for Manifest {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    fn serialize<S: Serializer>(
+        &self,
+        serializer: S
+    ) -> Result<S::Ok, S::Error> {
         let bytes = self.to_captured().into_bytes();
         let b64 = base64::encode(&bytes);
         b64.serialize(serializer)
@@ -97,7 +141,9 @@ impl Serialize for Manifest {
 }
 
 impl<'de> Deserialize<'de> for Manifest {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+    fn deserialize<D: Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
         use serde::de;
 
         let string = String::deserialize(deserializer)?;
@@ -193,6 +239,26 @@ impl ManifestContent {
 /// # Data Access
 ///
 impl ManifestContent {
+    /// Returns the manifest number.
+    pub fn manifest_number(&self) -> Serial {
+        self.manifest_number
+    }
+
+    /// Returns the time when this manifest was created.
+    pub fn this_update(&self) -> Time {
+        self.this_update
+    }
+
+    /// Returns the time when the next update to the manifest should appear.
+    pub fn next_update(&self) -> Time {
+        self.next_update
+    }
+
+    /// Returns the hash algorithm for the file list entries.
+    pub fn file_hash_alg(&self) -> DigestAlgorithm {
+        self.file_hash_alg
+    }
+
     /// Returns an iterator over the file list.
     pub fn iter(&self) -> FileListIter {
         FileListIter(self.file_list.clone())
