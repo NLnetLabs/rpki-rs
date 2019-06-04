@@ -20,6 +20,7 @@ use crate::cert::{ResourceCert, TbsCert};
 use crate::crypto::{DigestAlgorithm, Signer, SigningError};
 use crate::sigobj::{SignedObject, SignedObjectBuilder};
 use crate::x509::{Serial, Time, ValidationError};
+use cert::Cert;
 
 
 //------------ Manifest ------------------------------------------------------
@@ -82,6 +83,16 @@ impl Manifest {
     /// Returns a DER encoded Captured for this.
     pub fn to_captured(&self) -> Captured {
         self.encode_ref().to_captured(Mode::Der)
+    }
+
+    /// Returns the `Serial` for the embedded EE Certificate, for revocation.
+    pub fn cert(&self) -> &Cert {
+        self.signed.cert()
+    }
+
+    /// Returns when this Manifest needs to be updated.
+    pub fn content(&self) -> &ManifestContent {
+        &self.content
     }
 }
 
@@ -193,6 +204,22 @@ impl ManifestContent {
 /// # Data Access
 ///
 impl ManifestContent {
+    pub fn manifest_number(&self) -> Serial {
+        self.manifest_number
+    }
+
+    pub fn this_update(&self) -> Time {
+        self.this_update
+    }
+
+    pub fn next_update(&self) -> Time {
+        self.next_update
+    }
+
+    pub fn file_hash_alg(&self) -> DigestAlgorithm {
+        self.file_hash_alg
+    }
+
     /// Returns an iterator over the file list.
     pub fn iter(&self) -> FileListIter {
         FileListIter(self.file_list.clone())
