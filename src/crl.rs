@@ -22,9 +22,11 @@ use bcder::encode::PrimitiveContent;
 use bytes::Bytes;
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use crate::{oid, uri};
-use crate::crypto::{PublicKey, SignatureAlgorithm, Signer, SigningError};
+use crate::crypto::{
+    KeyIdentifier, PublicKey, SignatureAlgorithm, Signer, SigningError
+};
 use crate::x509::{
-    KeyIdentifier, Name, Serial, SignedData, Time, ValidationError,
+    Name, Serial, SignedData, Time, ValidationError,
     encode_extension, update_once
 };
 

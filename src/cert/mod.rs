@@ -37,10 +37,12 @@ use crate::resources::{AsBlocks, IpBlocks};
 use crate::tal::TalInfo;
 use crate::uri;
 use crate::x509::{
-    KeyIdentifier, Name, SignedData, Serial, Time, Validity, ValidationError,
+    Name, SignedData, Serial, Time, Validity, ValidationError,
     encode_extension, update_first, update_once
 };
-use crate::crypto::{PublicKey, SignatureAlgorithm, Signer, SigningError};
+use crate::crypto::{
+    KeyIdentifier, PublicKey, SignatureAlgorithm, Signer, SigningError
+};
 use crate::resources::{
     AddressFamily, AsBlocksBuilder, AsResources, AsResourcesBuilder,
     IpBlocksBuilder, IpResources, IpResourcesBuilder
@@ -323,7 +325,7 @@ impl Cert {
         
         // 4.8.2. Subject Key Identifer. Must be the SHA-1 hash of the octets
         // of the subjectPublicKey.
-        if *self.subject_key_identifier() != 
+        if self.subject_key_identifier() != 
                              self.subject_public_key_info().key_identifier() {
             return Err(ValidationError)
         }
@@ -741,13 +743,13 @@ impl TbsCert {
     /// when the subject public key is set via [`set_subject_public_key`].
     ///
     /// [`set_subject_public_key`]: #method.set_subject_public_key
-    pub fn subject_key_identifier(&self) -> &KeyIdentifier {
-        &self.subject_key_identifier
+    pub fn subject_key_identifier(&self) -> KeyIdentifier {
+        self.subject_key_identifier
     }
 
     /// Returns a reference to the authority key identifier if present.
-    pub fn authority_key_identifier(&self) -> Option<&KeyIdentifier> {
-        self.authority_key_identifier.as_ref()
+    pub fn authority_key_identifier(&self) -> Option<KeyIdentifier> {
+        self.authority_key_identifier
     }
 
     /// Sets the authority key identifier extension.

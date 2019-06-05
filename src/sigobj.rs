@@ -8,16 +8,14 @@ use bytes::Bytes;
 use crate::{oid, uri};
 use crate::cert::{Cert, KeyUsage, Overclaim, ResourceCert, TbsCert};
 use crate::crypto::{
-    Digest, DigestAlgorithm, Signature, SignatureAlgorithm, Signer,
-    SigningError
+    Digest, DigestAlgorithm, KeyIdentifier, Signature, SignatureAlgorithm,
+    Signer, SigningError
 };
 use crate::resources::{
     AsBlocksBuilder, AsResources, AsResourcesBuilder, IpBlocksBuilder,
     IpResources, IpResourcesBuilder
 };
-use crate::x509::{
-    KeyIdentifier, Name, Serial, Time, ValidationError, Validity, update_once
-};
+use crate::x509::{Name, Serial, Time, ValidationError, Validity, update_once};
 
 
 //------------ SignedObject --------------------------------------------------
@@ -191,7 +189,7 @@ impl SignedObject {
         //
         // c. cert is an EE cert with the SubjectKeyIdentifer matching
         //    the sid field of the SignerInfo.
-        if self.sid != *self.cert.subject_key_identifier() {
+        if self.sid != self.cert.subject_key_identifier() {
             return Err(ValidationError)
         }
         Ok(())
@@ -735,7 +733,7 @@ impl SignedObjectBuilder {
             Overclaim::Refuse,
         );
         cert.set_authority_key_identifier(
-            Some(issuer.subject_key_identifier().clone())
+            Some(issuer.subject_key_identifier())
         );
         cert.set_crl_uri(Some(self.crl_uri));
         cert.set_ca_issuer(Some(self.ca_issuer));

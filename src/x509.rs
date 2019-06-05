@@ -1,6 +1,6 @@
 //! Types common to all things X.509.
 
-use std::{io, ops, str};
+use std::{fmt, io, ops, str};
 use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{
@@ -9,11 +9,11 @@ use bcder::{
 use bcder::string::PrintableString;
 use bcder::decode::Source;
 use bcder::encode::PrimitiveContent;
-use bytes::Bytes;
 use chrono::{
     Datelike, DateTime, Duration, LocalResult, Timelike, TimeZone, Utc
 };
-use hex;
+use serde::de;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::crypto::{
     PublicKey, Signature, SignatureAlgorithm, Signer, VerificationError
 };
@@ -62,94 +62,6 @@ pub fn encode_extension<V: encode::Values>(
         OctetString::encode_wrapped(Mode::Der, content)
     ))
 }
-
-
-//------------ KeyIdentifier -------------------------------------------------
-
-/// A key identifier.
-///
-/// This is the SHA-1 hash over the public key’s bits.
-#[derive(Clone, Debug, Eq, Hash)]
-pub struct KeyIdentifier(Bytes);
-
-impl KeyIdentifier {
-    /// Creates a new identifier for the given key.
-    pub fn from_public_key(key: &PublicKey) -> Self {
-        Self(Bytes::from(key.key_identifier().as_ref()))
-    }
-
-    pub fn as_bytes(&self) -> &Bytes {
-        &self.0
-    }
-
-    pub fn into_bytes(self) -> Bytes {
-        self.0
-    }
-
-    pub fn as_slice(&self) -> &[u8] {
-        self.0.as_ref()
-    }
-
-    /// Takes an encoded key identifier from a constructed value.
-    ///
-    /// ```text
-    /// KeyIdentifier ::= OCTET STRING
-    /// ```
-    ///
-    /// The content of the octet string needs to be a SHA-1 hash, so it must
-    /// be exactly 20 octets long.
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_value_if(Tag::OCTET_STRING, Self::from_content)
-    }
-
-    pub fn from_content<S: decode::Source>(
-        content: &mut decode::Content<S>
-    ) -> Result<Self, S::Err> {
-        let res = OctetString::from_content(content)?;
-        if res.len() != 20 {
-            return Err(decode::Malformed.into())
-        }
-        Ok(Self(res.into_bytes()))
-    }
-
-    pub fn encode(self) -> impl encode::Values {
-        OctetString::new(self.0).encode()
-    }
-
-    pub fn encode_as(self, tag: Tag) -> impl encode::Values {
-        OctetString::new(self.0).encode_as(tag)
-    }
-
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
-        OctetString::encode_slice(self.0.as_ref())
-    }
-
-    pub fn encode_ref_as<'a>(&'a self, tag: Tag) -> impl encode::Values + 'a {
-        OctetString::encode_slice_as(self.0.as_ref(), tag)
-    }
-}
-
-impl AsRef<Bytes> for KeyIdentifier {
-    fn as_ref(&self) -> &Bytes {
-        &self.0
-    }
-}
-
-impl AsRef<[u8]> for KeyIdentifier {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
-    }
-}
-
-impl<T: AsRef<[u8]>> PartialEq<T> for KeyIdentifier {
-    fn eq(&self, other: &T) -> bool {
-        self.0.as_ref().eq(other.as_ref())
-    }
-}
-
-
 
 
 //------------ Name ----------------------------------------------------------
@@ -239,10 +151,7 @@ impl Name {
     /// the recommendations in RFC6487 sections 4.4, 4.5
     /// and 8.
     pub fn from_pub_key(key_info: &PublicKey) -> Self {
-        let ki = key_info.key_identifier();
-        // Borrow checker shenanigans ...
-        let enc = hex::encode(&ki);
-        let enc = enc.as_bytes();
+        let enc = key_info.key_identifier().into_hex();
         let values = encode::sequence(
             encode::set(
                 encode::sequence((
@@ -265,7 +174,7 @@ impl Name {
 /// A certificate serial number.
 //
 //  We encode the serial number in 20 octets left padded.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Serial([u8; 20]);
 
 impl Serial {
@@ -333,7 +242,61 @@ impl Serial {
             start
         }
     }
+
+    fn checked_mul_u8(mut self, rhs: u8) -> Option<Self> {
+        let mut overflow = 0;
+        let rhs = u16::from(rhs);
+        for i in (0..20_usize).rev() {
+            let step = u16::from(self.0[i]) * rhs + overflow;
+            self.0[i] = step as u8;
+            overflow = step >> 8;
+        }
+        if overflow == 0 {
+            Some(self)
+        }
+        else {
+            None
+        }
+    }
+
+    fn div_assign_u8(&mut self, rhs: u8) -> u8 {
+        let mut step: u16 = 0;
+        let rhs = u16::from(rhs);
+        for i in 0..20 {
+            step = step.overflowing_shl(8).0 + u16::from(self.0[i]);
+            self.0[i] = (step / rhs) as u8;
+            step %= rhs;
+        }
+        step as u8
+    }
+
+    fn is_zero(self) -> bool {
+        self == Serial::default()
+    }
+
+    fn encode_dec(mut self, target: &mut [u8; 49]) -> &str {
+        let mut len = 49;
+        while !self.is_zero() {
+            len -= 1;
+            target[len] = self.div_assign_u8(10) + b'0';
+        }
+        unsafe { str::from_utf8_unchecked(&target[len..]) }
+    }
 }
+
+
+//--- Default
+
+impl Default for Serial {
+    fn default() -> Self {
+        // derive would probably do the same thing, but let’s be explicit
+        // here.
+        Serial([0; 20])
+    }
+}
+
+
+//--- From and FromStr
 
 impl From<u128> for Serial {
     fn from(value: u128) -> Self {
@@ -346,6 +309,60 @@ impl From<u64> for Serial {
         Self::from_slice(value.to_be_bytes().as_ref()).unwrap()
     }
 }
+
+impl From<Serial> for String {
+    fn from(serial: Serial) -> String {
+        let mut target = [0; 49];
+        serial.encode_dec(&mut target).into()
+    }
+}
+
+impl FromStr for Serial {
+    type Err = RepresentationError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let mut res = Serial::default();
+        for ch in value.chars() {
+            match ch {
+                '0' ... '9' => {
+                    res = match res.checked_mul_u8(10) {
+                        Some(mut res) => {
+                            res.0[19] += (ch as u8) - b'0';
+                            res
+                        }
+                        None => return Err(RepresentationError)
+                    }
+                }
+                _ => return Err(RepresentationError)
+            }
+        }
+        if res.0[19] & 0x80 != 0 {
+            Err(RepresentationError)
+        }
+        else {
+            Ok(res)
+        }
+    }
+}
+
+
+//--- Display and Debug
+
+impl fmt::Display for Serial {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut target = [0; 49];
+        write!(f, "{}", self.encode_dec(&mut target))
+    }
+}
+
+impl fmt::Debug for Serial {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Serial({})", self)
+    }
+}
+
+
+//--- PrimitiveContent
 
 impl PrimitiveContent for Serial {
     const TAG: Tag = Tag::INTEGER;
@@ -360,6 +377,27 @@ impl PrimitiveContent for Serial {
         target: &mut W
     ) -> Result<(), io::Error> {
         target.write_all(&self.0[self.start()..])
+    }
+}
+
+
+//--- Deserialize and Serialize
+
+impl Serialize for Serial {
+    fn serialize<S: Serializer>(
+        &self,
+        serializer: S
+    ) -> Result<S::Ok, S::Error> {
+        let mut target = [0; 49];
+        self.encode_dec(&mut target).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Serial {
+    fn deserialize<D: Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
+        deserializer.deserialize_str(SerialVisitor)
     }
 }
 
@@ -453,7 +491,10 @@ impl<'a> PrimitiveContent for SignatureValueContent<'a> {
 
 //------------ Time ----------------------------------------------------------
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(
+    Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd,
+    Serialize
+)]
 pub struct Time(DateTime<Utc>);
 
 impl Time {
@@ -639,7 +680,6 @@ impl AsRef<DateTime<Utc>> for Time {
 }
 
 impl PrimitiveContent for Time {
-
     const TAG: Tag = Tag::GENERALIZED_TIME;
 
     fn encoded_len(&self, _: Mode) -> usize {
@@ -701,7 +741,7 @@ fn read_four_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Err> {
 
 //------------ Validity ------------------------------------------------------
 
-#[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Copy, Eq, Hash, PartialEq, Serialize)]
 pub struct Validity {
     not_before: Time,
     not_after: Time,
@@ -765,6 +805,38 @@ impl Validity {
 }
 
 
+//------------ SerialVisitor -------------------------------------------------
+
+/// Private helper class for deserializing serials.
+struct SerialVisitor;
+
+impl<'de> de::Visitor<'de> for SerialVisitor {
+    type Value = Serial;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "a string containing a serial number")
+    }
+
+    fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+    where E: de::Error {
+        Serial::from_str(s).map_err(de::Error::custom)
+    }
+
+    fn visit_string<E>(self, s: String) -> Result<Self::Value, E>
+    where E: de::Error {
+        Serial::from_str(&s).map_err(de::Error::custom)
+    }
+}
+
+
+//------------ RepresentationError -------------------------------------------
+
+/// A source value is not correctly formated for converting into a value.
+#[derive(Clone, Copy, Debug, Display, Eq, PartialEq)]
+#[display(fmt="wrong representation format")]
+pub struct RepresentationError;
+
+
 //------------ ValidationError -----------------------------------------------
 
 #[derive(Clone, Copy, Debug, Display, Eq, PartialEq)]
@@ -825,6 +897,30 @@ mod test {
                 )
             ),
             Serial([0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1,2,3])
+        );
+    }
+
+    #[test]
+    fn serial_from_str() {
+        assert_eq!(
+            unwrap!(Serial::from_str("383822")),
+            unwrap!(Serial::from_slice(b"\x05\xdb\x4e"))
+        );
+        assert_eq!(
+            unwrap!(Serial::from_str("000000383822")),
+            unwrap!(Serial::from_slice(b"\x05\xdb\x4e"))
+        );
+        assert_eq!(
+            unwrap!(Serial::from_str("0")),
+            unwrap!(Serial::from_slice(b"\0"))
+        );
+    }
+
+    #[test]
+    fn string_from_serial() {
+        assert_eq!(
+            String::from(unwrap!(Serial::from_slice(b"\x05\xdb\x4e"))),
+            String::from("383822"),
         );
     }
 
