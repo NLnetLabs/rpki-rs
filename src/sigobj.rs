@@ -189,7 +189,7 @@ impl SignedObject {
         //
         // c. cert is an EE cert with the SubjectKeyIdentifer matching
         //    the sid field of the SignerInfo.
-        if self.sid != *self.cert.subject_key_identifier() {
+        if self.sid != self.cert.subject_key_identifier() {
             return Err(ValidationError)
         }
         Ok(())
@@ -733,7 +733,7 @@ impl SignedObjectBuilder {
             Overclaim::Refuse,
         );
         cert.set_authority_key_identifier(
-            Some(issuer.subject_key_identifier().clone())
+            Some(issuer.subject_key_identifier())
         );
         cert.set_crl_uri(Some(self.crl_uri));
         cert.set_ca_issuer(Some(self.ca_issuer));

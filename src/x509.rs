@@ -265,7 +265,7 @@ impl Serial {
         for i in 0..20 {
             step = step.overflowing_shl(8).0 + u16::from(self.0[i]);
             self.0[i] = (step / rhs) as u8;
-            step = step % rhs;
+            step %= rhs;
         }
         step as u8
     }
@@ -274,7 +274,7 @@ impl Serial {
         self == Serial::default()
     }
 
-    fn encode_dec<'a>(mut self, target: &'a mut [u8; 49]) -> &'a str {
+    fn encode_dec(mut self, target: &mut [u8; 49]) -> &str {
         let mut len = 49;
         while !self.is_zero() {
             len -= 1;

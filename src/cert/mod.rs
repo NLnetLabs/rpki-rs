@@ -325,7 +325,7 @@ impl Cert {
         
         // 4.8.2. Subject Key Identifer. Must be the SHA-1 hash of the octets
         // of the subjectPublicKey.
-        if *self.subject_key_identifier() != 
+        if self.subject_key_identifier() != 
                              self.subject_public_key_info().key_identifier() {
             return Err(ValidationError)
         }
@@ -743,13 +743,13 @@ impl TbsCert {
     /// when the subject public key is set via [`set_subject_public_key`].
     ///
     /// [`set_subject_public_key`]: #method.set_subject_public_key
-    pub fn subject_key_identifier(&self) -> &KeyIdentifier {
-        &self.subject_key_identifier
+    pub fn subject_key_identifier(&self) -> KeyIdentifier {
+        self.subject_key_identifier
     }
 
     /// Returns a reference to the authority key identifier if present.
-    pub fn authority_key_identifier(&self) -> Option<&KeyIdentifier> {
-        self.authority_key_identifier.as_ref()
+    pub fn authority_key_identifier(&self) -> Option<KeyIdentifier> {
+        self.authority_key_identifier
     }
 
     /// Sets the authority key identifier extension.
