@@ -4,12 +4,20 @@
 
 Breaking
 
+* Moved `x509::KeyIdentifier` to `crypto::key::KeyIdentifier`. It also
+  contains a byte array and is `Copy`. Subsequently,
+  `Cert::subject_key_identifier` and `Cert::authority_key_identifier`
+  return values instead of references now. [(#51)]
+* 
+
 New
 
 * Add `CrlEntry::new` so these can actually be created. [(#49)]
 * `Manifest` now derefs to `ManifestContent` which adds accessors for its
   attributes. `Manifest` also allows access to the EE certificate via the
   `cert` method. [(#50)].
+* Implement serialization for `crypto::keys::KeyIdentifier`,
+  `x509::Serial`, `x509::Time`, and `x509::Validity`. [(#51)]
 
 Bug Fixes
 
@@ -18,6 +26,7 @@ Dependencies
 
 [(#49)]: https://github.com/NLnetLabs/rpki-rs/pull/49
 [(#50)]: https://github.com/NLnetLabs/rpki-rs/pull/50
+[(#51)]: https://github.com/NLnetLabs/rpki-rs/pull/51
 
 
 # 0.4.0
