@@ -8,16 +8,14 @@ use bytes::Bytes;
 use crate::{oid, uri};
 use crate::cert::{Cert, KeyUsage, Overclaim, ResourceCert, TbsCert};
 use crate::crypto::{
-    Digest, DigestAlgorithm, Signature, SignatureAlgorithm, Signer,
-    SigningError
+    Digest, DigestAlgorithm, KeyIdentifier, Signature, SignatureAlgorithm,
+    Signer, SigningError
 };
 use crate::resources::{
     AsBlocksBuilder, AsResources, AsResourcesBuilder, IpBlocksBuilder,
     IpResources, IpResourcesBuilder
 };
-use crate::x509::{
-    KeyIdentifier, Name, Serial, Time, ValidationError, Validity, update_once
-};
+use crate::x509::{Name, Serial, Time, ValidationError, Validity, update_once};
 
 
 //------------ SignedObject --------------------------------------------------

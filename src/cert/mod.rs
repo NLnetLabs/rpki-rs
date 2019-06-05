@@ -37,10 +37,12 @@ use crate::resources::{AsBlocks, IpBlocks};
 use crate::tal::TalInfo;
 use crate::uri;
 use crate::x509::{
-    KeyIdentifier, Name, SignedData, Serial, Time, Validity, ValidationError,
+    Name, SignedData, Serial, Time, Validity, ValidationError,
     encode_extension, update_first, update_once
 };
-use crate::crypto::{PublicKey, SignatureAlgorithm, Signer, SigningError};
+use crate::crypto::{
+    KeyIdentifier, PublicKey, SignatureAlgorithm, Signer, SigningError
+};
 use crate::resources::{
     AddressFamily, AsBlocksBuilder, AsResources, AsResourcesBuilder,
     IpBlocksBuilder, IpResources, IpResourcesBuilder

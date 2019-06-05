@@ -25,7 +25,6 @@ extern crate base64;
 extern crate bytes;
 extern crate chrono;
 #[macro_use] extern crate derive_more;
-extern crate hex;
 #[macro_use] extern crate log;
 #[cfg(feature = "softkeys")] extern crate openssl;
 extern crate quick_xml;
@@ -54,3 +53,4 @@ pub mod uri;
 pub mod x509;
 pub mod xml;
 
+mod util;

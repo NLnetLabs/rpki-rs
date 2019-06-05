@@ -1,15 +1,20 @@
 //! Types and parameters of keys.
 
-use std::io;
+use std::{fmt, io, str};
+use std::convert::{TryFrom, TryInto};
+use std::str::FromStr;
 use bcder::{decode, encode};
-use bcder::{BitString, Mode, Tag};
+use bcder::{BitString, Mode, OctetString, Tag};
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use ring::{digest, signature};
 use ring::error::Unspecified;
+use serde::de;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use untrusted::Input;
 use crate::oid;
-use crate::x509::Name;
+use crate::util::hex;
+use crate::x509::{Name, RepresentationError};
 use super::signature::Signature;
 
 
@@ -92,11 +97,12 @@ impl PublicKey {
         self.bits.octet_slice().unwrap()
     }
 
-    pub fn key_identifier(&self) -> digest::Digest {
-        digest::digest(
-            &digest::SHA1,
-            self.bits.octet_slice().unwrap()
-        )
+    pub fn key_identifier(&self) -> KeyIdentifier {
+        unwrap!(KeyIdentifier::try_from(
+            digest::digest(
+                &digest::SHA1, self.bits.octet_slice().unwrap()
+            ).as_ref()
+        ))
     }
 
     /// Verifies a signature using this public key.
@@ -194,18 +200,200 @@ impl<'a> PrimitiveContent for PublicKeyCn<'a> {
         _mode: Mode, 
         target: &mut W
     ) -> Result<(), io::Error> {
-        fn hexdig(ch: u8) -> u8 {
-            if ch < 0xa { ch + b'0' }
-            else { ch + b'a' }
-        }
-
         for ch in self.0.bits.octets() {
-            target.write_all(&[
-                hexdig(ch & 0x0F),
-                hexdig(ch >> 4)
-            ])?
+            target.write_all(&hex::encode_u8(ch))?
         }
         Ok(())
+    }
+}
+
+
+//------------ KeyIdentifier -------------------------------------------------
+
+/// A key identifier.
+///
+/// This is the SHA-1 hash over the public key’s bits.
+#[derive(Clone, Copy, Eq, Hash)]
+pub struct KeyIdentifier([u8; 20]);
+
+impl KeyIdentifier {
+    /// Creates a new identifier for the given key.
+    pub fn from_public_key(key: &PublicKey) -> Self {
+        Self(unwrap!(key.key_identifier().as_ref().try_into()))
+    }
+
+    /// Returns an octet slice of the key identifer’s value.
+    pub fn as_slice(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+
+    /// Returns a octet array with the hex representation of the identifier.
+    pub fn into_hex(self) -> [u8; 40] {
+        let mut res = [0u8; 40];
+        hex::encode(self.as_slice(), &mut res);
+        res
+    }
+
+    /// Takes an encoded key identifier from a constructed value.
+    ///
+    /// ```text
+    /// KeyIdentifier ::= OCTET STRING
+    /// ```
+    ///
+    /// The content of the octet string needs to be a SHA-1 hash, so it must
+    /// be exactly 20 octets long.
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        cons.take_value_if(Tag::OCTET_STRING, Self::from_content)
+    }
+
+    /// Parses an encoded key identifer from a encoded content.
+    pub fn from_content<S: decode::Source>(
+        content: &mut decode::Content<S>
+    ) -> Result<Self, S::Err> {
+        let content = OctetString::from_content(content)?;
+        if let Some(slice) = content.as_slice() {
+            Self::try_from(slice).map_err(|_| decode::Malformed.into())
+        }
+        else if content.len() != 20 {
+            Err(decode::Malformed.into())
+        }
+        else {
+            let mut res = KeyIdentifier(Default::default());
+            let mut pos = 0;
+            for slice in &content {
+                let end = pos + slice.len();
+                res.0[pos .. end].copy_from_slice(slice);
+                pos = end;
+            }
+            Ok(res)
+        }
+    }
+}
+
+
+//--- TryFrom and FromStr
+
+impl<'a> TryFrom<&'a [u8]> for KeyIdentifier {
+    type Error = RepresentationError;
+
+    fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
+        value.try_into().map(KeyIdentifier).map_err(|_| RepresentationError)
+    }
+}
+
+impl FromStr for KeyIdentifier {
+    type Err = RepresentationError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        if value.len() != 40 || !value.is_ascii() {
+            return Err(RepresentationError)
+        }
+        let mut res = KeyIdentifier(Default::default());
+        let mut pos = 0;
+        for ch in value.as_bytes().chunks(2) {
+            let ch = unsafe { str::from_utf8_unchecked(ch) };
+            res.0[pos] = u8::from_str_radix(ch, 16)
+                            .map_err(|_| RepresentationError)?;
+            pos += 1;
+        }
+        Ok(res)
+    }
+}
+
+
+//--- AsRef
+
+impl AsRef<[u8]> for KeyIdentifier {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl<T: AsRef<[u8]>> PartialEq<T> for KeyIdentifier {
+    fn eq(&self, other: &T) -> bool {
+        self.0.as_ref().eq(other.as_ref())
+    }
+}
+
+
+//--- Display and Debug
+
+impl fmt::Display for KeyIdentifier {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut buf = [0u8; 40];
+        write!(f, "{}", hex::encode(self.as_slice(), &mut buf))
+    }
+}
+
+impl fmt::Debug for KeyIdentifier {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "KeyIdentifier({})", self)
+    }
+}
+
+
+//--- PrimitiveContent
+
+impl PrimitiveContent for KeyIdentifier {
+    const TAG: Tag = Tag::OCTET_STRING;
+
+    fn encoded_len(&self, _mode: Mode) -> usize {
+        20
+    }
+
+    fn write_encoded<W: io::Write>(
+        &self,
+        _mode: Mode,
+        target: &mut W
+    ) -> Result<(), io::Error> {
+        target.write_all(&self.0)
+    }
+}
+
+
+//--- Deserialize and Serialize
+
+impl Serialize for KeyIdentifier {
+    fn serialize<S: Serializer>(
+        &self,
+        serializer: S
+    ) -> Result<S::Ok, S::Error> {
+        let mut buf = [0u8; 40];
+        hex::encode(self.as_slice(), &mut buf).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for KeyIdentifier {
+    fn deserialize<D: Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
+        deserializer.deserialize_str(KeyIdentifierVisitor)
+    }
+}
+
+
+//------------ KeyIdentifierVisitor -----------------------------------------
+
+/// Private helper type for implementing deserialization of KeyIdentifier.
+struct KeyIdentifierVisitor;
+
+impl<'de> de::Visitor<'de> for KeyIdentifierVisitor {
+    type Value = KeyIdentifier;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "a string containing a key identifier as hex digits")
+    }
+
+    fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+    where E: de::Error {
+        KeyIdentifier::from_str(s).map_err(de::Error::custom)
+    }
+
+    fn visit_string<E>(self, s: String) -> Result<Self::Value, E>
+    where E: de::Error {
+        KeyIdentifier::from_str(&s).map_err(de::Error::custom)
     }
 }
 
