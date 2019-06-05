@@ -6,9 +6,18 @@ Breaking
 
 New
 
+* Add `CrlEntry::new` so these can actually be created. [(#49)]
+* `Manifest` now derefs to `ManifestContent` which adds accessors for its
+  attributes. `Manifest` also allows access to the EE certificate via the
+  `cert` method. [(#50)].
+
 Bug Fixes
 
 Dependencies
+
+
+[(#49)]: https://github.com/NLnetLabs/rpki-rs/pull/49
+[(#50)]: https://github.com/NLnetLabs/rpki-rs/pull/50
 
 
 # 0.4.0
