@@ -7,7 +7,7 @@ use std::iter::FromIterator;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use bcder::{decode, encode};
-use bcder::{Captured, Mode, OctetString, Oid, Tag};
+use bcder::{Captured, Mode, OctetString, Oid, Tag, xerr};
 use bcder::decode::Source;
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
@@ -393,7 +393,7 @@ impl FriendlyRoaIpAddress {
 //------------ RoaStatus -----------------------------------------------------
 
 #[derive(Clone, Debug)]
-#[allow(large_enum_variant)]
+#[allow(clippy::large_enum_variant)]
 pub enum RoaStatus {
     Valid {
         cert: ResourceCert,
@@ -626,6 +626,7 @@ mod test {
 mod signer_test {
     use std::str::FromStr;
     use bcder::encode::Values;
+    use unwrap::unwrap;
     use crate::cert::{KeyUsage, Overclaim};
     use crate::crypto::{PublicKeyFormat, Signer};
     use crate::crypto::softsigner::OpenSslSigner;

@@ -8,7 +8,6 @@ Breaking
   contains a byte array and is `Copy`. Subsequently,
   `Cert::subject_key_identifier` and `Cert::authority_key_identifier`
   return values instead of references now. [(#51)]
-* 
 
 New
 

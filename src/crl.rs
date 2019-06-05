@@ -17,7 +17,7 @@
 use std::ops;
 use std::collections::HashSet;
 use bcder::{decode, encode};
-use bcder::{Captured, Mode, OctetString, Oid, Tag};
+use bcder::{Captured, Mode, OctetString, Oid, Tag, xerr};
 use bcder::encode::PrimitiveContent;
 use bytes::Bytes;
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
@@ -696,8 +696,6 @@ mod test {
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
     use super::*;
-    use chrono::Duration;
-    use x509::Validity;
     use crate::crypto::PublicKeyFormat;
     use crate::crypto::softsigner::OpenSslSigner;
 

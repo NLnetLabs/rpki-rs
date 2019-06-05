@@ -1,7 +1,7 @@
 // Signed objects.
 
 use bcder::{decode, encode};
-use bcder::{Captured, Mode, OctetString, Oid, Tag};
+use bcder::{Captured, Mode, OctetString, Oid, Tag, xerr};
 use bcder::encode::PrimitiveContent;
 use bcder::string::OctetStringSource;
 use bytes::Bytes;
@@ -766,6 +766,7 @@ impl SignedObjectBuilder {
 #[cfg(test)]
 mod test {
     use crate::tal::TalInfo;
+    use unwrap::unwrap;
     use super::*;
 
     #[test]
@@ -794,6 +795,7 @@ mod signer_test {
     use std::str::FromStr;
     use bcder::Oid;
     use bcder::encode::Values;
+    use unwrap::unwrap;
     use crate::uri;
     use crate::crypto::PublicKeyFormat;
     use crate::crypto::softsigner::OpenSslSigner;

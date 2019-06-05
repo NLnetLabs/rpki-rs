@@ -3,7 +3,8 @@
 use std::fmt;
 use bcder::{decode, encode};
 use bcder::{
-    BitString, Captured, ConstOid, Mode, OctetString, Oid, Tag, Unsigned
+    BitString, Captured, ConstOid, Mode, OctetString, Oid, Tag, Unsigned,
+    xerr
 };
 use bcder::encode::PrimitiveContent;
 use bytes::Bytes;

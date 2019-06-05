@@ -2,6 +2,7 @@
 use std::{fmt, io, str};
 use std::borrow::Cow;
 use bytes::Bytes;
+use derive_more::{Display, From};
 use quick_xml::events::{BytesStart, Event};
 
 /// An XML reader.

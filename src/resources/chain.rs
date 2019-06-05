@@ -93,7 +93,7 @@ impl<T: Block> Chain<T> {
     }
 
     pub fn empty() -> &'static Self {
-        #[allow(transmute_ptr_to_ptr)] // alternative causes ICE
+        #[allow(clippy::transmute_ptr_to_ptr)] // alternative causes ICE
         unsafe { mem::transmute::<&[T], _>(&[]) }
     }
 
@@ -340,7 +340,7 @@ impl<T: Block> OwnedChain<T> {
     }
 
     pub fn as_chain(&self) -> &Chain<T> {
-        #[allow(transmute_ptr_to_ptr)] // alternative causes ICE
+        #[allow(clippy::transmute_ptr_to_ptr)] // alternative causes ICE
         unsafe { mem::transmute(self.0.as_slice()) }
     }
 }
