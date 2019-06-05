@@ -26,6 +26,7 @@ pub mod ext;
 use std::{borrow, ops};
 use std::sync::Arc;
 use bcder::{decode, encode};
+use bcder::xerr;
 use bcder::encode::PrimitiveContent;
 use bcder::{
     BitString, Captured, ConstOid, Ia5String, Mode, OctetString, Oid, Tag

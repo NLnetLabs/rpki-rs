@@ -7,6 +7,7 @@ use bcder::encode;
 use bcder::{Mode, Tag};
 use bcder::encode::PrimitiveContent;
 use bytes::{BufMut, Bytes, BytesMut};
+use derive_more::Display;
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 

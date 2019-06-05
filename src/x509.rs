@@ -4,7 +4,7 @@ use std::{fmt, io, ops, str};
 use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{
-    BitString, Captured, ConstOid, Mode, OctetString, Oid, Tag, Unsigned
+    BitString, Captured, ConstOid, Mode, OctetString, Oid, Tag, Unsigned, xerr
 };
 use bcder::string::PrintableString;
 use bcder::decode::Source;
@@ -12,6 +12,7 @@ use bcder::encode::PrimitiveContent;
 use chrono::{
     Datelike, DateTime, Duration, LocalResult, Timelike, TimeZone, Utc
 };
+use derive_more::Display;
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::crypto::{
@@ -863,6 +864,7 @@ mod test {
     use super::*;
     use bcder::decode::Constructed;
     use bcder::encode::Values;
+    use unwrap::unwrap;
 
     #[test]
     fn signed_data_decode_then_encode() {

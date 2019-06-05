@@ -14,30 +14,11 @@
 //!
 //! Documentation for the items in this crate is currently somewhat sparse.
 //! This will be rectified in upcoming releases.
-#![allow(renamed_and_removed_lints, unknown_lints)]
 
 // We have seemingly redundant closures (i.e., closures where just providing
 // a function would also work) that cannot be removed due to lifetime issues.
-#![allow(redundant_closure)]
-
-extern crate base64;
-#[macro_use] extern crate bcder;
-extern crate bytes;
-extern crate chrono;
-#[macro_use] extern crate derive_more;
-#[macro_use] extern crate log;
-#[cfg(feature = "softkeys")] extern crate openssl;
-extern crate quick_xml;
-extern crate ring;
-#[macro_use] extern crate serde;
-#[cfg(feature = "softkeys")] extern crate slab;
-extern crate uuid;
-extern crate untrusted;
-#[macro_use] extern crate unwrap;
-extern crate core;
-
-#[cfg(test)]
-extern crate serde_json;
+// (This has since been corrected but is still present in 1.34.0.)
+#![allow(clippy::redundant_closure)]
 
 pub mod cert;
 pub mod crl;

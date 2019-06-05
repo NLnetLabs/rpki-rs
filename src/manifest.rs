@@ -12,16 +12,18 @@
 
 use std::{borrow, ops};
 use bcder::{decode, encode};
-use bcder::{BitString, Captured, Ia5String, Mode, OctetString, Oid, Tag};
+use bcder::{
+    BitString, Captured, Ia5String, Mode, OctetString, Oid, Tag, xerr
+};
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
+use unwrap::unwrap;
 use crate::{oid, uri};
-use crate::cert::{ResourceCert, TbsCert};
+use crate::cert::{Cert, ResourceCert, TbsCert};
 use crate::crypto::{DigestAlgorithm, Signer, SigningError};
 use crate::sigobj::{SignedObject, SignedObjectBuilder};
 use crate::x509::{Serial, Time, ValidationError};
-use cert::Cert;
 
 
 //------------ Manifest ------------------------------------------------------
