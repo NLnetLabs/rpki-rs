@@ -337,7 +337,7 @@ impl FromStr for Serial {
                 _ => return Err(RepresentationError)
             }
         }
-        if res.0[19] & 0x80 != 0 {
+        if res.0[0] & 0x80 != 0 {
             Err(RepresentationError)
         }
         else {
@@ -916,6 +916,26 @@ mod test {
             unwrap!(Serial::from_str("0")),
             unwrap!(Serial::from_slice(b"\0"))
         );
+        assert_eq!(
+            unwrap!(Serial::from_str("17085962136030120322")),
+            unwrap!(Serial::from_slice(b"\xed\x1d\x88\x09\x93\xd9\x89\x82"))
+        );
+        assert!(
+            Serial::from_str(
+                "1461501637330902918203684832716283019655932542975"
+            ).is_err()
+        );
+        assert_eq!(
+            unwrap!(Serial::from_str(
+                "000730750818665451459101842416358141509827966271487"
+            )),
+            unwrap!(Serial::from_slice(
+                b"\x7f\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\
+                  \xff\xff\xff\xff\xff\xff\xff\xff\xff"
+            ))
+        );
+        assert!(Serial::from_str("hello").is_err());
+        assert_eq!(unwrap!(Serial::from_str("0")), Serial::default());
     }
 
     #[test]
