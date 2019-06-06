@@ -252,7 +252,22 @@ impl Serial {
             self.0[i] = step as u8;
             overflow = step >> 8;
         }
-        if overflow == 0 {
+        if overflow == 0 && self.0[0] & 0x80 == 0 {
+            Some(self)
+        }
+        else {
+            None
+        }
+    }
+
+    fn checked_add_u8(mut self, rhs: u8) -> Option<Self> {
+        let mut overflow = u16::from(rhs);
+        for i in (0..20_usize).rev() {
+            let step = u16::from(self.0[i]) + overflow;
+            self.0[i] = step as u8;
+            overflow = step >> 8;
+        }
+        if overflow == 0 && self.0[0] & 0x80 == 0 {
             Some(self)
         }
         else {
@@ -327,9 +342,11 @@ impl FromStr for Serial {
             match ch {
                 '0' ... '9' => {
                     res = match res.checked_mul_u8(10) {
-                        Some(mut res) => {
-                            res.0[19] += (ch as u8) - b'0';
-                            res
+                        Some(res) => {
+                            match res.checked_add_u8((ch as u8) - b'0') {
+                                Some(res) => res,
+                                None => return Err(RepresentationError)
+                            }
                         }
                         None => return Err(RepresentationError)
                     }
@@ -337,12 +354,7 @@ impl FromStr for Serial {
                 _ => return Err(RepresentationError)
             }
         }
-        if res.0[0] & 0x80 != 0 {
-            Err(RepresentationError)
-        }
-        else {
-            Ok(res)
-        }
+        Ok(res)
     }
 }
 
@@ -933,6 +945,11 @@ mod test {
                 b"\x7f\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\
                   \xff\xff\xff\xff\xff\xff\xff\xff\xff"
             ))
+        );
+        assert!(
+            Serial::from_str(
+                "730750818665451459101842416358141509827966271488"
+            ).is_err()
         );
         assert!(Serial::from_str("hello").is_err());
         assert_eq!(unwrap!(Serial::from_str("0")), Serial::default());
