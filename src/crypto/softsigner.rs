@@ -35,6 +35,14 @@ impl OpenSslSigner {
             rng: rand::SystemRandom::new(),
         }
     }
+
+    pub fn key_from_der(&mut self, der: &[u8]) -> Result<KeyId, io::Error> {
+        Ok(KeyId(self.keys.insert(KeyPair::from_der(der)?)))
+    }
+
+    pub fn key_from_pem(&mut self, pem: &[u8]) -> Result<KeyId, io::Error> {
+        Ok(KeyId(self.keys.insert(KeyPair::from_pem(pem)?)))
+    }
 }
 
 impl Signer for OpenSslSigner {
@@ -133,6 +141,28 @@ impl KeyPair {
         let rsa = Rsa::generate(2048)?;
         let pkey = PKey::from_rsa(rsa)?;
         Ok(KeyPair(pkey))
+    }
+
+    fn from_der(der: &[u8]) -> Result<Self, io::Error> {
+        let res = PKey::private_key_from_der(der)?;
+        if res.bits() != 2048 {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("invalid key length {}", res.bits())
+            ))
+        }
+        Ok(KeyPair(res))
+    }
+
+    fn from_pem(pem: &[u8]) -> Result<Self, io::Error> {
+        let res = PKey::private_key_from_pem(pem)?;
+        if res.bits() != 2048 {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("invalid key length {}", res.bits())
+            ))
+        }
+        Ok(KeyPair(res))
     }
 
     fn get_key_info(&self) -> Result<PublicKey, io::Error>

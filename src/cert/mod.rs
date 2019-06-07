@@ -24,6 +24,7 @@ pub mod builder;
 pub mod ext;
 
 use std::{borrow, ops};
+use std::iter::FromIterator;
 use std::sync::Arc;
 use bcder::{decode, encode};
 use bcder::xerr;
@@ -45,8 +46,8 @@ use crate::crypto::{
     KeyIdentifier, PublicKey, SignatureAlgorithm, Signer, SigningError
 };
 use crate::resources::{
-    AddressFamily, AsBlocksBuilder, AsResources, AsResourcesBuilder,
-    IpBlocksBuilder, IpResources, IpResourcesBuilder
+    AddressFamily, AsBlock, AsBlocksBuilder, AsResources, AsResourcesBuilder,
+    IpBlock, IpBlocksBuilder, IpResources, IpResourcesBuilder
 };
 
 
@@ -872,6 +873,14 @@ impl TbsCert {
         self.set_v4_resources(builder.finalize())
     }
 
+    /// Builds the IPv4 address resources from an iterator over blocks.
+    pub fn v4_resources_from_iter<I>(&mut self, iter: I)
+    where I: IntoIterator<Item=IpBlock> {
+        self.v4_resources = Some(
+            IpResources::blocks(IpBlocks::from_iter(iter))
+        )
+    }
+
     /// Returns a reference to the IPv6 address resources if present.
     pub fn v6_resources(&self) -> Option<&IpResources> {
         self.v6_resources.as_ref()
@@ -893,6 +902,14 @@ impl TbsCert {
         let mut builder = IpResourcesBuilder::new();
         builder.blocks(op);
         self.set_v6_resources(builder.finalize())
+    }
+
+    /// Builds the IPv6 address resources from an iterator over blocks
+    pub fn v6_resources_from_iter<I>(&mut self, iter: I)
+    where I: IntoIterator<Item=IpBlock> {
+        self.v6_resources = Some(
+            IpResources::blocks(IpBlocks::from_iter(iter))
+        )
     }
 
     /// Returns whether the certificate has any IP resources at all.
@@ -921,6 +938,14 @@ impl TbsCert {
         let mut builder = AsResourcesBuilder::new();
         builder.blocks(op);
         self.set_as_resources(builder.finalize())
+    }
+
+    /// Builds the AS resources from an iterator over blocks.
+    pub fn as_resources_from_iter<I>(&mut self, iter: I)
+    where I: IntoIterator<Item = AsBlock> {
+        self.as_resources = Some(
+            AsResources::blocks(AsBlocks::from_iter(iter))
+        )
     }
 }
 

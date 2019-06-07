@@ -678,6 +678,9 @@ impl Time {
     }
 }
 
+
+//--- Deref and AsRef
+
 impl ops::Deref for Time {
     type Target = DateTime<Utc>;
 
@@ -692,23 +695,19 @@ impl AsRef<DateTime<Utc>> for Time {
     }
 }
 
-impl PrimitiveContent for Time {
-    const TAG: Tag = Tag::GENERALIZED_TIME;
 
-    fn encoded_len(&self, _: Mode) -> usize {
-        15 // yyyyMMddhhmmssZ
-    }
+//--- FromStr
 
-    fn write_encoded<W: io::Write>(
-        &self, _: Mode, target: &mut W
-    ) -> Result<(), io::Error> {
-        write!(
-            target, "{:04}{:02}{:02}{:02}{:02}{:02}Z",
-            self.0.year(), self.0.month(), self.0.day(),
-            self.0.hour(), self.0.minute(), self.0.second()
-        )
+impl FromStr for Time {
+    type Err = chrono::format::ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        FromStr::from_str(s).map(Time)
     }
 }
+
+
+//--- Add
 
 impl ops::Add<Duration> for Time {
     type Output = Self;
@@ -749,6 +748,27 @@ fn read_four_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Err> {
     u32::from_str(s).map_err(|_err| {
         xerr!(decode::Malformed.into())
     })
+}
+
+
+//--- PrimitiveContent
+
+impl PrimitiveContent for Time {
+    const TAG: Tag = Tag::GENERALIZED_TIME;
+
+    fn encoded_len(&self, _: Mode) -> usize {
+        15 // yyyyMMddhhmmssZ
+    }
+
+    fn write_encoded<W: io::Write>(
+        &self, _: Mode, target: &mut W
+    ) -> Result<(), io::Error> {
+        write!(
+            target, "{:04}{:02}{:02}{:02}{:02}{:02}Z",
+            self.0.year(), self.0.month(), self.0.day(),
+            self.0.hour(), self.0.minute(), self.0.second()
+        )
+    }
 }
 
 
