@@ -5,7 +5,8 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use chrono::Duration;
 use rpki::cert::{KeyUsage, Overclaim, TbsCert};
-use rpki::crypto::{PublicKey, Signer};
+use rpki::crl::{TbsCertList, CrlEntry};
+use rpki::crypto::{PublicKey, SignatureAlgorithm, Signer};
 use rpki::crypto::softsigner::{OpenSslSigner, KeyId};
 use rpki::resources::{AsBlock, IpBlock};
 use rpki::x509::{Serial, Time, Validity};
@@ -28,12 +29,17 @@ fn main() {
 #[derive(StructOpt)]
 #[structopt(name="mkrpki", about="Creates RPKI objects.")]
 enum Operation {
-    #[structopt(name="key")]
     /// Creates a key pair.
+    #[structopt(name="key")]
     Key(Key),
 
+    /// Creates a CA certificate.
     #[structopt(name="cer")]
     Cert(Cert),
+
+    /// Creates a CRL.
+    #[structopt(name="crl")]
+    Crl(Crl),
 }
 
 impl Operation {
@@ -41,6 +47,7 @@ impl Operation {
         match self {
             Operation::Key(key) => key.run(),
             Operation::Cert(cert) => cert.run(),
+            Operation::Crl(crl) => crl.run(),
         }
     }
 }
@@ -187,7 +194,7 @@ struct Cert {
     #[structopt(long="inherit-as")]
     inherit_as: bool,
 
-    /// Path to file to place the certificate into.
+    /// Path to file to write the certificate into.
     output: PathBuf
 }
 
@@ -256,6 +263,55 @@ impl Cert {
 
         let cert = unwrap!(cert.into_cert(&signer, &issuer_key)).to_captured();
         save_file(&self.output, &cert)
+    }
+}
+
+
+//------------ Crl -----------------------------------------------------------
+
+#[derive(StructOpt)]
+struct Crl {
+    /// Path to the private key of the certificate issuer.
+    #[structopt(long="issuer-key")]
+    issuer_key: PathBuf,
+
+    /// Time of this update. Defaults to now.
+    #[structopt(long = "this-update")]
+    this_update: Option<Time>,
+
+    /// Time of the next update.
+    #[structopt(long = "next-update")]
+    next_update: Time,
+
+    /// Revoked certificates.
+    #[structopt(short = "c", long = "cert")]
+    revoked_certs: Vec<CrlEntry>,
+
+    /// CRL number.
+    #[structopt(long = "crl")]
+    crl_number: Serial,
+
+    /// Path to file to write the CRL into.
+    output: PathBuf
+}
+
+impl Crl {
+    pub fn run(self) -> Result<(), ()> {
+        let (signer, issuer_key) = create_signer(&self.issuer_key)?;
+        let issuer_pub = unwrap!(signer.get_key_info(&issuer_key));
+
+        let crl = TbsCertList::new(
+            SignatureAlgorithm::default(),
+            issuer_pub.to_subject_name(),
+            self.this_update.unwrap_or_else(Time::now),
+            self.next_update,
+            self.revoked_certs,
+            issuer_pub.key_identifier(),
+            self.crl_number
+        );
+
+        let crl = unwrap!(crl.into_crl(&signer, &issuer_key)).to_captured();
+        save_file(&self.output, &crl)
     }
 }
 
