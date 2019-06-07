@@ -3,6 +3,7 @@
 use std::io::{Read, Write};
 use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::fmt::Write as _;
 use chrono::Duration;
 use rpki::cert::{KeyUsage, Overclaim, TbsCert};
 use rpki::crl::{TbsCertList, CrlEntry};
@@ -28,10 +29,15 @@ fn main() {
 
 #[derive(StructOpt)]
 #[structopt(name="mkrpki", about="Creates RPKI objects.")]
+#[allow(clippy::large_enum_variant)]
 enum Operation {
     /// Creates a key pair.
     #[structopt(name="key")]
     Key(Key),
+
+    /// Creates a trust-anchor certificate.
+    #[structopt(name="ta")]
+    Ta(Ta),
 
     /// Creates a CA certificate.
     #[structopt(name="cer")]
@@ -46,6 +52,7 @@ impl Operation {
     pub fn run(self) -> Result<(), ()> {
         match self {
             Operation::Key(key) => key.run(),
+            Operation::Ta(ta) => ta.run(),
             Operation::Cert(cert) => cert.run(),
             Operation::Crl(crl) => crl.run(),
         }
@@ -114,6 +121,127 @@ impl Key {
 
         eprintln!("Success.");
         Ok(())
+    }
+}
+
+
+//------------ Ta ------------------------------------------------------------
+
+#[derive(StructOpt)]
+struct Ta {
+    /// Path to the private key of the certificate.
+    #[structopt(long="key")]
+    key: PathBuf,
+
+    /// Serial number of the certificate.
+    #[structopt(long="serial")]
+    serial: Serial,
+
+    /// Not-before date of the certificate. Defaults to now.
+    #[structopt(long="not-before")]
+    not_before: Option<Time>,
+
+    /// Not-after date of the certificate.
+    #[structopt(long="not-after")]
+    not_after: Option<Time>,
+
+    /// Duration of validity of certificate in days.
+    #[structopt(long="days")]
+    valid_days: Option<i64>,
+
+    /// RPKI URI of the CRL.
+    #[structopt(long="crl")]
+    crl_uri: uri::Rsync,
+
+    /// CA repository URI.
+    #[structopt(long="ca-repository")]
+    ca_repository: uri::Rsync,
+
+    /// RPKI manifest URI.
+    #[structopt(long="rpki-manifest")]
+    rpki_manifest: uri::Rsync,
+
+    /// Optional RPKI notify URI.
+    #[structopt(long="rpki-notify")]
+    rpki_notify: Option<uri::Https>,
+
+    /// IPv4 resources.
+    #[structopt(long="v4")]
+    v4_resources: Vec<IpBlock>,
+
+    /// IPv4 resources.
+    #[structopt(long="v6")]
+    v6_resources: Vec<IpBlock>,
+
+    /// AS resources.
+    #[structopt(long="as")]
+    as_resources: Vec<AsBlock>,
+
+    /// Rsync URI to include in the TAL file.
+    #[structopt(long="tal-rsync-uri")]
+    tal_rsync_uri: uri::Rsync,
+
+    /// Optional HTTPS URI to include in the TAL file.
+    #[structopt(long="tal-https-uri")]
+    tal_https_uri: Option<uri::Https>,
+
+    /// Path to file to write the certificate into.
+    output_ta: PathBuf,
+
+    /// Path to file to write the TAL into.
+    output_tal: PathBuf,
+}
+
+impl Ta {
+    pub fn run(self) -> Result<(), ()> {
+        let (signer, key) = create_signer(&self.key)?;
+        let key_pub = unwrap!(signer.get_key_info(&key));
+
+        let not_before = self.not_before.unwrap_or_else(Time::now);
+        let validity = if let Some(not_after) = self.not_after {
+            Validity::new(not_before, not_after)
+        }
+        else if let Some(valid_days) = self.valid_days {
+            Validity::new(not_before, not_before + Duration::days(valid_days))
+        }
+        else {
+            eprintln!("Either --not-after or --valid-days must be given.");
+            return Err(())
+        };
+
+        let mut cert = TbsCert::new(
+            self.serial,
+            key_pub.to_subject_name(),
+            validity,
+            None,
+            key_pub.clone(),
+            KeyUsage::Ca,
+            Overclaim::Refuse,
+        );
+        cert.set_basic_ca(Some(true));
+        cert.set_authority_key_identifier(Some(key_pub.key_identifier()));
+        cert.set_crl_uri(Some(self.crl_uri));
+        cert.set_ca_repository(Some(self.ca_repository));
+        cert.set_rpki_manifest(Some(self.rpki_manifest));
+        if let Some(rpki_notify) = self.rpki_notify {
+            cert.set_rpki_notify(Some(rpki_notify));
+        }
+        cert.v4_resources_from_iter(self.v4_resources);
+        cert.v6_resources_from_iter(self.v6_resources);
+        cert.as_resources_from_iter(self.as_resources);
+
+        let cert = unwrap!(cert.into_cert(&signer, &key)).to_captured();
+        save_file(&self.output_ta, &cert)?;
+        
+        let mut tal = format!("{}\n", self.tal_rsync_uri);
+        if let Some(uri) = self.tal_https_uri {
+            unwrap!(writeln!(tal, "{}", uri));
+        }
+        unwrap!(writeln!(tal, ""));
+        unwrap!(
+            writeln!(tal, "{}", base64::encode(&key_pub.to_info_bytes()))
+        );
+        save_file(&self.output_tal, tal.as_bytes())
     }
 }
 
