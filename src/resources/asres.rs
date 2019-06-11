@@ -136,7 +136,9 @@ impl AsResources {
                         encode::Choice2::One(().encode())
                     }
                     ResourcesChoice::Blocks(blocks) => {
-                        encode::Choice2::Two(blocks.encode())
+                        encode::Choice2::Two(
+                            encode::sequence(blocks.encode())
+                        )
                     }
                 }
             )
@@ -151,7 +153,9 @@ impl AsResources {
                         encode::Choice2::One(().encode())
                     }
                     ResourcesChoice::Blocks(ref blocks) => {
-                        encode::Choice2::Two(blocks.encode_ref())
+                        encode::Choice2::Two(
+                            encode::sequence(blocks.encode_ref())
+                        )
                     }
                 }
             )

@@ -28,7 +28,6 @@ fn main() {
     if let Err(()) = Operation::from_args().run() {
         std::process::exit(1)
     }
-    eprintln!("Success.");
 }
 
 
@@ -82,9 +81,11 @@ impl Operation {
 #[derive(StructOpt)]
 struct Key {
     /// The path to the private key file.
+    #[structopt(long = "private")]
     private: PathBuf,
     
     /// The path to the public key file.
+    #[structopt(long = "public")]
     public: PathBuf,
 }
 
@@ -98,7 +99,7 @@ impl Key {
             }
         };
 
-        let mut file = match File::create(self.private) {
+        let mut file = match File::create(&self.private) {
             Ok(file) => file,
             Err(err) => {
                 eprintln!("Failed to open private key file: {}", err);
@@ -117,7 +118,7 @@ impl Key {
             return Err(())
         }
 
-        let mut file = match File::create(self.public) {
+        let mut file = match File::create(&self.public) {
             Ok(file) => file,
             Err(err) => {
                 eprintln!("Failed to open public key file: {}", err);
@@ -136,7 +137,8 @@ impl Key {
             return Err(())
         }
 
-        eprintln!("Success.");
+        eprintln!("key: {}", self.private.display());
+        eprintln!("pub:  {}", self.public.display());
         Ok(())
     }
 }
@@ -165,10 +167,6 @@ struct Ta {
     /// Duration of validity of certificate in days.
     #[structopt(long="days")]
     valid_days: Option<i64>,
-
-    /// RPKI URI of the CRL.
-    #[structopt(long="crl")]
-    crl_uri: uri::Rsync,
 
     /// CA repository URI.
     #[structopt(long="ca-repository")]
@@ -203,10 +201,12 @@ struct Ta {
     tal_https_uri: Option<uri::Https>,
 
     /// Path to file to write the certificate into.
+    #[structopt(long="output")]
     output_ta: PathBuf,
 
     /// Path to file to write the TAL into.
-    output_tal: PathBuf,
+    #[structopt(long="output-tal")]
+    output_tal: Option<PathBuf>,
 }
 
 impl Ta {
@@ -222,7 +222,7 @@ impl Ta {
             Validity::new(not_before, not_before + Duration::days(valid_days))
         }
         else {
-            eprintln!("Either --not-after or --valid-days must be given.");
+            eprintln!("Either --not-after or --days must be given.");
             return Err(())
         };
 
@@ -237,28 +237,38 @@ impl Ta {
         );
         cert.set_basic_ca(Some(true));
         cert.set_authority_key_identifier(Some(key_pub.key_identifier()));
-        cert.set_crl_uri(Some(self.crl_uri));
         cert.set_ca_repository(Some(self.ca_repository));
         cert.set_rpki_manifest(Some(self.rpki_manifest));
         if let Some(rpki_notify) = self.rpki_notify {
             cert.set_rpki_notify(Some(rpki_notify));
         }
-        cert.v4_resources_from_iter(self.v4_resources);
-        cert.v6_resources_from_iter(self.v6_resources);
-        cert.as_resources_from_iter(self.as_resources);
+        if !self.v4_resources.is_empty() {
+            cert.v4_resources_from_iter(self.v4_resources);
+        }
+        if !self.v6_resources.is_empty() {
+            cert.v6_resources_from_iter(self.v6_resources);
+        }
+        if !self.as_resources.is_empty() {
+            cert.as_resources_from_iter(self.as_resources);
+        }
 
         let cert = unwrap!(cert.into_cert(&signer, &key)).to_captured();
         save_file(&self.output_ta, &cert)?;
+        eprintln!("TA:  {}", self.output_ta.display());
         
-        let mut tal = format!("{}\n", self.tal_rsync_uri);
-        if let Some(uri) = self.tal_https_uri {
-            unwrap!(writeln!(tal, "{}", uri));
+        if let Some(path) = self.output_tal {
+            let mut tal = format!("{}\n", self.tal_rsync_uri);
+            if let Some(uri) = self.tal_https_uri {
+                unwrap!(writeln!(tal, "{}", uri));
+            }
+            unwrap!(writeln!(tal, ""));
+            unwrap!(
+                writeln!(tal, "{}", base64::encode(&key_pub.to_info_bytes()))
+            );
+            save_file(&path, tal.as_bytes())?;
+            eprintln!("TAL: {}", path.display());
         }
-        unwrap!(writeln!(tal, ""));
-        unwrap!(
-            writeln!(tal, "{}", base64::encode(&key_pub.to_info_bytes()))
-        );
-        save_file(&self.output_tal, tal.as_bytes())
+        Ok(())
     }
 }
 
@@ -271,7 +281,7 @@ struct Cert {
     #[structopt(long="issuer-key")]
     issuer_key: PathBuf,
 
-    /// Path to the publiec key of the certificate subject.
+    /// Path to the public key of the certificate subject.
     #[structopt(long="subject-key")]
     subject_key: PathBuf,
 
@@ -340,6 +350,7 @@ struct Cert {
     inherit_as: bool,
 
     /// Path to file to write the certificate into.
+    #[structopt(long="output")]
     output: PathBuf
 }
 
@@ -364,7 +375,7 @@ impl Cert {
             Validity::new(not_before, not_before + Duration::days(valid_days))
         }
         else {
-            eprintln!("Either --not-after or --valid-days must be given.");
+            eprintln!("Either --not-after or --days must be given.");
             return Err(())
         };
 
@@ -407,7 +418,9 @@ impl Cert {
         }
 
         let cert = unwrap!(cert.into_cert(&signer, &issuer_key)).to_captured();
-        save_file(&self.output, &cert)
+        save_file(&self.output, &cert)?;
+        eprintln!("Cer: {}", self.output.display());
+        Ok(())
     }
 }
 
@@ -426,7 +439,11 @@ struct Crl {
 
     /// Time of the next update.
     #[structopt(long = "next-update")]
-    next_update: Time,
+    next_update: Option<Time>,
+
+    /// The number of days until the next update.
+    #[structopt(long="next-days")]
+    next_days: Option<i64>,
 
     /// Revoked certificates.
     #[structopt(short = "c", long = "cert")]
@@ -437,6 +454,7 @@ struct Crl {
     crl_number: Serial,
 
     /// Path to file to write the CRL into.
+    #[structopt(long="output")]
     output: PathBuf
 }
 
@@ -445,18 +463,32 @@ impl Crl {
         let (signer, issuer_key) = create_signer(&self.issuer_key)?;
         let issuer_pub = unwrap!(signer.get_key_info(&issuer_key));
 
+        let this_update = self.this_update.unwrap_or_else(|| Time::now());
+        let next_update = if let Some(next_update) = self.next_update {
+            next_update
+        }
+        else if let Some(days) = self.next_days {
+            this_update + Duration::days(days)
+        }
+        else {
+            eprintln!("Either --next-update or --next-days must be given.");
+            return Err(())
+        };
+
         let crl = TbsCertList::new(
             SignatureAlgorithm::default(),
             issuer_pub.to_subject_name(),
-            self.this_update.unwrap_or_else(Time::now),
-            self.next_update,
+            this_update,
+            next_update,
             self.revoked_certs,
             issuer_pub.key_identifier(),
             self.crl_number
         );
 
         let crl = unwrap!(crl.into_crl(&signer, &issuer_key)).to_captured();
-        save_file(&self.output, &crl)
+        save_file(&self.output, &crl)?;
+        eprintln!("Crl: {}", self.output.display());
+        Ok(())
     }
 }
 
@@ -498,12 +530,15 @@ struct Roa {
     signed_object: uri::Rsync,
 
     /// The AS number for the ROA.
+    #[structopt(long="asn")]
     asn: AsId,
 
     /// The IP prefixes for the ROA.
+    #[structopt(long="prefixes")]
     prefixes: Vec<RoaPrefix>,
 
     /// Path to file to write the certificate into.
+    #[structopt(long="output")]
     output: PathBuf
 }
 
@@ -528,7 +563,7 @@ impl Roa {
             Validity::new(not_before, not_before + Duration::days(valid_days))
         }
         else {
-            eprintln!("Either --not-after or --valid-days must be given.");
+            eprintln!("Either --not-after or --days must be given.");
             return Err(())
         };
 
@@ -544,7 +579,9 @@ impl Roa {
             &signer, &issuer_key
         ));
         let roa = roa.to_captured();
-        save_file(&self.output, &roa)
+        save_file(&self.output, &roa)?;
+        eprintln!("Roa: {}", self.output.display());
+        Ok(())
     }
 }
 
@@ -628,6 +665,10 @@ struct Mft {
     #[structopt(long="number")]
     number: Serial,
 
+    /// Signed Object URI
+    #[structopt(long="signed-object")]
+    signed_object: uri::Rsync,
+
     /// The update time of this manifest.
     #[structopt(long="this-update")]
     this_update: Option<Time>,
@@ -640,14 +681,12 @@ struct Mft {
     #[structopt(long="next-days")]
     next_days: Option<i64>,
 
-    /// Signed Object URI
-    #[structopt(long="signed-object")]
-    signed_object: uri::Rsync,
-
     /// The files to include in the manifest
+    #[structopt(long="files")]
     files: Vec<PathBuf>,
 
     /// Path to file to write the certificate into.
+    #[structopt(long="output")]
     output: PathBuf,
 }
 
@@ -663,7 +702,7 @@ impl Mft {
             Validity::new(not_before, not_before + Duration::days(valid_days))
         }
         else {
-            eprintln!("Either --not-after or --valid-days must be given.");
+            eprintln!("Either --not-after or --days must be given.");
             return Err(())
         };
         let this_update = self.this_update.unwrap_or_else(|| Time::now());
@@ -727,8 +766,9 @@ impl Mft {
             &signer, &issuer_key
         ));
         let manifest = manifest.to_captured();
-        save_file(&self.output, &manifest)
-
+        save_file(&self.output, &manifest)?;
+        eprintln!("Mft: {}", self.output.display());
+        Ok(())
     }
 }
 
