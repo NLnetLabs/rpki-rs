@@ -13,7 +13,7 @@ use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use crate::oid;
-use crate::cert::{Cert, ResourceCert, TbsCert};
+use crate::cert::{Cert, ResourceCert};
 use crate::crypto::{Signer, SigningError};
 use crate::resources::{
     Addr, AddressFamily, AsId, IpBlocks, IpResources, Prefix
@@ -311,6 +311,10 @@ impl RoaIpAddress {
         RoaIpAddress::new(Prefix::new(addr, len), max_len)
     }
 
+    pub fn prefix(&self) -> Prefix {
+        self.prefix
+    }
+
     pub fn range(&self) -> (Addr, Addr) {
         self.prefix.range()
     }
@@ -532,7 +536,6 @@ impl RoaBuilder {
         mut sigobj: SignedObjectBuilder,
         signer: &S,
         issuer_key: &S::KeyId,
-        issuer: &TbsCert,
     ) -> Result<Roa, SigningError<S::Error>> {
         let content = self.to_attestation();
         let v4 = self.v4.to_resources();
@@ -546,7 +549,6 @@ impl RoaBuilder {
             content.encode_ref().to_captured(Mode::Der).into_bytes(),
             signer,
             issuer_key,
-            issuer
         )?;
         Ok(Roa { signed, content })
     }
@@ -627,7 +629,7 @@ mod signer_test {
     use std::str::FromStr;
     use bcder::encode::Values;
     use unwrap::unwrap;
-    use crate::cert::{KeyUsage, Overclaim};
+    use crate::cert::{KeyUsage, Overclaim, TbsCert};
     use crate::crypto::{PublicKeyFormat, Signer};
     use crate::crypto::softsigner::OpenSslSigner;
     use crate::resources::{AsId, Prefix};
@@ -662,7 +664,7 @@ mod signer_test {
                 12u64.into(), Validity::from_secs(86400), uri.clone(),
                 uri.clone(), uri.clone()
             ),
-            &signer, &key, &cert
+            &signer, &key
         ));
         let roa = roa.encode_ref().to_captured(Mode::Der);
 

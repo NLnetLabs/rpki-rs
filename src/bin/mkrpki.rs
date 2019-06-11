@@ -1,15 +1,19 @@
 //! Making of RPKI-related objects.
 
 use std::io::{Read, Write};
-use std::fs::File;
-use std::path::{Path, PathBuf};
 use std::fmt::Write as _;
+use std::fs::File;
+use std::net::IpAddr;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use chrono::Duration;
 use rpki::cert::{KeyUsage, Overclaim, TbsCert};
 use rpki::crl::{TbsCertList, CrlEntry};
 use rpki::crypto::{PublicKey, SignatureAlgorithm, Signer};
 use rpki::crypto::softsigner::{OpenSslSigner, KeyId};
-use rpki::resources::{AsBlock, IpBlock};
+use rpki::roa::{RoaBuilder, RoaIpAddress};
+use rpki::resources::{AsBlock, AsId, IpBlock};
+use rpki::sigobj::SignedObjectBuilder;
 use rpki::x509::{Serial, Time, Validity};
 use rpki::uri;
 use structopt::StructOpt;
@@ -46,6 +50,10 @@ enum Operation {
     /// Creates a CRL.
     #[structopt(name="crl")]
     Crl(Crl),
+
+    /// Creates a ROA.
+    #[structopt(name="roa")]
+    Roa(Roa),
 }
 
 impl Operation {
@@ -55,6 +63,7 @@ impl Operation {
             Operation::Ta(ta) => ta.run(),
             Operation::Cert(cert) => cert.run(),
             Operation::Crl(crl) => crl.run(),
+            Operation::Roa(roa) => roa.run(),
         }
     }
 }
@@ -440,6 +449,137 @@ impl Crl {
 
         let crl = unwrap!(crl.into_crl(&signer, &issuer_key)).to_captured();
         save_file(&self.output, &crl)
+    }
+}
+
+
+//------------ Roa -----------------------------------------------------------
+
+#[derive(StructOpt)]
+struct Roa {
+    /// Path to the private key of the certificate issuer.
+    #[structopt(long="issuer-key")]
+    issuer_key: PathBuf,
+
+    /// Serial number of the certificate.
+    #[structopt(long="serial")]
+    serial: Serial,
+
+    /// Not-before date of the certificate. Defaults to now.
+    #[structopt(long="not-before")]
+    not_before: Option<Time>,
+
+    /// Not-after date of the certificate.
+    #[structopt(long="not-after")]
+    not_after: Option<Time>,
+
+    /// Duration of validity of certificate in days.
+    #[structopt(long="days")]
+    valid_days: Option<i64>,
+
+    /// RPKI URI of the CRL.
+    #[structopt(long="crl")]
+    crl_uri: uri::Rsync,
+
+    /// CA issuer URI.
+    #[structopt(long="ca-issuer")]
+    ca_issuer: uri::Rsync,
+
+    /// Signed Object URI
+    #[structopt(long="signed-object")]
+    signed_object: uri::Rsync,
+
+    /// The AS number for the ROA.
+    asn: AsId,
+
+    /// The IP prefixes for the ROA.
+    prefixes: Vec<RoaPrefix>,
+
+    /// Path to file to write the certificate into.
+    output: PathBuf
+}
+
+impl Roa {
+    pub fn run(self) -> Result<(), ()> {
+        let (mut v4, mut v6) = (Vec::new(), Vec::new());
+        for prefix in self.prefixes {
+            if prefix.v4 {
+                v4.push(prefix.prefix)
+            }
+            else {
+                v6.push(prefix.prefix)
+            }
+        }
+        let (signer, issuer_key) = create_signer(&self.issuer_key)?;
+
+        let not_before = self.not_before.unwrap_or_else(Time::now);
+        let validity = if let Some(not_after) = self.not_after {
+            Validity::new(not_before, not_after)
+        }
+        else if let Some(valid_days) = self.valid_days {
+            Validity::new(not_before, not_before + Duration::days(valid_days))
+        }
+        else {
+            eprintln!("Either --not-after or --valid-days must be given.");
+            return Err(())
+        };
+
+        let mut roa = RoaBuilder::new(self.asn);
+        roa.extend_v4_from_slice(&v4);
+        roa.extend_v6_from_slice(&v6);
+
+        let roa = unwrap!(roa.finalize(
+            SignedObjectBuilder::new(
+                self.serial, validity, self.crl_uri, self.ca_issuer,
+                self.signed_object
+            ),
+            &signer, &issuer_key
+        ));
+        let roa = roa.to_captured();
+        save_file(&self.output, &roa)
+    }
+}
+
+
+//------------ RoaPrefix -----------------------------------------------------
+
+#[derive(Clone, Debug)]
+struct RoaPrefix {
+    v4: bool,
+    prefix: RoaIpAddress,
+}
+
+impl FromStr for RoaPrefix {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (prefix, maxlen) = match s.find('-') {
+            Some(idx) => (&s[..idx], Some(&s[idx + 1..])),
+            None => (s, None)
+        };
+        let (addr, len) = match prefix.find('/') {
+            Some(idx) => (&prefix[..idx], &prefix[idx + 1..]),
+            None => return Err(format!("Invalid ROA prefix '{}'", s))
+        };
+        let addr = match IpAddr::from_str(addr) {
+            Ok(addr) => addr,
+            Err(_) => return Err(format!("Invalid ROA prefix '{}'", s))
+        };
+        let len = match u8::from_str(len) {
+            Ok(len) => len,
+            Err(_) => return Err(format!("Invalid ROA prefix '{}'", s))
+        };
+        let maxlen = match maxlen {
+            Some(maxlen) => match u8::from_str(maxlen) {
+                Ok(maxlen) => Some(maxlen),
+                Err(_) => return Err(format!("Invalid ROA prefix '{}'", s))
+            },
+            None => None
+        };
+        Ok(RoaPrefix {
+            v4: addr.is_ipv4(),
+            prefix: RoaIpAddress::new_addr(addr, len, maxlen)
+        })
     }
 }
 
