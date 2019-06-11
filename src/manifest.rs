@@ -195,14 +195,14 @@ impl ManifestContent {
         iter: I,
     ) -> Self
     where
-        I: Iterator<Item = FH>,
+        I: IntoIterator<Item = FH>,
         FH: AsRef<FileAndHash<F, H>>,
         F: AsRef<[u8]>,
         H: AsRef<[u8]>,
     {
         let mut len = 0;
         let mut file_list = Captured::empty(Mode::Der);
-        for item in iter {
+        for item in iter.into_iter() {
             file_list.extend(item.as_ref().encode_ref());
             len += 1;
         }

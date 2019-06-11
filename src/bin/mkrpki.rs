@@ -2,6 +2,7 @@
 
 use std::io::{Read, Write};
 use std::fmt::Write as _;
+use std::ffi::OsStr;
 use std::fs::File;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
@@ -9,8 +10,9 @@ use std::str::FromStr;
 use chrono::Duration;
 use rpki::cert::{KeyUsage, Overclaim, TbsCert};
 use rpki::crl::{TbsCertList, CrlEntry};
-use rpki::crypto::{PublicKey, SignatureAlgorithm, Signer};
+use rpki::crypto::{DigestAlgorithm, PublicKey, SignatureAlgorithm, Signer};
 use rpki::crypto::softsigner::{OpenSslSigner, KeyId};
+use rpki::manifest::{FileAndHash, ManifestContent};
 use rpki::roa::{RoaBuilder, RoaIpAddress};
 use rpki::resources::{AsBlock, AsId, IpBlock};
 use rpki::sigobj::SignedObjectBuilder;
@@ -26,6 +28,7 @@ fn main() {
     if let Err(()) = Operation::from_args().run() {
         std::process::exit(1)
     }
+    eprintln!("Success.");
 }
 
 
@@ -54,6 +57,10 @@ enum Operation {
     /// Creates a ROA.
     #[structopt(name="roa")]
     Roa(Roa),
+
+    /// Creates a manifest.
+    #[structopt(name="mft")]
+    Mft(Mft),
 }
 
 impl Operation {
@@ -64,6 +71,7 @@ impl Operation {
             Operation::Cert(cert) => cert.run(),
             Operation::Crl(crl) => crl.run(),
             Operation::Roa(roa) => roa.run(),
+            Operation::Mft(mft) => mft.run(),
         }
     }
 }
@@ -580,6 +588,147 @@ impl FromStr for RoaPrefix {
             v4: addr.is_ipv4(),
             prefix: RoaIpAddress::new_addr(addr, len, maxlen)
         })
+    }
+}
+
+
+//------------ Mft -----------------------------------------------------------
+
+#[derive(StructOpt)]
+struct Mft {
+    /// Path to the private key of the certificate issuer.
+    #[structopt(long="issuer-key")]
+    issuer_key: PathBuf,
+
+    /// Serial number of the certificate.
+    #[structopt(long="serial")]
+    serial: Serial,
+
+    /// Not-before date of the certificate. Defaults to now.
+    #[structopt(long="not-before")]
+    not_before: Option<Time>,
+
+    /// Not-after date of the certificate.
+    #[structopt(long="not-after")]
+    not_after: Option<Time>,
+
+    /// Duration of validity of certificate in days.
+    #[structopt(long="days")]
+    valid_days: Option<i64>,
+
+    /// RPKI URI of the CRL.
+    #[structopt(long="crl")]
+    crl_uri: uri::Rsync,
+
+    /// CA issuer URI.
+    #[structopt(long="ca-issuer")]
+    ca_issuer: uri::Rsync,
+
+    /// The number of this manifest.
+    #[structopt(long="number")]
+    number: Serial,
+
+    /// The update time of this manifest.
+    #[structopt(long="this-update")]
+    this_update: Option<Time>,
+
+    /// The update time of the next manifest.
+    #[structopt(long="next-update")]
+    next_update: Option<Time>,
+
+    /// The number of days until the next update.
+    #[structopt(long="next-days")]
+    next_days: Option<i64>,
+
+    /// Signed Object URI
+    #[structopt(long="signed-object")]
+    signed_object: uri::Rsync,
+
+    /// The files to include in the manifest
+    files: Vec<PathBuf>,
+
+    /// Path to file to write the certificate into.
+    output: PathBuf,
+}
+
+impl Mft {
+    pub fn run(self) -> Result<(), ()> {
+        let (signer, issuer_key) = create_signer(&self.issuer_key)?;
+
+        let not_before = self.not_before.unwrap_or_else(Time::now);
+        let validity = if let Some(not_after) = self.not_after {
+            Validity::new(not_before, not_after)
+        }
+        else if let Some(valid_days) = self.valid_days {
+            Validity::new(not_before, not_before + Duration::days(valid_days))
+        }
+        else {
+            eprintln!("Either --not-after or --valid-days must be given.");
+            return Err(())
+        };
+        let this_update = self.this_update.unwrap_or_else(|| Time::now());
+        let next_update = if let Some(next_update) = self.next_update {
+            next_update
+        }
+        else if let Some(days) = self.next_days {
+            this_update + Duration::days(days)
+        }
+        else {
+            eprintln!("Either --next-update or --next-days must be given.");
+            return Err(())
+        };
+
+        let alg = DigestAlgorithm::default();
+        let mut files = Vec::new();
+        for path in self.files {
+            let mut file = match File::open(&path) {
+                Ok(file) => file,
+                Err(err) => {
+                    eprintln!("Cannot open file {}: {}", path.display(), err);
+                    return Err(())
+                }
+            };
+            let name = match path.file_name().and_then(OsStr::to_str) {
+                Some(name) if name.is_ascii() => name.to_string(),
+                _ => {
+                    eprintln!("Illegal file name {}.", path.display());
+                    return Err(())
+                }
+            };
+            let mut digest = alg.start();
+            let mut buf = [0u8; 4096];
+            loop {
+                let read = match file.read(&mut buf) {
+                    Ok(read) => read,
+                    Err(err) => {
+                        eprintln!(
+                            "Cannot read file {}: {}", path.display(), err
+                        );
+                        return Err(())
+                    }
+                };
+                if read == 0 {
+                    break;
+                }
+                digest.update(&buf[..read]);
+            }
+            files.push(FileAndHash::new(name, digest.finish()));
+        }
+
+        let content = ManifestContent::new(
+            self.number, this_update, next_update, alg, files
+        );
+
+        let manifest = unwrap!(content.into_manifest(
+            SignedObjectBuilder::new(
+                self.serial, validity, self.crl_uri, self.ca_issuer,
+                self.signed_object
+            ),
+            &signer, &issuer_key
+        ));
+        let manifest = manifest.to_captured();
+        save_file(&self.output, &manifest)
+
     }
 }
 
