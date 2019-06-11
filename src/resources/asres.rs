@@ -136,7 +136,9 @@ impl AsResources {
                         encode::Choice2::One(().encode())
                     }
                     ResourcesChoice::Blocks(blocks) => {
-                        encode::Choice2::Two(blocks.encode())
+                        encode::Choice2::Two(
+                            encode::sequence(blocks.encode())
+                        )
                     }
                 }
             )
@@ -151,7 +153,9 @@ impl AsResources {
                         encode::Choice2::One(().encode())
                     }
                     ResourcesChoice::Blocks(ref blocks) => {
-                        encode::Choice2::Two(blocks.encode_ref())
+                        encode::Choice2::Two(
+                            encode::sequence(blocks.encode_ref())
+                        )
                     }
                 }
             )
@@ -328,6 +332,33 @@ impl AsBlocks {
 }
 
 
+//--- FromStr and FromIterator
+
+impl FromStr for AsBlocks {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut builder = AsBlocksBuilder::default();
+
+        for el in s.split(',') {
+            let el = el.trim();
+            if !el.is_empty() {
+                let block = AsBlock::from_str(&el)?;
+                builder.push(block);
+            }
+        }
+
+        Ok(builder.finalize())
+    }
+}
+
+impl FromIterator<AsBlock> for AsBlocks {
+    fn from_iter<I: IntoIterator<Item = AsBlock>>(iter: I) -> Self {
+        Self(SharedChain::from_iter(iter))
+    }
+}
+
+
 //--- Display
 
 impl fmt::Display for AsBlocks {
@@ -348,38 +379,21 @@ impl fmt::Display for AsBlocks {
     }
 }
 
-//--- FromStr
-
-impl FromStr for AsBlocks {
-    type Err = FromStrError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut builder = AsBlocksBuilder::default();
-
-        for el in s.split(',') {
-            let el = el.trim();
-            if !el.is_empty() {
-                let block = AsBlock::from_str(&el)?;
-                builder.push(block);
-            }
-        }
-
-        Ok(builder.finalize())
-    }
-}
-
-//--- Serialize
+//--- Serialize and Deserialize
 
 impl Serialize for AsBlocks {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    fn serialize<S: Serializer>(
+        &self,
+        serializer: S
+    ) -> Result<S::Ok, S::Error> {
         self.to_string().serialize(serializer)
     }
 }
 
-//--- Deserialize
-
 impl<'de> Deserialize<'de> for AsBlocks {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+    fn deserialize<D: Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
         let string = String::deserialize(deserializer)?;
         Ok(Self::from_str(&string).map_err(de::Error::custom)?)
     }

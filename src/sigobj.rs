@@ -498,6 +498,12 @@ pub struct SignedObjectBuilder {
     /// Must be provided.
     validity: Validity,
 
+    /// The issuer name of the EE certificate.
+    ///
+    /// If this is `None` (the default), it will be generated from the key
+    /// identifier of the EE certificate’s key.
+    issuer: Option<Name>,
+
     /// The subject name of the EE certificate.
     ///
     /// If this is `None` (the default), it will be generated from the key
@@ -557,6 +563,7 @@ impl SignedObjectBuilder {
             digest_algorithm: DigestAlgorithm::default(),
             serial_number,
             validity,
+            issuer: None,
             subject: None,
             crl_uri,
             ca_issuer,
@@ -591,6 +598,14 @@ impl SignedObjectBuilder {
 
     pub fn set_validity(&mut self, validity: Validity) {
         self.validity = validity
+    }
+
+    pub fn issuer(&self) -> Option<&Name> {
+        self.issuer.as_ref()
+    }
+
+    pub fn set_issuer(&mut self, name: Option<Name>) {
+        self.issuer = name
     }
 
     pub fn subject(&self) -> Option<&Name> {
@@ -705,8 +720,9 @@ impl SignedObjectBuilder {
         content: Bytes,
         signer: &S,
         issuer_key: &S::KeyId,
-        issuer: &TbsCert,
     ) -> Result<SignedObject, SigningError<S::Error>> {
+        let issuer_pub = signer.get_key_info(issuer_key)?;
+
         // Produce signed attributes.
         let message_digest = self.digest_algorithm.digest(&content).into();
         let signed_attrs = SignedAttrs::new(
@@ -725,16 +741,14 @@ impl SignedObjectBuilder {
         // Make the certificate.
         let mut cert = TbsCert::new(
             self.serial_number,
-            issuer.subject().clone(),
+            self.issuer.unwrap_or_else(|| issuer_pub.to_subject_name()),
             self.validity,
             self.subject,
             key_info,
             KeyUsage::Ee,
             Overclaim::Refuse,
         );
-        cert.set_authority_key_identifier(
-            Some(issuer.subject_key_identifier())
-        );
+        cert.set_authority_key_identifier(Some(issuer_pub.key_identifier()));
         cert.set_crl_uri(Some(self.crl_uri));
         cert.set_ca_issuer(Some(self.ca_issuer));
         cert.set_signed_object(Some(self.signed_object));
@@ -833,7 +847,6 @@ mod signer_test {
             Bytes::from(b"1234".as_ref()),
             &signer,
             &key,
-            &cert,
         ));
         let sigobj = sigobj.encode_ref().to_captured(Mode::Der);
 

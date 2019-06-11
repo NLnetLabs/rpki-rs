@@ -20,7 +20,7 @@ use bytes::Bytes;
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use unwrap::unwrap;
 use crate::{oid, uri};
-use crate::cert::{Cert, ResourceCert, TbsCert};
+use crate::cert::{Cert, ResourceCert};
 use crate::crypto::{DigestAlgorithm, Signer, SigningError};
 use crate::sigobj::{SignedObject, SignedObjectBuilder};
 use crate::x509::{Serial, Time, ValidationError};
@@ -195,14 +195,14 @@ impl ManifestContent {
         iter: I,
     ) -> Self
     where
-        I: Iterator<Item = FH>,
+        I: IntoIterator<Item = FH>,
         FH: AsRef<FileAndHash<F, H>>,
         F: AsRef<[u8]>,
         H: AsRef<[u8]>,
     {
         let mut len = 0;
         let mut file_list = Captured::empty(Mode::Der);
-        for item in iter {
+        for item in iter.into_iter() {
             file_list.extend(item.as_ref().encode_ref());
             len += 1;
         }
@@ -221,7 +221,6 @@ impl ManifestContent {
         mut sigobj: SignedObjectBuilder,
         signer: &S,
         issuer_key: &S::KeyId,
-        issuer: &TbsCert,
     ) -> Result<Manifest, SigningError<S::Error>> {
         sigobj.set_v4_resources_inherit();
         sigobj.set_v6_resources_inherit();
@@ -231,7 +230,6 @@ impl ManifestContent {
             self.encode_ref().to_captured(Mode::Der).into_bytes(),
             signer,
             issuer_key,
-            issuer
         )?;
         Ok(Manifest { signed, content: self })
     }
@@ -535,7 +533,7 @@ mod test {
 mod signer_test {
     use std::str::FromStr;
     use bcder::encode::Values;
-    use crate::cert::{KeyUsage, Overclaim};
+    use crate::cert::{KeyUsage, Overclaim, TbsCert};
     use crate::crypto::{PublicKeyFormat, Signer};
     use crate::crypto::softsigner::OpenSslSigner;
     use crate::resources::{AsId, Prefix};
@@ -577,7 +575,7 @@ mod signer_test {
                 12u64.into(), Validity::from_secs(86400), uri.clone(),
                 uri.clone(), uri.clone()
             ),
-            &signer, &key, &cert
+            &signer, &key
         ));
         let manifest = manifest.encode_ref().to_captured(Mode::Der);
 

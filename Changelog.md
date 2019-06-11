@@ -8,6 +8,9 @@ Breaking
   contains a byte array and is `Copy`. Subsequently,
   `Cert::subject_key_identifier` and `Cert::authority_key_identifier`
   return values instead of references now. [(#51)]
+* Explicitly set issuer name in `SignedObjectBuilder`. Drop `cert`
+  argument from `SignedObjectBuilder::finalize`, `RoaBuilder::finalize`,
+  and `Manifest::finalize`.
 
 New
 

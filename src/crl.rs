@@ -16,6 +16,7 @@
 
 use std::ops;
 use std::collections::HashSet;
+use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Oid, Tag, xerr};
 use bcder::encode::PrimitiveContent;
@@ -26,7 +27,7 @@ use crate::crypto::{
     KeyIdentifier, PublicKey, SignatureAlgorithm, Signer, SigningError
 };
 use crate::x509::{
-    Name, Serial, SignedData, Time, ValidationError,
+    Name, RepresentationError, Serial, SignedData, Time, ValidationError,
     encode_extension, update_once
 };
 
@@ -598,6 +599,27 @@ impl CrlEntry {
             self.user_certificate.encode(),
             self.revocation_date.encode(),
         ))
+    }
+}
+
+
+//--- FromStr
+
+impl FromStr for CrlEntry {
+    type Err = RepresentationError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(pos) = s.find('@') {
+            Ok(CrlEntry::new(
+                Serial::from_str(&s[..pos])?,
+                Time::from_str(&s[pos + 1..]).map_err(|_| RepresentationError)?
+            ))
+        }
+        else {
+            Serial::from_str(s).map(|serial| {
+                CrlEntry::new(serial, Time::now())
+            })
+        }
     }
 }
 

@@ -71,6 +71,9 @@ impl Rsync {
         let authority = bytes.split_to(authority);
         bytes.advance(1);
         let module = bytes.split_to(module);
+        if bytes.is_empty() {
+            return Err(Error::BadUri)
+        }
         bytes.advance(1);
         Ok(Rsync {
             module: RsyncModule::new(authority, module),
