@@ -317,7 +317,7 @@ struct Cert {
 
     /// IPv4 resources.
     #[structopt(long="v4")]
-    v4_resources: Option<Vec<IpBlock>>,
+    v4_resources: Vec<IpBlock>,
 
     /// Inherit IPv4 resources. Overides any explicit resources.
     #[structopt(long="inherit-v4")]
@@ -325,7 +325,7 @@ struct Cert {
 
     /// IPv4 resources.
     #[structopt(long="v6")]
-    v6_resources: Option<Vec<IpBlock>>,
+    v6_resources: Vec<IpBlock>,
 
     /// Inherit IPv4 resources. Overides any explicit resources.
     #[structopt(long="inherit-v6")]
@@ -333,7 +333,7 @@ struct Cert {
 
     /// AS resources.
     #[structopt(long="as")]
-    as_resources: Option<Vec<AsBlock>>,
+    as_resources: Vec<AsBlock>,
 
     /// Inherit AS resources. Overides any explicit resources.
     #[structopt(long="inherit-as")]
@@ -390,20 +390,20 @@ impl Cert {
         if self.inherit_v4 {
             cert.set_v4_resources_inherit()
         }
-        else if let Some(v4) = self.v4_resources {
-            cert.v4_resources_from_iter(v4)
+        else if !self.v4_resources.is_empty() {
+            cert.v4_resources_from_iter(self.v4_resources)
         }
         if self.inherit_v6 {
             cert.set_v6_resources_inherit()
         }
-        else if let Some(v6) = self.v6_resources {
-            cert.v6_resources_from_iter(v6)
+        else if !self.v6_resources.is_empty() {
+            cert.v6_resources_from_iter(self.v6_resources)
         }
         if self.inherit_as {
             cert.set_as_resources_inherit()
         }
-        else if let Some(asn) = self.as_resources {
-            cert.as_resources_from_iter(asn)
+        else if !self.as_resources.is_empty() {
+            cert.as_resources_from_iter(self.as_resources)
         }
 
         let cert = unwrap!(cert.into_cert(&signer, &issuer_key)).to_captured();
