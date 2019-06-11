@@ -463,7 +463,7 @@ impl Crl {
         let (signer, issuer_key) = create_signer(&self.issuer_key)?;
         let issuer_pub = unwrap!(signer.get_key_info(&issuer_key));
 
-        let this_update = self.this_update.unwrap_or_else(|| Time::now());
+        let this_update = self.this_update.unwrap_or_else(Time::now);
         let next_update = if let Some(next_update) = self.next_update {
             next_update
         }
@@ -705,7 +705,7 @@ impl Mft {
             eprintln!("Either --not-after or --days must be given.");
             return Err(())
         };
-        let this_update = self.this_update.unwrap_or_else(|| Time::now());
+        let this_update = self.this_update.unwrap_or_else(Time::now);
         let next_update = if let Some(next_update) = self.next_update {
             next_update
         }
