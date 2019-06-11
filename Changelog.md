@@ -10,7 +10,7 @@ Breaking
   return values instead of references now. [(#51)]
 * Explicitly set issuer name in `SignedObjectBuilder`. Drop `cert`
   argument from `SignedObjectBuilder::finalize`, `RoaBuilder::finalize`,
-  and `Manifest::finalize`.
+  and `Manifest::finalize`. [(#54)]
 
 New
 
@@ -20,15 +20,20 @@ New
   `cert` method. [(#50)].
 * Implement serialization for `crypto::keys::KeyIdentifier`,
   `x509::Serial`, `x509::Time`, and `x509::Validity`. [(#51)]
+* Add `mkrpki`, a command line tool for creating RPKI objects. [(#54)]
 
 Bug Fixes
 
 Dependencies
 
+* Update *ring* to 0.14. [(#53)]
+
 
 [(#49)]: https://github.com/NLnetLabs/rpki-rs/pull/49
 [(#50)]: https://github.com/NLnetLabs/rpki-rs/pull/50
 [(#51)]: https://github.com/NLnetLabs/rpki-rs/pull/51
+[(#53)]: https://github.com/NLnetLabs/rpki-rs/pull/53
+[(#54)]: https://github.com/NLnetLabs/rpki-rs/pull/54
 
 
 # 0.4.0
