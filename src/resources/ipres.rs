@@ -1221,11 +1221,28 @@ impl encode::PrimitiveContent for Prefix {
     ) -> Result<(), io::Error> {
         // The type ensures that all the unused bits are zero, so we don’t
         // need to take care of that here.
+        /*
         let len = if self.len % 8 == 0 { self.len / 8 }
                   else { self.len / 8 + 1 };
-        target.write_all(&[(self.len % 8) as u8])?;
+        if self.len % 8 == 0 {
+            target.write_all(&[0])?;
+        }
+        else {
+            target.write_all(&[(8 - self.len % 8) as u8])?;
+        }
         let addr = self.addr.to_bytes();
         target.write_all(&addr[..len as usize])
+        */
+
+        let addr = self.addr.to_bytes();
+        if self.len % 8 == 0 {
+            target.write_all(&[0])?;
+            target.write_all(&addr[..(self.len / 8) as usize])
+        }
+        else {
+            target.write_all(&[(8 - self.len % 8) as u8])?;
+            target.write_all(&addr[..(self.len / 8 + 1) as usize])
+        }
     }
 }
 
@@ -1464,6 +1481,7 @@ pub enum FromStrError {
 
 #[cfg(test)]
 mod test {
+    use bcder::encode::Values;
     use super::*;
 
     #[test]
@@ -1614,6 +1632,30 @@ mod test {
         assert!(IpBlock::from_str("127.0.0.0/-282").is_err());
         assert!(IpBlock::from_str("f700::/282").is_err());
         assert!(IpBlock::from_str("f700:/-282").is_err());
+    }
+
+    #[test]
+    fn prefix_encode() {
+        assert_eq!(
+            Prefix::new(Ipv4Addr::new(192, 168, 103, 0), 0)
+                .encode().to_captured(Mode::Der).as_slice(),
+            b"\x03\x01\x00".as_ref()
+        );
+        assert_eq!(
+            Prefix::new(Ipv4Addr::new(192, 168, 103, 0), 18)
+                .encode().to_captured(Mode::Der).as_slice(),
+            b"\x03\x04\x06\xC0\xA8\x40".as_ref()
+        );
+        assert_eq!(
+            Prefix::new(Ipv4Addr::new(192, 168, 103, 0), 16)
+                .encode().to_captured(Mode::Der).as_slice(),
+            b"\x03\x03\x00\xC0\xA8".as_ref()
+        );
+        assert_eq!(
+            Prefix::new(Ipv4Addr::new(192, 168, 103, 0), 32)
+                .encode().to_captured(Mode::Der).as_slice(),
+            b"\x03\x05\x00\xC0\xA8\x67\x00".as_ref()
+        );
     }
 
     #[test]
