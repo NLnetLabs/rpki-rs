@@ -717,6 +717,18 @@ impl ops::Add<Duration> for Time {
     }
 }
 
+
+//--- Sub
+
+impl ops::Sub<Duration> for Time {
+    type Output = Self;
+
+    fn sub(self, duration: Duration) -> Self::Output {
+        Self::new(self.0 - duration)
+    }
+}
+
+
 fn read_two_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Err> {
     let mut s = [0u8; 2];
     s[0] = source.take_u8()?;
