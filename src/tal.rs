@@ -73,7 +73,11 @@ impl Tal {
         while let Some(uri) = Self::take_uri(&mut data)? {
             uris.push(uri)
         }
-        let key_info = base64::decode_config(data, base64::MIME)?;
+        let data: Vec<_> = data.iter().filter_map(|b|
+            if b.is_ascii_whitespace() { None }
+            else { Some(*b) }
+        ).collect();
+        let key_info = base64::decode(&data)?;
         let key_info = PublicKey::decode(key_info.as_ref())?;
         Ok(Tal {
             uris,
@@ -224,3 +228,26 @@ impl From<decode::Error> for ReadError {
     }
 }
 
+
+//============ Testing =======================================================
+
+#[cfg(test)]
+mod test {
+    use bytes::Bytes;
+    use unwrap::unwrap;
+    use crate::cert::Cert;
+    use super::*;
+
+    #[test]
+    fn tal_read() {
+        let tal = include_bytes!("../test-data/ripe.tal");
+        let tal = unwrap!(Tal::read("ripe.tal", &mut tal.as_ref()));
+        let cert = unwrap!(Cert::decode(Bytes::from_static(
+            include_bytes!("../test-data/ta.cer")
+        )));
+        assert_eq!(
+            tal.key_info(),
+            cert.subject_public_key_info(),
+        );
+    }
+}
