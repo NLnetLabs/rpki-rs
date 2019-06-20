@@ -31,6 +31,7 @@ Bug Fixes
 Dependencies
 
 * Update *ring* to 0.14. [(#53)]
+* Update *base64* to 0.10. [(#57)]
 
 
 [(#49)]: https://github.com/NLnetLabs/rpki-rs/pull/49
@@ -38,8 +39,9 @@ Dependencies
 [(#51)]: https://github.com/NLnetLabs/rpki-rs/pull/51
 [(#53)]: https://github.com/NLnetLabs/rpki-rs/pull/53
 [(#54)]: https://github.com/NLnetLabs/rpki-rs/pull/54
-[(#56)]: https://github.com/NLnetLabs/rpki-rs/pull/56
 [(#55)]: https://github.com/NLnetLabs/rpki-rs/pull/55
+[(#56)]: https://github.com/NLnetLabs/rpki-rs/pull/56
+[(#57)]: https://github.com/NLnetLabs/rpki-rs/pull/57
 
 
 # 0.4.0
