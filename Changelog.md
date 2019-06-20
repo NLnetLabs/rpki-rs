@@ -25,6 +25,9 @@ New
 
 Bug Fixes
 
+* IP address prefixes (`resources::Prefix`) were encoded wrongly if their
+  length was not divisible by 8. ([#55)]
+
 Dependencies
 
 * Update *ring* to 0.14. [(#53)]
@@ -36,6 +39,7 @@ Dependencies
 [(#53)]: https://github.com/NLnetLabs/rpki-rs/pull/53
 [(#54)]: https://github.com/NLnetLabs/rpki-rs/pull/54
 [(#56)]: https://github.com/NLnetLabs/rpki-rs/pull/56
+[(#55)]: https://github.com/NLnetLabs/rpki-rs/pull/55
 
 
 # 0.4.0
