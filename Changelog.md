@@ -20,9 +20,13 @@ New
   `cert` method. [(#50)].
 * Implement serialization for `crypto::keys::KeyIdentifier`,
   `x509::Serial`, `x509::Time`, and `x509::Validity`. [(#51)]
+* Add `impl Sub<Duration> for Time`. [(#56)]
 * Add `mkrpki`, a command line tool for creating RPKI objects. [(#54)]
 
 Bug Fixes
+
+* IP address prefixes (`resources::Prefix`) were encoded wrongly if their
+  length was not divisible by 8. ([#55)]
 
 Dependencies
 
@@ -35,6 +39,8 @@ Dependencies
 [(#51)]: https://github.com/NLnetLabs/rpki-rs/pull/51
 [(#53)]: https://github.com/NLnetLabs/rpki-rs/pull/53
 [(#54)]: https://github.com/NLnetLabs/rpki-rs/pull/54
+[(#55)]: https://github.com/NLnetLabs/rpki-rs/pull/55
+[(#56)]: https://github.com/NLnetLabs/rpki-rs/pull/56
 [(#57)]: https://github.com/NLnetLabs/rpki-rs/pull/57
 
 
