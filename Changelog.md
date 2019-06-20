@@ -20,6 +20,7 @@ New
   `cert` method. [(#50)].
 * Implement serialization for `crypto::keys::KeyIdentifier`,
   `x509::Serial`, `x509::Time`, and `x509::Validity`. [(#51)]
+* Add `impl Sub<Duration> for Time`. [(#56)]
 * Add `mkrpki`, a command line tool for creating RPKI objects. [(#54)]
 
 Bug Fixes
@@ -34,6 +35,7 @@ Dependencies
 [(#51)]: https://github.com/NLnetLabs/rpki-rs/pull/51
 [(#53)]: https://github.com/NLnetLabs/rpki-rs/pull/53
 [(#54)]: https://github.com/NLnetLabs/rpki-rs/pull/54
+[(#56)]: https://github.com/NLnetLabs/rpki-rs/pull/56
 
 
 # 0.4.0
