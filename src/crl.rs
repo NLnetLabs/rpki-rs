@@ -1,6 +1,6 @@
 //! Certificate Revocation Lists for RPKI.
 //!
-//! Much like for certificates, RPKI reuses X.509 for its certifcate
+//! Much like for certificates, RPKI reuses X.509 for its certificate
 //! revocation lists (CRLs), limiting the values that are allowed in the
 //! various fields.
 //!
