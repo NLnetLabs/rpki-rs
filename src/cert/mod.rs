@@ -1117,7 +1117,7 @@ impl TbsCert {
     /// extension is present.
     ///
     /// The pathLenConstraint field must not be present.
-    fn take_basic_constraints<S: decode::Source>(
+    pub(crate) fn take_basic_constraints<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         basic_ca: &mut Option<bool>,
     ) -> Result<(), S::Err> {
@@ -1185,7 +1185,7 @@ impl TbsCert {
     /// Must be present. In CA certificates, keyCertSign and
     /// CRLSign must be set, in EE certificates, digitalSignatures must be
     /// set.
-    fn take_key_usage<S: decode::Source>(
+    pub(crate) fn take_key_usage<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         key_usage: &mut Option<KeyUsage>
     ) -> Result<(), S::Err> {
@@ -1211,7 +1211,7 @@ impl TbsCert {
     /// ```
     ///
     /// May only be present in EE certificates issued to devices.
-    fn take_extended_key_usage<S: decode::Source>(
+    pub(crate) fn take_extended_key_usage<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         extended_key_usage: &mut Option<Captured>
     ) -> Result<(), S::Err> {
@@ -1324,7 +1324,7 @@ impl TbsCert {
     ///
     /// Since we don’t necessarily know what kind of certificate we have yet,
     /// we may accept the wrong kind here. This needs to be checked later.
-    fn take_subject_info_access<S: decode::Source>(
+    pub(crate) fn take_subject_info_access<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         sia: &mut Option<Sia>,
     ) -> Result<(), S::Err> {
@@ -1640,12 +1640,24 @@ where F: FnMut(Bytes) -> Result<T, E> {
 }
 
 /// Internal helper type for parsing Subject Information Access.
-#[derive(Default)]
-struct Sia {
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Sia {
     ca_repository: Option<uri::Rsync>,
     rpki_manifest: Option<uri::Rsync>,
     signed_object: Option<uri::Rsync>,
     rpki_notify: Option<uri::Https>,
+}
+
+impl Sia {
+    pub(crate) fn ca_repository(&self) -> Option<&uri::Rsync> {
+        self.ca_repository.as_ref()
+    }
+    pub(crate) fn rpki_manifest(&self) -> Option<&uri::Rsync> {
+        self.rpki_manifest.as_ref()
+    }
+    pub(crate) fn rpki_notify(&self) -> Option<&uri::Https> {
+        self.rpki_notify.as_ref()
+    }
 }
 
 
