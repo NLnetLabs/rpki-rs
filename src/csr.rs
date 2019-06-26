@@ -26,6 +26,7 @@ use crate::cert::{KeyUsage, Sia, TbsCert};
 use crate::crypto::PublicKey;
 use crate::x509::{Name, SignedData, ValidationError};
 
+
 //------------ Csr -----------------------------------------------------------
 
 /// An RPKI Certificate Sign Request.
@@ -70,7 +71,6 @@ impl Csr {
         self.content.attributes.basic_ca
     }
 
-
     /// Returns the desired KeyUsage
     pub fn key_usage(&self) -> KeyUsage {
         self.content.attributes.key_usage
@@ -95,7 +95,6 @@ impl Csr {
     pub fn rpki_notify(&self) -> Option<&uri::Https> {
         self.content.attributes.sia.rpki_notify()
     }
-
 }
 
 /// # Decode and Validate
@@ -130,9 +129,10 @@ impl Csr {
 }
 
 
+//------------ CsrContent ----------------------------------------------------
+
 #[derive(Clone, Debug)]
-pub struct CsrContent {
-    // version, MUST be 0
+struct CsrContent {
     subject: Name,
     public_key: PublicKey,
     attributes: CsrAttributes
@@ -140,7 +140,7 @@ pub struct CsrContent {
 
 impl CsrContent {
     /// Takes a value from the beginning of an encoded constructed value.
-    pub fn take_from<S: decode::Source>(
+    fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
@@ -153,8 +153,11 @@ impl CsrContent {
     }
 }
 
+
+//------------ CsrAttributes -------------------------------------------------
+
 #[derive(Clone, Debug)]
-pub struct CsrAttributes {
+struct CsrAttributes {
     basic_ca: bool,
     key_usage: KeyUsage,
     extended_key_usage: Option<Captured>,
@@ -162,7 +165,7 @@ pub struct CsrAttributes {
 }
 
 impl CsrAttributes {
-    pub fn take_from<S: decode::Source>(
+    fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_constructed_if(Tag::CTX_0, |cons| {
