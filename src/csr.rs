@@ -19,11 +19,14 @@
 //! - a signature (to prove possession of the public key)
 //!
 
-use bcder::{decode, xerr};
-use bcder::{Captured, Mode, OctetString, Oid, Tag};
+use bcder::{decode, encode, xerr};
+use bcder::{BitString, Captured, Mode, OctetString, Oid, Tag};
+use bcder::encode::{PrimitiveContent, Constructed};
 use crate::{oid, uri};
 use crate::cert::{KeyUsage, Sia, TbsCert};
-use crate::crypto::PublicKey;
+use crate::cert::builder;
+use crate::crypto::{SignatureAlgorithm, PublicKey};
+use crate::crypto::signer::{Signer, SigningError};
 use crate::x509::{Name, SignedData, ValidationError};
 
 
@@ -128,6 +131,80 @@ impl Csr {
     }
 }
 
+/// # Construct
+///
+impl Csr {
+    /// Builds a new Csr for RPKI CA certificates.
+    ///
+    /// Other use cases are not required in RPKI, and for simplicity they are
+    /// not supported here. That means that BasicConstraints, KeyUsage, and
+    /// algorithm do not need to be specified. Only the values for the
+    /// required SIA entries for 'id-ad-caRepository' and
+    /// 'id-ad-rpkiManifest' (see RFC6487), and the optional entry for
+    /// 'id-ad-rpkiNotify' (see RFC8182), need to be specified.
+    pub fn construct<S: Signer>(
+        signer: &S,
+        key: &S::KeyId,
+        ca_repository: &uri::Rsync,
+        rpki_manifest: &uri::Rsync,
+        rpki_notify: Option<&uri::Https>
+    ) -> Result<Captured, SigningError<S::Error>> {
+        let pub_key = signer.get_key_info(key)?;
+
+        let content = Captured::from_values(Mode::Der, encode::sequence((
+            0_u32.encode(),
+            Name::from_pub_key(&pub_key).encode_ref(),
+            pub_key.encode_ref(),
+
+            Constructed::new(Tag::CTX_0, encode::sequence((
+                oid::EXTENSION_REQUEST.encode_ref(),
+                encode::set(encode::sequence((
+                    builder::extension(
+                        &oid::CE_BASIC_CONSTRAINTS, true,
+                        encode::sequence(true.encode())
+                    ),
+                    builder::extension(
+                        &oid::CE_KEY_USAGE, true,
+                        KeyUsage::Ca.encode()
+                    ),
+                    builder::extension(
+                        &oid::PE_SUBJECT_INFO_ACCESS, false,
+                        encode::sequence((
+                            encode::sequence((
+                                oid::AD_CA_REPOSITORY.encode(),
+                                ca_repository.encode_general_name()
+                            )),
+                            encode::sequence((
+                                oid::AD_RPKI_MANIFEST.encode(),
+                                rpki_manifest.encode_general_name()
+                            )),
+                            rpki_notify.map(|uri| {
+                                encode::sequence((
+                                    oid::AD_RPKI_NOTIFY.encode(),
+                                    uri.encode_general_name()
+                                ))
+                            })
+                        ))
+                    )
+                )))
+            )))
+        )));
+
+        let (alg, signature) = signer.sign(
+            key,
+            SignatureAlgorithm::default(),
+            &content
+        )?.unwrap();
+
+        Ok(Captured::from_values(Mode::Der,
+            encode::sequence((
+            content,
+            alg.x509_encode(),
+            BitString::new(0, signature).encode()
+        ))))
+    }
+}
+
 
 //------------ CsrContent ----------------------------------------------------
 
@@ -222,11 +299,9 @@ impl CsrAttributes {
             let key_usage = key_usage.ok_or_else(|| decode::Malformed)?;
             let sia = sia.ok_or_else(|| decode::Malformed)?;
 
-            Ok(
-                CsrAttributes {
+            Ok(CsrAttributes {
                     basic_ca, key_usage, extended_key_usage, sia
-                }
-            )
+            })
         })
     }
 }
@@ -235,9 +310,17 @@ impl CsrAttributes {
 
 #[cfg(test)]
 mod test {
-
     use std::str::FromStr;
     use super::*;
+
+    fn rsync(s: &str) -> uri::Rsync {
+        uri::Rsync::from_str(s).unwrap()
+    }
+
+    #[allow(dead_code)]
+    fn https(s: &str) -> uri::Https {
+        uri::Https::from_str(s).unwrap()
+    }
 
     #[test]
     fn parse_drl_csr() {
@@ -249,18 +332,47 @@ mod test {
 
         assert!(csr.basic_ca());
 
-        let ca_repo = uri::Rsync::from_str(
-            "rsync://localhost:4404/rpki/Alice/Bob/Carol/3/"
-        ).unwrap();
+        let ca_repo = rsync("rsync://localhost:4404/rpki/Alice/Bob/Carol/3/");
         assert_eq!(Some(&ca_repo), csr.ca_repository());
 
-
-        let rpki_mft = uri::Rsync::from_str(
-            "rsync://localhost:4404/rpki/Alice/Bob/Carol/3/IozwkwjtGls63XR8W2lo1wc7UoU.mnf"
-        ).unwrap();
+        let rpki_mft = rsync("rsync://localhost:4404/rpki/Alice/Bob/Carol/3/IozwkwjtGls63XR8W2lo1wc7UoU.mnf");
         assert_eq!(Some(&rpki_mft), csr.rpki_manifest());
 
         assert_eq!(None, csr.rpki_notify());
     }
 
+    #[test]
+    #[cfg(all(test, feature="softkeys"))]
+    fn build_csr() {
+
+        use crate::crypto::softsigner::OpenSslSigner;
+        use crate::crypto::PublicKeyFormat;
+
+        let mut signer = OpenSslSigner::new();
+        let key = signer.create_key(PublicKeyFormat::default()).unwrap();
+
+
+        let ca_repo = rsync("rsync://localhost/repo/");
+        let rpki_mft = rsync("rsync://localhost/repo/ca.mft");
+        let rpki_not = https("https://localhost/repo/notify.xml");
+
+        let enc = Csr::construct(
+            &signer,
+            &key,
+            &ca_repo,
+            &rpki_mft,
+            Some(&rpki_not)
+        ).unwrap();
+
+        let csr = Csr::decode(enc.as_slice()).unwrap();
+        csr.validate().unwrap();
+
+        let pub_key = signer.get_key_info(&key).unwrap();
+
+        assert!(csr.basic_ca());
+        assert_eq!(&pub_key, csr.public_key());
+        assert_eq!(Some(&ca_repo), csr.ca_repository());
+        assert_eq!(Some(&rpki_mft), csr.rpki_manifest());
+        assert_eq!(Some(&rpki_not), csr.rpki_notify());
+    }
 }
