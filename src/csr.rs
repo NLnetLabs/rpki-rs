@@ -22,6 +22,8 @@
 use bcder::{decode, encode, xerr};
 use bcder::{BitString, Captured, Mode, OctetString, Oid, Tag};
 use bcder::encode::{PrimitiveContent, Constructed};
+use bytes::Bytes;
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use crate::{oid, uri};
 use crate::cert::{KeyUsage, Sia, TbsCert};
 use crate::cert::builder;
@@ -131,6 +133,20 @@ impl Csr {
     }
 }
 
+/// # Encoding
+///
+impl Csr {
+    /// Returns a value encoder for a reference to the csr.
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        self.signed_data.encode_ref()
+    }
+
+    /// Returns a captured encoding of the csr.
+    pub fn to_captured(&self) -> Captured {
+        Captured::from_values(Mode::Der, self.encode_ref())
+    }
+}
+
 /// # Construct
 ///
 impl Csr {
@@ -202,6 +218,28 @@ impl Csr {
             alg.x509_encode(),
             BitString::new(0, signature).encode()
         ))))
+    }
+}
+
+
+//--- Deserialize and Serialize
+
+impl Serialize for Csr {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        let bytes = self.to_captured().into_bytes();
+        let b64 = base64::encode(&bytes);
+        b64.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Csr {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+        use serde::de;
+
+        let string = String::deserialize(deserializer)?;
+        let decoded = base64::decode(&string).map_err(de::Error::custom)?;
+        let bytes = Bytes::from(decoded);
+        Csr::decode(bytes).map_err(de::Error::custom)
     }
 }
 
@@ -374,5 +412,19 @@ mod test {
         assert_eq!(Some(&ca_repo), csr.ca_repository());
         assert_eq!(Some(&rpki_mft), csr.rpki_manifest());
         assert_eq!(Some(&rpki_not), csr.rpki_notify());
+    }
+
+    #[test]
+    fn serde_csr() {
+        let bytes = include_bytes!("../test-data/drl-csr.der");
+        let csr = Csr::decode(bytes.as_ref()).unwrap();
+
+        let csr_ser = serde_json::to_string(&csr).unwrap();
+        let csr_des: Csr = serde_json::from_str(&csr_ser).unwrap();
+
+        assert_eq!(
+            csr.to_captured().as_slice(),
+            csr_des.to_captured().as_slice()
+        );
     }
 }

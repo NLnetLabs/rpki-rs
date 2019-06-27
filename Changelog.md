@@ -22,7 +22,7 @@ New
   `x509::Serial`, `x509::Time`, and `x509::Validity`. [(#51)]
 * Add `impl Sub<Duration> for Time`. [(#56)]
 * Add `mkrpki`, a command line tool for creating RPKI objects. [(#54)]
-* Parse, validate, construct `Csr`. [(#58)]
+* Parse, validate, construct, (de-)serialize `Csr`. [(#58)]
 
 Bug Fixes
 
