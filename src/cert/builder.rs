@@ -435,7 +435,7 @@ impl CertBuilder {
 }
 
 
-fn extension<V: encode::Values>(
+pub(crate) fn extension<V: encode::Values>(
     oid: &'static ConstOid,
     critical: bool,
     content: V
