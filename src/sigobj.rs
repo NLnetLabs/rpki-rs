@@ -275,7 +275,7 @@ impl SignedObject {
 /// In order to make sticking tag and length in front of the value easier, we
 /// allow a maximum length of the s content of 65536 octets.
 #[derive(Clone, Debug)]
-struct SignedAttrs(Captured);
+pub struct SignedAttrs(Captured);
 
 impl SignedAttrs {
     fn new(
@@ -329,7 +329,7 @@ impl SignedAttrs {
     /// Returns the raw signed attrs, the message digest, the content type
     /// object identifier, and the two optional signing times.
     #[allow(clippy::type_complexity)]
-    fn take_from<S: decode::Source>(
+    pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<
         (Self, MessageDigest, Oid<Bytes>, Option<Time>, Option<u64>),
@@ -458,7 +458,7 @@ impl AsRef<[u8]> for SignedAttrs {
 
 /// A private helper type that contains the message digest attribute.
 #[derive(Clone, Debug)]
-struct MessageDigest(Bytes);
+pub struct MessageDigest(Bytes);
 
 impl MessageDigest {
     fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
