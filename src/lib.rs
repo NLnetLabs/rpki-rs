@@ -23,6 +23,7 @@
 pub mod cert;
 pub mod crl;
 pub mod crypto;
+pub mod csr;
 pub mod manifest;
 pub mod oid;
 pub mod resources;
