@@ -796,16 +796,16 @@ impl FromStr for AsId {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
 
-        if s.len() < 3 || ! s[..2].eq_ignore_ascii_case("as") {
-            Err(FromStrError::BadAsn)
+        let s = if s.len() > 2 && s[..2].eq_ignore_ascii_case("as") {
+            &s[2..]
         } else {
-            let id = u32::from_str(&s[2..])
-                .map_err(|_| FromStrError::BadAsn)?;
-            Ok(AsId(id))
-        }
+            s
+        };
+
+        let id = u32::from_str(s).map_err(|_| FromStrError::BadAsn)?;
+        Ok(AsId(id))
     }
 }
-
 
 //--- Add
 
@@ -850,6 +850,12 @@ mod test {
     #[test]
     fn as_id_from_str() {
         let as1 = AsId::from_str("AS1").unwrap();
+        assert_eq!(as1, AsId(1))
+    }
+
+    #[test]
+    fn as_id_from_str_without_as_prefix() {
+        let as1 = AsId::from_str("1").unwrap();
         assert_eq!(as1, AsId(1))
     }
 

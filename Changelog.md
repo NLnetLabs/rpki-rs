@@ -23,6 +23,7 @@ New
 * Add `impl Sub<Duration> for Time`. [(#56)]
 * Add `mkrpki`, a command line tool for creating RPKI objects. [(#54)]
 * Parse, validate, construct, (de-)serialize `Csr`. [(#58)]
+* Parse decimal string format used by RFC6492 for `AsId`. [(#60)]
 
 Bug Fixes
 
