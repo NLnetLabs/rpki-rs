@@ -1,6 +1,6 @@
 # Change Log
 
-# Unreleased next version
+# 0.5.0
 
 Breaking
 
