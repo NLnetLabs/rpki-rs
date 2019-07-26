@@ -1,7 +1,8 @@
 //! Parsing the XML representations.
 
-use std::io;
+use std::{fmt, io, ops, str};
 use bytes::Bytes;
+use ring::digest;
 use uuid::Uuid;
 use crate::uri;
 use crate::xml::decode::{Reader, Name, Error};
@@ -63,7 +64,7 @@ impl NotificationFile {
                             Ok(())
                         }
                         b"hash" => {
-                            hash = Some(value.into_ascii_bytes()?);
+                            hash = Some(value.ascii_into()?);
                             Ok(())
                         }
                         _ => Err(Error::Malformed)
@@ -90,7 +91,7 @@ impl NotificationFile {
                             Ok(())
                         }
                         b"hash" => {
-                            hash = Some(value.into_ascii_bytes()?);
+                            hash = Some(value.ascii_into()?);
                             Ok(())
                         }
                         _ => Err(Error::Malformed)
@@ -338,11 +339,11 @@ pub trait ProcessDelta {
 #[derive(Clone, Debug)]
 pub struct UriAndHash {
     uri: uri::Https,
-    hash: Bytes,
+    hash: DigestHex,
 }
 
 impl UriAndHash {
-    pub fn new(uri: uri::Https, hash: Bytes) -> Self {
+    pub fn new(uri: uri::Https, hash: DigestHex) -> Self {
         UriAndHash { uri, hash }
     }
 
@@ -350,8 +351,67 @@ impl UriAndHash {
         &self.uri
     }
 
-    pub fn hash(&self) -> &Bytes {
+    pub fn hash(&self) -> &DigestHex {
         &self.hash
+    }
+}
+
+
+//------------ DigestHex -----------------------------------------------------
+
+/// A helper type to encode a digest as a sequence of hex-digits.
+#[derive(Clone, Debug)]
+pub struct DigestHex(Vec<u8>);
+
+impl From<Vec<u8>> for DigestHex {
+    fn from(value: Vec<u8>) -> DigestHex {
+        DigestHex(value)
+    }
+}
+
+impl From<digest::Digest> for DigestHex {
+    fn from(value: digest::Digest) -> DigestHex {
+        DigestHex(Vec::from(value.as_ref()))
+    }
+}
+
+impl str::FromStr for DigestHex {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut res = Vec::new();
+        let mut s = s.chars();
+        while let Some(first) = s.next() {
+            let first = first.to_digit(16).ok_or("invalid digest")?;
+            let second = s.next().ok_or("invalid digest")?
+                .to_digit(16).ok_or("invalid digest")?;
+
+            res.push((first << 8 | second) as u8);
+        }
+        Ok(DigestHex(res))
+    }
+}
+
+impl ops::Deref for DigestHex {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl AsRef<[u8]> for DigestHex {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl fmt::Display for DigestHex {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for &ch in self.0.as_slice() {
+            write!(f, "{:02x}", ch)?;
+        }
+        Ok(())
     }
 }
 
