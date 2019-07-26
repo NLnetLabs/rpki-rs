@@ -386,7 +386,7 @@ impl str::FromStr for DigestHex {
             let second = s.next().ok_or("invalid digest")?
                 .to_digit(16).ok_or("invalid digest")?;
 
-            res.push((first << 8 | second) as u8);
+            res.push((first << 4 | second) as u8);
         }
         Ok(DigestHex(res))
     }
