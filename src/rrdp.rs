@@ -150,11 +150,13 @@ pub trait ProcessSnapshot {
         let mut serial = None;
         let mut outer = reader.start(|element| {
             if element.name() != SNAPSHOT {
+                info!("Bad outer: not snapshot");
                 return Err(Error::Malformed)
             }
             element.attributes(|name, value| match name {
                 b"version" => {
                     if value.ascii_into::<u8>()? != 1 {
+                        info!("Bad version");
                         return Err(Error::Malformed)
                     }
                     Ok(())
@@ -167,7 +169,10 @@ pub trait ProcessSnapshot {
                     serial = Some(value.ascii_into()?);
                     Ok(())
                 }
-                _ => Err(Error::Malformed)
+                _ => {
+                    info!("Bad attribute on snapshot.");
+                    Err(Error::Malformed)
+                }
             })
         })?;
 
@@ -175,13 +180,17 @@ pub trait ProcessSnapshot {
             (Some(session_id), Some(serial)) => {
                 self.meta(session_id, serial)?;
             }
-            _ => return Err(Error::Malformed.into()),
+            _ => {
+                info!("Missing session or serial");
+                return Err(Error::Malformed.into())
+            }
         }
 
         loop {
             let mut uri = None;
             let inner = outer.take_opt_element(&mut reader, |element| {
                 if element.name() != PUBLISH {
+                info!("Bad inner: not publish");
                     return Err(Error::Malformed)
                 }
                 element.attributes(|name, value| match name {
@@ -190,10 +199,7 @@ pub trait ProcessSnapshot {
                         Ok(())
                     }
                     _ => {
-                        info!(
-                            "illegal attr {}",
-                            String::from_utf8_lossy(name)
-                        );
+                        info!("Bad attribute on publish.");
                         Err(Error::Malformed)
                     }
                 })
