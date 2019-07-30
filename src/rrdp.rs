@@ -150,7 +150,7 @@ pub trait ProcessSnapshot {
         let mut serial = None;
         let mut outer = reader.start(|element| {
             if element.name() != SNAPSHOT {
-                info!("Bad outer: not snapshot");
+                info!("Bad outer: not snapshot, but {:?}", element.name());
                 return Err(Error::Malformed)
             }
             element.attributes(|name, value| match name {
