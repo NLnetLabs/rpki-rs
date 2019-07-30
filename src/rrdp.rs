@@ -1,7 +1,6 @@
 //! Parsing the XML representations.
 
 use std::{fmt, io, ops, str};
-use bytes::Bytes;
 use ring::digest;
 use uuid::Uuid;
 use crate::uri;
@@ -229,14 +228,14 @@ pub trait ProcessDelta {
     fn publish(
         &mut self,
         uri: uri::Rsync,
-        hash: Option<Bytes>,
+        hash: Option<DigestHex>,
         data: Vec<u8>,
     ) -> Result<(), Self::Err>;
 
     fn withdraw(
         &mut self,
         uri: uri::Rsync,
-        hash: Bytes,
+        hash: DigestHex,
     ) -> Result<(), Self::Err>;
 
 
@@ -294,7 +293,7 @@ pub trait ProcessDelta {
                         Ok(())
                     }
                     b"hash" => {
-                        hash = Some(value.into_ascii_bytes()?);
+                        hash = Some(value.ascii_into()?);
                         Ok(())
                     }
                     _ => Err(Error::Malformed)
