@@ -213,8 +213,10 @@ pub trait ProcessSnapshot {
                 None => return Err(Error::Malformed.into())
             };
             let data = inner.take_text(&mut reader, |text| {
-                base64::decode(text.to_ascii()?.as_ref())
-                    .map_err(|_| Error::Malformed)
+                base64::decode(text.to_ascii()?.as_ref()).map_err(|_| {
+                    info!("Bad base64.");
+                    Error::Malformed
+                })
             })?;
             self.publish(uri, data)?;
             inner.take_end(&mut reader)?;
