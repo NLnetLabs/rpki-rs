@@ -1,6 +1,7 @@
 //! Parsing the XML representations.
 
 use std::{fmt, io, ops, str};
+use log::info;
 use ring::digest;
 use uuid::Uuid;
 use crate::uri;
@@ -188,7 +189,13 @@ pub trait ProcessSnapshot {
                         uri = Some(value.ascii_into()?);
                         Ok(())
                     }
-                    _ => Err(Error::Malformed)
+                    _ => {
+                        info!(
+                            "illegal attr {}",
+                            String::from_utf8_lossy(name)
+                        );
+                        Err(Error::Malformed)
+                    }
                 })
             })?;
             let mut inner = match inner {
