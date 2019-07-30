@@ -213,8 +213,12 @@ pub trait ProcessSnapshot {
                 None => return Err(Error::Malformed.into())
             };
             let data = inner.take_text(&mut reader, |text| {
-                base64::decode(text.to_ascii()?.as_ref()).map_err(|_| {
-                    info!("Bad base64.");
+                let text: Vec<_> = text.to_ascii()?.as_bytes()
+                .iter().filter_map(|b| {
+                    if b.is_ascii_whitespace() { None }
+                    else { Some(*b) }
+                }).collect();
+                base64::decode(&text).map_err(|_| {
                     Error::Malformed
                 })
             })?;
