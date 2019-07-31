@@ -1,13 +1,17 @@
 //! Trust Anchor Locators
 
+use std::str;
+use std::convert::TryFrom;
 use std::fs::{read_dir, DirEntry, File, ReadDir};
 use std::io::{self, Read};
 use std::path::Path;
 use std::sync::Arc;
 use base64;
+use bytes::Bytes;
 use bcder::decode;
-use derive_more::Display;
+use derive_more::{Display, From};
 use log::{debug, error};
+use serde::{Deserialize, Serialize};
 use crate::crypto::PublicKey;
 use super::uri;
 
@@ -16,7 +20,7 @@ use super::uri;
 
 #[derive(Clone, Debug)]
 pub struct Tal {
-    uris: Vec<uri::Rsync>,
+    uris: Vec<TalUri>,
     key_info: PublicKey,
     info: Arc<TalInfo>,
 }
@@ -33,43 +37,11 @@ impl Tal {
         let mut data = Vec::new();
         reader.read_to_end(&mut data)?;
 
-        if let Some(&b'#') = data.first() {
-            // Workaround for ARIN: If the TAL starts with a hash, it is
-            // followed by a URI where to go to get it. We print out a
-            // text and terminate.
-            let data = String::from_utf8_lossy(&data[1..]);
-            let path = path.as_ref().display();
-            match data.lines().next().map(|s| s.trim()) {
-                Some(uri) => {
-                    eprintln!("MISSING TRUST ANCHOR LOCATOR\n\n\
-                        The trust anchor locator (TAL) in \
-                        file\n\n   {}\n\nhas not been installed. \
-                        Please go to\n\n   {}\n\nand download the TAL \
-                        in RFC 7730 format. Place the downloaded file \
-                        at\n\n   {}\n\n\
-                        Routinator will refuse to run until you have done \
-                        that.",
-                        path, uri, path
-                    );
-                }
-                None => {
-                    eprintln!("MISSING TRUST ANCHOR LOCATOR\
-                        The trust anchor locator (TAL) in file {} has not\
-                        been installed.\n\
-                        Unfortunately, the file is malformed and we cannot \
-                        tell you where to get it.\n
-                        The file will have to contain a valid TAL in RFC \
-                        7730 format.\n\n
-                        Routinator will refuse to run until it does. Sorry.",
-                        path
-                    );
-                }
-            }
-            ::std::process::exit(1);
-        }
-        
-        let mut data = data.as_ref();
+        let mut data = data.as_slice();
         let mut uris = Vec::new();
+        while let Some(&b'#') = data.first() {
+            Self::skip_line(&mut data)?;
+        }
         while let Some(uri) = Self::take_uri(&mut data)? {
             uris.push(uri)
         }
@@ -86,7 +58,14 @@ impl Tal {
         })
     }
 
-    fn take_uri(data: &mut &[u8]) -> Result<Option<uri::Rsync>, ReadError> {
+    fn skip_line(data: &mut &[u8]) -> Result<(), ReadError> {
+        let mut split = data.splitn(2, |&ch| ch == b'\n');
+        let _ = split.next().ok_or(ReadError::UnexpectedEof)?;
+        *data = split.next().ok_or(ReadError::UnexpectedEof)?;
+        Ok(())
+    }
+
+    fn take_uri(data: &mut &[u8]) -> Result<Option<TalUri>, ReadError> {
         let mut split = data.splitn(2, |&ch| ch == b'\n');
         let mut line = split.next().ok_or(ReadError::UnexpectedEof)?;
         *data = split.next().ok_or(ReadError::UnexpectedEof)?;
@@ -97,13 +76,13 @@ impl Tal {
             Ok(None)
         }
         else {
-            Ok(Some(uri::Rsync::from_slice(line)?))
+            Ok(Some(TalUri::from_slice(line)?))
         }
     }
 }
 
 impl Tal {
-    pub fn uris(&self) -> ::std::slice::Iter<uri::Rsync> {
+    pub fn uris(&self) -> ::std::slice::Iter<TalUri> {
         self.uris.iter()
     }
 
@@ -151,6 +130,67 @@ fn next_entry(entry: &DirEntry) -> Result<Option<Tal>, ReadError> {
     let path = entry.path();
     debug!("Processing TAL {}", path.display());
     Tal::read(&path, &mut File::open(&path)?).map(Some)
+}
+
+
+//------------ TalUri --------------------------------------------------------
+
+#[derive(
+    Clone, Debug, Deserialize, Display, Eq, From, Hash, PartialEq, Serialize
+)]
+pub enum TalUri {
+    Rsync(uri::Rsync),
+    Https(uri::Https),
+}
+
+impl TalUri {
+    pub fn from_string(s: String) -> Result<Self, uri::Error> {
+        Self::from_bytes(Bytes::from(s))
+    }
+
+    pub fn from_slice(slice: &[u8]) -> Result<Self, uri::Error> {
+        Self::from_bytes(slice.into())
+    }
+
+    pub fn from_bytes(bytes: Bytes) -> Result<Self, uri::Error> {
+        if let Ok(uri) = uri::Rsync::from_bytes(bytes.clone()) {
+            return Ok(TalUri::Rsync(uri))
+        }
+        uri::Https::from_bytes(bytes).map(Into::into)
+    }
+
+    pub fn is_rsync(&self) -> bool {
+        match *self {
+            TalUri::Rsync(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_https(&self) -> bool {
+        match *self {
+            TalUri::Https(_) => true,
+            _ => false
+        }
+    }
+}
+
+
+//--- TryFrom and FromStr
+
+impl TryFrom<String> for TalUri {
+    type Error = uri::Error;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        Self::from_string(s)
+    }
+}
+
+impl str::FromStr for TalUri {
+    type Err = uri::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_bytes(Bytes::from(s))
+    }
 }
 
 

@@ -6,6 +6,10 @@ Breaking
 
 * Hashes in the `rrdp` module are now of a new type `DigestHex` and are
   automatically converted from their hex representation. [(#62)]
+* Removed `uri::Http`. [(#XX)]
+* `tal::Tal::uris` now returns an iterator over `tal::TalUri`s, which can
+  be either an rsync or HTTPS URI. [(#XX)]
+* Removed the ARIN tal workaround. [(#XX)]
 
 New
 
