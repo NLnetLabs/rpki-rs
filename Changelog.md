@@ -6,10 +6,10 @@ Breaking
 
 * Hashes in the `rrdp` module are now of a new type `DigestHex` and are
   automatically converted from their hex representation. [(#62)]
-* Removed `uri::Http`. [(#XX)]
+* Removed `uri::Http`. [(#63)]
 * `tal::Tal::uris` now returns an iterator over `tal::TalUri`s, which can
-  be either an rsync or HTTPS URI. [(#XX)]
-* Removed the ARIN tal workaround. [(#XX)]
+  be either an rsync or HTTPS URI. [(#63)]
+* Removed the ARIN tal workaround. [(#63)]
 
 New
 
@@ -20,6 +20,7 @@ Bug Fixes
 Dependencies
 
 [(#62)]: https://github.com/NLnetLabs/rpki-rs/pull/62
+[(#63)]: https://github.com/NLnetLabs/rpki-rs/pull/63
 
 
 # 0.5.0
