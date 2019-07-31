@@ -4,11 +4,18 @@
 
 Breaking
 
+* Hashes in the `rrdp` module are now of a new type `DigestHex` and are
+  automatically converted from their hex representation. [(#62)]
+
 New
 
 Bug Fixes
 
+* Various improvements to the RRDP implementation. [(#62)]
+
 Dependencies
+
+[(#62)]: https://github.com/NLnetLabs/rpki-rs/pull/62
 
 
 # 0.5.0
