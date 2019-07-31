@@ -494,7 +494,7 @@ mod test {
         fn publish(
             &mut self,
             _uri: uri::Rsync,
-            _hash: Option<Bytes>,
+            _hash: Option<DigestHex>,
             _data: Vec<u8>,
         ) -> Result<(), Self::Err> {
             Ok(())
@@ -503,7 +503,7 @@ mod test {
         fn withdraw(
             &mut self,
             _uri: uri::Rsync,
-            _hash: Bytes,
+            _hash: DigestHex,
         ) -> Result<(), Self::Err> {
             Ok(())
         }
