@@ -1,6 +1,31 @@
 # Change Log
 
-# Unreleased next version
+# Unreleased future version
+
+Breaking
+
+* Hashes in the `rrdp` module are now of a new type `DigestHex` and are
+  automatically converted from their hex representation. [(#62)]
+* Removed `uri::Http`. [(#63)]
+* `tal::Tal::uris` now returns an iterator over `tal::TalUri`s, which can
+  be either an rsync or HTTPS URI. [(#63)]
+* Removed the ARIN tal workaround. [(#63)]
+
+New
+
+Bug Fixes
+
+* Various improvements to the RRDP implementation. [(#62)]
+* Fix a endless loop and an off-by-one error in Chain::trim. [(#64)]
+
+Dependencies
+
+[(#62)]: https://github.com/NLnetLabs/rpki-rs/pull/62
+[(#63)]: https://github.com/NLnetLabs/rpki-rs/pull/63
+[(#64)]: https://github.com/NLnetLabs/rpki-rs/pull/64
+
+
+# 0.5.0
 
 Breaking
 

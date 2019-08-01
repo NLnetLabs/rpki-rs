@@ -2,4 +2,3 @@
 **/*.rs.bk
 /Cargo.lock
 .cargo
-/misc/test-repo

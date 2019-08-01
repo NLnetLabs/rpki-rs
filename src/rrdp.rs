@@ -1,7 +1,8 @@
 //! Parsing the XML representations.
 
-use std::io;
-use bytes::Bytes;
+use std::{fmt, io, ops, str};
+use log::info;
+use ring::digest;
 use uuid::Uuid;
 use crate::uri;
 use crate::xml::decode::{Reader, Name, Error};
@@ -63,7 +64,7 @@ impl NotificationFile {
                             Ok(())
                         }
                         b"hash" => {
-                            hash = Some(value.into_ascii_bytes()?);
+                            hash = Some(value.ascii_into()?);
                             Ok(())
                         }
                         _ => Err(Error::Malformed)
@@ -90,7 +91,7 @@ impl NotificationFile {
                             Ok(())
                         }
                         b"hash" => {
-                            hash = Some(value.into_ascii_bytes()?);
+                            hash = Some(value.ascii_into()?);
                             Ok(())
                         }
                         _ => Err(Error::Malformed)
@@ -149,11 +150,13 @@ pub trait ProcessSnapshot {
         let mut serial = None;
         let mut outer = reader.start(|element| {
             if element.name() != SNAPSHOT {
+                info!("Bad outer: not snapshot, but {:?}", element.name());
                 return Err(Error::Malformed)
             }
             element.attributes(|name, value| match name {
                 b"version" => {
                     if value.ascii_into::<u8>()? != 1 {
+                        info!("Bad version");
                         return Err(Error::Malformed)
                     }
                     Ok(())
@@ -166,7 +169,10 @@ pub trait ProcessSnapshot {
                     serial = Some(value.ascii_into()?);
                     Ok(())
                 }
-                _ => Err(Error::Malformed)
+                _ => {
+                    info!("Bad attribute on snapshot.");
+                    Err(Error::Malformed)
+                }
             })
         })?;
 
@@ -174,13 +180,17 @@ pub trait ProcessSnapshot {
             (Some(session_id), Some(serial)) => {
                 self.meta(session_id, serial)?;
             }
-            _ => return Err(Error::Malformed.into()),
+            _ => {
+                info!("Missing session or serial");
+                return Err(Error::Malformed.into())
+            }
         }
 
         loop {
             let mut uri = None;
             let inner = outer.take_opt_element(&mut reader, |element| {
                 if element.name() != PUBLISH {
+                info!("Bad inner: not publish");
                     return Err(Error::Malformed)
                 }
                 element.attributes(|name, value| match name {
@@ -188,7 +198,10 @@ pub trait ProcessSnapshot {
                         uri = Some(value.ascii_into()?);
                         Ok(())
                     }
-                    _ => Err(Error::Malformed)
+                    _ => {
+                        info!("Bad attribute on publish.");
+                        Err(Error::Malformed)
+                    }
                 })
             })?;
             let mut inner = match inner {
@@ -200,8 +213,14 @@ pub trait ProcessSnapshot {
                 None => return Err(Error::Malformed.into())
             };
             let data = inner.take_text(&mut reader, |text| {
-                base64::decode(text.to_ascii()?.as_ref())
-                    .map_err(|_| Error::Malformed)
+                let text: Vec<_> = text.to_ascii()?.as_bytes()
+                .iter().filter_map(|b| {
+                    if b.is_ascii_whitespace() { None }
+                    else { Some(*b) }
+                }).collect();
+                base64::decode(&text).map_err(|_| {
+                    Error::Malformed
+                })
             })?;
             self.publish(uri, data)?;
             inner.take_end(&mut reader)?;
@@ -228,14 +247,14 @@ pub trait ProcessDelta {
     fn publish(
         &mut self,
         uri: uri::Rsync,
-        hash: Option<Bytes>,
+        hash: Option<DigestHex>,
         data: Vec<u8>,
     ) -> Result<(), Self::Err>;
 
     fn withdraw(
         &mut self,
         uri: uri::Rsync,
-        hash: Bytes,
+        hash: DigestHex,
     ) -> Result<(), Self::Err>;
 
 
@@ -293,7 +312,7 @@ pub trait ProcessDelta {
                         Ok(())
                     }
                     b"hash" => {
-                        hash = Some(value.into_ascii_bytes()?);
+                        hash = Some(value.ascii_into()?);
                         Ok(())
                     }
                     _ => Err(Error::Malformed)
@@ -338,11 +357,11 @@ pub trait ProcessDelta {
 #[derive(Clone, Debug)]
 pub struct UriAndHash {
     uri: uri::Https,
-    hash: Bytes,
+    hash: DigestHex,
 }
 
 impl UriAndHash {
-    pub fn new(uri: uri::Https, hash: Bytes) -> Self {
+    pub fn new(uri: uri::Https, hash: DigestHex) -> Self {
         UriAndHash { uri, hash }
     }
 
@@ -350,8 +369,67 @@ impl UriAndHash {
         &self.uri
     }
 
-    pub fn hash(&self) -> &Bytes {
+    pub fn hash(&self) -> &DigestHex {
         &self.hash
+    }
+}
+
+
+//------------ DigestHex -----------------------------------------------------
+
+/// A helper type to encode a digest as a sequence of hex-digits.
+#[derive(Clone, Debug)]
+pub struct DigestHex(Vec<u8>);
+
+impl From<Vec<u8>> for DigestHex {
+    fn from(value: Vec<u8>) -> DigestHex {
+        DigestHex(value)
+    }
+}
+
+impl From<digest::Digest> for DigestHex {
+    fn from(value: digest::Digest) -> DigestHex {
+        DigestHex(Vec::from(value.as_ref()))
+    }
+}
+
+impl str::FromStr for DigestHex {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut res = Vec::new();
+        let mut s = s.chars();
+        while let Some(first) = s.next() {
+            let first = first.to_digit(16).ok_or("invalid digest")?;
+            let second = s.next().ok_or("invalid digest")?
+                .to_digit(16).ok_or("invalid digest")?;
+
+            res.push((first << 4 | second) as u8);
+        }
+        Ok(DigestHex(res))
+    }
+}
+
+impl ops::Deref for DigestHex {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl AsRef<[u8]> for DigestHex {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl fmt::Display for DigestHex {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for &ch in self.0.as_slice() {
+            write!(f, "{:02x}", ch)?;
+        }
+        Ok(())
     }
 }
 
@@ -416,7 +494,7 @@ mod test {
         fn publish(
             &mut self,
             _uri: uri::Rsync,
-            _hash: Option<Bytes>,
+            _hash: Option<DigestHex>,
             _data: Vec<u8>,
         ) -> Result<(), Self::Err> {
             Ok(())
@@ -425,7 +503,7 @@ mod test {
         fn withdraw(
             &mut self,
             _uri: uri::Rsync,
-            _hash: Bytes,
+            _hash: DigestHex,
         ) -> Result<(), Self::Err> {
             Ok(())
         }
