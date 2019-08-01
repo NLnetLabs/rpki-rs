@@ -8,170 +8,21 @@
 //! non-empty.
 
 use std::{fmt, io, iter, mem, str};
-use std::fmt::{Display, Formatter};
+use std::fmt::Display;
 use std::iter::FromIterator;
 use std::net::{AddrParseError, IpAddr, Ipv4Addr, Ipv6Addr};
 use std::num::ParseIntError;
-use std::ops::Deref;
 use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, OctetString, Tag, xerr};
 use bcder::encode::PrimitiveContent;
 use derive_more::{Display, From};
-use serde::de;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::cert::Overclaim;
 use crate::roa::RoaIpAddress;
 use crate::x509::ValidationError;
 use super::chain::{Block, SharedChain};
 use super::choice::ResourcesChoice;
 
-//------------ Ipv4Resources -------------------------------------------------
-
-/// The IPv4 Address Resources of an RPKI Certificate.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Ipv4Resources(IpResources);
-
-impl Ipv4Resources {
-    /// Creates a new IpResources with a ResourcesChoice::Inherit
-    pub fn inherit() -> Self {
-        Ipv4Resources(IpResources(ResourcesChoice::Inherit))
-    }
-
-    /// Creates a new IpResources for the given blocks.
-    pub fn blocks(blocks: IpBlocks) -> Self {
-        Ipv4Resources(IpResources(ResourcesChoice::Blocks(blocks)))
-    }
-}
-
-//--- Deref
-
-impl Deref for Ipv4Resources {
-    type Target = IpResources;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-//--- Display
-
-impl fmt::Display for Ipv4Resources {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match &self.0.as_blocks() {
-            None => write!(f, "inherit"),
-            Some(blocks) => blocks.as_v4().fmt(f)
-        }
-    }
-}
-
-//--- FromStr
-
-impl FromStr for Ipv4Resources {
-    type Err = FromStrError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s == "inherit" {
-            Ok(Ipv4Resources(IpResources(ResourcesChoice::Inherit)))
-        } else if s.contains(':') {
-            Err(FromStrError::FamilyMismatch)
-        } else {
-            let blocks = IpBlocks::from_str(s)?;
-            Ok(Ipv4Resources(IpResources(ResourcesChoice::Blocks(blocks))))
-        }
-    }
-}
-
-//--- Serialize
-
-impl Serialize for Ipv4Resources {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
-        self.to_string().serialize(serializer)
-    }
-}
-
-//--- Deserialize
-
-impl<'de> Deserialize<'de> for Ipv4Resources {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
-        let string = String::deserialize(deserializer)?;
-        Ok(Self::from_str(&string).map_err(de::Error::custom)?)
-    }
-}
-
-
-//------------ Ipv6Resources -------------------------------------------------
-
-/// The IPv6 Address Resources of an RPKI Certificate.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Ipv6Resources(IpResources);
-
-impl Ipv6Resources {
-    /// Creates a new IpResources with a ResourcesChoice::Inherit
-    pub fn inherit() -> Self {
-        Ipv6Resources(IpResources(ResourcesChoice::Inherit))
-    }
-
-    /// Creates a new IpResources for the given blocks.
-    pub fn blocks(blocks: IpBlocks) -> Self {
-        Ipv6Resources(IpResources(ResourcesChoice::Blocks(blocks)))
-    }
-}
-
-//--- Deref
-
-impl Deref for Ipv6Resources {
-    type Target = IpResources;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-//--- Display
-
-impl fmt::Display for Ipv6Resources {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match &self.0.as_blocks() {
-            None => write!(f, "inherit"),
-            Some(blocks) => blocks.as_v6().fmt(f)
-        }
-    }
-}
-
-//--- FromStr
-
-impl FromStr for Ipv6Resources {
-    type Err = FromStrError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s == "inherit" {
-            Ok(Ipv6Resources(IpResources(ResourcesChoice::Inherit)))
-        } else if s.contains('.') {
-            Err(FromStrError::FamilyMismatch)
-        } else {
-            let blocks = IpBlocks::from_str(s)?;
-            Ok(Ipv6Resources(IpResources(ResourcesChoice::Blocks(blocks))))
-        }
-    }
-}
-
-//--- Serialize
-
-impl Serialize for Ipv6Resources {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
-        self.to_string().serialize(serializer)
-    }
-}
-
-//--- Deserialize
-
-impl<'de> Deserialize<'de> for Ipv6Resources {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
-        let string = String::deserialize(deserializer)?;
-        Ok(Self::from_str(&string).map_err(de::Error::custom)?)
-    }
-}
 
 //------------ IpResources ---------------------------------------------------
 
@@ -439,7 +290,7 @@ impl IpBlocks {
             Some(ResourcesChoice::Blocks(ref blocks)) => {
                 match mode {
                     Overclaim::Refuse => {
-                        if blocks.0.is_encompassed(&self.0) {
+                        if self.contains(blocks) {
                             Ok(blocks.clone())
                         }
                         else {
@@ -447,10 +298,7 @@ impl IpBlocks {
                         }
                     }
                     Overclaim::Trim => {
-                        match blocks.0.trim(&self.0) {
-                            Ok(()) => Ok(blocks.clone()),
-                            Err(new) => Ok(IpBlocks(new.into()))
-                        }
+                        Ok(blocks.intersection(&self))
                     }
                 }
             },
@@ -460,7 +308,7 @@ impl IpBlocks {
 
 
     /// Returns whether the address blocks cover the given ROA address prefix.
-    pub fn contains(&self, addr: &RoaIpAddress) -> bool {
+    pub fn contains_roa(&self, addr: &RoaIpAddress) -> bool {
         let (min, max) = addr.range();
         for range in self.iter() {
             if range.min() <= min && range.max() >= max {
@@ -468,6 +316,262 @@ impl IpBlocks {
             }
         }
         false
+    }
+}
+
+/// # Set methods
+///
+impl IpBlocks {
+    /// Returns whether this IpBlocks contains the other in its entirety.
+    pub fn contains(&self, other: &Self) -> bool {
+        other.0.is_encompassed(&self.0)
+    }
+
+    /// Returns a new IpBlocks with the intersection of this and the other IpBlocks.
+    ///
+    /// i.e. all resources found in both IpBlocks.
+    pub fn intersection(&self, other: &Self) -> Self {
+        // iterate through both, sorted!, IpBlocks and find all ranges that
+        // are present in both structures
+        let mut this_iter = self.iter();
+        let mut other_iter = other.iter();
+
+        let other_block = other_iter.next();
+        let this_block = this_iter.next();
+
+        // We don't need to do work if either is empty.
+        // But we need to check both separately so we can unwrap the element.
+        if other_block.is_none() {
+            return IpBlocks::empty()
+        }
+        if this_block.is_none() {
+            return IpBlocks::empty()
+        }
+
+        // TODO: If this has more elements than other, than do
+        //       the intersection starting with other for efficiency?
+
+        let mut intersects = vec![];
+
+        let this_block = this_block.unwrap();
+        let mut this_min = this_block.min();
+        let mut this_max = this_block.max();
+
+        let other_block = other_block.unwrap();
+        let mut other_min = other_block.min();
+        let mut other_max = other_block.max();
+        loop {
+            // Whenever we need a next, and there is none, we are done
+
+            // this:            |----
+            // other:     |---|
+            if this_min > other_max {
+                if let Some(other_block) = other_iter.next() {
+                    other_min = other_block.min();
+                    other_max = other_block.max();
+                    continue
+                } else {
+                    break
+                }
+            }
+
+            // this:            |----
+            // other:     |-----|
+            if this_min == other_max {
+                let intersect_min = other_max;
+                let intersect_max = this_min;
+                let intersect = IpBlock::new(intersect_min, intersect_max);
+                intersects.push(intersect);
+
+                // take next other if available
+                if let Some(other_block) = other_iter.next() {
+                    other_min = other_block.min();
+                    other_max = other_block.max();
+                    continue
+                } else {
+                    break
+                }
+            }
+
+            // this:          |----
+            // other:     |-----|
+            if this_min > other_min && this_min < other_min && this_max > other_max {
+                let intersect_min = this_min;
+                let intersect_max = other_max;
+                let intersect = IpBlock::new(intersect_min, intersect_max);
+                intersects.push(intersect);
+
+                this_min = other_max;
+
+                // take next other if available
+                if let Some(other_block) = other_iter.next() {
+                    other_min = other_block.min();
+                    other_max = other_block.max();
+                    continue
+                } else {
+                    break
+                }
+            }
+
+            // this:          |----|
+            // other:       |~{----|
+            if this_min >= other_min && this_max == other_max {
+                let intersect_min = this_min;
+                let intersect_max = this_max;
+                let intersect = IpBlock::new(intersect_min, intersect_max);
+                intersects.push(intersect);
+
+                if let Some(this_block) = this_iter.next() {
+                    this_min = this_block.min();
+                    this_max = this_block.max();
+                } else {
+                    break
+                }
+
+                if let Some(other_block) = other_iter.next() {
+                    other_min = other_block.min();
+                    other_max = other_block.max();
+                } else {
+                    break
+                }
+
+                continue
+            }
+
+            // this:          |----|
+            // other:       |~{-----|
+            if this_min >= other_min && this_max < other_max {
+                let intersect_min = this_min;
+                let intersect_max = this_max;
+                let intersect = IpBlock::new(intersect_min, intersect_max);
+                intersects.push(intersect);
+
+                other_min = this_max;
+
+                if let Some(this_block) = this_iter.next() {
+                    this_min = this_block.min();
+                    this_max = this_block.max();
+                    continue
+                } else {
+                    break
+                }
+            }
+
+            // this:   |----------|
+            // other:  |~~{-----|
+            if this_min <= other_min && this_max > other_max {
+                let intersect_min = other_min;
+                let intersect_max = other_max;
+                let intersect = IpBlock::new(intersect_min, intersect_max);
+                intersects.push(intersect);
+
+                this_min = other_max;
+
+                if let Some(other_block) = other_iter.next() {
+                    other_min = other_block.min();
+                    other_max = other_block.max();
+                    continue
+                } else {
+                    break
+                }
+            }
+
+            // this:   |----------|
+            // other:  |~~{-------|
+            if this_min <= other_min && this_max == other_max {
+                let intersect_min = other_min;
+                let intersect_max = other_max;
+                let intersect = IpBlock::new(intersect_min, intersect_max);
+                intersects.push(intersect);
+
+                if let Some(this_block) = this_iter.next() {
+                    this_min = this_block.min();
+                    this_max = this_block.max();
+                } else {
+                    break
+                }
+
+                if let Some(other_block) = other_iter.next() {
+                    other_min = other_block.min();
+                    other_max = other_block.max();
+                } else {
+                    break
+                }
+
+                continue
+            }
+
+            // this:   |----------|
+            // other:  |~~{----------|
+            if this_min <= other_min && this_max < other_max {
+                let intersect_min = other_min;
+                let intersect_max = this_max;
+                let intersect = IpBlock::new(intersect_min, intersect_max);
+                intersects.push(intersect);
+
+                other_min = this_max;
+
+                if let Some(this_block) = this_iter.next() {
+                    this_min = this_block.min();
+                    this_max = this_block.max();
+                    continue
+                } else {
+                    break
+                }
+            }
+
+            // this:   |------|
+            // other:         |---------|
+            if this_max == other_min {
+                let intersect_min = this_max;
+                let intersect_max = this_max;
+                let intersect = IpBlock::new(intersect_min, intersect_max);
+                intersects.push(intersect);
+
+                if let Some(this_block) = this_iter.next() {
+                    this_min = this_block.min();
+                    this_max = this_block.max();
+                    continue
+                } else {
+                    break
+                }
+            }
+
+
+            // this:     |-----|
+            // other:            |---
+            if this_max < other_min {
+                if let Some(this_block) = this_iter.next() {
+                    this_min = this_block.min();
+                    this_max = this_block.max();
+                    continue
+                } else {
+                    break
+                }
+            }
+
+            let this_block = IpBlock::new(this_min, this_max);
+            let other_block = IpBlock::new(other_min, other_max);
+            panic!(
+                "This should be unreachable, uncovered intersection case: {:?} and {:?}",
+                this_block,
+                other_block
+            )
+        }
+
+
+        IpBlocks(SharedChain::from_iter(intersects.into_iter()))
+    }
+
+    /// Returns a new IpBlocks with the union of this and the other IpBlocks.
+    ///
+    /// i.e. all resources found in one or both IpBlocks.
+    pub fn union(&self, other: &Self) -> Self {
+        IpBlocks(
+            FromIterator::from_iter(
+                self.0.iter().cloned().chain(other.0.iter().cloned())
+            )
+        )
     }
 }
 
@@ -1485,50 +1589,6 @@ mod test {
     use super::*;
 
     #[test]
-    fn ipv4_resources_inherit_serde() {
-        let resources_str = "inherit";
-        let ipv4_resources = Ipv4Resources::from_str(resources_str).unwrap();
-
-        let json = serde_json::to_string(&ipv4_resources).unwrap();
-        let deser_ipv4_resources = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(ipv4_resources, deser_ipv4_resources)
-    }
-
-    #[test]
-    fn ipv4_resources_concrete_serde() {
-        let resources_str = "10.0.0.0, 10.1.0.0-10.1.2.255, 192.168.0.0/16";
-        let ipv4_resources = Ipv4Resources::from_str(resources_str).unwrap();
-
-        let json = serde_json::to_string(&ipv4_resources).unwrap();
-        let deser_ipv4_resources = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(ipv4_resources, deser_ipv4_resources)
-    }
-
-    #[test]
-    fn ipv6_resources_inherit_serde() {
-        let resources_str = "inherit";
-        let ipv6_resources = Ipv6Resources::from_str(resources_str).unwrap();
-
-        let json = serde_json::to_string(&ipv6_resources).unwrap();
-        let deser_ipv6_resources = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(ipv6_resources, deser_ipv6_resources)
-    }
-
-    #[test]
-    fn ipv6_resources_concrete_serde() {
-        let resources_str = "::1, 2001:db8::/32";
-        let ipv6_resources = Ipv6Resources::from_str(resources_str).unwrap();
-
-        let json = serde_json::to_string(&ipv6_resources).unwrap();
-        let deser_ipv6_resources = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(ipv6_resources, deser_ipv6_resources)
-    }
-
-    #[test]
     fn ip_blocks_to_v4_str() {
         let expected_str = "10.0.0.0, 10.1.0.0-10.1.2.255, 192.168.0.0/16";
         let blocks = IpBlocks::from_str(expected_str).unwrap();
@@ -1557,6 +1617,47 @@ mod test {
         let blocks = IpBlocks::from_str("").unwrap();
         assert_eq!(expected_str, blocks.as_v4().to_string());
         assert_eq!(expected_str, blocks.as_v6().to_string());
+    }
+
+    #[test]
+    fn ip_blocks_contains() {
+        let super_set = IpBlocks::from_str("10.0.0.0/16, 192.168.0.0/16").unwrap();
+        let same = IpBlocks::from_str("10.0.0.0/16, 192.168.0.0/16").unwrap();
+        let higher_block = IpBlocks::from_str("192.168.0.0/16").unwrap();
+        let smaller_left = IpBlocks::from_str("10.0.0.0/17").unwrap();
+        let smaller_right = IpBlocks::from_str("10.0.0.0/17").unwrap();
+        let smaller = IpBlocks::from_str("10.0.0.1-10.0.255.254").unwrap();
+        let bigger_left = IpBlocks::from_str("19.9.9.255-10.0.255.255").unwrap();
+        let bigger_right = IpBlocks::from_str("19.9.9.255-10.1.0.0").unwrap();
+        let bigger = IpBlocks::from_str("19.9.9.255-10.1.0.0").unwrap();
+
+        assert!(super_set.contains(&same));
+        assert!(super_set.contains(&higher_block));
+        assert!(super_set.contains(&smaller_left));
+        assert!(super_set.contains(&smaller_right));
+        assert!(super_set.contains(&smaller));
+        assert!(!super_set.contains(&bigger_left));
+        assert!(!super_set.contains(&bigger_right));
+        assert!(!super_set.contains(&bigger ));
+    }
+
+    #[test]
+    fn ip_blocks_intersection() {
+        // same
+        let left = IpBlocks::from_str("10.0.0.0/16, 192.168.0.0/16").unwrap();
+        let right = IpBlocks::from_str("10.0.0.0/16, 192.168.0.0/16").unwrap();
+        assert_eq!(left, left.intersection(&right));
+//
+//        // left smaller
+//        let left = IpBlocks::from_str("10.0.0.0/24, 192.168.1.0/24").unwrap();
+//        let right = IpBlocks::from_str("10.0.0.0/16, 192.168.0.0/16").unwrap();
+//        assert_eq!(left, left.intersection(&right));
+//
+//        // right smaller
+//        let left = IpBlocks::from_str("10.0.0.0/16, 192.168.0.0/16").unwrap();
+//        let right = IpBlocks::from_str("10.0.0.0/24").unwrap();
+//
+//        assert_eq!(right, left.intersection(&right));
     }
 
     #[test]
