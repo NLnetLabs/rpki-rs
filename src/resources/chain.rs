@@ -174,9 +174,12 @@ impl<T: Block> Chain<T> {
         loop {
             // Skip over other items before self item. If we run out of other
             // items, we are done.
-            while other_item.max() < self_item.0 {
-                other_item = match other_iter.next() {
-                    Some(item) => item,
+            if other_item.max() < self_item.0 {
+                match other_iter.next() {
+                    Some(item) => {
+                        other_item = item;
+                        continue;
+                    }
                     None => break
                 }
             }
@@ -271,7 +274,7 @@ impl<T: Block> Chain<T> {
         // If res is an index, we ran out of other items (we return early
         // otherwise) and need to make a copy of the indexed elements.
         let res = match res {
-            Ok(idx) => self.0[..=idx].into(),
+            Ok(idx) => self.0[..idx].into(),
             Err(vec) => vec
         };
         Err(unsafe { OwnedChain::from_vec_unchecked(res) })
@@ -604,40 +607,125 @@ mod test {
 
     #[test]
     fn trim() {
-        let chain = OwnedChain::from([(1,4), (11,18), (23,48)].as_ref());
-        assert!(
-            OwnedChain::from([(1,4), (11,18), (23,48)].as_ref())
-                .trim(&chain).is_ok()
+        // Other ends before self even starts.
+        assert_eq!(
+            OwnedChain::from([(10,15)].as_ref()).trim(
+                &OwnedChain::from([(5,8)].as_ref())
+            ),
+            Err(OwnedChain::empty())
         );
-        assert!(
-            OwnedChain::from([(13,18)].as_ref())
-                .trim(&chain).is_ok()
-        );
-        assert!(
-            OwnedChain::from([(30,38)].as_ref())
-                .trim(&chain).is_ok()
+
+        // Beginning of self is covered by other.
+        assert_eq!(
+            OwnedChain::from([(10,15), (20, 25)].as_ref()).trim(
+                &OwnedChain::from([(5,18)].as_ref())
+            ),
+            Err(OwnedChain::from([(10,15)].as_ref()))
         );
         assert_eq!(
-            OwnedChain::from([(1,6), (13,45)].as_ref())
-                .trim(&chain).unwrap_err().as_slice(),
-            &[(1,4), (13,18), (23,45)][..]
+            OwnedChain::from([(10,15), (20, 25)].as_ref()).trim(
+                &OwnedChain::from([(5,15)].as_ref())
+            ),
+            Err(OwnedChain::from([(10,15)].as_ref()))
         );
         assert_eq!(
-            OwnedChain::from([(1,4), (13,45)].as_ref())
-                .trim(&chain).unwrap_err().as_slice(),
-            &[(1,4), (13,18), (23,45)][..]
+            OwnedChain::from([(10,15), (20, 25)].as_ref()).trim(
+                &OwnedChain::from([(10,18)].as_ref())
+            ),
+            Err(OwnedChain::from([(10,15)].as_ref()))
         );
         assert_eq!(
-            OwnedChain::from([(13,45)].as_ref())
-                .trim(&chain).unwrap_err().as_slice(),
-            &[(13,18), (23,45)][..]
+            OwnedChain::from([(10,15), (20, 25)].as_ref()).trim(
+                &OwnedChain::from([(10,15)].as_ref())
+            ),
+            Err(OwnedChain::from([(10,15)].as_ref()))
         );
-        
-        let chain = OwnedChain::from([(1,4), (11,18), (23,255)].as_ref());
+
+        // All of self is covered by other.
         assert_eq!(
-            OwnedChain::from([(13,255)].as_ref())
-                .trim(&chain).unwrap_err().as_slice(),
-            &[(13,18), (23,255)][..]
+            OwnedChain::from([(10,15), (20, 25)].as_ref()).trim(
+                &OwnedChain::from([(10,25)].as_ref())
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            OwnedChain::from([(10,15), (20, 25)].as_ref()).trim(
+                &OwnedChain::from([(10,15), (20,25)].as_ref())
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            OwnedChain::from([(10,15), (20, 25)].as_ref()).trim(
+                &OwnedChain::from([(8,17), (19,50)].as_ref())
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            OwnedChain::from([(10,15), (20, 25)].as_ref()).trim(
+                &OwnedChain::from([(8,17), (19,50), (70,80)].as_ref())
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            OwnedChain::from([(10,15), (20, 25)].as_ref()).trim(
+                &OwnedChain::from([(2, 6), (8,17), (19,50), (70,80)].as_ref())
+            ),
+            Ok(())
+        );
+
+        // An element in self needs trimming down.
+        assert_eq!(
+            OwnedChain::from([(10,15), (20, 25)].as_ref()).trim(
+                &OwnedChain::from([(12,13)].as_ref())
+            ),
+            Err(OwnedChain::from([(12,13)].as_ref()))
+        );
+        assert_eq!(
+            OwnedChain::from([(10,15), (20, 25)].as_ref()).trim(
+                &OwnedChain::from([(10,13)].as_ref())
+            ),
+            Err(OwnedChain::from([(10,13)].as_ref()))
+        );
+        assert_eq!(
+            OwnedChain::from([(10,15), (20, 25)].as_ref()).trim(
+                &OwnedChain::from([(8,13)].as_ref())
+            ),
+            Err(OwnedChain::from([(10,13)].as_ref()))
+        );
+        assert_eq!(
+            OwnedChain::from([(10,15), (20, 25)].as_ref()).trim(
+                &OwnedChain::from([(12,15)].as_ref())
+            ),
+            Err(OwnedChain::from([(12,15)].as_ref()))
+        );
+        assert_eq!(
+            OwnedChain::from([(10,15), (20, 25)].as_ref()).trim(
+                &OwnedChain::from([(12,17)].as_ref())
+            ),
+            Err(OwnedChain::from([(12,15)].as_ref()))
+        );
+        assert_eq!(
+            OwnedChain::from([(10,15), (20, 25)].as_ref()).trim(
+                &OwnedChain::from([(8,17)].as_ref())
+            ),
+            Err(OwnedChain::from([(10,15)].as_ref()))
+        );
+
+        // A later element in self needs trimming.
+        assert_eq!(
+            OwnedChain::from([(1,4), (10,15), (20, 25)].as_ref()).trim(
+                &OwnedChain::from([(8,17)].as_ref())
+            ),
+            Err(OwnedChain::from([(10,15)].as_ref()))
+        );
+
+        // Two elements in self need trimming.
+        assert_eq!(
+            OwnedChain::from([(10,15), (20, 25)].as_ref()).trim(
+                &OwnedChain::from([(12,15), (22,23), (50,70)].as_ref())
+            ),
+            Err(OwnedChain::from([(12,15), (22,23)].as_ref()))
         );
     }
 }
+
