@@ -362,7 +362,7 @@ impl SignedAttrs {
                             &mut binary_signing_time
                         )
                     }
-                    else if strict == false {
+                    else if !strict {
                         cons.skip_all()
                     } else {
                         xerr!(Err(decode::Malformed.into()))
