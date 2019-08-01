@@ -319,7 +319,7 @@ impl IpBlocks {
     }
 }
 
-/// # Set methods
+/// # Set operations
 ///
 impl IpBlocks {
     /// Returns whether this IpBlocks contains the other in its entirety.
@@ -327,6 +327,8 @@ impl IpBlocks {
         other.0.is_encompassed(&self.0)
     }
 
+    /// Return the intersection of this IpBlocks and the other. I.e. all
+    /// resources which are found in both.
     pub fn intersection(&self, other: &Self) -> Self {
         match self.0.trim(&other.0) {
             Ok(()) => self.clone(),
