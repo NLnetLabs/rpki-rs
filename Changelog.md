@@ -16,11 +16,13 @@ New
 Bug Fixes
 
 * Various improvements to the RRDP implementation. [(#62)]
+* Fix a endless loop and an off-by-one error in Chain::trim. [(#64)]
 
 Dependencies
 
 [(#62)]: https://github.com/NLnetLabs/rpki-rs/pull/62
 [(#63)]: https://github.com/NLnetLabs/rpki-rs/pull/63
+[(#64)]: https://github.com/NLnetLabs/rpki-rs/pull/64
 
 
 # 0.5.0
