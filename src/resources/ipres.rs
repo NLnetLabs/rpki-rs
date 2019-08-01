@@ -327,240 +327,11 @@ impl IpBlocks {
         other.0.is_encompassed(&self.0)
     }
 
-    /// Returns a new IpBlocks with the intersection of this and the other IpBlocks.
-    ///
-    /// i.e. all resources found in both IpBlocks.
     pub fn intersection(&self, other: &Self) -> Self {
-        // iterate through both, sorted!, IpBlocks and find all ranges that
-        // are present in both structures
-        let mut this_iter = self.iter();
-        let mut other_iter = other.iter();
-
-        let other_block = other_iter.next();
-        let this_block = this_iter.next();
-
-        // We don't need to do work if either is empty.
-        // But we need to check both separately so we can unwrap the element.
-        if other_block.is_none() {
-            return IpBlocks::empty()
+        match self.0.trim(&other.0) {
+            Ok(()) => self.clone(),
+            Err(owned) => IpBlocks(SharedChain::from_owned(owned))
         }
-        if this_block.is_none() {
-            return IpBlocks::empty()
-        }
-
-        // TODO: If this has more elements than other, than do
-        //       the intersection starting with other for efficiency?
-
-        let mut intersects = vec![];
-
-        let this_block = this_block.unwrap();
-        let mut this_min = this_block.min();
-        let mut this_max = this_block.max();
-
-        let other_block = other_block.unwrap();
-        let mut other_min = other_block.min();
-        let mut other_max = other_block.max();
-        loop {
-            // Whenever we need a next, and there is none, we are done
-
-            // this:            |----
-            // other:     |---|
-            if this_min > other_max {
-                if let Some(other_block) = other_iter.next() {
-                    other_min = other_block.min();
-                    other_max = other_block.max();
-                    continue
-                } else {
-                    break
-                }
-            }
-
-            // this:            |----
-            // other:     |-----|
-            if this_min == other_max {
-                let intersect_min = other_max;
-                let intersect_max = this_min;
-                let intersect = IpBlock::new(intersect_min, intersect_max);
-                intersects.push(intersect);
-
-                // take next other if available
-                if let Some(other_block) = other_iter.next() {
-                    other_min = other_block.min();
-                    other_max = other_block.max();
-                    continue
-                } else {
-                    break
-                }
-            }
-
-            // this:          |----
-            // other:     |-----|
-            if this_min > other_min && this_min < other_min && this_max > other_max {
-                let intersect_min = this_min;
-                let intersect_max = other_max;
-                let intersect = IpBlock::new(intersect_min, intersect_max);
-                intersects.push(intersect);
-
-                this_min = other_max;
-
-                // take next other if available
-                if let Some(other_block) = other_iter.next() {
-                    other_min = other_block.min();
-                    other_max = other_block.max();
-                    continue
-                } else {
-                    break
-                }
-            }
-
-            // this:          |----|
-            // other:       |~{----|
-            if this_min >= other_min && this_max == other_max {
-                let intersect_min = this_min;
-                let intersect_max = this_max;
-                let intersect = IpBlock::new(intersect_min, intersect_max);
-                intersects.push(intersect);
-
-                if let Some(this_block) = this_iter.next() {
-                    this_min = this_block.min();
-                    this_max = this_block.max();
-                } else {
-                    break
-                }
-
-                if let Some(other_block) = other_iter.next() {
-                    other_min = other_block.min();
-                    other_max = other_block.max();
-                } else {
-                    break
-                }
-
-                continue
-            }
-
-            // this:          |----|
-            // other:       |~{-----|
-            if this_min >= other_min && this_max < other_max {
-                let intersect_min = this_min;
-                let intersect_max = this_max;
-                let intersect = IpBlock::new(intersect_min, intersect_max);
-                intersects.push(intersect);
-
-                other_min = this_max;
-
-                if let Some(this_block) = this_iter.next() {
-                    this_min = this_block.min();
-                    this_max = this_block.max();
-                    continue
-                } else {
-                    break
-                }
-            }
-
-            // this:   |----------|
-            // other:  |~~{-----|
-            if this_min <= other_min && this_max > other_max {
-                let intersect_min = other_min;
-                let intersect_max = other_max;
-                let intersect = IpBlock::new(intersect_min, intersect_max);
-                intersects.push(intersect);
-
-                this_min = other_max;
-
-                if let Some(other_block) = other_iter.next() {
-                    other_min = other_block.min();
-                    other_max = other_block.max();
-                    continue
-                } else {
-                    break
-                }
-            }
-
-            // this:   |----------|
-            // other:  |~~{-------|
-            if this_min <= other_min && this_max == other_max {
-                let intersect_min = other_min;
-                let intersect_max = other_max;
-                let intersect = IpBlock::new(intersect_min, intersect_max);
-                intersects.push(intersect);
-
-                if let Some(this_block) = this_iter.next() {
-                    this_min = this_block.min();
-                    this_max = this_block.max();
-                } else {
-                    break
-                }
-
-                if let Some(other_block) = other_iter.next() {
-                    other_min = other_block.min();
-                    other_max = other_block.max();
-                } else {
-                    break
-                }
-
-                continue
-            }
-
-            // this:   |----------|
-            // other:  |~~{----------|
-            if this_min <= other_min && this_max < other_max {
-                let intersect_min = other_min;
-                let intersect_max = this_max;
-                let intersect = IpBlock::new(intersect_min, intersect_max);
-                intersects.push(intersect);
-
-                other_min = this_max;
-
-                if let Some(this_block) = this_iter.next() {
-                    this_min = this_block.min();
-                    this_max = this_block.max();
-                    continue
-                } else {
-                    break
-                }
-            }
-
-            // this:   |------|
-            // other:         |---------|
-            if this_max == other_min {
-                let intersect_min = this_max;
-                let intersect_max = this_max;
-                let intersect = IpBlock::new(intersect_min, intersect_max);
-                intersects.push(intersect);
-
-                if let Some(this_block) = this_iter.next() {
-                    this_min = this_block.min();
-                    this_max = this_block.max();
-                    continue
-                } else {
-                    break
-                }
-            }
-
-
-            // this:     |-----|
-            // other:            |---
-            if this_max < other_min {
-                if let Some(this_block) = this_iter.next() {
-                    this_min = this_block.min();
-                    this_max = this_block.max();
-                    continue
-                } else {
-                    break
-                }
-            }
-
-            let this_block = IpBlock::new(this_min, this_max);
-            let other_block = IpBlock::new(other_min, other_max);
-            panic!(
-                "This should be unreachable, uncovered intersection case: {:?} and {:?}",
-                this_block,
-                other_block
-            )
-        }
-
-
-        IpBlocks(SharedChain::from_iter(intersects.into_iter()))
     }
 
     /// Returns a new IpBlocks with the union of this and the other IpBlocks.
@@ -1643,21 +1414,121 @@ mod test {
 
     #[test]
     fn ip_blocks_intersection() {
-        // same
-        let left = IpBlocks::from_str("10.0.0.0/16, 192.168.0.0/16").unwrap();
-        let right = IpBlocks::from_str("10.0.0.0/16, 192.168.0.0/16").unwrap();
-        assert_eq!(left, left.intersection(&right));
-//
-//        // left smaller
-//        let left = IpBlocks::from_str("10.0.0.0/24, 192.168.1.0/24").unwrap();
-//        let right = IpBlocks::from_str("10.0.0.0/16, 192.168.0.0/16").unwrap();
-//        assert_eq!(left, left.intersection(&right));
-//
-//        // right smaller
-//        let left = IpBlocks::from_str("10.0.0.0/16, 192.168.0.0/16").unwrap();
-//        let right = IpBlocks::from_str("10.0.0.0/24").unwrap();
-//
-//        assert_eq!(right, left.intersection(&right));
+        // Note: the IpBlocks::intersection function delegates to Chain::trim
+        // which has been well fuzzed. Adding these tests here though for
+        // readability and regression testing.
+
+        // this:            |----
+        // other:     |---|
+        let this = IpBlocks::from_str("10.0.1.0-10.0.1.255").unwrap();
+        let other = IpBlocks::from_str("10.0.0.0-10.0.0.255").unwrap();
+        let expected = IpBlocks::empty();
+
+        assert_eq!(this.intersection(&other), expected);
+        assert_eq!(other.intersection(&this), expected);
+
+        // this:            |----
+        // other:     |-----|
+        let this = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.0.0-10.0.1.0").unwrap();
+        let expected = IpBlocks::from_str("10.0.1.0-10.0.1.0").unwrap();
+        assert_eq!(expected, this.intersection(&other));
+        assert_eq!(expected, other.intersection(&this));
+
+        // this:          |----
+        // other:     |-----|
+        let this = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.0.0-10.0.1.27").unwrap();
+        let expected = IpBlocks::from_str("10.0.1.0-10.0.1.27").unwrap();
+        assert_eq!(expected, this.intersection(&other));
+        assert_eq!(expected, other.intersection(&this));
+
+        // this:          |----|
+        // other:       |~{----|
+        let this = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.0.0/23").unwrap();
+        let expected = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        assert_eq!(expected, this.intersection(&other));
+        assert_eq!(expected, other.intersection(&this));
+
+        // this:          |----|
+        // other:       |~{-----|
+        let this = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.0.0-10.0.2.0").unwrap();
+        let expected = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        assert_eq!(expected, this.intersection(&other));
+        assert_eq!(expected, other.intersection(&this));
+
+        // this:   |----------|
+        // other:  |~~{-----|
+        let this = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.1.3-10.0.1.98").unwrap();
+        let expected = IpBlocks::from_str("10.0.1.3-10.0.1.98").unwrap();
+        assert_eq!(expected, this.intersection(&other));
+        assert_eq!(expected, other.intersection(&this));
+
+        let this = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.1.0-10.0.1.98").unwrap();
+        let expected = IpBlocks::from_str("10.0.1.0-10.0.1.98").unwrap();
+        assert_eq!(expected, this.intersection(&other));
+        assert_eq!(expected, other.intersection(&this));
+
+        // this:   |----------|
+        // other:  |~~{-------|
+        let this = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.1.3-10.0.1.255").unwrap();
+        let expected = IpBlocks::from_str("10.0.1.3-10.0.1.255").unwrap();
+        assert_eq!(expected, this.intersection(&other));
+        assert_eq!(expected, other.intersection(&this));
+
+        let this = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.1.0-10.0.1.255").unwrap();
+        let expected = IpBlocks::from_str("10.0.1.0-10.0.1.255").unwrap();
+        assert_eq!(expected, this.intersection(&other));
+        assert_eq!(expected, other.intersection(&this));
+
+        // this:   |----------|
+        // other:  |~~{----------|
+        let this = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.1.3-10.0.2.0").unwrap();
+        let expected = IpBlocks::from_str("10.0.1.3-10.0.1.255").unwrap();
+        // Looking at the number, IPv4 is modelled as the left most 4 bytes in a u128
+        // so the max number of the intersection comes out as 10.0.1.255 with the
+        // remaining bytes set to FF. This is not significant but is not treated
+        // as equals.
+        //
+        // In short we assert here that the as_v4().to_string() is equal, because
+        // then these bytes are dropped.
+        assert_eq!(
+            this.intersection(&other).as_v4().to_string(),
+            expected.as_v4().to_string()
+        );
+        assert_eq!(
+            other.intersection(&this).as_v4().to_string(),
+            expected.as_v4().to_string()
+        );
+
+        // this:   |------|
+        // other:         |---------|
+        let this = IpBlocks::from_str("10.0.0.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.0.255-10.0.1.0").unwrap();
+        let expected = IpBlocks::from_str("10.0.0.255/32").unwrap();
+        assert_eq!(
+            this.intersection(&other).as_v4().to_string(),
+            expected.as_v4().to_string()
+        );
+        assert_eq!(
+            other.intersection(&this).as_v4().to_string(),
+            expected.as_v4().to_string()
+        );
+
+        // this:     |-----|
+        // other:            |---
+        let this = IpBlocks::from_str("10.0.0.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        let expected = IpBlocks::empty();
+        assert_eq!(expected, this.intersection(&other));
+        assert_eq!(expected, other.intersection(&this));
     }
 
     #[test]
