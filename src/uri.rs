@@ -318,148 +318,6 @@ impl fmt::Display for RsyncModule {
 }
 
 
-//------------ Http ----------------------------------------------------------
-
-/// A simple HTTP(s) URI
-///
-/// This is only a slim wrapper around a `Bytes` value ensuring that the
-/// scheme is either `"http"` or `"https"`.
-///
-/// Note that this type holds both HTTP and HTTPS URIs. If you require a
-/// HTTPS URI, use [`uri::Https`] instead.
-///
-/// [`uri::Https`]: struct.Https.html
-#[derive(Clone, Debug, PartialEq)]
-pub struct Http {
-    uri: Bytes
-}
-
-impl Http {
-    pub fn from_string(s: String) -> Result<Self, Error> {
-        Self::from_bytes(Bytes::from(s))
-    }
-
-    pub fn from_slice(slice: &[u8]) -> Result<Self, Error> {
-        Self::from_bytes(slice.into())
-    }
-
-    pub fn from_bytes(bytes: Bytes) -> Result<Self, Error> {
-        if !is_uri_ascii(&bytes) {
-            return Err(Error::NotAscii)
-        }
-        if !Scheme::from_prefix(bytes.as_ref())?.0.is_any_http() {
-            return Err(Error::BadScheme)
-        }
-        Ok(Http { uri: bytes })
-    }
-
-    pub fn secure(&self) -> bool {
-        self.scheme() == Scheme::Https
-    }
-
-    pub fn scheme(&self) -> Scheme {
-        Scheme::from_prefix(self.uri.as_ref()).unwrap().0
-    }
-
-    pub fn as_str(&self) -> &str {
-        unsafe { str::from_utf8_unchecked(self.uri.as_ref()) }
-    }
-
-    pub fn to_string(&self) -> String {
-        self.as_str().into()
-    }
-
-    pub fn encode_general_name<'a>(&'a self) -> impl encode::Values + 'a {
-        self.encode_as(Tag::CTX_6)
-    }
-}
-
-
-//--- AsRef
-
-impl AsRef<Bytes> for Http {
-    fn as_ref(&self) -> &Bytes {
-        &self.uri
-    }
-}
-
-impl AsRef<str> for Http {
-    fn as_ref(&self) -> &str {
-        self.as_str()
-    }
-}
-
-impl AsRef<[u8]> for Http {
-    fn as_ref(&self) -> &[u8] {
-        self.uri.as_ref()
-    }
-}
-
-
-//--- TryFrom and FromStr
-
-impl TryFrom<String> for Http {
-    type Error = Error;
-
-    fn try_from(s: String) -> Result<Self, Error> {
-        Self::from_string(s)
-    }
-}
-
-impl str::FromStr for Http {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Error> {
-        Self::from_bytes(Bytes::from(s))
-    }
-}
-
-
-//--- Serialize and Deserialize
-
-impl Serialize for Http {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: Serializer {
-        self.to_string().serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for Http {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de> {
-        deserializer.deserialize_string(UriVisitor::<Http>::default())
-    }
-}
-
-
-//--- PrimitiveContent
-
-impl<'a> encode::PrimitiveContent for &'a Http {
-    const TAG: Tag = Tag::IA5_STRING;
-
-    fn encoded_len(&self, _: Mode) -> usize {
-        self.uri.len()
-    }
-
-    fn write_encoded<W: io::Write>(
-        &self,
-        _mode: Mode,
-        target: &mut W
-    ) -> Result<(), io::Error> {
-        target.write_all(self.uri.as_ref())
-    }
-}
-
-
-//--- Display
-
-impl fmt::Display for Http {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.as_str().fmt(f)
-    }
-}
-
-
 //------------ Https ---------------------------------------------------------
 
 /// A simple HTTPS URI.
@@ -642,7 +500,6 @@ impl fmt::Display for Https {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Scheme {
-    Http,
     Https,
     Rsync
 }
@@ -653,10 +510,7 @@ impl Scheme {
     /// Returns both the scheme itself and the index of the first byte
     /// following the scheme prefx including the two slashes.
     fn from_prefix(s: &[u8]) -> Result<(Self, usize), Error> {
-        if starts_with_ignore_case(s, b"http://") {
-            Ok((Scheme::Http, 7))
-        }
-        else if starts_with_ignore_case(s, b"https://") {
+        if starts_with_ignore_case(s, b"https://") {
             Ok((Scheme::Https, 8))
         }
         else if starts_with_ignore_case(s, b"rsync://") {
@@ -673,23 +527,8 @@ impl Scheme {
         Ok(res)
     }
 
-    pub fn is_http(self) -> bool {
-        match self {
-            Scheme::Http => true,
-            _ => false
-        }
-    }
-
     pub fn is_https(self) -> bool {
         match self {
-            Scheme::Https => true,
-            _ => false
-        }
-    }
-
-    pub fn is_any_http(self) -> bool {
-        match self {
-            Scheme::Http => true,
             Scheme::Https => true,
             _ => false
         }
@@ -704,7 +543,6 @@ impl Scheme {
 
     pub fn as_str(self) -> &'static str {
         match self {
-            Scheme::Http => "http",
             Scheme::Https => "https",
             Scheme::Rsync => "rsync",
         }
@@ -817,35 +655,6 @@ mod tests {
     }
 
     #[test]
-    fn reject_non_ascii_http_uri() {
-        match  Http::from_bytes(Bytes::from("http://my.høst.tld/å/pâth")) {
-            Err(Error::NotAscii) => { }
-            _ => { assert!(false); }
-        }
-    }
-
-    #[test]
-    fn reject_bad_scheme_http_uri() {
-        match Http::from_str("rsync://my.host.tld/path") {
-            Err(Error::BadScheme) => {}
-            _ => { assert!(false)}
-        }
-    }
-
-    #[test]
-    fn parse_http_uri() {
-        let http = Http::from_str("http://my.host.tld/and/a/path").unwrap();
-        assert_eq!(Scheme::Http, http.scheme());
-    }
-
-    #[test]
-    fn parse_https_uri() {
-        let http = Http::from_str("https://my.host.tld/and/a/path").unwrap();
-        assert_eq!(Scheme::Https, http.scheme());
-        Https::from_str("https://my.host.tld/and/a/path").unwrap();
-    }
-
-    #[test]
     fn https_eq()  {
         assert_eq!(
             Https::from_str("https://example.com/some/stuff").unwrap(),
@@ -923,15 +732,6 @@ mod tests {
         use serde_json::{from_str, to_string};
 
         let uri = Rsync::from_str("rsync://localhost/mod_b/a/b").unwrap();
-        let res = from_str(&to_string(&uri).unwrap()).unwrap();
-        assert_eq!(uri, res);
-    }
-
-    #[test]
-    fn http_serde() {
-        use serde_json::{from_str, to_string};
-
-        let uri = Http::from_str("https://example.com/some/stuff").unwrap();
         let res = from_str(&to_string(&uri).unwrap()).unwrap();
         assert_eq!(uri, res);
     }
