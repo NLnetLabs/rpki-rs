@@ -328,9 +328,13 @@ impl SignedAttrs {
     ///
     /// Returns the raw signed attrs, the message digest, the content type
     /// object identifier, and the two optional signing times.
+    ///
+    /// If strict is true, any unknown signed attributes are rejected, if
+    /// strict is false they will be ignored.
     #[allow(clippy::type_complexity)]
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
+    fn take_from_with_mode<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+        strict: bool
     ) -> Result<
         (Self, MessageDigest, Oid<Bytes>, Option<Time>, Option<u64>),
         S::Err
@@ -358,8 +362,10 @@ impl SignedAttrs {
                             &mut binary_signing_time
                         )
                     }
-                    else {
+                    else if strict {
                         xerr!(Err(decode::Malformed.into()))
+                    } else {
+                        cons.skip_all()
                     }
                 })? { }
                 Ok(())
@@ -380,6 +386,42 @@ impl SignedAttrs {
             Self(raw), message_digest, content_type, signing_time,
             binary_signing_time
         ))
+    }
+
+
+
+    /// Takes the signed attributes from the beginning of a constructed value.
+    ///
+    /// Returns the raw signed attrs, the message digest, the content type
+    /// object identifier, and the two optional signing times.
+    #[allow(clippy::type_complexity)]
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<
+        (Self, MessageDigest, Oid<Bytes>, Option<Time>, Option<u64>),
+        S::Err
+    > {
+        Self::take_from_with_mode(cons, true)
+    }
+
+    /// Takes the signed attributes from the beginning of a constructed value.
+    ///
+    /// Note this function should be used for parsing CMS used in RFC6492 and
+    /// RFC8181 messages only, as it will ignore any unknown signed attributes.
+    /// Unfortunately the profile for the Certificates and CMS used is not
+    /// well-defined in these RFCs. So, in this case, we should be more
+    /// accepting.
+    ///
+    /// Returns the raw signed attrs, the message digest, the content type
+    /// object identifier, and the two optional signing times.
+    #[allow(clippy::type_complexity)]
+    pub fn take_from_signed_message<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<
+        (Self, MessageDigest, Oid<Bytes>, Option<Time>, Option<u64>),
+        S::Err
+    > {
+        Self::take_from_with_mode(cons, false)
     }
 
     /// Parses the Content Type attribute.
