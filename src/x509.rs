@@ -3,6 +3,7 @@
 use std::{fmt, io, ops, str};
 use std::cmp::{min, max};
 use std::str::FromStr;
+use std::time::SystemTime;
 use bcder::{decode, encode};
 use bcder::{
     BitString, Captured, ConstOid, Mode, OctetString, Oid, Tag, Unsigned, xerr
@@ -552,6 +553,7 @@ impl Time {
         Time(Utc.ymd(year, month, day).and_hms(hour, min, sec))
     }
 
+    #[deprecated(since="0.6.0", note="Use self.timestamp instead.")]
     pub fn to_binary_time(self) -> i64 {
         self.0.timestamp()
     }
@@ -697,7 +699,31 @@ impl AsRef<DateTime<Utc>> for Time {
 }
 
 
-//--- FromStr
+//--- From and FromStr
+
+impl From<DateTime<Utc>> for Time {
+    fn from(time: DateTime<Utc>) -> Self {
+        Time(time)
+    }
+}
+
+impl From<Time> for DateTime<Utc> {
+    fn from(time: Time) -> Self {
+        time.0
+    }
+}
+
+impl From<SystemTime> for Time {
+    fn from(time: SystemTime) -> Self {
+        Time(time.into())
+    }
+}
+
+impl From<Time> for SystemTime {
+    fn from(time: Time) -> Self {
+        time.0.into()
+    }
+}
 
 impl FromStr for Time {
     type Err = chrono::format::ParseError;
