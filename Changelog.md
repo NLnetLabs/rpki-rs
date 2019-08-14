@@ -13,6 +13,9 @@ Breaking
 
 New
 
+* `ResourceCert` keeps track of the validity of the entire certificate
+  chain and makes it available via `validity`. [(#67)]
+
 Bug Fixes
 
 * Various improvements to the RRDP implementation. [(#62)]
@@ -23,6 +26,7 @@ Dependencies
 [(#62)]: https://github.com/NLnetLabs/rpki-rs/pull/62
 [(#63)]: https://github.com/NLnetLabs/rpki-rs/pull/63
 [(#64)]: https://github.com/NLnetLabs/rpki-rs/pull/64
+[(#67)]: https://github.com/NLnetLabs/rpki-rs/pull/67
 
 
 # 0.5.0
