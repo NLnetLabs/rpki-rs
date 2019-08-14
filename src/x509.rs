@@ -341,7 +341,7 @@ impl FromStr for Serial {
         let mut res = Serial::default();
         for ch in value.chars() {
             match ch {
-                '0' ... '9' => {
+                '0' ..= '9' => {
                     res = match res.checked_mul_u8(10) {
                         Some(res) => {
                             match res.checked_add_u8((ch as u8) - b'0') {

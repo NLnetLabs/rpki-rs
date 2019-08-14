@@ -10,6 +10,8 @@ Breaking
 * `tal::Tal::uris` now returns an iterator over `tal::TalUri`s, which can
   be either an rsync or HTTPS URI. [(#63)]
 * Removed the ARIN tal workaround. [(#63)]
+* Removed the `to_string` methods from URI types as these are available
+  via the `ToString` trait which is implemented via `Display`. [(#67)]
 
 New
 

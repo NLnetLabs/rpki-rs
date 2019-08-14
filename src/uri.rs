@@ -93,10 +93,6 @@ impl Rsync {
         unsafe { ::std::str::from_utf8_unchecked(self.path.as_ref()) }
     }
 
-    pub fn to_string(&self) -> String {
-        format!("{}", self)
-    }
-
     pub fn parent(&self) -> Option<Self> {
         // rsplit always returns at least one element.
         let tail = self.path.rsplit(|ch| *ch == b'/').next().unwrap().len();
@@ -271,10 +267,6 @@ impl RsyncModule {
         }
     }
 
-    pub fn to_string(&self) -> String {
-        format!("{}", self)
-    }
-
     pub fn authority(&self) -> &str {
         unsafe { ::std::str::from_utf8_unchecked(self.authority.as_ref()) }
     }
@@ -372,10 +364,6 @@ impl Https {
 
     pub fn as_str(&self) -> &str {
         unsafe { str::from_utf8_unchecked(self.uri.as_ref()) }
-    }
-
-    pub fn to_string(&self) -> String {
-        self.as_str().into()
     }
 
     pub fn encode_general_name<'a>(&'a self) -> impl encode::Values + 'a {
