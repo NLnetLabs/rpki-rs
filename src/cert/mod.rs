@@ -202,7 +202,6 @@ impl Cert {
         )?;
 
         Ok(ResourceCert {
-            validity: self.validity,
             cert: self,
             v4_resources,
             v6_resources,
@@ -458,7 +457,6 @@ impl Cert {
             as_resources: issuer.as_resources.validate_issued(
                 self.as_resources(), self.overclaim()
             )?,
-            validity: self.validity.trim(issuer.validity),
             cert: self,
             tal: issuer.tal.clone(),
         })
@@ -1674,9 +1672,6 @@ pub struct ResourceCert {
     /// The underlying resource certificate.
     cert: Cert,
 
-    /// The resolved validity time.
-    validity: Validity,
-
     /// The resolved IPv4 resources.
     v4_resources: IpBlocks,
 
@@ -1694,14 +1689,6 @@ impl ResourceCert {
     /// Returns a reference to the underlying certificate.
     pub fn as_cert(&self) -> &Cert {
         &self.cert
-    }
-
-    /// Returns the minimal validity of resource certificate.
-    ///
-    /// This is the shortest time span the entire chain of certificates is
-    /// valid.
-    pub fn validity(&self) -> Validity {
-        self.validity
     }
 
     /// Returns a reference to the IPv4 resources of this certificate.

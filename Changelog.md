@@ -15,9 +15,6 @@ Breaking
 
 New
 
-* `ResourceCert` keeps track of the validity of the entire certificate
-  chain and makes it available via `validity`. [(#67)]
-
 Bug Fixes
 
 * Various improvements to the RRDP implementation. [(#62)]
