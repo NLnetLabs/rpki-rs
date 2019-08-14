@@ -1,6 +1,7 @@
 //! Types common to all things X.509.
 
 use std::{fmt, io, ops, str};
+use std::cmp::{min, max};
 use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{
@@ -818,6 +819,13 @@ impl Validity {
 
     pub fn not_after(self) -> Time {
         self.not_after
+    }
+
+    pub fn trim(self, other: Self) -> Self {
+        Validity::new(
+            max(self.not_before, other.not_before),
+            min(self.not_after, other.not_after)
+        )
     }
 
     pub fn take_from<S: decode::Source>(
