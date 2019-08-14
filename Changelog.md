@@ -15,6 +15,8 @@ Breaking
 
 New
 
+* Add various useful impls of `From` for `x509::Time`. [(#69)]
+
 Bug Fixes
 
 * Various improvements to the RRDP implementation. [(#62)]
@@ -26,6 +28,7 @@ Dependencies
 [(#63)]: https://github.com/NLnetLabs/rpki-rs/pull/63
 [(#64)]: https://github.com/NLnetLabs/rpki-rs/pull/64
 [(#67)]: https://github.com/NLnetLabs/rpki-rs/pull/67
+[(#69)]: https://github.com/NLnetLabs/rpki-rs/pull/69
 
 
 # 0.5.0
