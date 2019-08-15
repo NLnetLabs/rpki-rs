@@ -21,6 +21,10 @@ Bug Fixes
 
 * Various improvements to the RRDP implementation. [(#62)]
 * Fix a endless loop and an off-by-one error in Chain::trim. [(#64)]
+* The `version` field of a ROA’s `RouteOriginAttestation` structure was
+  parsed and constructed as implicitly tagged whereas the standard demands
+  explicit tagging. This would have lead to a parse error for all ROAs
+  that actually contain the (optional) version field. [(#70)]
 
 Dependencies
 
@@ -29,6 +33,7 @@ Dependencies
 [(#64)]: https://github.com/NLnetLabs/rpki-rs/pull/64
 [(#67)]: https://github.com/NLnetLabs/rpki-rs/pull/67
 [(#69)]: https://github.com/NLnetLabs/rpki-rs/pull/69
+[(#70)]: https://github.com/NLnetLabs/rpki-rs/pull/70
 
 
 # 0.5.0

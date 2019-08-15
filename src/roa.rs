@@ -8,7 +8,6 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Oid, Tag, xerr};
-use bcder::decode::Source;
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
@@ -140,14 +139,8 @@ impl RouteOriginAttestation {
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
-            cons.take_opt_primitive_if(Tag::CTX_0, |prim| {
-                if prim.take_u8()? != 0 {
-                    xerr!(Err(decode::Malformed.into()))
-                }
-                else {
-                    Ok(())
-                }
-            })?;
+            // version [0] EXPLICIT INTEGER DEFAULT 0
+            cons.take_opt_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(0))?;
             let as_id = AsId::take_from(cons)?;
             let mut v4 = None;
             let mut v6 = None;
@@ -218,7 +211,7 @@ impl RouteOriginAttestation {
 
     pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence((
-            0u8.encode_as(Tag::CTX_0),
+            encode::sequence_as(Tag::CTX_0, 0u8.encode()),
             self.as_id.encode(),
             encode::sequence((
                 self.v4_addrs.encode_ref_family([0x00, 0x01]),
@@ -622,6 +615,17 @@ impl Extend<RoaIpAddress> for RoaIpAddressesBuilder {
 
 #[cfg(test)]
 mod test {
+    use super::*;
+
+    #[test]
+    fn decode_roa() {
+        assert!(
+            Roa::decode(
+                include_bytes!("../test-data/example-ripe.roa").as_ref(),
+                false
+            ).is_ok()
+        )
+    }
 }
 
 #[cfg(all(test, feature="softkeys"))]
@@ -681,6 +685,7 @@ mod signer_test {
     fn encode_roa() {
         make_roa();
     }
+        
 
     #[test]
     fn serde_roa() {
