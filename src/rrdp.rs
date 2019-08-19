@@ -329,7 +329,12 @@ pub trait ProcessDelta {
             match action.unwrap() { // Or we'd have exited already.
                 Action::Publish => {
                     let data = inner.take_text(&mut reader, |text| {
-                        base64::decode(text.to_ascii()?.as_ref())
+                        let text: Vec<_> = text.to_ascii()?.as_bytes()
+                        .iter().filter_map(|b| {
+                            if b.is_ascii_whitespace() { None }
+                            else { Some(*b) }
+                        }).collect();
+                        base64::decode(&text)
                             .map_err(|_| Error::Malformed)
                     })?;
                     self.publish(uri, hash, data)?;
