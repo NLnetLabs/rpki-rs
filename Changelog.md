@@ -10,19 +10,30 @@ Breaking
 * `tal::Tal::uris` now returns an iterator over `tal::TalUri`s, which can
   be either an rsync or HTTPS URI. [(#63)]
 * Removed the ARIN tal workaround. [(#63)]
+* Removed the `to_string` methods from URI types as these are available
+  via the `ToString` trait which is implemented via `Display`. [(#67)]
 
 New
+
+* Add various useful impls of `From` for `x509::Time`. [(#69)]
 
 Bug Fixes
 
 * Various improvements to the RRDP implementation. [(#62)]
 * Fix a endless loop and an off-by-one error in Chain::trim. [(#64)]
+* The `version` field of a ROA’s `RouteOriginAttestation` structure was
+  parsed and constructed as implicitly tagged whereas the standard demands
+  explicit tagging. This would have lead to a parse error for all ROAs
+  that actually contain the (optional) version field. [(#70)]
 
 Dependencies
 
 [(#62)]: https://github.com/NLnetLabs/rpki-rs/pull/62
 [(#63)]: https://github.com/NLnetLabs/rpki-rs/pull/63
 [(#64)]: https://github.com/NLnetLabs/rpki-rs/pull/64
+[(#67)]: https://github.com/NLnetLabs/rpki-rs/pull/67
+[(#69)]: https://github.com/NLnetLabs/rpki-rs/pull/69
+[(#70)]: https://github.com/NLnetLabs/rpki-rs/pull/70
 
 
 # 0.5.0
