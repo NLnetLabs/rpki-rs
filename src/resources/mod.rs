@@ -20,7 +20,7 @@ pub use self::asres::{
 pub use self::choice::ResourcesChoice;
 pub use self::ipres::{
     Addr, AddressFamily, IpBlock, IpBlocks, IpBlocksBuilder, IpBlocksForFamily,
-    IpResources, IpResourcesBuilder, Ipv4Resources, Ipv6Resources, Prefix
+    IpResources, IpResourcesBuilder, Prefix
 };
 
 mod asres;

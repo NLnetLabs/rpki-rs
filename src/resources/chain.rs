@@ -171,7 +171,14 @@ impl<T: Block> Chain<T> {
         // working on or a vector of cloned and trimmed blocks.
         let mut res: Result<usize, Vec<_>> = Ok(0);
 
+        let mut i = 1;
         loop {
+            if i == 100 {
+                break
+            } else {
+                i += 1;
+            }
+
             // Skip over other items before self item. If we run out of other
             // items, we are done.
             if other_item.max() < self_item.0 {
@@ -726,6 +733,16 @@ mod test {
             ),
             Err(OwnedChain::from([(12,15), (22,23)].as_ref()))
         );
+    }
+
+    #[test]
+    fn trim_bigger() {
+        let bigger = OwnedChain::from([(1,5), (10,18), (23,48)].as_ref());
+        let smaller =  OwnedChain::from([(1,4), (11,17), (23,48)].as_ref());
+
+        let intersection = bigger.trim(&smaller).err().unwrap();
+
+        assert_eq!(smaller, intersection);
     }
 }
 

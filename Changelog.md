@@ -12,9 +12,12 @@ Breaking
 * Removed the ARIN tal workaround. [(#63)]
 * Removed the `to_string` methods from URI types as these are available
   via the `ToString` trait which is implemented via `Display`. [(#67)]
+* Renamed `IpBlocks::contains` to `IpBlocks::contains_roa`. [(#72)]
 
 New
 
+* Add set operations `union`, `intersection`, and `contains` to `IpBlocks`
+  and `AsBlocks`. [(#72)]
 * Add various useful impls of `From` for `x509::Time`. [(#69)]
 
 Bug Fixes

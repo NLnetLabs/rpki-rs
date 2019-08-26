@@ -189,7 +189,7 @@ impl RouteOriginAttestation {
                 return Err(ValidationError)
             }
             for addr in self.v4_addrs.iter() {
-                if !blocks.contains(&addr) {
+                if !blocks.contains_roa(&addr) {
                     return Err(ValidationError)
                 }
             }
@@ -200,7 +200,7 @@ impl RouteOriginAttestation {
                 return Err(ValidationError)
             }
             for addr in self.v6_addrs.iter() {
-                if !blocks.contains(&addr) {
+                if !blocks.contains_roa(&addr) {
                     return Err(ValidationError)
                 }
             }

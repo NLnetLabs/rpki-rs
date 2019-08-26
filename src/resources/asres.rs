@@ -290,6 +290,37 @@ impl AsBlocks {
     }
 }
 
+/// # Set operations
+///
+impl AsBlocks {
+    /// Returns whether this AsBlocks contains the other in its entirety.
+    pub fn contains(&self, other: &Self) -> bool {
+        other.0.is_encompassed(&self.0)
+    }
+
+    /// Return the intersection of this AsBlocks and the other. I.e. all
+    /// resources which are found in both.
+    pub fn intersection(&self, other: &Self) -> Self {
+        match self.0.trim(&other.0) {
+            Ok(()) => self.clone(),
+            Err(owned) => AsBlocks(SharedChain::from_owned(owned))
+        }
+    }
+
+    /// Returns a new AsBlocks with the union of this and the other AsBlocks.
+    ///
+    /// i.e. all resources found in one or both AsBlocks.
+    pub fn union(&self, other: &Self) -> Self {
+        AsBlocks(
+            FromIterator::from_iter(
+                self.0.iter().cloned().chain(other.0.iter().cloned())
+            )
+        )
+    }
+
+
+
+}
 
 /// # Decoding and Encoding
 ///

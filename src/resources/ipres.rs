@@ -8,170 +8,21 @@
 //! non-empty.
 
 use std::{fmt, io, iter, mem, str};
-use std::fmt::{Display, Formatter};
+use std::fmt::Display;
 use std::iter::FromIterator;
 use std::net::{AddrParseError, IpAddr, Ipv4Addr, Ipv6Addr};
 use std::num::ParseIntError;
-use std::ops::Deref;
 use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, OctetString, Tag, xerr};
 use bcder::encode::PrimitiveContent;
 use derive_more::{Display, From};
-use serde::de;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::cert::Overclaim;
 use crate::roa::RoaIpAddress;
 use crate::x509::ValidationError;
 use super::chain::{Block, SharedChain};
 use super::choice::ResourcesChoice;
 
-//------------ Ipv4Resources -------------------------------------------------
-
-/// The IPv4 Address Resources of an RPKI Certificate.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Ipv4Resources(IpResources);
-
-impl Ipv4Resources {
-    /// Creates a new IpResources with a ResourcesChoice::Inherit
-    pub fn inherit() -> Self {
-        Ipv4Resources(IpResources(ResourcesChoice::Inherit))
-    }
-
-    /// Creates a new IpResources for the given blocks.
-    pub fn blocks(blocks: IpBlocks) -> Self {
-        Ipv4Resources(IpResources(ResourcesChoice::Blocks(blocks)))
-    }
-}
-
-//--- Deref
-
-impl Deref for Ipv4Resources {
-    type Target = IpResources;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-//--- Display
-
-impl fmt::Display for Ipv4Resources {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match &self.0.as_blocks() {
-            None => write!(f, "inherit"),
-            Some(blocks) => blocks.as_v4().fmt(f)
-        }
-    }
-}
-
-//--- FromStr
-
-impl FromStr for Ipv4Resources {
-    type Err = FromStrError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s == "inherit" {
-            Ok(Ipv4Resources(IpResources(ResourcesChoice::Inherit)))
-        } else if s.contains(':') {
-            Err(FromStrError::FamilyMismatch)
-        } else {
-            let blocks = IpBlocks::from_str(s)?;
-            Ok(Ipv4Resources(IpResources(ResourcesChoice::Blocks(blocks))))
-        }
-    }
-}
-
-//--- Serialize
-
-impl Serialize for Ipv4Resources {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
-        self.to_string().serialize(serializer)
-    }
-}
-
-//--- Deserialize
-
-impl<'de> Deserialize<'de> for Ipv4Resources {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
-        let string = String::deserialize(deserializer)?;
-        Ok(Self::from_str(&string).map_err(de::Error::custom)?)
-    }
-}
-
-
-//------------ Ipv6Resources -------------------------------------------------
-
-/// The IPv6 Address Resources of an RPKI Certificate.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Ipv6Resources(IpResources);
-
-impl Ipv6Resources {
-    /// Creates a new IpResources with a ResourcesChoice::Inherit
-    pub fn inherit() -> Self {
-        Ipv6Resources(IpResources(ResourcesChoice::Inherit))
-    }
-
-    /// Creates a new IpResources for the given blocks.
-    pub fn blocks(blocks: IpBlocks) -> Self {
-        Ipv6Resources(IpResources(ResourcesChoice::Blocks(blocks)))
-    }
-}
-
-//--- Deref
-
-impl Deref for Ipv6Resources {
-    type Target = IpResources;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-//--- Display
-
-impl fmt::Display for Ipv6Resources {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match &self.0.as_blocks() {
-            None => write!(f, "inherit"),
-            Some(blocks) => blocks.as_v6().fmt(f)
-        }
-    }
-}
-
-//--- FromStr
-
-impl FromStr for Ipv6Resources {
-    type Err = FromStrError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s == "inherit" {
-            Ok(Ipv6Resources(IpResources(ResourcesChoice::Inherit)))
-        } else if s.contains('.') {
-            Err(FromStrError::FamilyMismatch)
-        } else {
-            let blocks = IpBlocks::from_str(s)?;
-            Ok(Ipv6Resources(IpResources(ResourcesChoice::Blocks(blocks))))
-        }
-    }
-}
-
-//--- Serialize
-
-impl Serialize for Ipv6Resources {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
-        self.to_string().serialize(serializer)
-    }
-}
-
-//--- Deserialize
-
-impl<'de> Deserialize<'de> for Ipv6Resources {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
-        let string = String::deserialize(deserializer)?;
-        Ok(Self::from_str(&string).map_err(de::Error::custom)?)
-    }
-}
 
 //------------ IpResources ---------------------------------------------------
 
@@ -439,7 +290,7 @@ impl IpBlocks {
             Some(ResourcesChoice::Blocks(ref blocks)) => {
                 match mode {
                     Overclaim::Refuse => {
-                        if blocks.0.is_encompassed(&self.0) {
+                        if self.contains(blocks) {
                             Ok(blocks.clone())
                         }
                         else {
@@ -447,10 +298,7 @@ impl IpBlocks {
                         }
                     }
                     Overclaim::Trim => {
-                        match blocks.0.trim(&self.0) {
-                            Ok(()) => Ok(blocks.clone()),
-                            Err(new) => Ok(IpBlocks(new.into()))
-                        }
+                        Ok(blocks.intersection(&self))
                     }
                 }
             },
@@ -460,7 +308,7 @@ impl IpBlocks {
 
 
     /// Returns whether the address blocks cover the given ROA address prefix.
-    pub fn contains(&self, addr: &RoaIpAddress) -> bool {
+    pub fn contains_roa(&self, addr: &RoaIpAddress) -> bool {
         let (min, max) = addr.range();
         for range in self.iter() {
             if range.min() <= min && range.max() >= max {
@@ -468,6 +316,35 @@ impl IpBlocks {
             }
         }
         false
+    }
+}
+
+/// # Set operations
+///
+impl IpBlocks {
+    /// Returns whether this IpBlocks contains the other in its entirety.
+    pub fn contains(&self, other: &Self) -> bool {
+        other.0.is_encompassed(&self.0)
+    }
+
+    /// Return the intersection of this IpBlocks and the other. I.e. all
+    /// resources which are found in both.
+    pub fn intersection(&self, other: &Self) -> Self {
+        match self.0.trim(&other.0) {
+            Ok(()) => self.clone(),
+            Err(owned) => IpBlocks(SharedChain::from_owned(owned))
+        }
+    }
+
+    /// Returns a new IpBlocks with the union of this and the other IpBlocks.
+    ///
+    /// i.e. all resources found in one or both IpBlocks.
+    pub fn union(&self, other: &Self) -> Self {
+        IpBlocks(
+            FromIterator::from_iter(
+                self.0.iter().cloned().chain(other.0.iter().cloned())
+            )
+        )
     }
 }
 
@@ -1485,50 +1362,6 @@ mod test {
     use super::*;
 
     #[test]
-    fn ipv4_resources_inherit_serde() {
-        let resources_str = "inherit";
-        let ipv4_resources = Ipv4Resources::from_str(resources_str).unwrap();
-
-        let json = serde_json::to_string(&ipv4_resources).unwrap();
-        let deser_ipv4_resources = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(ipv4_resources, deser_ipv4_resources)
-    }
-
-    #[test]
-    fn ipv4_resources_concrete_serde() {
-        let resources_str = "10.0.0.0, 10.1.0.0-10.1.2.255, 192.168.0.0/16";
-        let ipv4_resources = Ipv4Resources::from_str(resources_str).unwrap();
-
-        let json = serde_json::to_string(&ipv4_resources).unwrap();
-        let deser_ipv4_resources = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(ipv4_resources, deser_ipv4_resources)
-    }
-
-    #[test]
-    fn ipv6_resources_inherit_serde() {
-        let resources_str = "inherit";
-        let ipv6_resources = Ipv6Resources::from_str(resources_str).unwrap();
-
-        let json = serde_json::to_string(&ipv6_resources).unwrap();
-        let deser_ipv6_resources = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(ipv6_resources, deser_ipv6_resources)
-    }
-
-    #[test]
-    fn ipv6_resources_concrete_serde() {
-        let resources_str = "::1, 2001:db8::/32";
-        let ipv6_resources = Ipv6Resources::from_str(resources_str).unwrap();
-
-        let json = serde_json::to_string(&ipv6_resources).unwrap();
-        let deser_ipv6_resources = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(ipv6_resources, deser_ipv6_resources)
-    }
-
-    #[test]
     fn ip_blocks_to_v4_str() {
         let expected_str = "10.0.0.0, 10.1.0.0-10.1.2.255, 192.168.0.0/16";
         let blocks = IpBlocks::from_str(expected_str).unwrap();
@@ -1557,6 +1390,147 @@ mod test {
         let blocks = IpBlocks::from_str("").unwrap();
         assert_eq!(expected_str, blocks.as_v4().to_string());
         assert_eq!(expected_str, blocks.as_v6().to_string());
+    }
+
+    #[test]
+    fn ip_blocks_contains() {
+        let super_set = IpBlocks::from_str("10.0.0.0/16, 192.168.0.0/16").unwrap();
+        let same = IpBlocks::from_str("10.0.0.0/16, 192.168.0.0/16").unwrap();
+        let higher_block = IpBlocks::from_str("192.168.0.0/16").unwrap();
+        let smaller_left = IpBlocks::from_str("10.0.0.0/17").unwrap();
+        let smaller_right = IpBlocks::from_str("10.0.0.0/17").unwrap();
+        let smaller = IpBlocks::from_str("10.0.0.1-10.0.255.254").unwrap();
+        let bigger_left = IpBlocks::from_str("19.9.9.255-10.0.255.255").unwrap();
+        let bigger_right = IpBlocks::from_str("19.9.9.255-10.1.0.0").unwrap();
+        let bigger = IpBlocks::from_str("19.9.9.255-10.1.0.0").unwrap();
+
+        assert!(super_set.contains(&same));
+        assert!(super_set.contains(&higher_block));
+        assert!(super_set.contains(&smaller_left));
+        assert!(super_set.contains(&smaller_right));
+        assert!(super_set.contains(&smaller));
+        assert!(!super_set.contains(&bigger_left));
+        assert!(!super_set.contains(&bigger_right));
+        assert!(!super_set.contains(&bigger ));
+    }
+
+    #[test]
+    fn ip_blocks_intersection() {
+        // Note: the IpBlocks::intersection function delegates to Chain::trim
+        // which has been well fuzzed. Adding these tests here though for
+        // readability and regression testing.
+
+        // this:            |----
+        // other:     |---|
+        let this = IpBlocks::from_str("10.0.1.0-10.0.1.255").unwrap();
+        let other = IpBlocks::from_str("10.0.0.0-10.0.0.255").unwrap();
+        let expected = IpBlocks::empty();
+
+        assert_eq!(this.intersection(&other), expected);
+        assert_eq!(other.intersection(&this), expected);
+
+        // this:            |----
+        // other:     |-----|
+        let this = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.0.0-10.0.1.0").unwrap();
+        let expected = IpBlocks::from_str("10.0.1.0-10.0.1.0").unwrap();
+        assert_eq!(expected, this.intersection(&other));
+        assert_eq!(expected, other.intersection(&this));
+
+        // this:          |----
+        // other:     |-----|
+        let this = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.0.0-10.0.1.27").unwrap();
+        let expected = IpBlocks::from_str("10.0.1.0-10.0.1.27").unwrap();
+        assert_eq!(expected, this.intersection(&other));
+        assert_eq!(expected, other.intersection(&this));
+
+        // this:          |----|
+        // other:       |~{----|
+        let this = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.0.0/23").unwrap();
+        let expected = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        assert_eq!(expected, this.intersection(&other));
+        assert_eq!(expected, other.intersection(&this));
+
+        // this:          |----|
+        // other:       |~{-----|
+        let this = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.0.0-10.0.2.0").unwrap();
+        let expected = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        assert_eq!(expected, this.intersection(&other));
+        assert_eq!(expected, other.intersection(&this));
+
+        // this:   |----------|
+        // other:  |~~{-----|
+        let this = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.1.3-10.0.1.98").unwrap();
+        let expected = IpBlocks::from_str("10.0.1.3-10.0.1.98").unwrap();
+        assert_eq!(expected, this.intersection(&other));
+        assert_eq!(expected, other.intersection(&this));
+
+        let this = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.1.0-10.0.1.98").unwrap();
+        let expected = IpBlocks::from_str("10.0.1.0-10.0.1.98").unwrap();
+        assert_eq!(expected, this.intersection(&other));
+        assert_eq!(expected, other.intersection(&this));
+
+        // this:   |----------|
+        // other:  |~~{-------|
+        let this = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.1.3-10.0.1.255").unwrap();
+        let expected = IpBlocks::from_str("10.0.1.3-10.0.1.255").unwrap();
+        assert_eq!(expected, this.intersection(&other));
+        assert_eq!(expected, other.intersection(&this));
+
+        let this = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.1.0-10.0.1.255").unwrap();
+        let expected = IpBlocks::from_str("10.0.1.0-10.0.1.255").unwrap();
+        assert_eq!(expected, this.intersection(&other));
+        assert_eq!(expected, other.intersection(&this));
+
+        // this:   |----------|
+        // other:  |~~{----------|
+        let this = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.1.3-10.0.2.0").unwrap();
+        let expected = IpBlocks::from_str("10.0.1.3-10.0.1.255").unwrap();
+        // Looking at the number, IPv4 is modelled as the left most 4 bytes in a u128
+        // so the max number of the intersection comes out as 10.0.1.255 with the
+        // remaining bytes set to FF. This is not significant but is not treated
+        // as equals.
+        //
+        // In short we assert here that the as_v4().to_string() is equal, because
+        // then these bytes are dropped.
+        assert_eq!(
+            this.intersection(&other).as_v4().to_string(),
+            expected.as_v4().to_string()
+        );
+        assert_eq!(
+            other.intersection(&this).as_v4().to_string(),
+            expected.as_v4().to_string()
+        );
+
+        // this:   |------|
+        // other:         |---------|
+        let this = IpBlocks::from_str("10.0.0.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.0.255-10.0.1.0").unwrap();
+        let expected = IpBlocks::from_str("10.0.0.255/32").unwrap();
+        assert_eq!(
+            this.intersection(&other).as_v4().to_string(),
+            expected.as_v4().to_string()
+        );
+        assert_eq!(
+            other.intersection(&this).as_v4().to_string(),
+            expected.as_v4().to_string()
+        );
+
+        // this:     |-----|
+        // other:            |---
+        let this = IpBlocks::from_str("10.0.0.0/24").unwrap();
+        let other = IpBlocks::from_str("10.0.1.0/24").unwrap();
+        let expected = IpBlocks::empty();
+        assert_eq!(expected, this.intersection(&other));
+        assert_eq!(expected, other.intersection(&this));
     }
 
     #[test]
