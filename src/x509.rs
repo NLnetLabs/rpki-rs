@@ -521,6 +521,10 @@ impl Time {
         Self::new(Utc::now())
     }
 
+    pub fn five_minutes_ago() -> Self {
+        Self::now() - Duration::minutes(5)
+    }
+
     pub fn tomorrow() -> Self {
         Self::now() + Duration::days(1)
     }
