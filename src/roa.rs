@@ -67,6 +67,11 @@ impl Roa {
     pub fn to_captured(&self) -> Captured {
         self.encode_ref().to_captured(Mode::Der)
     }
+
+    /// Returns a reference to the EE certificate of this manifest.
+    pub fn cert(&self) -> &Cert {
+        self.signed.cert()
+    }
 }
 
 
