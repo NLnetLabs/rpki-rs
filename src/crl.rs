@@ -514,7 +514,7 @@ impl RevokedCertificates {
 
     /// Returns a value encoder for a reference to the value.
     pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
-        &self.0
+        encode::sequence(&self.0)
     }
 
     /// Create a value from an iterator over CRL entries.
@@ -731,7 +731,7 @@ mod signer_test {
             pubkey.to_subject_name(),
             Time::now(),
             Time::tomorrow(),
-            Vec::<CrlEntry>::new(),
+            vec![CrlEntry::new(12u64.into(), Time::now())],
             KeyIdentifier::from_public_key(&pubkey),
             12u64.into()
         );
