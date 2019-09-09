@@ -28,6 +28,7 @@ Bug Fixes
   parsed and constructed as implicitly tagged whereas the standard demands
   explicit tagging. This would have lead to a parse error for all ROAs
   that actually contain the (optional) version field. [(#70)]
+* Fix encoding of CRLs. [(#73)]
 
 Dependencies
 
@@ -37,6 +38,7 @@ Dependencies
 [(#67)]: https://github.com/NLnetLabs/rpki-rs/pull/67
 [(#69)]: https://github.com/NLnetLabs/rpki-rs/pull/69
 [(#70)]: https://github.com/NLnetLabs/rpki-rs/pull/70
+[(#73)]: https://github.com/NLnetLabs/rpki-rs/pull/73
 
 
 # 0.5.0
