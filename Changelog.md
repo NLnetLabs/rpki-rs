@@ -32,6 +32,8 @@ Bug Fixes
 
 Dependencies
 
+* Upgrade to ring 0.16. [(#75)]
+
 [(#62)]: https://github.com/NLnetLabs/rpki-rs/pull/62
 [(#63)]: https://github.com/NLnetLabs/rpki-rs/pull/63
 [(#64)]: https://github.com/NLnetLabs/rpki-rs/pull/64
@@ -39,6 +41,7 @@ Dependencies
 [(#69)]: https://github.com/NLnetLabs/rpki-rs/pull/69
 [(#70)]: https://github.com/NLnetLabs/rpki-rs/pull/70
 [(#73)]: https://github.com/NLnetLabs/rpki-rs/pull/73
+[(#75)]: https://github.com/NLnetLabs/rpki-rs/pull/75
 
 
 # 0.5.0
