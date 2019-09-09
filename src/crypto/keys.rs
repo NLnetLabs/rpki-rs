@@ -12,7 +12,6 @@ use ring::{digest, signature};
 use ring::error::Unspecified;
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use untrusted::Input;
 use unwrap::unwrap;
 use crate::oid;
 use crate::util::hex;
@@ -102,7 +101,8 @@ impl PublicKey {
     pub fn key_identifier(&self) -> KeyIdentifier {
         unwrap!(KeyIdentifier::try_from(
             digest::digest(
-                &digest::SHA1, self.bits.octet_slice().unwrap()
+                &digest::SHA1_FOR_LEGACY_USE_ONLY,
+                self.bits.octet_slice().unwrap()
             ).as_ref()
         ))
     }
@@ -111,11 +111,12 @@ impl PublicKey {
     pub fn verify(
         &self, message: &[u8], signature: &Signature
     ) -> Result<(), VerificationError> {
-        signature::verify(
+        signature::UnparsedPublicKey::new(
             &signature::RSA_PKCS1_2048_8192_SHA256,
-            Input::from(self.bits()),
-            Input::from(message),
-            Input::from(signature.value().as_ref())
+            self.bits()
+        ).verify(
+            message,
+            signature.value().as_ref()
         ).map_err(Into::into)
     }
 }

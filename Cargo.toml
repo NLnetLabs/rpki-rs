@@ -1,6 +1,6 @@
 [package]
 name = "rpki"
-version = "0.5.1"
+version = "0.6.0"
 edition = "2018"
 authors = ["The NLnet Labs RPKI Team <rpki@nlnetlabs.nl>"]
 description = "A library for validating and creating RPKI data."
@@ -13,18 +13,17 @@ license = "BSD-3-Clause"
 
 [dependencies]
 base64          = "^0.10.1"
-bcder           = "^0.3.2"
+bcder           = "^0.4.0"
 bytes           = "^0.4.12"
 chrono          = { version = "^0.4.7", features = [ "serde" ] }
 derive_more     = "^0.15.0"
 log             = "^0.4.7"
 openssl         = { version = "^0.10.23", optional = true }
-quick-xml       = "^0.15.0"
-ring            = "^0.14.6"
+quick-xml       = "^0.16.1"
+ring            = "^0.16.9"
 serde           = { version = "^1.0.95", features = [ "derive" ] }
 slab            = { version = "^0.4.2", optional = true }
 uuid            = "^0.7.4"
-untrusted       = "^0.6.2"
 unwrap          = "^1.2.1"
 
 [dev-dependencies]
@@ -34,7 +33,4 @@ serde_json      = "^1.0.40"
 default = []
 softkeys = [ "openssl", "slab" ]
 extra-debug = [ "bcder/extra-debug" ]
-
-[patch.crates-io]
-bcder = { git="https://github.com/NLnetLabs/bcder.git" }
 
