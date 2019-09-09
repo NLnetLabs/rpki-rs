@@ -1,6 +1,6 @@
 # Change Log
 
-# Unreleased future version
+# 0.6.0
 
 Breaking
 
@@ -29,8 +29,6 @@ Bug Fixes
   explicit tagging. This would have lead to a parse error for all ROAs
   that actually contain the (optional) version field. [(#70)]
 * Fix encoding of CRLs. [(#73)]
-
-Dependencies
 
 [(#62)]: https://github.com/NLnetLabs/rpki-rs/pull/62
 [(#63)]: https://github.com/NLnetLabs/rpki-rs/pull/63
