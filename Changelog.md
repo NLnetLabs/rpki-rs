@@ -4,11 +4,18 @@
 
 Breaking
 
+* Dot segments (‘.’ and ‘..’) and empty segments (except for the final
+  segment) are not allowed anymore in rsync URIs and will lead to URIs being
+  rejected. The `uri::Error`  enum has received new variants for these cases.
+  [(#77)]
+
 New
 
 Bug Fixes
 
 Dependencies
+
+[(#77)]: https://github.com/NLnetLabs/rpki-rs/pull/77
 
 
 # 0.6.0
