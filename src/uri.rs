@@ -75,10 +75,35 @@ impl Rsync {
             return Err(Error::BadUri)
         }
         bytes.advance(1);
+        Self::check_path(&bytes)?;
         Ok(Rsync {
             module: RsyncModule::new(authority, module),
             path: bytes
         })
+    }
+
+    fn check_path(path: &[u8]) -> Result<(), Error> {
+        // Don’t allow ".." anywhere. Don’t allow empty segments except at the
+        // end.
+        let mut items = path.split(|ch| *ch == b'/');
+        loop {
+            let item = match items.next() {
+                Some(item) => item,
+                None => return Ok(())
+            };
+            if item.is_empty() {
+                break
+            }
+            if item == b".." || item == b"." {
+                return Err(Error::DotSegments)
+            }
+        }
+        if items.next().is_some() {
+            Err(Error::EmptySegments)
+        }
+        else {
+            Ok(())
+        }
     }
 
     pub fn module(&self) -> &RsyncModule {
@@ -617,6 +642,12 @@ pub enum Error {
 
     #[display(fmt="bad URI scheme")]
     BadScheme,
+
+    #[display(fmt="URI with dot segments")]
+    DotSegments,
+
+    #[display(fmt="URI with empty segments")]
+    EmptySegments,
 }
 
 
@@ -626,6 +657,36 @@ pub enum Error {
 mod tests {
     use super::*;
     use std::str::FromStr;
+
+    #[test]
+    fn rsync_check_uri() {
+        assert!(Rsync::from_slice(b"rsync://host/module/foo/bar").is_ok());
+        assert!(Rsync::from_slice(b"rsync://host/module/foo/bar/").is_ok());
+        assert_eq!(
+            Rsync::from_slice(b"rsync://host/module/foo/../bar/"),
+            Err(Error::DotSegments)
+        );
+        assert_eq!(
+            Rsync::from_slice(b"rsync://host/module/foo/./bar/"),
+            Err(Error::DotSegments)
+        );
+        assert_eq!(
+            Rsync::from_slice(b"rsync://host/module/foo/bar/.."),
+            Err(Error::DotSegments)
+        );
+        assert_eq!(
+            Rsync::from_slice(b"rsync://host/module/foo/bar/../"),
+            Err(Error::DotSegments)
+        );
+        assert_eq!(
+            Rsync::from_slice(b"rsync://host/module/foo//bar/"),
+            Err(Error::EmptySegments)
+        );
+        assert_eq!(
+            Rsync::from_slice(b"rsync://host/module//foo/bar/"),
+            Err(Error::EmptySegments)
+        );
+    }
 
     #[test]
     fn resolve_relative_rsync_path() {
