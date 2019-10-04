@@ -308,7 +308,7 @@ impl ManifestContent {
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
-            cons.take_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(0))?;
+            cons.take_opt_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(0))?;
             let manifest_number = Serial::take_from(cons)?;
             let this_update = Time::take_from(cons)?;
             let next_update = Time::take_from(cons)?;
