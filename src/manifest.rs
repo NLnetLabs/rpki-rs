@@ -342,7 +342,6 @@ impl ManifestContent {
     /// Returns a value encoder for a reference to the content.
     pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence((
-            encode::sequence_as(Tag::CTX_0, 0u8.encode()),
             self.manifest_number.encode(),
             self.this_update.encode(),
             self.next_update.encode(),
