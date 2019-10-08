@@ -13,9 +13,19 @@ New
 
 Bug Fixes
 
+* Fixed a decoding and encoding error in manifests’ version field which
+  caused certain manifests (which don’t seem to be existing in the wild 
+  currently) to be rejected and produced manifests to be invalid. [(#78)]
+
+Other Changes
+
+* Optional versions are not included in encoded ROAs and manifests
+  anymore. This fixes some interoperability issues. [(#78)]
+
 Dependencies
 
 [(#77)]: https://github.com/NLnetLabs/rpki-rs/pull/77
+[(#78)]: https://github.com/NLnetLabs/rpki-rs/pull/78
 
 
 # 0.6.0
