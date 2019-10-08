@@ -308,15 +308,7 @@ impl ManifestContent {
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
-            cons.take_opt_primitive_if(Tag::CTX_0, |prim| {
-                if prim.to_u8()? != 0 {
-                    xerr!(Err(decode::Malformed.into()))
-                }
-                else {
-                    Ok(())
-                }
-            })?;
-
+            cons.take_opt_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(0))?;
             let manifest_number = Serial::take_from(cons)?;
             let this_update = Time::take_from(cons)?;
             let next_update = Time::take_from(cons)?;
@@ -350,7 +342,6 @@ impl ManifestContent {
     /// Returns a value encoder for a reference to the content.
     pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence((
-            0u8.encode_as(Tag::CTX_0),
             self.manifest_number.encode(),
             self.this_update.encode(),
             self.next_update.encode(),
