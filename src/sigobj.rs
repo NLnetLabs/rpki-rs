@@ -756,6 +756,26 @@ impl SignedObjectBuilder {
         self.set_as_resources(builder.finalize())
     }
 
+    /// Returns the signing time attribute.
+    pub fn signing_time(&self) -> Option<Time> {
+        self.signing_time
+    }
+
+    /// Sets the signing time attribute.
+    pub fn set_signing_time(&mut self, signing_time: Option<Time>) {
+        self.signing_time = signing_time
+    }
+
+    /// Returns the binary signing time attribute.
+    pub fn binary_signing_time(&self) -> Option<u64> {
+        self.binary_signing_time
+    }
+
+    /// Sets the binary signing time attribute.
+    pub fn set_binary_signing_time(&mut self, time: Option<u64>) {
+        self.binary_signing_time = time
+    }
+
     pub fn finalize<S: Signer>(
         self,
         content_type: Oid<Bytes>,

@@ -11,6 +11,9 @@ Breaking
 
 New
 
+* Added access to signing time and binary signing time in signed object
+  builder. [(#80)]
+
 Bug Fixes
 
 * Fixed a decoding and encoding error in manifests’ version field which
@@ -26,6 +29,7 @@ Dependencies
 
 [(#77)]: https://github.com/NLnetLabs/rpki-rs/pull/77
 [(#78)]: https://github.com/NLnetLabs/rpki-rs/pull/78
+[(#80)]: https://github.com/NLnetLabs/rpki-rs/pull/80
 
 
 # 0.6.0
