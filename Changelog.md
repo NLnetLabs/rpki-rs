@@ -19,6 +19,7 @@ Bug Fixes
 * Fixed a decoding and encoding error in manifests’ version field which
   caused certain manifests (which don’t seem to be existing in the wild 
   currently) to be rejected and produced manifests to be invalid. [(#78)]
+* Don’t include empty address families in a produced ROA. [(#79)]
 
 Other Changes
 
@@ -29,6 +30,7 @@ Dependencies
 
 [(#77)]: https://github.com/NLnetLabs/rpki-rs/pull/77
 [(#78)]: https://github.com/NLnetLabs/rpki-rs/pull/78
+[(#79)]: https://github.com/NLnetLabs/rpki-rs/pull/79
 [(#80)]: https://github.com/NLnetLabs/rpki-rs/pull/80
 
 

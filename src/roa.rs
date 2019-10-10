@@ -579,7 +579,14 @@ impl RoaIpAddressesBuilder {
     }
 
     pub fn to_addresses(&self) -> RoaIpAddresses {
-        RoaIpAddresses(Captured::from_values(Mode::Der, self.encode_ref()))
+        RoaIpAddresses(
+            if self.addrs.is_empty() {
+                Captured::empty(Mode::Der)
+            }
+            else {
+                Captured::from_values(Mode::Der, self.encode_ref())
+            }
+       )
     }
 
     pub fn to_resources(&self) -> Option<IpResources> {
