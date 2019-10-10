@@ -1,6 +1,6 @@
 # Change Log
 
-# Unreleased next version
+# 0.7.0
 
 Breaking
 
@@ -25,8 +25,6 @@ Other Changes
 
 * Optional versions are not included in encoded ROAs and manifests
   anymore. This fixes some interoperability issues. [(#78)]
-
-Dependencies
 
 [(#77)]: https://github.com/NLnetLabs/rpki-rs/pull/77
 [(#78)]: https://github.com/NLnetLabs/rpki-rs/pull/78
