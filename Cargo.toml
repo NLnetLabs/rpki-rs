@@ -13,7 +13,7 @@ license = "BSD-3-Clause"
 
 [dependencies]
 base64          = "^0.10.1"
-bcder           = "^0.4"
+bcder           = "^0.4.1-pre"
 bytes           = "^0.4.12"
 chrono          = { version = "^0.4.7", features = [ "serde" ] }
 derive_more     = "^0.15.0"
