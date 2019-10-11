@@ -538,7 +538,7 @@ impl RoaBuilder {
         let v4 = self.v4.to_resources();
         let v6 = self.v6.to_resources();
         // There must be some resources in order to make a valid ROA.
-        assert!(v4.is_some() || v6.is_none());
+        assert!(v4.is_some() || v6.is_some());
         sigobj.set_v4_resources(v4);
         sigobj.set_v6_resources(v6);
         let signed = sigobj.finalize(
