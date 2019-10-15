@@ -337,7 +337,7 @@ impl<T: Block> Eq for Chain<T> {}
 //  Note: This isn’t a `Box<Chain<T>>` because converting a vec to a box
 //        likely means re-allocating to drop down from capacity. We don’t
 //        want to force that upon users, so we keep the vec.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct OwnedChain<T: Block>(Vec<T>);
 
 impl<T: Block> OwnedChain<T> {
@@ -466,13 +466,24 @@ impl<T: Block> AsRef<[T]> for OwnedChain<T> {
 }
 
 
+//--- PartialEq and Eq
+
+impl<T: Block, Other: AsRef<Chain<T>>> PartialEq<Other> for OwnedChain<T> {
+    fn eq(&self, other: &Other) -> bool {
+        self.as_chain().eq(other.as_ref())
+    }
+}
+
+impl<T: Block> Eq for OwnedChain<T> { }
+
+
 //------------ SharedChain ---------------------------------------------------
 
 /// A shared, owned version of a chain.
 ///
 /// This is essentially an owned chain inside of an arc with an optimization
 /// so that empty chains never get actually allocated.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct SharedChain<T: Block + 'static>(Option<Arc<OwnedChain<T>>>);
 
 impl<T: Block + 'static> SharedChain<T> {
@@ -536,6 +547,17 @@ impl<T: Block + 'static> AsRef<[T]> for SharedChain<T> {
         self.as_chain().as_ref()
     }
 }
+
+
+//--- PartialEq and Eq
+
+impl<T: Block, Other: AsRef<Chain<T>>> PartialEq<Other> for SharedChain<T> {
+    fn eq(&self, other: &Other) -> bool {
+        self.as_chain().eq(other.as_ref())
+    }
+}
+
+impl<T: Block> Eq for SharedChain<T> { }
 
 
 
