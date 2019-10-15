@@ -787,6 +787,16 @@ mod test {
         assert_ne!(two.as_chain(), empty.as_chain());
         assert_ne!(two.as_chain(), one.as_chain());
         assert_eq!(two.as_chain(), two.as_chain());
+
+        assert_eq!(empty.clone(), empty.clone());
+        assert_ne!(empty.clone(), one.clone());
+        assert_ne!(empty.clone(), two.clone());
+        assert_ne!(one.clone(), empty.clone());
+        assert_eq!(one.clone(), one.clone());
+        assert_ne!(one.clone(), two.clone());
+        assert_ne!(two.clone(), empty.clone());
+        assert_ne!(two.clone(), one.clone());
+        assert_eq!(two.clone(), two.clone());
     }
 }
 
