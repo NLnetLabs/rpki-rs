@@ -795,20 +795,23 @@ fn read_four_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Err> {
 
 
 //--- PrimitiveContent
+//
+// XXX This is only for testing.
 
 impl PrimitiveContent for Time {
-    const TAG: Tag = Tag::GENERALIZED_TIME;
+    //const TAG: Tag = Tag::GENERALIZED_TIME;
+    const TAG: Tag = Tag::UTC_TIME;
 
     fn encoded_len(&self, _: Mode) -> usize {
-        15 // yyyyMMddhhmmssZ
+        13 // yyMMddhhmmssZ
     }
 
     fn write_encoded<W: io::Write>(
         &self, _: Mode, target: &mut W
     ) -> Result<(), io::Error> {
         write!(
-            target, "{:04}{:02}{:02}{:02}{:02}{:02}Z",
-            self.0.year(), self.0.month(), self.0.day(),
+            target, "{:02}{:02}{:02}{:02}{:02}{:02}Z",
+            self.0.year() % 100, self.0.month(), self.0.day(),
             self.0.hour(), self.0.minute(), self.0.second()
         )
     }
