@@ -317,7 +317,12 @@ impl<T: Block> PartialEq for Chain<T> {
         let mut other_iter = other.iter();
         loop {
             match (self_iter.next(), other_iter.next()) {
-                (Some(left), Some(right)) if left == right => { }
+                (Some(left), Some(right)) => {
+                    if left.min() != right.min() || left.max() != right.max() {
+                        return false
+                    }
+                    // continue
+                }
                 (None, None) => {
                     return true
                 }
