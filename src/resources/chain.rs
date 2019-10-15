@@ -313,17 +313,22 @@ impl<T: Block> PartialEq for Chain<T> {
     fn eq(&self, other: &Chain<T>) -> bool {
         // This code relies on the property that a chain is an
         // ordered, non-overlapping, non-continuous sequence of blocks.
+        let mut self_iter = self.iter();
         let mut other_iter = other.iter();
-        for my_block in self.iter() {
-            if let Some(other_block) = other_iter.next() {
-                if my_block.min() != other_block.min() || my_block.max() != other_block.max() {
-                    return false
+        loop {
+            match (self_iter.next(), other_iter.next()) {
+                (Some(left), Some(right)) => {
+                    if left.min() != right.min() || left.max() != right.max() {
+                        return false
+                    }
+                    // continue
                 }
-            } else {
-                return false
+                (None, None) => {
+                    return true
+                }
+                _ => return false
             }
         }
-        true
     }
 }
 
@@ -337,7 +342,7 @@ impl<T: Block> Eq for Chain<T> {}
 //  Note: This isn’t a `Box<Chain<T>>` because converting a vec to a box
 //        likely means re-allocating to drop down from capacity. We don’t
 //        want to force that upon users, so we keep the vec.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct OwnedChain<T: Block>(Vec<T>);
 
 impl<T: Block> OwnedChain<T> {
@@ -466,13 +471,24 @@ impl<T: Block> AsRef<[T]> for OwnedChain<T> {
 }
 
 
+//--- PartialEq and Eq
+
+impl<T: Block, Other: AsRef<Chain<T>>> PartialEq<Other> for OwnedChain<T> {
+    fn eq(&self, other: &Other) -> bool {
+        self.as_chain().eq(other.as_ref())
+    }
+}
+
+impl<T: Block> Eq for OwnedChain<T> { }
+
+
 //------------ SharedChain ---------------------------------------------------
 
 /// A shared, owned version of a chain.
 ///
 /// This is essentially an owned chain inside of an arc with an optimization
 /// so that empty chains never get actually allocated.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct SharedChain<T: Block + 'static>(Option<Arc<OwnedChain<T>>>);
 
 impl<T: Block + 'static> SharedChain<T> {
@@ -536,6 +552,17 @@ impl<T: Block + 'static> AsRef<[T]> for SharedChain<T> {
         self.as_chain().as_ref()
     }
 }
+
+
+//--- PartialEq and Eq
+
+impl<T: Block, Other: AsRef<Chain<T>>> PartialEq<Other> for SharedChain<T> {
+    fn eq(&self, other: &Other) -> bool {
+        self.as_chain().eq(other.as_ref())
+    }
+}
+
+impl<T: Block> Eq for SharedChain<T> { }
 
 
 
@@ -743,6 +770,33 @@ mod test {
         let intersection = bigger.trim(&smaller).err().unwrap();
 
         assert_eq!(smaller, intersection);
+    }
+
+    #[test]
+    fn eq() {
+        let empty = OwnedChain::<(u8, u8)>::empty();
+        let one = OwnedChain::from([(1, 2)].as_ref());
+        let two = OwnedChain::from([(1, 2), (3, 4)].as_ref());
+
+        assert_eq!(empty.as_chain(), empty.as_chain());
+        assert_ne!(empty.as_chain(), one.as_chain());
+        assert_ne!(empty.as_chain(), two.as_chain());
+        assert_ne!(one.as_chain(), empty.as_chain());
+        assert_eq!(one.as_chain(), one.as_chain());
+        assert_ne!(one.as_chain(), two.as_chain());
+        assert_ne!(two.as_chain(), empty.as_chain());
+        assert_ne!(two.as_chain(), one.as_chain());
+        assert_eq!(two.as_chain(), two.as_chain());
+
+        assert_eq!(empty.clone(), empty.clone());
+        assert_ne!(empty.clone(), one.clone());
+        assert_ne!(empty.clone(), two.clone());
+        assert_ne!(one.clone(), empty.clone());
+        assert_eq!(one.clone(), one.clone());
+        assert_ne!(one.clone(), two.clone());
+        assert_ne!(two.clone(), empty.clone());
+        assert_ne!(two.clone(), one.clone());
+        assert_eq!(two.clone(), two.clone());
     }
 }
 
