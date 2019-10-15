@@ -771,5 +771,22 @@ mod test {
 
         assert_eq!(smaller, intersection);
     }
+
+    #[test]
+    fn eq() {
+        let empty = OwnedChain::<(u8, u8)>::empty();
+        let one = OwnedChain::from([(1, 2)].as_ref());
+        let two = OwnedChain::from([(1, 2), (3, 4)].as_ref());
+
+        assert_eq!(empty.as_chain(), empty.as_chain());
+        assert_ne!(empty.as_chain(), one.as_chain());
+        assert_ne!(empty.as_chain(), two.as_chain());
+        assert_ne!(one.as_chain(), empty.as_chain());
+        assert_eq!(one.as_chain(), one.as_chain());
+        assert_ne!(one.as_chain(), two.as_chain());
+        assert_ne!(two.as_chain(), empty.as_chain());
+        assert_ne!(two.as_chain(), one.as_chain());
+        assert_eq!(two.as_chain(), two.as_chain());
+    }
 }
 
