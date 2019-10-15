@@ -313,17 +313,17 @@ impl<T: Block> PartialEq for Chain<T> {
     fn eq(&self, other: &Chain<T>) -> bool {
         // This code relies on the property that a chain is an
         // ordered, non-overlapping, non-continuous sequence of blocks.
+        let mut self_iter = self.iter();
         let mut other_iter = other.iter();
-        for my_block in self.iter() {
-            if let Some(other_block) = other_iter.next() {
-                if my_block.min() != other_block.min() || my_block.max() != other_block.max() {
-                    return false
+        loop {
+            match (self_iter.next(), other_iter.next()) {
+                (Some(left), Some(right)) if left == right => { }
+                (None, None) => {
+                    return true
                 }
-            } else {
-                return false
+                _ => return false
             }
         }
-        true
     }
 }
 
