@@ -1448,7 +1448,14 @@ impl TbsCert {
                 self.basic_ca.map(|ca| {
                     encode_extension(
                         &oid::CE_BASIC_CONSTRAINTS, true,
-                        encode::sequence(ca.encode())
+                        encode::sequence(
+                            if ca {
+                                Some(ca.encode())
+                            }
+                            else {
+                                None
+                            }
+                        )
                     )
                 }),
 

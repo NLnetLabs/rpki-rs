@@ -216,6 +216,7 @@ impl RouteOriginAttestation {
 
     pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence((
+            // version is DEFAULT
             self.as_id.encode(),
             encode::sequence((
                 self.v4_addrs.encode_ref_family([0x00, 0x01]),

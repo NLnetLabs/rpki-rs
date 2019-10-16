@@ -61,7 +61,12 @@ pub fn encode_extension<V: encode::Values>(
 ) -> impl encode::Values {
     encode::sequence((
         oid.encode(),
-        critical.encode(),
+        if critical {
+            Some(critical.encode())
+        }
+        else {
+            None
+        },
         OctetString::encode_wrapped(Mode::Der, content)
     ))
 }
