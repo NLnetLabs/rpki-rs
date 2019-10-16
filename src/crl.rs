@@ -423,8 +423,8 @@ impl TbsCertList<RevokedCertificates> {
             1.encode(), // version
             self.signature.x509_encode(),
             self.issuer.encode_ref(),
-            self.this_update.encode(),
-            self.next_update.encode(),
+            self.this_update.encode_varied(),
+            self.next_update.encode_varied(),
             self.revoked_certs.encode_ref(),
             encode::sequence_as(Tag::CTX_0, 
                 encode::sequence((
@@ -597,7 +597,7 @@ impl CrlEntry {
     pub fn encode(self) -> impl encode::Values {
         encode::sequence((
             self.user_certificate.encode(),
-            self.revocation_date.encode(),
+            self.revocation_date.encode_varied(),
         ))
     }
 }

@@ -4,12 +4,25 @@
 
 Breaking
 
+* Encoding of `x509::Time` values changed since in some cases it needs to
+  encode as either UTCTime or GeneralizedTime depending on the year. Thus,
+  there is no simple `encode` method anymore but rather, there now is
+  `encode_utc_time`, `encode_generalized_time`, or `encode_varied` to make
+  the choice explicit. [(#84)]
+
 New
 
 Bug Fixes
 
+* Stop refusing to make IPv6-only ROAs (this wasn’t on purpose, honest).
+  [(#82)]
+* Empty `IpBlocks` and `AsBlocks` where equal to everything. [(#83)]
+
 Dependencies
 
+[(#82)]: https://github.com/NLnetLabs/rpki-rs/pull/82
+[(#83)]: https://github.com/NLnetLabs/rpki-rs/pull/83
+[(#84)]: https://github.com/NLnetLabs/rpki-rs/pull/84
 
 
 # 0.7.0
