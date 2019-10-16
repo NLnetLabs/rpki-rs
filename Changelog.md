@@ -17,12 +17,15 @@ Bug Fixes
 * Stop refusing to make IPv6-only ROAs (this wasn’t on purpose, honest).
   [(#82)]
 * Empty `IpBlocks` and `AsBlocks` where equal to everything. [(#83)]
+* Don’t include the values that are at their default value in the DER
+  encoding. [(#85)]
 
 Dependencies
 
 [(#82)]: https://github.com/NLnetLabs/rpki-rs/pull/82
 [(#83)]: https://github.com/NLnetLabs/rpki-rs/pull/83
 [(#84)]: https://github.com/NLnetLabs/rpki-rs/pull/84
+[(#85)]: https://github.com/NLnetLabs/rpki-rs/pull/85
 
 
 # 0.7.0
