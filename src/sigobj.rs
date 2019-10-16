@@ -307,7 +307,7 @@ impl SignedAttrs {
                 encode::sequence((
                     oid::SIGNING_TIME.encode(),
                     encode::set(
-                        time.encode(),
+                        time.encode_varied(),
                     )
                 ))
             }),

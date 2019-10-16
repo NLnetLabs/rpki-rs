@@ -343,8 +343,8 @@ impl ManifestContent {
     pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence((
             self.manifest_number.encode(),
-            self.this_update.encode(),
-            self.next_update.encode(),
+            self.this_update.encode_generalized_time(),
+            self.next_update.encode_generalized_time(),
             self.file_hash_alg.encode_oid(),
             encode::sequence(
                 &self.file_list

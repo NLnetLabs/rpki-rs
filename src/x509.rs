@@ -683,6 +683,23 @@ impl Time {
             Ok(())
         }
     }
+
+    pub fn encode_utc_time(self) -> impl encode::Values {
+        UtcTime(self).encode()
+    }
+
+    pub fn encode_generalized_time(self) -> impl encode::Values {
+        GeneralizedTime(self).encode()
+    }
+
+    pub fn encode_varied(self) -> impl encode::Values {
+        if self.year() < 1950 || self.year() > 2049 {
+            (None, Some(self.encode_generalized_time()))
+        }
+        else {
+            (Some(self.encode_utc_time()), None)
+        }
+    }
 }
 
 
@@ -794,12 +811,11 @@ fn read_four_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Err> {
 }
 
 
-//--- PrimitiveContent
-//
-// XXX This is only for testing.
+//------------ AsUtcTime -----------------------------------------------------
 
-impl PrimitiveContent for Time {
-    //const TAG: Tag = Tag::GENERALIZED_TIME;
+pub struct UtcTime(Time);
+
+impl PrimitiveContent for UtcTime {
     const TAG: Tag = Tag::UTC_TIME;
 
     fn encoded_len(&self, _: Mode) -> usize {
@@ -812,6 +828,29 @@ impl PrimitiveContent for Time {
         write!(
             target, "{:02}{:02}{:02}{:02}{:02}{:02}Z",
             self.0.year() % 100, self.0.month(), self.0.day(),
+            self.0.hour(), self.0.minute(), self.0.second()
+        )
+    }
+}
+
+
+//------------ AsGeneralizedTime ---------------------------------------------
+
+pub struct GeneralizedTime(Time);
+
+impl PrimitiveContent for GeneralizedTime {
+    const TAG: Tag = Tag::GENERALIZED_TIME;
+
+    fn encoded_len(&self, _: Mode) -> usize {
+        15 // yyyyMMddhhmmssZ
+    }
+
+    fn write_encoded<W: io::Write>(
+        &self, _: Mode, target: &mut W
+    ) -> Result<(), io::Error> {
+        write!(
+            target, "{:04}{:02}{:02}{:02}{:02}{:02}Z",
+            self.0.year(), self.0.month(), self.0.day(),
             self.0.hour(), self.0.minute(), self.0.second()
         )
     }
@@ -884,8 +923,8 @@ impl Validity {
 
     pub fn encode(self) -> impl encode::Values {
         encode::sequence((
-            self.not_before.encode(),
-            self.not_after.encode(),
+            self.not_before.encode_varied(),
+            self.not_after.encode_varied(),
         ))
     }
 }
