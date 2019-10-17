@@ -19,7 +19,7 @@ chrono          = { version = "^0.4.7", features = [ "serde" ] }
 derive_more     = "^0.15.0"
 log             = "^0.4.7"
 openssl         = { version = "^0.10.23", optional = true }
-quick-xml       = "^0.17.0"
+quick-xml       = "^0.16.1"
 ring            = "^0.14.6"
 serde           = { version = "^1.0.95", features = [ "derive" ] }
 slab            = { version = "^0.4.2", optional = true }
