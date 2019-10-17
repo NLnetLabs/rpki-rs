@@ -1,6 +1,6 @@
 # Change Log
 
-# Unreleased next version
+# 0.8.0
 
 Breaking
 
@@ -10,8 +10,6 @@ Breaking
   `encode_utc_time`, `encode_generalized_time`, or `encode_varied` to make
   the choice explicit. [(#84)]
 
-New
-
 Bug Fixes
 
 * Stop refusing to make IPv6-only ROAs (this wasn’t on purpose, honest).
@@ -19,8 +17,6 @@ Bug Fixes
 * Empty `IpBlocks` and `AsBlocks` where equal to everything. [(#83)]
 * Don’t include the values that are at their default value in the DER
   encoding. [(#85)]
-
-Dependencies
 
 [(#82)]: https://github.com/NLnetLabs/rpki-rs/pull/82
 [(#83)]: https://github.com/NLnetLabs/rpki-rs/pull/83
