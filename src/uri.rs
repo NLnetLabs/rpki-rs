@@ -408,10 +408,8 @@ impl Https {
         );
         res.put_slice(self.uri.as_ref());
 
-        if ! self.path().is_empty() {
-            if !self.path().ends_with(b"/") {
-                res.put_slice(b"/");
-            }
+        if !self.path().is_empty() && !self.path().ends_with(b"/") {
+            res.put_slice(b"/");
         }
 
         res.put_slice(path);
