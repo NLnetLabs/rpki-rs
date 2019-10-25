@@ -394,6 +394,33 @@ impl Https {
     pub fn encode_general_name<'a>(&'a self) -> impl encode::Values + 'a {
         self.encode_as(Tag::CTX_6)
     }
+
+    fn path(&self) -> &[u8] {
+        &self.uri[self.path_idx..]
+    }
+
+    /// This function will join this URI and the given path. If the current
+    /// URI does not end with a trailing '/', it will be injected.
+    pub fn join(&self, path: &[u8]) -> Self {
+        assert!(is_uri_ascii(path));
+        let mut res = BytesMut::with_capacity(
+            self.uri.len() + self.uri.len() + 1
+        );
+        res.put_slice(self.uri.as_ref());
+
+        if ! self.path().is_empty() {
+            if !self.path().ends_with(b"/") {
+                res.put_slice(b"/");
+            }
+        }
+
+        res.put_slice(path);
+
+        let uri = res.freeze();
+        let path_idx = self.path_idx;
+
+        Https { uri, path_idx }
+    }
 }
 
 
@@ -802,5 +829,17 @@ mod tests {
             json.as_bytes()
         ).unwrap();
         assert_eq!(uri, deser_uri);
+    }
+
+    #[test]
+    fn https_join() {
+        let base_uri_no_trailing_slash = Https::from_str("https://example.com/some").unwrap();
+        let base_uri_trailing_slash = Https::from_str("https://example.com/some/").unwrap();
+        let sub = "sub/".as_bytes();
+
+        let expected = Https::from_str("https://example.com/some/sub/").unwrap();
+
+        assert_eq!(base_uri_no_trailing_slash.join(sub), expected);
+        assert_eq!(base_uri_trailing_slash.join(sub), expected);
     }
 }
