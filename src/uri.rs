@@ -414,10 +414,10 @@ impl Https {
 
         res.put_slice(path);
 
-        let uri = res.freeze();
-        let path_idx = self.path_idx;
-
-        Https { uri, path_idx }
+        Https {
+            uri: res.freeze(),
+            path_idx: self.path_idx
+        }
     }
 }
 
