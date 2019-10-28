@@ -6,9 +6,13 @@ Breaking
 
 New
 
+* `uri::Https::join` [(#87)]
+
 Bug Fixes
 
 Other
+
+[(#87)]: https://github.com/NLnetLabs/rpki-rs/pull/87
 
 
 # 0.8.0
