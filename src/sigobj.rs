@@ -294,14 +294,6 @@ impl SignedAttrs {
                 )
             )),
 
-            // Message Digest
-            encode::sequence((
-                oid::MESSAGE_DIGEST.encode(),
-                encode::set(
-                    digest.encode_ref(),
-                )
-            )),
-
             // Signing Time
             signing_time.map(|time| {
                 encode::sequence((
@@ -311,6 +303,14 @@ impl SignedAttrs {
                     )
                 ))
             }),
+
+            // Message Digest
+            encode::sequence((
+                oid::MESSAGE_DIGEST.encode(),
+                encode::set(
+                    digest.encode_ref(),
+                )
+            )),
 
             // Binary Signing Time
             binary_signing_time.map(|time| {
