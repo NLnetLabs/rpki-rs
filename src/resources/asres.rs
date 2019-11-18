@@ -14,6 +14,7 @@
 //! [RFC 6487]: https://tools.ietf.org/html/rfc6487
 
 use std::{fmt, iter, ops};
+use std::cmp::Ordering;
 use std::iter::FromIterator;
 use std::str::FromStr;
 use bcder::{decode, encode};
@@ -493,14 +494,16 @@ impl AsBlock {
     /// If you try to set the minimum to value larger than the current
     /// maximum, the method will panic.
     pub fn set_min(&mut self, id: AsId) {
-        if id < self.max() {
-            *self = AsBlock::Range(AsRange::new(id, self.max()))
-        }
-        else if id == self.max() {
-            *self = AsBlock::Id(id)
-        }
-        else {
-            panic!("trying to set minimum beyond current maximum");
+        match id.cmp(&self.max()) {
+            Ordering::Less => {
+                *self = AsBlock::Range(AsRange::new(id, self.max()))
+            }
+            Ordering::Equal => {
+                *self = AsBlock::Id(id)
+            }
+            Ordering::Greater => {
+                panic!("trying to set minimum beyond current maximum");
+            }
         }
     }
 
@@ -511,14 +514,16 @@ impl AsBlock {
     /// If you try to set the minimum to value smaller than the current
     /// minimum, the method will panic.
     pub fn set_max(&mut self, id: AsId) {
-        if id > self.min() {
-            *self = AsBlock::Range(AsRange::new(self.min(), id))
-        }
-        else if id == self.min() {
-            *self = AsBlock::Id(id)
-        }
-        else {
-            panic!("trying to set maximum below current minimum");
+        match id.cmp(&self.min()) {
+            Ordering::Greater => {
+                *self = AsBlock::Range(AsRange::new(self.min(), id))
+            }
+            Ordering::Equal => {
+                *self = AsBlock::Id(id)
+            }
+            Ordering::Less => {
+                panic!("trying to set maximum below current minimum");
+            }
         }
     }
 }
