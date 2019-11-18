@@ -10,9 +10,13 @@ New
 
 Bug Fixes
 
+* Fix order of signed attributes in created signed objects. (New versions
+  of Bouncy Castle insist on that.) [(#88)]
+
 Other
 
 [(#87)]: https://github.com/NLnetLabs/rpki-rs/pull/87
+[(#88)]: https://github.com/NLnetLabs/rpki-rs/pull/88
 
 
 # 0.8.0

@@ -1,10 +1,12 @@
 // Signed objects.
 
+use std::{cmp, io};
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Oid, Tag, xerr};
 use bcder::encode::PrimitiveContent;
 use bcder::string::OctetStringSource;
 use bytes::Bytes;
+use unwrap::unwrap;
 use crate::{oid, uri};
 use crate::cert::{Cert, KeyUsage, Overclaim, ResourceCert, TbsCert};
 use crate::crypto::{
@@ -284,44 +286,77 @@ impl SignedAttrs {
         signing_time: Option<Time>,
         binary_signing_time: Option<u64>,
     ) -> Self {
-        // The inner captured is only the attributes, not the outer set.
-        SignedAttrs(Captured::from_values(Mode::Der, (
-            // Content Type
+        // In DER encoding, the values of SET OFs is ordered via the octet
+        // string of their DER encoding. Given that all our values are
+        // SEQUENCEs, their first octet will always be 30. So we only have to
+        // compare the length octets. Unfortunately, two of the values are
+        // variable length, so we need to get creative.
+
+        let mut content_type = Some(encode::sequence((
+            oid::CONTENT_TYPE.encode(),
+            encode::set(
+                content_type.encode_ref(),
+            )
+        )));
+        let mut signing_time = signing_time.map(|time| {
             encode::sequence((
-                oid::CONTENT_TYPE.encode(),
+                oid::SIGNING_TIME.encode(),
                 encode::set(
-                    content_type.encode_ref(),
-                )
-            )),
-
-            // Message Digest
+                    time.encode_varied(),
+                    )
+            ))
+        });
+        let mut message_digest = Some(encode::sequence((
+            oid::MESSAGE_DIGEST.encode(),
+            encode::set(
+                digest.encode_ref(),
+            )
+        )));
+        let mut binary_signing_time = binary_signing_time.map(|time| {
             encode::sequence((
-                oid::MESSAGE_DIGEST.encode(),
+                oid::AA_BINARY_SIGNING_TIME.encode(),
                 encode::set(
-                    digest.encode_ref(),
+                    time.encode()
                 )
-            )),
+            ))
+        });
 
-            // Signing Time
-            signing_time.map(|time| {
-                encode::sequence((
-                    oid::SIGNING_TIME.encode(),
-                    encode::set(
-                        time.encode_varied(),
-                    )
-                ))
-            }),
+        let mut len = [
+            (0, StartOfValue::new(&content_type)),
+            (1, StartOfValue::new(&signing_time)),
+            (2, StartOfValue::new(&message_digest)),
+            (3, StartOfValue::new(&binary_signing_time)),
+        ];
+        len.sort_by_key(|&(_, len)| len.unwrap());
 
-            // Binary Signing Time
-            binary_signing_time.map(|time| {
-                encode::sequence((
-                    oid::AA_BINARY_SIGNING_TIME.encode(),
-                    encode::set(
-                        time.encode()
-                    )
-                ))
-            })
-        )))
+        let mut res = Captured::empty(Mode::Der);
+        for &(idx, _) in &len {
+            match idx {
+                0 => {
+                    if let Some(val) = content_type.take() {
+                        res.extend(val)
+                    }
+                }
+                1 => {
+                    if let Some(val) = signing_time.take() {
+                        res.extend(val)
+                    }
+                }
+                2 => {
+                    if let Some(val) = message_digest.take() {
+                        res.extend(val)
+                    }
+                }
+                3 => {
+                    if let Some(val) = binary_signing_time.take() {
+                        res.extend(val)
+                    }
+                }
+                _ => unreachable!()
+            }
+        }
+
+       SignedAttrs(res) 
     }
 
     /// Takes the signed attributes from the beginning of a constructed value.
@@ -834,6 +869,49 @@ impl SignedObjectBuilder {
     }
 
 
+}
+
+
+//------------ StartOfValue --------------------------------------------------
+
+
+/// Helper type for ordering signed attributes.
+///
+/// It keeps the first eight octets of a value which should be enough to
+/// cover the length.
+#[derive(Clone, Copy, Debug)]
+struct StartOfValue {
+    res: [u8; 8],
+    pos: usize,
+}
+
+impl StartOfValue {
+    fn new<V: encode::Values>(values: &V) -> Self {
+        let mut res = StartOfValue {
+            res: [0; 8],
+            pos: 0
+        };
+        unwrap!(values.write_encoded(Mode::Der, &mut res));
+        res
+    }
+
+    fn unwrap(self) -> [u8; 8] {
+        self.res
+    }
+}
+
+impl io::Write for StartOfValue {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
+        let slice = &mut self.res[self.pos..];
+        let len = cmp::min(slice.len(), buf.len());
+        slice[..len].copy_from_slice(&buf[..len]);
+        self.pos += len;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> Result<(), io::Error> {
+        Ok(())
+    }
 }
 
 
