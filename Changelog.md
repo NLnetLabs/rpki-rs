@@ -1,5 +1,16 @@
 # Change Log
 
+# Unreleased next version
+
+Breaking
+
+New
+
+Bug Fixes
+
+Other
+
+
 # 0.8.1
 
 New
