@@ -336,22 +336,22 @@ impl SignedAttrs {
             match idx {
                 0 => {
                     if let Some(val) = content_type.take() {
-                        res.extend(encode::sequence(val))
+                        res.extend(val)
                     }
                 }
                 1 => {
                     if let Some(val) = signing_time.take() {
-                        res.extend(encode::sequence(val))
+                        res.extend(val)
                     }
                 }
                 2 => {
                     if let Some(val) = message_digest.take() {
-                        res.extend(encode::sequence(val))
+                        res.extend(val)
                     }
                 }
                 3 => {
                     if let Some(val) = binary_signing_time.take() {
-                        res.extend(encode::sequence(val))
+                        res.extend(val)
                     }
                 }
                 _ => unreachable!()
