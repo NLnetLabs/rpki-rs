@@ -323,11 +323,9 @@ impl SignedAttrs {
 
         let mut len = [
             (0, StartOfValue::new(&content_type)),
-            /*
-            (1, signing_time.encoded_len(Mode::Der)),
-            (2, message_digest.encoded_len(Mode::Der)),
-            (3, binary_signing_time.encoded_len(Mode::Der)),
-            */
+            (1, StartOfValue::new(&signing_time)),
+            (2, StartOfValue::new(&message_digest)),
+            (3, StartOfValue::new(&binary_signing_time)),
         ];
         len.sort_by_key(|&(_, len)| len.unwrap());
 
