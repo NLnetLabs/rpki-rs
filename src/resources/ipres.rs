@@ -495,8 +495,8 @@ impl IpBlock {
             AddressRange::from_v4_str_sep(s, sep).map(IpBlock::Range)
         }
         else {
-            let addr = Ipv4Addr::from_str(s)?.into();
-            Ok(IpBlock::Range(AddressRange::new(addr, addr)))
+            let addr = Addr::from(Ipv4Addr::from_str(s)?);
+            Ok(IpBlock::Range(AddressRange::new(addr, addr.to_max(32))))
         }
     }
 
@@ -615,8 +615,17 @@ impl str::FromStr for IpBlock {
             AddressRange::from_str_sep(s, sep).map(IpBlock::Range)
         }
         else {
-            let addr = IpAddr::from_str(s)?.into();
-            Ok(IpBlock::Range(AddressRange::new(addr, addr)))
+            let (min, max) = match IpAddr::from_str(s)? {
+                IpAddr::V4(addr) => {
+                    let addr = Addr::from(addr);
+                    (addr, addr.to_max(32))
+                },
+                IpAddr::V6(addr) => {
+                    let addr = Addr::from(addr);
+                    (addr, addr)
+                }
+            };
+            Ok(IpBlock::Range(AddressRange::new(min, max)))
         }
     }
 }
@@ -691,7 +700,10 @@ impl AddressRange {
         let min = IpAddr::from_str(&s[..sep])?;
         let max = IpAddr::from_str(&s[sep + 1..])?;
         match (min.is_ipv4(), max.is_ipv4()) {
-            (true, true) | (false, false) => {
+            (true, true) => {
+                Ok(Self::new(min.into(), Addr::from(max).to_max(32)))
+            }
+            (false, false) => {
                 Ok(Self::new(min.into(), max.into()))
             }
             _ => Err(FromStrError::FamilyMismatch)
@@ -702,7 +714,7 @@ impl AddressRange {
     fn from_v4_str_sep(s: &str, sep: usize) -> Result<Self, FromStrError> {
         Ok(Self::new(
             Ipv4Addr::from_str(&s[..sep])?.into(),
-            Ipv4Addr::from_str(&s[sep + 1..])?.into()
+            Addr::from(Ipv4Addr::from_str(&s[sep + 1..])?).to_max(32)
         ))
     }
 
@@ -1359,6 +1371,7 @@ pub enum FromStrError {
 #[cfg(test)]
 mod test {
     use bcder::encode::Values;
+    use unwrap::unwrap;
     use super::*;
 
     #[test]
@@ -1412,6 +1425,16 @@ mod test {
         assert!(!super_set.contains(&bigger_left));
         assert!(!super_set.contains(&bigger_right));
         assert!(!super_set.contains(&bigger ));
+    }
+
+    #[test]
+    fn ip_blocks_neighbours() {
+        let super_set = unwrap!(IpBlocks::from_str(
+            "10.0.0.0-10.0.0.10, 10.0.0.11-10.0.0.20"
+        ));
+        let between = unwrap!(IpBlocks::from_str("10.0.0.5-10.0.0.15"));
+
+        assert!(super_set.contains(&between));
     }
 
     #[test]
@@ -1535,17 +1558,34 @@ mod test {
 
     #[test]
     fn ip_block_from_v4_str() {
-        assert_eq!(
-            IpBlock::from_v4_str("127.0.0.0/8").unwrap(),
-            IpBlock::Prefix(Prefix::new(Addr(127 << 120), 8))
+        fn check(s: &str, prefix: bool, min: &str, max: &str) {
+            let block = unwrap!(IpBlock::from_v4_str(s));
+            let is_prefix = match block {
+                IpBlock::Prefix(_) => true,
+                _ => false
+            };
+            assert_eq!(prefix, is_prefix);
+            assert_eq!(
+                block.min(),
+                Addr::from(unwrap!(Ipv4Addr::from_str(min))).to_min(32)
+            );
+            assert_eq!(
+                block.max(),
+                Addr::from(unwrap!(Ipv4Addr::from_str(max))).to_max(32)
+            );
+        }
+
+        check(
+            "127.0.0.0/8", true,
+            "127.0.0.0", "127.255.255.255"
         );
-        assert_eq!(
-            IpBlock::from_v4_str("127.0.0.0-199.0.0.0").unwrap(),
-            IpBlock::Range((Addr(127 << 120), Addr(199 << 120)).into())
+        check(
+            "127.0.0.0-199.0.0.0", false,
+            "127.0.0.0", "199.0.0.0"
         );
-        assert_eq!(
-            IpBlock::from_v4_str("127.0.0.0").unwrap(),
-            IpBlock::Range((Addr(127 << 120), Addr(127 << 120)).into())
+        check(
+            "127.0.0.0", false,
+            "127.0.0.0", "127.0.0.0"
         );
         assert!(IpBlock::from_v4_str("127.0.0.0/82").is_err());
         assert!(IpBlock::from_v4_str("127.0.0.0/282").is_err());
@@ -1576,18 +1616,36 @@ mod test {
 
     #[test]
     fn ip_block_from_str() {
-        assert_eq!(
-            IpBlock::from_str("127.0.0.0/8").unwrap(),
-            IpBlock::Prefix(Prefix::new(Addr(127 << 120), 8))
+        fn check_v4(s: &str, prefix: bool, min: &str, max: &str) {
+            let block = unwrap!(IpBlock::from_str(s));
+            let is_prefix = match block {
+                IpBlock::Prefix(_) => true,
+                _ => false
+            };
+            assert_eq!(prefix, is_prefix);
+            assert_eq!(
+                block.min(),
+                Addr::from(unwrap!(Ipv4Addr::from_str(min))).to_min(32)
+            );
+            assert_eq!(
+                block.max(),
+                Addr::from(unwrap!(Ipv4Addr::from_str(max))).to_max(32)
+            );
+        }
+
+        check_v4(
+            "127.0.0.0/8", true,
+            "127.0.0.0", "127.255.255.255"
         );
-        assert_eq!(
-            IpBlock::from_str("127.0.0.0-199.0.0.0").unwrap(),
-            IpBlock::Range((Addr(127 << 120), Addr(199 << 120)).into())
+        check_v4(
+            "127.0.0.0-199.0.0.0", false,
+            "127.0.0.0", "199.0.0.0"
         );
-        assert_eq!(
-            IpBlock::from_str("127.0.0.0").unwrap(),
-            IpBlock::Range((Addr(127 << 120), Addr(127 << 120)).into())
+        check_v4(
+            "127.0.0.0", false,
+            "127.0.0.0", "127.0.0.0"
         );
+
         assert_eq!(
             IpBlock::from_str("7f00::").unwrap(),
             IpBlock::Range((Addr(127 << 120), Addr(127 << 120)).into())
