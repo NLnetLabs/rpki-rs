@@ -1,17 +1,11 @@
 # Change Log
 
-# Unreleased next version
-
-Breaking
-
-New
+# 0.8.2
 
 Bug Fixes
 
 * Fix trimming of large resource sets. [(#91)]
 * Fix creation of IPv4 resources from strings. [(#91)]
-
-Other
 
 [(#91)]: https://github.com/NLnetLabs/rpki-rs/pull/91
 
