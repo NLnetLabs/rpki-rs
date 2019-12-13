@@ -171,14 +171,7 @@ impl<T: Block> Chain<T> {
         // working on or a vector of cloned and trimmed blocks.
         let mut res: Result<usize, Vec<_>> = Ok(0);
 
-        let mut i = 1;
         loop {
-            if i == 100 {
-                break
-            } else {
-                i += 1;
-            }
-
             // Skip over other items before self item. If we run out of other
             // items, we are done.
             if other_item.max() < self_item.0 {
