@@ -1,5 +1,18 @@
 # Change Log
 
+# Unreleased next version
+
+Breaking
+
+New
+
+Bug Fixes
+
+Other Changes
+
+Dependencies
+
+
 # 0.8.2
 
 Bug Fixes
