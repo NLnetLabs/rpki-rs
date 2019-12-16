@@ -8,9 +8,14 @@ New
 
 Bug Fixes
 
+* Fix an issue in resource range calculation that could result in a range
+  added in parts being encoded in multiple ranges. [(#932)]
+
 Other Changes
 
 Dependencies
+
+[(#93)]: https://github.com/NLnetLabs/rpki-rs/pull/93
 
 
 # 0.8.2
