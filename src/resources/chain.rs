@@ -609,6 +609,11 @@ mod test {
             OwnedChain::from([(5,8), (3,6), (4,8)].as_ref()).as_slice(),
             &[(3, 8)][..]
         );
+        // Poorly sorted neighbouring blocks
+        assert_eq!(
+            OwnedChain::from([(7,9), (1,4), (5, 6)].as_ref()).as_slice(),
+            &[(1, 9)][..]
+        );
     }
 
     #[test]
