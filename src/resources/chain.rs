@@ -410,6 +410,32 @@ fn from_iter_unsorted<T: Block, I: Iterator<Item=T>>(
         merge_or_add_block(&mut res, block);
     }
     res.sort_unstable_by_key(|block| block.min());
+
+    // The strategy may may lead to consecutive blocks. We can’t have those,
+    // so we need to merge them. This is a bit ugly. Not sure if there is a
+    // cleaner way?
+    if res.len() > 1 {
+        let mut tail = 0;
+        let mut tail_next = T::next(res[0].max());
+        for j in 1..res.len() {
+            if Some(res[j].min()) == tail_next {
+                // Neighbouring. Merge j into tail and continue.
+                res[tail] = T::new(res[tail].min(), res[j].max());
+                tail_next = T::next(res[j].max());
+            }
+            else {
+                // Not neighbouring. Move to the next tail. If this isn’t j,
+                // we need to copy j there.
+                tail +=1;
+                if tail != j {
+                    res[tail] = res[j].clone()
+                }
+                tail_next = T::next(res[tail].max());
+            }
+        }
+        res.truncate(tail + 1);
+    }
+
     unsafe { OwnedChain::from_vec_unchecked(res) }
 }
 
@@ -608,6 +634,17 @@ mod test {
         assert_eq!(
             OwnedChain::from([(5,8), (3,6), (4,8)].as_ref()).as_slice(),
             &[(3, 8)][..]
+        );
+        // Poorly sorted neighbouring blocks
+        assert_eq!(
+            OwnedChain::from([(7,9), (1,4), (5, 6)].as_ref()).as_slice(),
+            &[(1, 9)][..]
+        );
+        assert_eq!(
+            OwnedChain::from(
+                [(7,9), (3,4), (5, 6), (20, 22), (0, 1)].as_ref()
+            ).as_slice(),
+            &[(0, 1), (3, 9), (20, 22)][..]
         );
     }
 
