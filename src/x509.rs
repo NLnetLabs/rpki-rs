@@ -542,18 +542,21 @@ impl Time {
         Self::years_from_now(1)
     }
 
+    pub fn next_year_from_date(years: i32, date: DateTime<Utc>) -> Self {
+        let future_now = date + Duration::days(i64::from(365 * years));
+
+        let year = future_now.year();
+        let month = future_now.month();
+        let day = future_now.day();
+        let hour = future_now.hour();
+        let min = future_now.minute();
+        let sec = future_now.second();
+
+        Self::utc(year, month, day, hour, min, sec)
+    }
+
     pub fn years_from_now(years: i32) -> Self {
-        let now = Utc::now();
-
-        let year = now.year();
-        let month = now.month();
-        let day = now.day();
-
-        let hour = now.hour();
-        let min = now.minute();
-        let sec = now.second();
-
-        Self::utc(year + years, month, day, hour, min, sec)
+        Self::next_year_from_date(years, Utc::now())
     }
 
     pub fn utc(
@@ -1100,6 +1103,68 @@ mod test {
         assert_eq!(
             target,
             b"\x02\x04\x00\x81\x02\x03"
+        );
+    }
+
+    #[test]
+    fn next_year() {
+        let now = DateTime::parse_from_rfc3339("2014-10-21T16:39:57-00:00").unwrap();
+        let future = Time::next_year_from_date(1, DateTime::from_utc(now.naive_utc(), Utc));
+
+        assert_eq!(
+            future.year(),
+            2015
+        );
+        assert_eq!(
+            future.month(),
+            10
+        );
+        assert_eq!(
+            future.day(),
+            21
+        );
+        assert_eq!(
+            future.hour(),
+            16
+        );
+        assert_eq!(
+            future.minute(),
+            39
+        );
+        assert_eq!(
+            future.second(),
+            57
+        );
+    }
+
+    #[test]
+    fn next_year_from_leap() {
+        let now = DateTime::parse_from_rfc3339("2020-02-29T16:39:57-00:00").unwrap();
+        let future = Time::next_year_from_date(1, DateTime::from_utc(now.naive_utc(), Utc));
+
+        assert_eq!(
+            future.year(),
+            2021
+        );
+        assert_eq!(
+            future.month(),
+            2
+        );
+        assert_eq!(
+            future.day(),
+            28
+        );
+        assert_eq!(
+            future.hour(),
+            16
+        );
+        assert_eq!(
+            future.minute(),
+            39
+        );
+        assert_eq!(
+            future.second(),
+            57
         );
     }
 }
