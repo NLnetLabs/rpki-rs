@@ -542,21 +542,36 @@ impl Time {
         Self::years_from_now(1)
     }
 
-    pub fn next_year_from_date(years: i32, date: DateTime<Utc>) -> Self {
-        let future_now = date + Duration::days(i64::from(365 * years));
+    /// Adds number of years to the given date.
+    ///
+    /// If the given date happens to be a leap date,
+    /// the resulting date would be normalized to February 28.
+    ///
+    /// This is the case even if the resulting year is also a leap year.
+    pub fn years_from_date(years: i32, date: DateTime<Utc>) -> Self {
 
-        let year = future_now.year();
-        let month = future_now.month();
-        let day = future_now.day();
-        let hour = future_now.hour();
-        let min = future_now.minute();
-        let sec = future_now.second();
+        let year = date.year();
+        let month = date.month();
 
-        Self::utc(year, month, day, hour, min, sec)
+        let day = {
+            if date.day() == 29 && month == 2 { 28 } else { date.day() }
+        };
+
+        let hour = date.hour();
+        let min = date.minute();
+        let sec = date.second();
+
+        Self::utc(year + years, month, day, hour, min, sec)
     }
 
+    /// Adds given years to the current date.
+    ///
+    /// If current date happens to be a leap date,
+    /// the resulting date would be normalized to February 28.
+    ///
+    /// This is the case even if the resulting year is also a leap year.
     pub fn years_from_now(years: i32) -> Self {
-        Self::next_year_from_date(years, Utc::now())
+        Self::years_from_date(years, Utc::now())
     }
 
     pub fn utc(
@@ -1109,7 +1124,7 @@ mod test {
     #[test]
     fn next_year() {
         let now = DateTime::parse_from_rfc3339("2014-10-21T16:39:57-00:00").unwrap();
-        let future = Time::next_year_from_date(1, DateTime::from_utc(now.naive_utc(), Utc));
+        let future = Time::years_from_date(1, DateTime::from_utc(now.naive_utc(), Utc));
 
         assert_eq!(
             future.year(),
@@ -1140,11 +1155,11 @@ mod test {
     #[test]
     fn next_year_from_leap() {
         let now = DateTime::parse_from_rfc3339("2020-02-29T16:39:57-00:00").unwrap();
-        let future = Time::next_year_from_date(1, DateTime::from_utc(now.naive_utc(), Utc));
+        let future = Time::years_from_date(10, DateTime::from_utc(now.naive_utc(), Utc));
 
         assert_eq!(
             future.year(),
-            2021
+            2030
         );
         assert_eq!(
             future.month(),
