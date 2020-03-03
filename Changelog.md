@@ -8,7 +8,14 @@ New
 
 Bug Fixes
 
+* Fix `Time::years_from_now` to work on February 29. ([#95], thanks to
+  [@dadepo]).
+
 Dependencies
+
+[#95]: https://github.com/NLnetLabs/rpki-rs/pull/95
+[@dadepo]: https://github.com/dadepo
+
 
 
 # 0.8.3
