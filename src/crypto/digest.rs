@@ -157,11 +157,11 @@ impl DigestAlgorithm {
 //------------ Sha1 ----------------------------------------------------------
 
 pub fn sha1_digest(data: &[u8]) -> Digest {
-    digest::digest(&digest::SHA1, data)
+    digest::digest(&digest::SHA1_FOR_LEGACY_USE_ONLY, data)
 }
 
 pub fn start_sha1() -> Context {
-    Context(digest::Context::new(&digest::SHA1))
+    Context(digest::Context::new(&digest::SHA1_FOR_LEGACY_USE_ONLY))
 }
 
 
