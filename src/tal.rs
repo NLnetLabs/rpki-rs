@@ -6,7 +6,6 @@ use std::fs::{read_dir, DirEntry, File, ReadDir};
 use std::io::{self, Read};
 use std::path::Path;
 use std::sync::Arc;
-use base64;
 use bytes::Bytes;
 use bcder::decode;
 use derive_more::{Display, From};
