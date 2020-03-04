@@ -4,6 +4,9 @@
 
 Breaking
 
+* The minimum supported Rust version is now 1.40.0. [(#96)]
+* The crate now requires ring 0.16. [(#96)]
+
 New
 
 Bug Fixes
@@ -14,6 +17,7 @@ Bug Fixes
 Dependencies
 
 [#95]: https://github.com/NLnetLabs/rpki-rs/pull/95
+[#96]: https://github.com/NLnetLabs/rpki-rs/pull/96
 [@dadepo]: https://github.com/dadepo
 
 

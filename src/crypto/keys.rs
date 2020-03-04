@@ -18,6 +18,7 @@ use crate::oid;
 use crate::util::hex;
 use crate::x509::{Name, RepresentationError};
 use super::signature::Signature;
+use ring::signature::VerificationAlgorithm;
 
 
 //------------ PublicKeyFormat -----------------------------------------------
@@ -102,7 +103,7 @@ impl PublicKey {
     pub fn key_identifier(&self) -> KeyIdentifier {
         unwrap!(KeyIdentifier::try_from(
             digest::digest(
-                &digest::SHA1, self.bits.octet_slice().unwrap()
+                &digest::SHA1_FOR_LEGACY_USE_ONLY, self.bits.octet_slice().unwrap()
             ).as_ref()
         ))
     }
@@ -111,8 +112,7 @@ impl PublicKey {
     pub fn verify(
         &self, message: &[u8], signature: &Signature
     ) -> Result<(), VerificationError> {
-        signature::verify(
-            &signature::RSA_PKCS1_2048_8192_SHA256,
+        signature::RSA_PKCS1_2048_8192_SHA256.verify(
             Input::from(self.bits()),
             Input::from(message),
             Input::from(signature.value().as_ref())
