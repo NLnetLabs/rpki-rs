@@ -15,11 +15,6 @@
 //! Documentation for the items in this crate is currently somewhat sparse.
 //! This will be rectified in upcoming releases.
 
-// We have seemingly redundant closures (i.e., closures where just providing
-// a function would also work) that cannot be removed due to lifetime issues.
-// (This has since been corrected but is still present in 1.34.0.)
-#![allow(clippy::redundant_closure)]
-
 pub mod cert;
 pub mod crl;
 pub mod crypto;
