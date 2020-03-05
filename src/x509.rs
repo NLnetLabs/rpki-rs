@@ -559,7 +559,7 @@ impl Time {
 
         let hour = date.hour();
         let min = date.minute();
-        let sec = date.second();
+        let sec = std::cmp::min(date.second(), 59);
 
         Self::utc(year + years, month, day, hour, min, sec)
     }
