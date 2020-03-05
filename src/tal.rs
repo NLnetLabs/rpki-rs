@@ -148,7 +148,7 @@ impl TalUri {
     }
 
     pub fn from_slice(slice: &[u8]) -> Result<Self, uri::Error> {
-        Self::from_bytes(slice.into())
+        Self::from_bytes(Bytes::copy_from_slice(slice))
     }
 
     pub fn from_bytes(bytes: Bytes) -> Result<Self, uri::Error> {
@@ -188,7 +188,7 @@ impl str::FromStr for TalUri {
     type Err = uri::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::from_bytes(Bytes::from(s))
+        Self::from_bytes(Bytes::copy_from_slice(s.as_ref()))
     }
 }
 

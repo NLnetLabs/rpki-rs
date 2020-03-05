@@ -329,7 +329,7 @@ impl SignedAttrs {
         ];
         len.sort_by_key(|&(_, len)| len.unwrap());
 
-        let mut res = Captured::empty(Mode::Der);
+        let mut res = Captured::builder(Mode::Der);
         for &(idx, _) in &len {
             match idx {
                 0 => {
@@ -356,7 +356,7 @@ impl SignedAttrs {
             }
         }
 
-       SignedAttrs(res) 
+       SignedAttrs(res.freeze()) 
     }
 
     /// Takes the signed attributes from the beginning of a constructed value.
@@ -545,7 +545,7 @@ impl MessageDigest {
 
 impl From<Digest> for MessageDigest {
     fn from(digest: Digest) -> Self {
-        MessageDigest(Bytes::from(digest.as_ref()))
+        MessageDigest(Bytes::copy_from_slice(digest.as_ref()))
     }
 }
 
