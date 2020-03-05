@@ -16,15 +16,15 @@ base64          = "^0.10.1"
 #bcder           = "^0.5.0"
 bcder = { git = "https://github.com/NLnetLabs/bcder" }
 bytes           = "^0.5"
-chrono          = { version = "^0.4.7", features = [ "serde" ] }
+chrono          = { version = "^0.4.10", features = [ "serde" ] }
 derive_more     = "^0.15.0"
 log             = "^0.4.7"
 openssl         = { version = "^0.10.23", optional = true }
-quick-xml       = "^0.16.1"
+quick-xml       = "^0.17.2"
 ring            = "0.16.11"
 serde           = { version = "^1.0.95", features = [ "derive" ] }
-slab            = { version = "^0.4.2", optional = true }
-uuid            = "^0.7.4"
+slab            = { version = "^0.4.1", optional = true }
+uuid            = "^0.8.1"
 untrusted       = "0.7.0"
 unwrap          = "^1.2.1"
 
