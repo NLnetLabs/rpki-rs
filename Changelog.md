@@ -4,8 +4,8 @@
 
 Breaking
 
-* The minimum supported Rust version is now 1.40.0. [(#96)]
-* The crate now requires ring 0.16. [(#96)]
+* The minimum supported Rust version is now 1.40.0. ([#96])
+* The crate now requires ring 0.16. ([#96])
 
 Bug Fixes
 
