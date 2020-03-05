@@ -300,7 +300,7 @@ impl<'a> AttrValue<'a> {
         if !s.is_ascii() {
             return Err(Error::Malformed)
         }
-        Ok(Bytes::from(unsafe { str::from_utf8_unchecked(s.as_ref()) }))
+        Ok(s.into_owned().into())
     }
 }
 

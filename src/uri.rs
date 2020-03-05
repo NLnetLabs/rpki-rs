@@ -6,7 +6,7 @@ use std::str::FromStr;
 use bcder::encode;
 use bcder::{Mode, Tag};
 use bcder::encode::PrimitiveContent;
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use derive_more::Display;
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -43,7 +43,7 @@ impl Rsync {
     }
 
     pub fn from_slice(slice: &[u8]) -> Result<Self, Error> {
-        Self::from_bytes(slice.into())
+        Self::from_bytes(Bytes::copy_from_slice(slice))
     }
 
     pub fn from_bytes(mut bytes: Bytes) -> Result<Self, Error> {
@@ -131,7 +131,7 @@ impl Rsync {
             }
             else {
                 res.path = self.path.slice(
-                    0, self.path.len() - tail - 1
+                    0..self.path.len() - tail - 1
                 );
             }
             Some(res)
@@ -205,7 +205,7 @@ impl str::FromStr for Rsync {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Error> {
-        Self::from_bytes(Bytes::from(s))
+        Self::from_bytes(Bytes::copy_from_slice(s.as_ref()))
     }
 }
 
@@ -366,7 +366,7 @@ impl Https {
     }
 
     pub fn from_slice(slice: &[u8]) -> Result<Self, Error> {
-        Self::from_bytes(slice.into())
+        Self::from_bytes(Bytes::copy_from_slice(slice))
     }
 
     pub fn from_bytes(bytes: Bytes) -> Result<Self, Error> {
@@ -457,7 +457,7 @@ impl str::FromStr for Https {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Error> {
-        Self::from_bytes(Bytes::from(s))
+        Self::from_bytes(Bytes::copy_from_slice(s.as_ref()))
     }
 }
 

@@ -201,7 +201,7 @@ impl ManifestContent {
         H: AsRef<[u8]>,
     {
         let mut len = 0;
-        let mut file_list = Captured::empty(Mode::Der);
+        let mut file_list = Captured::builder(Mode::Der);
         for item in iter.into_iter() {
             file_list.extend(item.as_ref().encode_ref());
             len += 1;
@@ -211,7 +211,7 @@ impl ManifestContent {
             this_update,
             next_update,
             file_hash_alg,
-            file_list,
+            file_list: file_list.freeze(),
             len
         }
     }

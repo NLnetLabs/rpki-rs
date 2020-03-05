@@ -13,8 +13,9 @@ license = "BSD-3-Clause"
 
 [dependencies]
 base64          = "^0.10.1"
-bcder           = "^0.4.0"
-bytes           = "^0.4.12"
+#bcder           = "^0.5.0"
+bcder = { git = "https://github.com/NLnetLabs/bcder" }
+bytes           = "^0.5"
 chrono          = { version = "^0.4.7", features = [ "serde" ] }
 derive_more     = "^0.15.0"
 log             = "^0.4.7"

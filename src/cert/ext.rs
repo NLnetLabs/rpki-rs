@@ -535,7 +535,7 @@ pub struct KeyIdentifier(OctetString);
 impl KeyIdentifier {
     pub fn new(key_info: &PublicKey) -> Self {
         let ki = key_info.key_identifier();
-        let b = Bytes::from(ki.as_ref());
+        let b = Bytes::copy_from_slice(ki.as_ref());
         KeyIdentifier(OctetString::new(b))
     }
 
@@ -647,7 +647,7 @@ pub struct AuthorityKeyIdentifier {
 impl AuthorityKeyIdentifier {
     pub fn new(key_info: &PublicKey) -> Self {
         let ki = key_info.key_identifier();
-        let b = Bytes::from(ki.as_ref());
+        let b = Bytes::copy_from_slice(ki.as_ref());
 
         Self{authority_key_id: OctetString::new(b)}
     }
