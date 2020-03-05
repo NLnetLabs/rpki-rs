@@ -16,8 +16,11 @@ Bug Fixes
 
 Dependencies
 
+* Upgrade to bytes 0.5 and bcder 0.5. ([#99])
+
 [#95]: https://github.com/NLnetLabs/rpki-rs/pull/95
 [#96]: https://github.com/NLnetLabs/rpki-rs/pull/96
+[#99]: https://github.com/NLnetLabs/rpki-rs/pull/99
 [@dadepo]: https://github.com/dadepo
 
 
