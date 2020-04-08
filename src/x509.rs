@@ -1,6 +1,6 @@
 //! Types common to all things X.509.
 
-use std::{fmt, io, ops, str};
+use std::{error, fmt, io, ops, str};
 use std::cmp::{min, max};
 use std::str::FromStr;
 use std::time::SystemTime;
@@ -14,7 +14,6 @@ use bcder::encode::PrimitiveContent;
 use chrono::{
     Datelike, DateTime, Duration, LocalResult, Timelike, TimeZone, Utc
 };
-use derive_more::Display;
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::crypto::{
@@ -980,15 +979,21 @@ impl<'de> de::Visitor<'de> for SerialVisitor {
 //------------ RepresentationError -------------------------------------------
 
 /// A source value is not correctly formated for converting into a value.
-#[derive(Clone, Copy, Debug, Display, Eq, PartialEq)]
-#[display(fmt="wrong representation format")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RepresentationError;
+
+impl fmt::Display for RepresentationError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("wrong representation format")
+    }
+}
+
+impl error::Error for RepresentationError { }
 
 
 //------------ ValidationError -----------------------------------------------
 
-#[derive(Clone, Copy, Debug, Display, Eq, PartialEq)]
-#[display(fmt="validation error")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ValidationError;
 
 impl From<decode::Error> for ValidationError {
@@ -1003,6 +1008,14 @@ impl From<VerificationError> for ValidationError {
     }
 }
 
+impl fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("validation error")
+    }
+}
+
+impl error::Error for ValidationError { }
+
 
 //------------ Testing. One. Two. Three --------------------------------------
 
@@ -1011,7 +1024,6 @@ mod test {
     use super::*;
     use bcder::decode::Constructed;
     use bcder::encode::Values;
-    use unwrap::unwrap;
 
     #[test]
     fn signed_data_decode_then_encode() {
@@ -1026,7 +1038,7 @@ mod test {
     #[test]
     fn serial_from_slice() {
         assert_eq!(
-            unwrap!(Serial::from_slice(b"\x01\x02\x03")),
+            Serial::from_slice(b"\x01\x02\x03").unwrap(),
             Serial([0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1,2,3])
         );
         assert_eq!(
@@ -1038,13 +1050,11 @@ mod test {
     #[test]
     fn serial_take_from() {
         assert_eq!(
-            unwrap!(
-                Constructed::decode(
-                    b"\x02\x03\x01\x02\x03".as_ref(),
-                    Mode::Der,
-                    Serial::take_from
-                )
-            ),
+            Constructed::decode(
+                b"\x02\x03\x01\x02\x03".as_ref(),
+                Mode::Der,
+                Serial::take_from
+            ).unwrap(),
             Serial([0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1,2,3])
         );
     }
@@ -1052,20 +1062,20 @@ mod test {
     #[test]
     fn serial_from_str() {
         assert_eq!(
-            unwrap!(Serial::from_str("383822")),
-            unwrap!(Serial::from_slice(b"\x05\xdb\x4e"))
+            Serial::from_str("383822").unwrap(),
+            Serial::from_slice(b"\x05\xdb\x4e").unwrap()
         );
         assert_eq!(
-            unwrap!(Serial::from_str("000000383822")),
-            unwrap!(Serial::from_slice(b"\x05\xdb\x4e"))
+            Serial::from_str("000000383822").unwrap(),
+            Serial::from_slice(b"\x05\xdb\x4e").unwrap()
         );
         assert_eq!(
-            unwrap!(Serial::from_str("0")),
-            unwrap!(Serial::from_slice(b"\0"))
+            Serial::from_str("0").unwrap(),
+            Serial::from_slice(b"\0").unwrap()
         );
         assert_eq!(
-            unwrap!(Serial::from_str("17085962136030120322")),
-            unwrap!(Serial::from_slice(b"\xed\x1d\x88\x09\x93\xd9\x89\x82"))
+            Serial::from_str("17085962136030120322").unwrap(),
+            Serial::from_slice(b"\xed\x1d\x88\x09\x93\xd9\x89\x82").unwrap()
         );
         assert!(
             Serial::from_str(
@@ -1073,13 +1083,13 @@ mod test {
             ).is_err()
         );
         assert_eq!(
-            unwrap!(Serial::from_str(
+            Serial::from_str(
                 "000730750818665451459101842416358141509827966271487"
-            )),
-            unwrap!(Serial::from_slice(
+            ).unwrap(),
+            Serial::from_slice(
                 b"\x7f\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\
                   \xff\xff\xff\xff\xff\xff\xff\xff\xff"
-            ))
+            ).unwrap()
         );
         assert!(
             Serial::from_str(
@@ -1087,13 +1097,13 @@ mod test {
             ).is_err()
         );
         assert!(Serial::from_str("hello").is_err());
-        assert_eq!(unwrap!(Serial::from_str("0")), Serial::default());
+        assert_eq!(Serial::from_str("0").unwrap(), Serial::default());
     }
 
     #[test]
     fn string_from_serial() {
         assert_eq!(
-            String::from(unwrap!(Serial::from_slice(b"\x05\xdb\x4e"))),
+            String::from(Serial::from_slice(b"\x05\xdb\x4e").unwrap()),
             String::from("383822"),
         );
     }
@@ -1101,20 +1111,16 @@ mod test {
     #[test]
     fn serial_encode() {
         let mut target = Vec::new();
-        unwrap!(
-            Serial([0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1,2,3])
-                .encode().write_encoded(Mode::Der, &mut target)
-        );
+        Serial([0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1,2,3])
+            .encode().write_encoded(Mode::Der, &mut target).unwrap();
         assert_eq!(
             target,
             b"\x02\x03\x01\x02\x03"
         );
 
         let mut target = Vec::new();
-        unwrap!(
-            Serial([0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0x81,2,3])
-                .encode().write_encoded(Mode::Der, &mut target)
-        );
+        Serial([0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0x81,2,3])
+            .encode().write_encoded(Mode::Der, &mut target).unwrap();
         assert_eq!(
             target,
             b"\x02\x04\x00\x81\x02\x03"

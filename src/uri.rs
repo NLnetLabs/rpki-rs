@@ -1,13 +1,12 @@
 //! URIs.
 
-use std::{fmt, hash, io, str};
+use std::{error, fmt, hash, io, str};
 use std::convert::TryFrom;
 use std::str::FromStr;
 use bcder::encode;
 use bcder::{Mode, Tag};
 use bcder::encode::PrimitiveContent;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use derive_more::Display;
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -657,23 +656,29 @@ pub fn is_uri_ascii<S: AsRef<[u8]>>(slice: S) -> bool {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Clone, Copy, Debug, Display, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Error {
-    #[display(fmt="invalid characters")]
     NotAscii,
-
-    #[display(fmt="bad URI")]
     BadUri,
-
-    #[display(fmt="bad URI scheme")]
     BadScheme,
-
-    #[display(fmt="URI with dot segments")]
     DotSegments,
-
-    #[display(fmt="URI with empty segments")]
     EmptySegments,
 }
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match *self {
+            Error::NotAscii => "invalid characters",
+            Error::BadUri => "bad URI",
+            Error::BadScheme => "bad URI scheme",
+            Error::DotSegments => "URI with dot path segments",
+            Error::EmptySegments => "URI with emtpy path segments",
+        })
+    }
+}
+
+impl error::Error for Error { }
+
 
 
 //------------ Tests ---------------------------------------------------------

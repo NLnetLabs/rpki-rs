@@ -1,19 +1,17 @@
 //! Types and parameters of keys.
 
-use std::{fmt, io, str};
+use std::{error, fmt, io, str};
 use std::convert::{TryFrom, TryInto};
 use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, OctetString, Tag};
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
-use derive_more::Display;
 use ring::{digest, signature};
 use ring::error::Unspecified;
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use untrusted::Input;
-use unwrap::unwrap;
 use crate::oid;
 use crate::util::hex;
 use crate::x509::{Name, RepresentationError};
@@ -101,11 +99,12 @@ impl PublicKey {
     }
 
     pub fn key_identifier(&self) -> KeyIdentifier {
-        unwrap!(KeyIdentifier::try_from(
+        KeyIdentifier::try_from(
             digest::digest(
-                &digest::SHA1_FOR_LEGACY_USE_ONLY, self.bits.octet_slice().unwrap()
+                &digest::SHA1_FOR_LEGACY_USE_ONLY,
+                self.bits.octet_slice().unwrap()
             ).as_ref()
-        ))
+        ).unwrap()
     }
 
     /// Verifies a signature using this public key.
@@ -221,7 +220,7 @@ pub struct KeyIdentifier([u8; 20]);
 impl KeyIdentifier {
     /// Creates a new identifier for the given key.
     pub fn from_public_key(key: &PublicKey) -> Self {
-        Self(unwrap!(key.key_identifier().as_ref().try_into()))
+        Self(key.key_identifier().as_ref().try_into().unwrap())
     }
 
     /// Returns an octet slice of the key identifer’s value.
@@ -405,8 +404,7 @@ impl<'de> de::Visitor<'de> for KeyIdentifierVisitor {
 /// An error happened while verifying a signature.
 ///
 /// No further information is provided. This is on purpose.
-#[derive(Clone, Copy, Debug, Display, Eq, PartialEq)]
-#[display(fmt="signature verification failed")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct VerificationError;
 
 impl From<Unspecified> for VerificationError {
@@ -415,3 +413,10 @@ impl From<Unspecified> for VerificationError {
     }
 }
 
+impl fmt::Display for VerificationError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("signature verification failed")
+    }
+}
+
+impl error::Error for VerificationError { }

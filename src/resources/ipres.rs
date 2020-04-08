@@ -7,7 +7,7 @@
 //! value is not used for an address family, the set of addresses must be
 //! non-empty.
 
-use std::{fmt, io, iter, mem, str};
+use std::{error, fmt, io, iter, mem, str};
 use std::fmt::Display;
 use std::iter::FromIterator;
 use std::net::{AddrParseError, IpAddr, Ipv4Addr, Ipv6Addr};
@@ -16,7 +16,6 @@ use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, OctetString, Tag, xerr};
 use bcder::encode::PrimitiveContent;
-use derive_more::{Display, From};
 use crate::cert::Overclaim;
 use crate::roa::RoaIpAddress;
 use crate::x509::ValidationError;
@@ -1347,23 +1346,44 @@ impl AddressFamily {
 
 //------------ FromStrError --------------------------------------------------
 
-#[derive(Clone, Debug, Display, Eq, From, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FromStrError {
-    #[display(fmt="{}", _0)]
     Addr(AddrParseError),
-
-    #[display(fmt="bad prefix length: {}", _0)]
     PrefixLen(ParseIntError),
-
-    #[display(fmt="missing separator")]
     MissingSeparator,
-
-    #[display(fmt="address family mismatch")]
     FamilyMismatch,
-
-    #[display(fmt="Cannot parse blocks.")]
     BadBlocks,
 }
+
+impl From<AddrParseError> for FromStrError {
+    fn from(err: AddrParseError) -> Self {
+        FromStrError::Addr(err)
+    }
+}
+
+impl From<ParseIntError> for FromStrError {
+    fn from(err: ParseIntError) -> Self {
+        FromStrError::PrefixLen(err)
+    }
+}
+
+impl fmt::Display for FromStrError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            FromStrError::Addr(ref err) => err.fmt(f),
+            FromStrError::PrefixLen(ref err)
+                => write!(f, "bad prefix length: {}", err),
+            FromStrError::MissingSeparator
+                => f.write_str("missing separator"),
+            FromStrError::FamilyMismatch
+                => f.write_str("address family mismatch"),
+            FromStrError::BadBlocks
+                => f.write_str("cannot parse blocks"),
+        }
+    }
+}
+
+impl error::Error for FromStrError { }
 
 
 //============ Tests =========================================================
@@ -1371,7 +1391,6 @@ pub enum FromStrError {
 #[cfg(test)]
 mod test {
     use bcder::encode::Values;
-    use unwrap::unwrap;
     use super::*;
 
     #[test]
@@ -1429,10 +1448,10 @@ mod test {
 
     #[test]
     fn ip_blocks_neighbours() {
-        let super_set = unwrap!(IpBlocks::from_str(
+        let super_set = IpBlocks::from_str(
             "10.0.0.0-10.0.0.10, 10.0.0.11-10.0.0.20"
-        ));
-        let between = unwrap!(IpBlocks::from_str("10.0.0.5-10.0.0.15"));
+        ).unwrap();
+        let between = IpBlocks::from_str("10.0.0.5-10.0.0.15").unwrap();
 
         assert!(super_set.contains(&between));
     }
@@ -1559,7 +1578,7 @@ mod test {
     #[test]
     fn ip_block_from_v4_str() {
         fn check(s: &str, prefix: bool, min: &str, max: &str) {
-            let block = unwrap!(IpBlock::from_v4_str(s));
+            let block = IpBlock::from_v4_str(s).unwrap();
             let is_prefix = match block {
                 IpBlock::Prefix(_) => true,
                 _ => false
@@ -1567,11 +1586,11 @@ mod test {
             assert_eq!(prefix, is_prefix);
             assert_eq!(
                 block.min(),
-                Addr::from(unwrap!(Ipv4Addr::from_str(min))).to_min(32)
+                Addr::from(Ipv4Addr::from_str(min).unwrap()).to_min(32)
             );
             assert_eq!(
                 block.max(),
-                Addr::from(unwrap!(Ipv4Addr::from_str(max))).to_max(32)
+                Addr::from(Ipv4Addr::from_str(max).unwrap()).to_max(32)
             );
         }
 
@@ -1617,7 +1636,7 @@ mod test {
     #[test]
     fn ip_block_from_str() {
         fn check_v4(s: &str, prefix: bool, min: &str, max: &str) {
-            let block = unwrap!(IpBlock::from_str(s));
+            let block = IpBlock::from_str(s).unwrap();
             let is_prefix = match block {
                 IpBlock::Prefix(_) => true,
                 _ => false
@@ -1625,11 +1644,11 @@ mod test {
             assert_eq!(prefix, is_prefix);
             assert_eq!(
                 block.min(),
-                Addr::from(unwrap!(Ipv4Addr::from_str(min))).to_min(32)
+                Addr::from(Ipv4Addr::from_str(min).unwrap()).to_min(32)
             );
             assert_eq!(
                 block.max(),
-                Addr::from(unwrap!(Ipv4Addr::from_str(max))).to_max(32)
+                Addr::from(Ipv4Addr::from_str(max).unwrap()).to_max(32)
             );
         }
 
