@@ -17,7 +17,7 @@ jobs:
         rust-version: ${{ matrix.rust }}
     - if: matrix.rust != 'nightly'
       run: rustup component add clippy
-    - if: matrix.os != 'windows-latest' and matrix.rust != 'nightly'
+    - if: matrix.os != 'windows-latest' && matrix.rust != 'nightly'
       run: cargo clippy --all --all-features -- -D warnings
     - if: matrix.os != 'windows-latest'
       run: cargo build --verbose --all --all-features
