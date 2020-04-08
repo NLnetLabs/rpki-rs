@@ -947,7 +947,6 @@ mod signer_test {
     use std::str::FromStr;
     use bcder::Oid;
     use bcder::encode::Values;
-    use unwrap::unwrap;
     use crate::uri;
     use crate::crypto::PublicKeyFormat;
     use crate::crypto::softsigner::OpenSslSigner;
