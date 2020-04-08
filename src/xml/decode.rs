@@ -1,8 +1,7 @@
 
-use std::{fmt, io, str};
+use std::{error, fmt, io, str};
 use std::borrow::Cow;
 use bytes::Bytes;
-use derive_more::{Display, From};
 use quick_xml::events::{BytesStart, Event};
 
 /// An XML reader.
@@ -327,12 +326,25 @@ impl<'a> Text<'a> {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Display, From)]
+#[derive(Debug)]
 pub enum Error {
-    #[display(fmt="{}", _0)]
     Xml(quick_xml::Error),
-
-    #[display(fmt="Malformed XML")]
     Malformed,
 }
 
+impl From<quick_xml::Error> for Error {
+    fn from(err: quick_xml::Error) -> Self {
+        Error::Xml(err)
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Error::Xml(ref err) => err.fmt(f),
+            Error::Malformed => f.write_str("malformed XML"),
+        }
+    }
+}
+
+impl error::Error for Error { } 

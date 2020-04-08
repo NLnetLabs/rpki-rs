@@ -1,6 +1,6 @@
 //! Trust Anchor Locators
 
-use std::str;
+use std::{fmt, str};
 use std::convert::TryFrom;
 use std::fs::{read_dir, DirEntry, File, ReadDir};
 use std::io::{self, Read};
@@ -8,7 +8,6 @@ use std::path::Path;
 use std::sync::Arc;
 use bytes::Bytes;
 use bcder::decode;
-use derive_more::{Display, From};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use crate::crypto::PublicKey;
@@ -135,7 +134,7 @@ fn next_entry(entry: &DirEntry) -> Result<Option<Tal>, ReadError> {
 //------------ TalUri --------------------------------------------------------
 
 #[derive(
-    Clone, Debug, Deserialize, Display, Eq, From, Hash, PartialEq, Serialize
+    Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize
 )]
 pub enum TalUri {
     Rsync(uri::Rsync),
@@ -174,6 +173,21 @@ impl TalUri {
 }
 
 
+//--- From
+
+impl From<uri::Rsync> for TalUri {
+    fn from(uri: uri::Rsync) -> Self {
+        TalUri::Rsync(uri)
+    }
+}
+
+impl From<uri::Https> for TalUri {
+    fn from(uri: uri::Https) -> Self {
+        TalUri::Https(uri)
+    }
+}
+
+
 //--- TryFrom and FromStr
 
 impl TryFrom<String> for TalUri {
@@ -189,6 +203,18 @@ impl str::FromStr for TalUri {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::from_bytes(Bytes::copy_from_slice(s.as_ref()))
+    }
+}
+
+
+//--- Display
+
+impl fmt::Display for TalUri {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            TalUri::Rsync(ref uri) => uri.fmt(f),
+            TalUri::Https(ref uri) => uri.fmt(f)
+        }
     }
 }
 
@@ -225,21 +251,12 @@ impl TalInfo {
 
 //------------ ReadError -----------------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum ReadError {
-    #[display(fmt="{}", _0)]
     Io(io::Error),
-
-    #[display(fmt="unexpected end of file")]
     UnexpectedEof,
-
-    #[display(fmt="bad trunst anchor URI: {}", _0)]
     BadUri(uri::Error),
-
-    #[display(fmt="bad key info: {}", _0)]
     BadKeyInfoEncoding(base64::DecodeError),
-
-    #[display(fmt="bad key info: {}", _0)]
     BadKeyInfo(decode::Error),
 }
 
@@ -267,23 +284,38 @@ impl From<decode::Error> for ReadError {
     }
 }
 
+impl fmt::Display for ReadError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            ReadError::Io(ref err) => err.fmt(f),
+            ReadError::UnexpectedEof
+                => f.write_str("unexpected end of file"),
+            ReadError::BadUri(ref err)
+                => write!(f, "bad trust anchor URI: {}", err),
+            ReadError::BadKeyInfoEncoding(ref err)
+                => write!(f, "bad key info: {}", err),
+            ReadError::BadKeyInfo(ref err)
+                => write!(f, "bad key info: {}", err),
+        }
+    }
+}
+
 
 //============ Testing =======================================================
 
 #[cfg(test)]
 mod test {
     use bytes::Bytes;
-    use unwrap::unwrap;
     use crate::cert::Cert;
     use super::*;
 
     #[test]
     fn tal_read() {
         let tal = include_bytes!("../test-data/ripe.tal");
-        let tal = unwrap!(Tal::read("ripe.tal", &mut tal.as_ref()));
-        let cert = unwrap!(Cert::decode(Bytes::from_static(
+        let tal = Tal::read("ripe.tal", &mut tal.as_ref()).unwrap();
+        let cert = Cert::decode(Bytes::from_static(
             include_bytes!("../test-data/ta.cer")
-        )));
+        )).unwrap();
         assert_eq!(
             tal.key_info(),
             cert.subject_public_key_info(),

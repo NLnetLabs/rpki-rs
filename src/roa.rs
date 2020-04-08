@@ -644,7 +644,6 @@ mod test {
 mod signer_test {
     use std::str::FromStr;
     use bcder::encode::Values;
-    use unwrap::unwrap;
     use crate::cert::{KeyUsage, Overclaim, TbsCert};
     use crate::crypto::{PublicKeyFormat, Signer};
     use crate::crypto::softsigner::OpenSslSigner;
@@ -655,9 +654,9 @@ mod signer_test {
 
     fn make_roa() -> Roa {
         let mut signer = OpenSslSigner::new();
-        let key = unwrap!(signer.create_key(PublicKeyFormat::default()));
-        let pubkey = unwrap!(signer.get_key_info(&key));
-        let uri = unwrap!(uri::Rsync::from_str("rsync://example.com/m/p"));
+        let key = signer.create_key(PublicKeyFormat::default()).unwrap();
+        let pubkey = signer.get_key_info(&key).unwrap();
+        let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
 
         let mut cert = TbsCert::new(
             12u64.into(), pubkey.to_subject_name(),
@@ -670,25 +669,25 @@ mod signer_test {
         cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_as_resource_blocks(|b| b.push((AsId::MIN, AsId::MAX)));
-        let cert = unwrap!(cert.into_cert(&signer, &key));
+        let cert = cert.into_cert(&signer, &key).unwrap();
 
         let mut roa = RoaBuilder::new(64496.into());
         roa.push_v4_addr(Ipv4Addr::new(192, 0, 2, 0), 24, None);
 
-        let roa = unwrap!(roa.finalize(
+        let roa = roa.finalize(
             SignedObjectBuilder::new(
                 12u64.into(), Validity::from_secs(86400), uri.clone(),
                 uri.clone(), uri.clone()
             ),
             &signer, &key
-        ));
+        ).unwrap();
         let roa = roa.encode_ref().to_captured(Mode::Der);
 
-        let roa = unwrap!(Roa::decode(roa.as_slice(), true));
-        let cert = unwrap!(cert.validate_ta(
+        let roa = Roa::decode(roa.as_slice(), true).unwrap();
+        let cert = cert.validate_ta(
             TalInfo::from_name("foo".into()).into_arc(), true
-        ));
-        unwrap!(roa.clone().process(&cert, true, |_| Ok(())));
+        ).unwrap();
+        roa.clone().process(&cert, true, |_| Ok(())).unwrap();
 
         roa
     }

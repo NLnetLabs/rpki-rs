@@ -10,6 +10,11 @@ Bug Fixes
 
 Dependencies
 
+* Update `base64` to 0.12. ([#101])
+* Dropped dependency on `unwrap` and `derive_more`. ([#101])
+
+[#101]: https://github.com/NLnetLabs/rpki-rs/pull/101
+
 
 # 0.9.0
 

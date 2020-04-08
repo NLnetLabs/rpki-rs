@@ -6,7 +6,6 @@ use bcder::{Captured, Mode, OctetString, Oid, Tag, xerr};
 use bcder::encode::PrimitiveContent;
 use bcder::string::OctetStringSource;
 use bytes::Bytes;
-use unwrap::unwrap;
 use crate::{oid, uri};
 use crate::cert::{Cert, KeyUsage, Overclaim, ResourceCert, TbsCert};
 use crate::crypto::{
@@ -891,7 +890,7 @@ impl StartOfValue {
             res: [0; 8],
             pos: 0
         };
-        unwrap!(values.write_encoded(Mode::Der, &mut res));
+        values.write_encoded(Mode::Der, &mut res).unwrap();
         res
     }
 
@@ -920,7 +919,6 @@ impl io::Write for StartOfValue {
 #[cfg(test)]
 mod test {
     use crate::tal::TalInfo;
-    use unwrap::unwrap;
     use super::*;
 
     #[test]
@@ -930,16 +928,16 @@ mod test {
         let issuer = Cert::decode(
             include_bytes!("../test-data/ta.cer").as_ref()
         ).unwrap();
-        let issuer = unwrap!(issuer.validate_ta_at(talinfo, false, at));
-        let obj = unwrap!(SignedObject::decode(
+        let issuer = issuer.validate_ta_at(talinfo, false, at).unwrap();
+        let obj = SignedObject::decode(
             include_bytes!("../test-data/ta.mft").as_ref(),
             false
-        ));
-        unwrap!(obj.validate_at(&issuer, false, at));
-        let obj = unwrap!(SignedObject::decode(
+        ).unwrap();
+        obj.validate_at(&issuer, false, at).unwrap();
+        let obj = SignedObject::decode(
             include_bytes!("../test-data/ca1.mft").as_ref(),
             false
-        ));
+        ).unwrap();
         assert!(obj.validate_at(&issuer, false, at).is_err());
     }
 }
@@ -949,7 +947,6 @@ mod signer_test {
     use std::str::FromStr;
     use bcder::Oid;
     use bcder::encode::Values;
-    use unwrap::unwrap;
     use crate::uri;
     use crate::crypto::PublicKeyFormat;
     use crate::crypto::softsigner::OpenSslSigner;
@@ -960,9 +957,9 @@ mod signer_test {
     #[test]
     fn encode_signed_object() {
         let mut signer = OpenSslSigner::new();
-        let key = unwrap!(signer.create_key(PublicKeyFormat::default()));
-        let pubkey = unwrap!(signer.get_key_info(&key));
-        let uri = unwrap!(uri::Rsync::from_str("rsync://example.com/m/p"));
+        let key = signer.create_key(PublicKeyFormat::default()).unwrap();
+        let pubkey = signer.get_key_info(&key).unwrap();
+        let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
 
         let mut cert = TbsCert::new(
             12u64.into(), pubkey.to_subject_name(),
@@ -975,26 +972,26 @@ mod signer_test {
         cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_as_resource_blocks(|b| b.push((AsId::MIN, AsId::MAX)));
-        let cert = unwrap!(cert.into_cert(&signer, &key));
+        let cert = cert.into_cert(&signer, &key).unwrap();
 
         let mut sigobj = SignedObjectBuilder::new(
             12u64.into(), Validity::from_secs(86400), uri.clone(),
             uri.clone(), uri.clone()
         );
         sigobj.set_v4_resources_inherit();
-        let sigobj = unwrap!(sigobj.finalize(
+        let sigobj = sigobj.finalize(
             Oid(oid::SIGNED_DATA.0.into()),
             Bytes::from(b"1234".as_ref()),
             &signer,
             &key,
-        ));
+        ).unwrap();
         let sigobj = sigobj.encode_ref().to_captured(Mode::Der);
 
-        let sigobj = unwrap!(SignedObject::decode(sigobj.as_slice(), true));
-        let cert = unwrap!(cert.validate_ta(
+        let sigobj = SignedObject::decode(sigobj.as_slice(), true).unwrap();
+        let cert = cert.validate_ta(
             TalInfo::from_name("foo".into()).into_arc(), true
-        ));
-        unwrap!(sigobj.validate(&cert, true));
+        ).unwrap();
+        sigobj.validate(&cert, true).unwrap();
     }
 }
 

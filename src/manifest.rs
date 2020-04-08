@@ -18,7 +18,6 @@ use bcder::{
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
-use unwrap::unwrap;
 use crate::{oid, uri};
 use crate::cert::{Cert, ResourceCert};
 use crate::crypto::{DigestAlgorithm, Signer, SigningError};
@@ -364,9 +363,9 @@ impl Iterator for FileListIter {
     type Item = FileAndHash<Bytes, Bytes>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        unwrap!(self.0.decode_partial(|cons| {
+        self.0.decode_partial(|cons| {
             FileAndHash::take_opt_from(cons)
-        }))
+        }).unwrap()
     }
 }
 
@@ -506,16 +505,16 @@ mod test {
         let issuer = Cert::decode(
             include_bytes!("../test-data/ta.cer").as_ref()
         ).unwrap();
-        let issuer = unwrap!(issuer.validate_ta_at(talinfo, false, at));
-        let obj = unwrap!(Manifest::decode(
+        let issuer = issuer.validate_ta_at(talinfo, false, at).unwrap();
+        let obj = Manifest::decode(
             include_bytes!("../test-data/ta.mft").as_ref(),
             false
-        ));
-        unwrap!(obj.validate_at(&issuer, false, at));
-        let obj = unwrap!(Manifest::decode(
+        ).unwrap();
+        obj.validate_at(&issuer, false, at).unwrap();
+        let obj = Manifest::decode(
             include_bytes!("../test-data/ca1.mft").as_ref(),
             false
-        ));
+        ).unwrap();
         assert!(obj.validate_at(&issuer, false, at).is_err());
     }
 }
@@ -535,9 +534,9 @@ mod signer_test {
 
     fn make_test_manifest() -> Manifest {
         let mut signer = OpenSslSigner::new();
-        let key = unwrap!(signer.create_key(PublicKeyFormat::default()));
-        let pubkey = unwrap!(signer.get_key_info(&key));
-        let uri = unwrap!(uri::Rsync::from_str("rsync://example.com/m/p"));
+        let key = signer.create_key(PublicKeyFormat::default()).unwrap();
+        let pubkey = signer.get_key_info(&key).unwrap();
+        let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
 
         let mut cert = TbsCert::new(
             12u64.into(), pubkey.to_subject_name(),
@@ -550,7 +549,7 @@ mod signer_test {
         cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_as_resource_blocks(|b| b.push((AsId::MIN, AsId::MAX)));
-        let cert = unwrap!(cert.into_cert(&signer, &key));
+        let cert = cert.into_cert(&signer, &key).unwrap();
 
         let content = ManifestContent::new(
             12u64.into(), Time::now(), Time::now(),
@@ -561,20 +560,20 @@ mod signer_test {
             ].iter()
         );
 
-        let manifest = unwrap!(content.into_manifest(
+        let manifest = content.into_manifest(
             SignedObjectBuilder::new(
                 12u64.into(), Validity::from_secs(86400), uri.clone(),
                 uri.clone(), uri.clone()
             ),
             &signer, &key
-        ));
+        ).unwrap();
         let manifest = manifest.encode_ref().to_captured(Mode::Der);
 
-        let manifest = unwrap!(Manifest::decode(manifest.as_slice(), true));
-        let cert = unwrap!(cert.validate_ta(
+        let manifest = Manifest::decode(manifest.as_slice(), true).unwrap();
+        let cert = cert.validate_ta(
             TalInfo::from_name("foo".into()).into_arc(), true
-        ));
-        unwrap!(manifest.clone().validate(&cert, true));
+        ).unwrap();
+        manifest.clone().validate(&cert, true).unwrap();
 
         manifest
     }
