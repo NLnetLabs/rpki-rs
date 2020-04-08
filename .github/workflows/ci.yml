@@ -23,7 +23,7 @@ jobs:
       run: cargo build --verbose --all --all-features
     - if: matrix.os != 'windows-latest'
       run: cargo test --verbose --all --all-features
-    - if: matrix.os == 'windows-latest'
+    - if: matrix.os == 'windows-latest' && matrix.rust != 'nightly'
       run: cargo clippy --all -- -D warnings
     - if: matrix.os == 'windows-latest'
       run: cargo build --verbose --all
