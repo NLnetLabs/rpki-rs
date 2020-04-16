@@ -32,6 +32,18 @@ impl Tal {
         path: P,
         reader: &mut R
     ) -> Result<Self, ReadError> {
+        Self::read_named(
+            path.as_ref().file_stem()
+                .expect("TAL path needs to have a file name")
+                .to_string_lossy().into_owned(),
+            reader
+        )
+    }
+
+    pub fn read_named<R: Read>(
+        name: String,
+        reader: &mut R
+    ) -> Result<Self, ReadError> {
         let mut data = Vec::new();
         reader.read_to_end(&mut data)?;
 
@@ -52,7 +64,7 @@ impl Tal {
         Ok(Tal {
             uris,
             key_info,
-            info: Arc::new(TalInfo::from_path(path))
+            info: Arc::new(TalInfo::from_name(name))
         })
     }
 
@@ -227,14 +239,6 @@ pub struct TalInfo {
 }
 
 impl TalInfo {
-    fn from_path<P: AsRef<Path>>(path: P) -> Self {
-        TalInfo::from_name(
-            path.as_ref().file_stem()
-                .expect("TAL path needs to have a file name")
-                .to_string_lossy().into_owned()
-        )
-    }
-
     pub fn from_name(name: String) -> Self {
         TalInfo { name }
     }
