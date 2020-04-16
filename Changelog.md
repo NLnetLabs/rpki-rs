@@ -6,6 +6,9 @@ Breaking
 
 New
 
+* `Tal`s can now be created with an explicit name for their `TalInfo`
+  instead of deriving the name from the path. ([#102)]
+
 Bug Fixes
 
 Dependencies
@@ -14,6 +17,7 @@ Dependencies
 * Dropped dependency on `unwrap` and `derive_more`. ([#101])
 
 [#101]: https://github.com/NLnetLabs/rpki-rs/pull/101
+[#102]: https://github.com/NLnetLabs/rpki-rs/pull/102
 
 
 # 0.9.0
