@@ -8,6 +8,12 @@ New
 
 * `Tal`s can now be created with an explicit name for their `TalInfo`
   instead of deriving the name from the path. ([#102)]
+* All types from the `uri` module now have a `authority` method that provides
+  access to the authority portion of the URI (a.k.a., the hostname).
+  [(#103)]
+* All types from the `uri` module now have a method `unshare` that causes
+  to value to use its own memory, possibly freeing up the shared memory
+  block they were taken out of earlier and saving memory. [(#103)]
 
 Bug Fixes
 
@@ -18,6 +24,7 @@ Dependencies
 
 [#101]: https://github.com/NLnetLabs/rpki-rs/pull/101
 [#102]: https://github.com/NLnetLabs/rpki-rs/pull/102
+[#103]: https://github.com/NLnetLabs/rpki-rs/pull/102
 
 
 # 0.9.0

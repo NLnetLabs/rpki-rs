@@ -81,6 +81,17 @@ impl Rsync {
         })
     }
 
+    /// Moves the URI to its own memory.
+    ///
+    /// Values use shared memory in order to allow cheap copying which may
+    /// result in large allocations being kept around longer than necessary.
+    /// This method moves the URI to a new memory location allowing the
+    /// previous location to potentially be freed.
+    pub fn unshare(&mut self) {
+        self.module.unshare();
+        self.path = Bytes::copy_from_slice(self.path.as_ref());
+    }
+
     fn check_path(path: &[u8]) -> Result<(), Error> {
         // Don’t allow ".." anywhere. Don’t allow empty segments except at the
         // end.
@@ -111,6 +122,10 @@ impl Rsync {
 
     pub fn to_module(&self) -> RsyncModule {
         self.module.clone()
+    }
+
+    pub fn authority(&self) -> &str {
+        self.module.authority()
     }
 
     pub fn path(&self) -> &str {
@@ -284,6 +299,18 @@ impl RsyncModule {
         RsyncModule { authority, module }
     }
 
+    /// Moves the value to its own memory.
+    ///
+    /// Values use shared memory in order to allow cheap copying which may
+    /// result in large allocations being kept around longer than necessary.
+    /// This method moves the URI to a new memory location allowing the
+    /// previous location to potentially be freed.
+    pub fn unshare(&mut self) {
+        self.authority = Bytes::copy_from_slice(self.authority.as_ref());
+        self.module = Bytes::copy_from_slice(self.module.as_ref());
+    }
+
+
     pub fn to_uri(&self) -> Rsync {
         Rsync {
             module: self.clone(),
@@ -382,8 +409,22 @@ impl Https {
         Ok(Https { uri: bytes, path_idx })
     }
 
+    /// Moves the URI to its own memory.
+    ///
+    /// Values use shared memory in order to allow cheap copying which may
+    /// result in large allocations being kept around longer than necessary.
+    /// This method moves the URI to a new memory location allowing the
+    /// previous location to potentially be freed.
+    pub fn unshare(&mut self) {
+        self.uri = Bytes::copy_from_slice(self.uri.as_ref());
+    }
+
     pub fn scheme(&self) -> Scheme {
         Scheme::Https
+    }
+
+    pub fn authority(&self) -> &str {
+        &self.as_str()[self.scheme().as_str().len() + 3..self.path_idx]
     }
 
     pub fn as_str(&self) -> &str {
@@ -731,6 +772,20 @@ mod tests {
         assert_eq!(None, c.relative_to(&a));
         assert_eq!(None, a.relative_to(&a_b));
         assert_eq!(None, m2_a_b.relative_to(&a));
+    }
+
+    #[test]
+    fn https_authority() {
+        assert_eq!(
+            Https::from_str(
+                "https://example.com/some/stuff"
+            ).unwrap().authority(),
+            "example.com"
+        );
+        assert_eq!(
+            Https::from_str("https://example.com/",).unwrap().authority(),
+            "example.com"
+        );
     }
 
     #[test]
