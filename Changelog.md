@@ -1,8 +1,6 @@
-# Change Log
+# Changelog
 
-# Next Unreleased Version
-
-Breaking
+# 0.9.1
 
 New
 
@@ -14,8 +12,6 @@ New
 * All types from the `uri` module now have a method `unshare` that causes
   to value to use its own memory, possibly freeing up the shared memory
   block they were taken out of earlier and saving memory. [(#103)]
-
-Bug Fixes
 
 Dependencies
 
