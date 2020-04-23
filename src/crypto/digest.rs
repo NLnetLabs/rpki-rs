@@ -119,7 +119,7 @@ impl DigestAlgorithm {
         cons: &mut decode::Constructed<S>
     ) -> Result<(), S::Err> {
         cons.take_constructed_if(Tag::SET, |cons| {
-            while let Some(_) = Self::take_opt_from(cons)? { }
+            while Self::take_opt_from(cons)?.is_some() { }
             Ok(())
         })
     }
