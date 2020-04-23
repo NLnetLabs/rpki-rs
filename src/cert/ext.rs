@@ -310,7 +310,7 @@ impl Extensions {
             let res = cons.take_sequence(|c| c.capture_all())?;
             res.clone().decode(|cons| {
                 Oid::skip_in(cons)?;
-                while let Some(_) = Oid::skip_opt_in(cons)? { }
+                while Oid::skip_opt_in(cons)?.is_some() { }
                 Ok(res)
             }).map_err(Into::into)
         })
