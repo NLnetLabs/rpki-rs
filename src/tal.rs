@@ -1,6 +1,7 @@
 //! Trust Anchor Locators
 
 use std::{fmt, str};
+use std::cmp::Ordering;
 use std::convert::TryFrom;
 use std::fs::{read_dir, DirEntry, File, ReadDir};
 use std::io::{self, Read};
@@ -65,6 +66,19 @@ impl Tal {
             uris,
             key_info,
             info: Arc::new(TalInfo::from_name(name))
+        })
+    }
+
+    /// Reorders the TAL URIs placing HTTPS URIs first.
+    ///
+    /// The method keeps the order within each scheme.
+    pub fn prefer_https(&mut self) {
+        self.uris.sort_by(|left, right| {
+            match (left.is_https(), right.is_https()) {
+                (true, false) => Ordering::Less,
+                (false, true) => Ordering::Greater,
+                _ => Ordering::Equal
+            }
         })
     }
 
@@ -323,6 +337,35 @@ mod test {
         assert_eq!(
             tal.key_info(),
             cert.subject_public_key_info(),
+        );
+    }
+
+    #[test]
+    fn prefer_https() {
+        let tal = include_bytes!("../test-data/ripe.tal");
+        let mut tal = Tal::read("ripe.tal", &mut tal.as_ref()).unwrap();
+        tal.uris = vec![
+            TalUri::from_slice(b"rsync://a.example.com/1/1").unwrap(),
+            TalUri::from_slice(b"https://d.example.com/1/1").unwrap(),
+            TalUri::from_slice(b"rsync://k.example.com/2/1").unwrap(),
+            TalUri::from_slice(b"https://2.example.com/2/1").unwrap(),
+            TalUri::from_slice(b"https://i.example.com/3/1").unwrap(),
+            TalUri::from_slice(b"rsync://g.example.com/3/1").unwrap(),
+            TalUri::from_slice(b"https://r.example.com/4/1").unwrap(),
+        ];
+        tal.prefer_https();
+
+        assert_eq!(
+            tal.uris,
+            vec![
+                TalUri::from_slice(b"https://d.example.com/1/1").unwrap(),
+                TalUri::from_slice(b"https://2.example.com/2/1").unwrap(),
+                TalUri::from_slice(b"https://i.example.com/3/1").unwrap(),
+                TalUri::from_slice(b"https://r.example.com/4/1").unwrap(),
+                TalUri::from_slice(b"rsync://a.example.com/1/1").unwrap(),
+                TalUri::from_slice(b"rsync://k.example.com/2/1").unwrap(),
+                TalUri::from_slice(b"rsync://g.example.com/3/1").unwrap(),
+            ]
         );
     }
 }
