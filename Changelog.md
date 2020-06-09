@@ -1,5 +1,16 @@
 # Changelog
 
+# Unreleased next version
+
+Breaking
+
+Bug Fixes
+
+New
+
+Dependencies
+
+
 # 0.9.2
 
 New
