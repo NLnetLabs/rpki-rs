@@ -1,20 +1,14 @@
 # Changelog
 
-# Unreleased next version
-
-Breaking Changes
+# 0.9.2
 
 New
 
 * The new method `Tal::prefer_https` reorders the URIs of a TAL so that the
   HTTPS URIs appear first. ([#106])
 
-Bug Fixes
-
-Dependencies
-
-
 [#106]: https://github.com/NLnetLabs/rpki-rs/pull/106
+
 
 # 0.9.1
 
