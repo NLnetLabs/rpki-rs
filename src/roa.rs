@@ -63,12 +63,12 @@ impl Roa {
         self.signed.encode_ref()
     }
 
-    /// Returns a DER encoded Captured for this.
+    /// Returns a DER encoded Captured for this ROA.
     pub fn to_captured(&self) -> Captured {
         self.encode_ref().to_captured(Mode::Der)
     }
 
-    /// Returns a reference to the EE certificate of this manifest.
+    /// Returns a reference to the EE certificate of this ROA.
     pub fn cert(&self) -> &Cert {
         self.signed.cert()
     }

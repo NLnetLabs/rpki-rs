@@ -325,11 +325,23 @@ impl AsBlocks {
 /// # Decoding and Encoding
 ///
 impl AsBlocks {
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        cons.take_sequence(Self::parse_cons_content)
+    }
+
     /// Parses the content of a AS ID blocks sequence.
     fn parse_content<S: decode::Source>(
         content: &mut decode::Content<S>
     ) -> Result<Self, S::Err> {
         let cons = content.as_constructed()?;
+        Self::parse_cons_content(cons)
+    }
+
+    fn parse_cons_content<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
         let mut err = None;
 
         let res = SharedChain::from_iter(
@@ -529,7 +541,7 @@ impl AsBlock {
 
 impl AsBlock {
     /// Takes an optional AS bock from the beginning of an encoded value.
-    fn take_opt_from<S: decode::Source>(
+    pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, S::Err> {
         cons.take_opt_value(|tag, content| {
@@ -545,9 +557,8 @@ impl AsBlock {
         })
     }
 
-    /*
     /// Skips over the AS block at the beginning of an encoded value.
-    fn skip_opt_in<S: decode::Source>(
+    pub fn skip_opt_in<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<()>, S::Err> {
         cons.take_opt_value(|tag, content| {
@@ -562,7 +573,6 @@ impl AsBlock {
             }
         })
     }
-    */
 
     fn encode(self) -> impl encode::Values {
         match self {
@@ -710,7 +720,6 @@ impl AsRange {
         })
     }
 
-    /*
     /// Skips over the content of an AS range value.
     fn skip_content<S: decode::Source>(
         content: &mut decode::Content<S>
@@ -720,7 +729,6 @@ impl AsRange {
         AsId::skip_in(cons)?;
         Ok(())
     }
-    */
 
     fn encode(self) -> impl encode::Values {
         encode::sequence((
@@ -779,14 +787,12 @@ impl AsId {
         cons.take_u32().map(AsId)
     }
 
-    /*
     /// Skips over the AS number at the beginning of an encoded value.
     fn skip_in<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<(), S::Err> {
         cons.take_u32().map(|_| ())
     }
-    */
 
     /// Parses the content of an AS number value.
     fn parse_content<S: decode::Source>(
@@ -795,14 +801,12 @@ impl AsId {
         content.to_u32().map(AsId)
     }
 
-    /*
     /// Skips the content of an AS number value.
     fn skip_content<S: decode::Source>(
         content: &mut decode::Content<S>
     ) -> Result<(), S::Err> {
         content.to_u32().map(|_| ())
     }
-    */
 
     pub fn encode(self) -> impl encode::Values {
         self.0.encode()

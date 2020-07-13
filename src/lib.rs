@@ -24,6 +24,7 @@ pub mod oid;
 pub mod resources;
 pub mod roa;
 pub mod rrdp;
+pub mod rta;
 pub mod sigobj;
 pub mod tal;
 pub mod uri;

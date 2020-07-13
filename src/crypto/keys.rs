@@ -271,6 +271,17 @@ impl KeyIdentifier {
             Ok(res)
         }
     }
+
+    /// Skips over an encoded key indentifier.
+    pub fn skip_in<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<(), S::Err> {
+        while cons.take_opt_value_if(
+            Tag::OCTET_STRING, OctetString::from_content
+        )?.is_some() {
+        }
+        Ok(())
+    }
 }
 
 

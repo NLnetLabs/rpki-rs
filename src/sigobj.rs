@@ -1,4 +1,6 @@
-// Signed objects.
+//! Signed objects.
+//
+// See RFC 6488 and RFC 5652.
 
 use std::{cmp, io};
 use bcder::{decode, encode};
@@ -279,8 +281,8 @@ impl SignedObject {
 pub struct SignedAttrs(Captured);
 
 impl SignedAttrs {
-    fn new(
-        content_type: &Oid<Bytes>,
+    pub(crate) fn new(
+        content_type: &Oid<impl AsRef<[u8]>>,
         digest: &MessageDigest,
         signing_time: Option<Time>,
         binary_signing_time: Option<u64>,
@@ -537,8 +539,14 @@ impl AsRef<[u8]> for SignedAttrs {
 pub struct MessageDigest(Bytes);
 
 impl MessageDigest {
-    fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         OctetString::encode_slice(self.0.as_ref())
+    }
+}
+
+impl From<OctetString> for MessageDigest {
+    fn from(src: OctetString) -> Self {
+        MessageDigest(src.into_bytes())
     }
 }
 
@@ -866,13 +874,10 @@ impl SignedObjectBuilder {
             binary_signing_time: self.binary_signing_time,
         })
     }
-
-
 }
 
 
 //------------ StartOfValue --------------------------------------------------
-
 
 /// Helper type for ordering signed attributes.
 ///

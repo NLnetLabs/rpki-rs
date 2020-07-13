@@ -116,6 +116,13 @@ impl Cert {
         cons.take_sequence(Self::from_constructed)
     }
 
+    /// Takes an optional certificate from the beginning of a value.
+    pub fn take_opt_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Option<Self>, S::Err> {
+        cons.take_opt_sequence(Self::from_constructed)
+    }
+
     /// Parses the content of a Certificate sequence.
     pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>

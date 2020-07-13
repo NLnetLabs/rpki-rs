@@ -348,11 +348,23 @@ impl IpBlocks {
 }
 
 impl IpBlocks {
-    /// Parses the content of an address block sequence.
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        cons.take_sequence(Self::parse_cons_content)
+    }
+
+    /// Parses the content of a AS ID blocks sequence.
     fn parse_content<S: decode::Source>(
         content: &mut decode::Content<S>
     ) -> Result<Self, S::Err> {
         let cons = content.as_constructed()?;
+        Self::parse_cons_content(cons)
+    }
+
+    fn parse_cons_content<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
         let mut err = None;
 
         let res = SharedChain::from_iter(
@@ -548,7 +560,7 @@ impl IpBlock {
 
 impl IpBlock {
     /// Takes an optional address block from the beginning of encoded value.
-    fn take_opt_from<S: decode::Source>(
+    pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, S::Err> {
         cons.take_opt_value(|tag, content| {

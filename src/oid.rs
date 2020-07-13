@@ -63,6 +63,8 @@ pub const CP_IPADDR_ASNUMBER_V2: Oid<&[u8]> = Oid(&[43, 6, 1, 5, 5, 7, 14, 3]);
 
 pub const CT_RPKI_MANIFEST: ConstOid
     = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 16, 1, 26]);
+pub const CT_RESOURCE_TAGGED_ATTESTATION: ConstOid
+    = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 16, 1, 36]);
 
 pub const PE_AUTHORITY_INFO_ACCESS: Oid<&[u8]>
     = Oid(&[43, 6, 1, 5, 5, 7, 1, 1]);
