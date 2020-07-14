@@ -671,7 +671,7 @@ impl AttestationBuilder {
         &self.keys
     }
 
-    pub fn keys_mut(&mut self) -> &Vec<KeyIdentifier> {
+    pub fn keys_mut(&mut self) -> &mut Vec<KeyIdentifier> {
         &mut self.keys
     }
 
