@@ -667,6 +667,10 @@ impl AttestationBuilder {
         }
     }
 
+    pub fn push_key(&mut self, key: KeyIdentifier) {
+        self.keys.push(key)
+    }
+
     pub fn keys(&self) -> &[KeyIdentifier] {
         &self.keys
     }
