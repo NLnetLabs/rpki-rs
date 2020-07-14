@@ -517,11 +517,11 @@ impl CrlSet {
 
     /// Returns a value encoder for a reference to a signed object.
     pub fn encode_ref_as<'a>(&'a self, tag: Tag) -> impl encode::Values + 'a {
-        match self.0.is_empty() {
-            true => None,
-            false => {
-                Some(encode::sequence_as(tag, &self.0))
-            }
+        if self.0.is_empty() {
+            None
+        }
+        else {
+            Some(encode::sequence_as(tag, &self.0))
         }
     }
 }
@@ -774,7 +774,7 @@ impl RtaBuilder {
         &self.certificates
     }
 
-    pub fn certificates_mut(&mut self) -> &Vec<Cert> {
+    pub fn certificates_mut(&mut self) -> &mut Vec<Cert> {
         &mut self.certificates
     }
 
