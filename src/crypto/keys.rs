@@ -303,12 +303,10 @@ impl FromStr for KeyIdentifier {
             return Err(RepresentationError)
         }
         let mut res = KeyIdentifier(Default::default());
-        let mut pos = 0;
-        for ch in value.as_bytes().chunks(2) {
+        for (pos, ch) in value.as_bytes().chunks(2).enumerate() {
             let ch = unsafe { str::from_utf8_unchecked(ch) };
             res.0[pos] = u8::from_str_radix(ch, 16)
                             .map_err(|_| RepresentationError)?;
-            pos += 1;
         }
         Ok(res)
     }
