@@ -6,6 +6,7 @@
 //!
 //! draft-michaelson-rpki-rta: https://tools.ietf.org/html/draft-michaelson-rpki-rta
 
+use std::ops;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Tag};
 use bcder::encode::{PrimitiveContent, Values};
@@ -35,6 +36,10 @@ pub struct Rta {
 }
 
 impl Rta {
+    pub fn content(&self) -> &ResourceTaggedAttestation {
+        &self.content
+    }
+
     pub fn decode<S: decode::Source>(
         source: S,
         strict: bool
@@ -46,12 +51,6 @@ impl Rta {
         Ok(Rta { signed, content })
     }
 
-    pub fn validate<F: FnMut(Cert) -> Result<ResourceCert, ValidationError>>(
-        self, _strict: bool, _validate_cert: F
-    ) -> Result<ResourceTaggedAttestation, ValidationError> {
-        unimplemented!()
-    }
-
     /// Returns a value encoder for a reference to a ROA.
     pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         self.signed.encode_ref()
@@ -60,6 +59,23 @@ impl Rta {
     /// Returns a DER encoded Captured for this ROA.
     pub fn to_captured(&self) -> Captured {
         self.encode_ref().to_captured(Mode::Der)
+    }
+}
+
+
+//--- Deref and AsRef
+
+impl ops::Deref for Rta {
+    type Target = ResourceTaggedAttestation;
+
+    fn deref(&self) -> &Self::Target {
+        self.content()
+    }
+}
+
+impl AsRef<ResourceTaggedAttestation> for Rta {
+    fn as_ref(&self) -> &ResourceTaggedAttestation {
+        self.content()
     }
 }
 
@@ -82,6 +98,32 @@ pub struct ResourceTaggedAttestation {
     digest_algorithm: DigestAlgorithm,
 
     message_digest: MessageDigest,
+}
+
+impl ResourceTaggedAttestation {
+    pub fn subject_keys(&self) -> &SubjectKeySet {
+        &self.subject_keys
+    }
+
+    pub fn as_resources(&self) -> &RtaAsBlocks {
+        &self.as_resources
+    }
+
+    pub fn v4_resources(&self) -> &RtaIpBlocks {
+        &self.v4_resources
+    }
+
+    pub fn v6_resources(&self) -> &RtaIpBlocks {
+        &self.v6_resources
+    }
+
+    pub fn digest_algorithm(&self) -> DigestAlgorithm {
+        self.digest_algorithm
+    }
+
+    pub fn message_digest(&self) -> &MessageDigest {
+        &self.message_digest
+    }
 }
 
 impl ResourceTaggedAttestation {
