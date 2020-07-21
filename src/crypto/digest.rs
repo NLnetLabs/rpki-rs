@@ -1,6 +1,9 @@
 //! Digest algorithm and operations.
 
 use std::io;
+use std::io::Read;
+use std::fs::File;
+use std::path::Path;
 use ring::digest;
 use bcder::{decode, encode};
 use bcder::encode::PrimitiveContent;
@@ -31,6 +34,23 @@ impl DigestAlgorithm {
     /// Returns the digest of `data` using this algorithm.
     pub fn digest(self, data: &[u8]) -> Digest {
         digest::digest(&digest::SHA256, data)
+    }
+
+    /// Calculates the digest for the content of a file.
+    pub fn digest_file(
+        self, path: impl AsRef<Path>
+    ) -> Result<Digest, io::Error> {
+        let mut file = File::open(path)?;
+        let mut buf = [0u8; 8 * 1024];
+        let mut ctx = self.start();
+        loop {
+            let read = file.read(&mut buf)?;
+            if read == 0 {
+                break;
+            }
+            ctx.update(&buf[..read]);
+        }
+        Ok(ctx.finish())
     }
 
     /// Returns a digest context for multi-step calculation of the digest.

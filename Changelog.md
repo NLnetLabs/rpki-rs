@@ -8,6 +8,10 @@ Bug Fixes
 
 New
 
+* Module `rta` for handling Resource Tagged Assertions.
+* `crypto::DigestAlgorithm::digest_file` allows calculating the digest
+  value of an entire file.
+
 Dependencies
 
 
