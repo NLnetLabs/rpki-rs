@@ -539,7 +539,7 @@ impl RoaBuilder {
         let v4 = self.v4.to_resources();
         let v6 = self.v6.to_resources();
         // There must be some resources in order to make a valid ROA.
-        assert!(v4.is_some() || v6.is_some());
+        assert!(v4.is_present() || v6.is_present());
         sigobj.set_v4_resources(v4);
         sigobj.set_v6_resources(v6);
         let signed = sigobj.finalize(
@@ -590,16 +590,10 @@ impl RoaIpAddressesBuilder {
        )
     }
 
-    pub fn to_resources(&self) -> Option<IpResources> {
-        let blocks = IpBlocks::from_iter(
+    pub fn to_resources(&self) -> IpResources {
+        IpResources::blocks(IpBlocks::from_iter(
             self.addrs.iter().map(|addr| addr.prefix.into())
-        );
-        if blocks.is_empty() {
-            None
-        }
-        else {
-            Some(IpResources::blocks(blocks))
-        }
+        ))
     }
 
     pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {

@@ -10,7 +10,7 @@ use crate::resources::{
 };
 use crate::uri;
 use crate::x509::Name;
-use super::Validity;
+use super::{Overclaim, Validity};
 
 
 #[derive(Clone, Debug)]
@@ -138,10 +138,10 @@ pub struct CertBuilder {
     /// Subject Information Access of type `id-ad-rpkiNotify`
     rpki_notify: Option<uri::Https>,
 
-    //  Certificate Policies
-    //
-    //  This contains a single policy, id-cp-ipAddr-asNumber, without any
-    //  qualifiers.
+    /// Certificate Policies
+    ///
+    /// This is chosen via the value of the overclaim mode,
+    overclaim: Overclaim,
 
     /// IPv4 Resources
     ///
@@ -182,6 +182,7 @@ impl CertBuilder {
             rpki_manifest: None,
             signed_object: None,
             rpki_notify: None,
+            overclaim: Overclaim::Refuse,
             v4_resources: IpResourcesBuilder::new(),
             v6_resources: IpResourcesBuilder::new(),
             as_resources: AsResourcesBuilder::new(),
@@ -230,6 +231,11 @@ impl CertBuilder {
         self
     }
 
+    pub fn overclaim(&mut self, overclaim: Overclaim) -> &mut Self {
+        self.overclaim = overclaim;
+        self
+    }
+
     pub fn inherit_v4(&mut self) -> &mut Self {
         self.v4_resources.inherit();
         self
@@ -241,7 +247,7 @@ impl CertBuilder {
     }
 
     pub fn inherit_as(&mut self) -> &mut Self {
-        self.as_resources.inhert();
+        self.as_resources.inherit();
         self
     }
 
@@ -418,17 +424,16 @@ impl CertBuilder {
                 ),
 
                 // IP Resources
-                IpResources::encode_families(
-                    self.v4_resources.finalize(),
-                    self.v6_resources.finalize()
-                ).map(|res| {
-                    extension(&oid::PE_IP_ADDR_BLOCK, true, res)
-                }),
+                IpResources::encode_extension(
+                    self.overclaim,
+                    &self.v4_resources.finalize(),
+                    &self.v6_resources.finalize()
+                ),
 
                 // AS Resources
-                self.as_resources.finalize().map(|res| {
-                    extension(&oid::PE_AUTONOMOUS_SYS_IDS, true, res.encode())
-                })
+                self.as_resources.finalize().encode_extension(
+                    self.overclaim
+                ),
             )))
         )))
     }

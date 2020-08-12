@@ -2,8 +2,7 @@
 ///
 /// This is a private module used only internally.
 
-use std::{error, fmt};
-use std::str::FromStr;
+use std::fmt;
 use serde::{Deserialize, Serialize};
 use crate::x509::ValidationError;
 
@@ -15,6 +14,11 @@ use crate::x509::ValidationError;
 /// This is generic over the type of included resources.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ResourcesChoice<T> {
+    /// There are no resources of this type.
+    ///
+    /// This is a special case since creating an empty `T` may still be pricy.
+    Missing,
+
     /// Resources are to be inherited from the issuer.
     Inherit,
 
@@ -31,26 +35,21 @@ impl<T> ResourcesChoice<T> {
         }
     }
 
-    /// Returns a reference to the blocks if there are any.
-    pub fn as_blocks(&self) -> Option<&T> {
+    /// Returns whether the resources are present.
+    pub fn is_present(&self) -> bool {
         match self {
-            ResourcesChoice::Inherit => None,
-            ResourcesChoice::Blocks(ref some) => Some(some)
-        }
-    }
-
-    /// Returns a mutable reference to the blocks if there are any.
-    pub fn as_blocks_mut(&mut self) -> Option<&mut T> {
-        match self {
-            ResourcesChoice::Inherit => None,
-            ResourcesChoice::Blocks(ref mut some) => Some(some)
+            ResourcesChoice::Missing => false,
+            _ => true
         }
     }
 
     /// Converts the resources into blocks or returns an error.
+    ///
+    /// In case the resources are missing, returns a default `T`.
     pub fn to_blocks(&self) -> Result<T, ValidationError>
-    where T: Clone {
+    where T: Clone + Default {
         match self {
+            ResourcesChoice::Missing => Ok(Default::default()),
             ResourcesChoice::Inherit => Err(ValidationError),
             ResourcesChoice::Blocks(ref some) => Ok(some.clone()),
         }
@@ -60,11 +59,12 @@ impl<T> ResourcesChoice<T> {
     ///
     /// If this value is of the included variant, runs the blocks through
     /// the provided closure and returns a new choice with the result. If
-    /// this value is of the inherit variant, does nothing and simply
-    /// returns the choice.
+    /// this value is of the inherit or missing variant, does nothing and
+    /// simply returns the choice.
     pub fn map_blocks<U, F>(self, f: F) -> ResourcesChoice<U>
     where F: FnOnce(T) -> U {
         match self {
+            ResourcesChoice::Missing => ResourcesChoice::Missing,
             ResourcesChoice::Inherit => ResourcesChoice::Inherit,
             ResourcesChoice::Blocks(t) => ResourcesChoice::Blocks(f(t))
         }
@@ -77,42 +77,10 @@ impl<T> ResourcesChoice<T> {
 impl<T: fmt::Display> fmt::Display for ResourcesChoice<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
+            ResourcesChoice::Missing => Ok(()),
             ResourcesChoice::Inherit => write!(f, "inherit"),
             ResourcesChoice::Blocks(ref inner) => inner.fmt(f)
         }
     }
 }
-
-//--- FromStr
-
-impl<T: FromStr> FromStr for ResourcesChoice<T> {
-    type Err = FromStrErr;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s == "inherit" {
-            Ok(ResourcesChoice::Inherit)
-        } else {
-            let blocks = T::from_str(s).map_err(|_| FromStrErr::BlocksFromStr)?;
-            Ok(ResourcesChoice::Blocks(blocks))
-        }
-    }
-}
-
-//------------ FromStrError --------------------------------------------------
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum FromStrErr {
-    BlocksFromStr,
-}
-
-impl fmt::Display for FromStrErr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(match *self {
-            FromStrErr::BlocksFromStr
-                => "Cannot parse blocks"
-        })
-    }
-}
-
-impl error::Error for FromStrErr { }
 

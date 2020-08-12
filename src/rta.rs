@@ -4,6 +4,11 @@
 //! resources referred to by a docuement. This is currently an IETF draft,
 //! see [draft-michaelson-rpki-rta] for details.
 //!
+//! Current limitations:
+//!
+//! * Resources are read in a rather relaxed way: they can be unordered and
+//!   overlapping. This happens even if the strict flag is set.
+//!
 //! draft-michaelson-rpki-rta: https://tools.ietf.org/html/draft-michaelson-rpki-rta
 
 use std::ops;
@@ -14,16 +19,18 @@ use bcder::string::OctetStringSource;
 use bcder::xerr;
 use bytes::Bytes;
 use crate::oid;
-use crate::cert::{Cert, ResourceCert};
+use crate::cert::{Cert, Overclaim, ResourceCert};
 use crate::crl::Crl;
 use crate::crypto:: {
-    DigestAlgorithm, KeyIdentifier, Signature, SignatureAlgorithm,
+    Digest, DigestAlgorithm, KeyIdentifier, Signature, SignatureAlgorithm,
     Signer, SigningError
 };
 use crate::resources::{
-    AddressFamily, AsBlock, AsBlocksBuilder, IpBlock, IpBlocksBuilder
+    AddressFamily, AsBlock, AsBlocks, AsBlocksBuilder, IpBlock, IpBlocks,
+    IpBlocksBuilder,
 };
 use crate::sigobj::{MessageDigest, SignedAttrs};
+use crate::tal::Tal;
 use crate::x509::{Time, ValidationError};
 
 
@@ -41,8 +48,7 @@ impl Rta {
     }
 
     pub fn decode<S: decode::Source>(
-        source: S,
-        strict: bool
+        source: S, strict: bool
     ) -> Result<Self, S::Err> {
         let signed = MultiSignedObject::decode(source, strict)?;
         let content = signed.decode_content(|cons| {
@@ -84,16 +90,16 @@ impl AsRef<ResourceTaggedAttestation> for Rta {
 
 #[derive(Clone, Debug)]
 pub struct ResourceTaggedAttestation {
-    subject_keys: SubjectKeySet,
+    subject_keys: Vec<KeyIdentifier>,
 
     /// AS Resources
-    as_resources: RtaAsBlocks,
+    as_resources: AsBlocks,
 
     /// IP Resources for the IPv4 address family.
-    v4_resources: RtaIpBlocks,
+    v4_resources: IpBlocks,
 
     /// IP Resources for the IPv6 address family.
-    v6_resources: RtaIpBlocks,
+    v6_resources: IpBlocks,
 
     digest_algorithm: DigestAlgorithm,
 
@@ -101,19 +107,19 @@ pub struct ResourceTaggedAttestation {
 }
 
 impl ResourceTaggedAttestation {
-    pub fn subject_keys(&self) -> &SubjectKeySet {
+    pub fn subject_keys(&self) -> &[KeyIdentifier] {
         &self.subject_keys
     }
 
-    pub fn as_resources(&self) -> &RtaAsBlocks {
+    pub fn as_resources(&self) -> &AsBlocks {
         &self.as_resources
     }
 
-    pub fn v4_resources(&self) -> &RtaIpBlocks {
+    pub fn v4_resources(&self) -> &IpBlocks {
         &self.v4_resources
     }
 
-    pub fn v6_resources(&self) -> &RtaIpBlocks {
+    pub fn v6_resources(&self) -> &IpBlocks {
         &self.v6_resources
     }
 
@@ -132,7 +138,7 @@ impl ResourceTaggedAttestation {
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             cons.take_opt_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(0))?;
-            let subject_keys = SubjectKeySet::take_from(cons)?;
+            let subject_keys = Self::take_subject_keys_from(cons)?;
             let (v4res, v6res, asres) = Self::take_resources_from(cons)?;
             let alg = DigestAlgorithm::take_from(cons)?;
             let digest = OctetString::take_from(cons)?;
@@ -147,12 +153,24 @@ impl ResourceTaggedAttestation {
         })
     }
 
+    fn take_subject_keys_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Vec<KeyIdentifier>, S::Err> {
+        cons.take_set(|cons| {
+            let mut res = Vec::new();
+            while let Some(id) = KeyIdentifier::take_opt_from(cons)? {
+                res.push(id)
+            }
+            Ok(res)
+        })
+    }
+
     fn take_resources_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<(RtaIpBlocks, RtaIpBlocks, RtaAsBlocks), S::Err> {
+    ) -> Result<(IpBlocks, IpBlocks, AsBlocks), S::Err> {
         cons.take_sequence(|cons| {
             let asres = cons.take_opt_constructed_if(Tag::CTX_0, |cons| {
-                RtaAsBlocks::take_from(cons)
+                AsBlocks::take_from(cons)
             })?;
 
             let mut v4 = None;
@@ -165,13 +183,13 @@ impl ResourceTaggedAttestation {
                                 if v4.is_some() {
                                     xerr!(return Err(decode::Malformed.into()));
                                 }
-                                v4 = Some(RtaIpBlocks::take_from(cons)?);
+                                v4 = Some(IpBlocks::take_from(cons)?);
                             }
                             AddressFamily::Ipv6 => {
                                 if v6.is_some() {
                                     xerr!(return Err(decode::Malformed.into()));
                                 }
-                                v6 = Some(RtaIpBlocks::take_from(cons)?);
+                                v6 = Some(IpBlocks::take_from(cons)?);
                             }
                         }
                         Ok(())
@@ -194,7 +212,11 @@ impl ResourceTaggedAttestation {
     pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence((
             // version is DEFAULT
-            self.subject_keys.encode_ref(),
+            encode::set(
+                encode::iter(self.subject_keys.iter().map(|item| {
+                    item.encode_ref()
+                }))
+            ),
             encode::sequence((
                 self.encode_as_resources(),
                 self.encode_ip_resources(),
@@ -206,11 +228,15 @@ impl ResourceTaggedAttestation {
 
     fn encode_as_resources<'a>(&'a self) -> impl encode::Values + 'a {
         if self.as_resources.is_empty() {
-            return None
+            None
         }
-        Some(encode::sequence_as(Tag::CTX_0,
-            self.as_resources.encode_ref()
-        ))
+        else {
+            Some(encode::sequence_as(Tag::CTX_0,
+                encode::sequence(
+                    self.as_resources.encode_ref()
+                )
+            ))
+        }
     }
 
     fn encode_ip_resources<'a>(&'a self) -> impl encode::Values + 'a {
@@ -219,149 +245,14 @@ impl ResourceTaggedAttestation {
         }
         Some(encode::sequence_as(Tag::CTX_1,
             encode::sequence((
-                self.v4_resources.encode_ref_family([0x00, 0x01]),
-                self.v6_resources.encode_ref_family([0x00, 0x02]),
+                self.v4_resources.encode_family(AddressFamily::Ipv4),
+                self.v6_resources.encode_family(AddressFamily::Ipv6),
             ))
         ))
     }
 
     fn to_bytes(&self) -> Bytes {
         self.encode_ref().to_captured(Mode::Der).into_bytes()
-    }
-}
-
-
-//------------ SubjectKeySet -------------------------------------------------
-
-// The captured content only contains the content of the set.
-#[derive(Clone, Debug)]
-pub struct SubjectKeySet(Captured);
-
-impl SubjectKeySet {
-    fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_set(|cons| {
-            cons.capture(|cons| {
-                KeyIdentifier::skip_in(cons)
-            }).map(SubjectKeySet)
-        })
-    }
-
-    fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
-        encode::set(
-            &self.0
-        )
-    }
-}
-
-impl From<Vec<KeyIdentifier>> for SubjectKeySet {
-    fn from(src: Vec<KeyIdentifier>) -> Self {
-        SubjectKeySet(Captured::from_values(
-            Mode::Der,
-            encode::iter(src.iter().map(|item| item.encode_ref()))
-        ))
-    }
-}
-
-
-//------------ RtaAsBlocks ---------------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct RtaAsBlocks(Captured);
-
-impl RtaAsBlocks {
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-impl RtaAsBlocks {
-    fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_sequence(|cons| {
-            cons.capture(|cons| {
-                while AsBlock::skip_opt_in(cons)?.is_some() { }
-                Ok(())
-            })
-        }).map(RtaAsBlocks)
-    }
-
-    fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
-        encode::sequence(
-            &self.0
-        )
-    }
-}
-
-impl Default for RtaAsBlocks {
-    fn default() -> Self {
-        RtaAsBlocks(Captured::empty(Mode::Der))
-    }
-}
-
-impl From<AsBlocksBuilder> for RtaAsBlocks {
-    fn from(src: AsBlocksBuilder) -> RtaAsBlocks {
-        RtaAsBlocks(Captured::from_values(
-            Mode::Der,
-            src.finalize().encode()
-        ))
-    }
-}
-
-
-//------------ RtaIpBlocks ---------------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct RtaIpBlocks(Captured);
-
-impl RtaIpBlocks {
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-impl RtaIpBlocks {
-    fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_sequence(|cons| {
-            cons.capture(|cons| {
-                while IpBlock::take_opt_from(cons)?.is_some() { }
-                Ok(())
-            })
-        }).map(RtaIpBlocks)
-    }
-
-    fn encode_ref_family<'a>(
-        &'a self,
-        family: [u8; 2]
-    ) -> impl encode::Values + 'a {
-        if self.0.is_empty() {
-            None
-        }
-        else {
-            Some(encode::sequence((
-                OctetString::encode_slice(family),
-                &self.0
-            )))
-        }
-    }
-}
-
-impl Default for RtaIpBlocks {
-    fn default() -> Self {
-        RtaIpBlocks(Captured::empty(Mode::Der))
-    }
-}
-
-impl From<IpBlocksBuilder> for RtaIpBlocks {
-    fn from(src: IpBlocksBuilder) -> RtaIpBlocks {
-        RtaIpBlocks(Captured::from_values(
-            Mode::Der,
-            src.finalize().encode()
-        ))
     }
 }
 
@@ -373,9 +264,9 @@ impl From<IpBlocksBuilder> for RtaIpBlocks {
 pub struct MultiSignedObject {
     digest_algorithm: DigestAlgorithm,
     content: OctetString,
-    certificates: CertificateSet,
-    crls: CrlSet,
-    signer_infos: SignerInfoSet,
+    certificates: Vec<Cert>,
+    crls: Vec<Crl>,
+    signer_infos: Vec<SignerInfo>,
 }
 
 impl MultiSignedObject {
@@ -394,14 +285,13 @@ impl MultiSignedObject {
 
 impl MultiSignedObject {
     pub fn decode<S: decode::Source>(
-        source: S,
-        _strict: bool
+        source: S, strict: bool
     ) -> Result<Self, S::Err> {
-        Mode::Der.decode(source, Self::take_from)
+        Mode::Der.decode(source, |cons| Self::take_from(cons, strict))
     }
 
     pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
+        cons: &mut decode::Constructed<S>, strict: bool
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             oid::SIGNED_DATA.skip_if(cons)?; // contentType
@@ -418,11 +308,9 @@ impl MultiSignedObject {
                             OctetString::take_from
                         )
                     })?;
-                    let certificates = CertificateSet::take_if(
-                        Tag::CTX_0, cons
-                    )?;
-                    let crls = CrlSet::take_opt_if(Tag::CTX_1, cons)?;
-                    let signer_infos = SignerInfoSet::take_from(cons)?;
+                    let certificates = Self::take_certificates(cons, strict)?;
+                    let crls = Self::take_crls(cons, strict)?;
+                    let signer_infos = Self::take_signer_infos(cons, strict)?;
 
                     Ok(MultiSignedObject {
                         digest_algorithm,
@@ -436,10 +324,40 @@ impl MultiSignedObject {
         })
     }
 
-    pub fn validate<F: FnMut(Cert) -> Result<ResourceCert, ValidationError>>(
-        self, _strict: bool, _validate_cert: F
-    ) -> Result<ResourceTaggedAttestation, ValidationError> {
-        unimplemented!()
+    fn take_certificates<S: decode::Source>(
+        cons: &mut decode::Constructed<S>, _strict: bool
+    ) -> Result<Vec<Cert>, S::Err> {
+        cons.take_constructed_if(Tag::CTX_0, |cons| {
+            let mut certificates = Vec::new();
+            while let Some(cert) = Cert::take_opt_from(cons)? {
+                certificates.push(cert);
+            }
+            Ok(certificates)
+        })
+    }
+
+    fn take_crls<S: decode::Source>(
+        cons: &mut decode::Constructed<S>, _strict: bool
+    ) -> Result<Vec<Crl>, S::Err> {
+        cons.take_constructed_if(Tag::CTX_1, |cons| {
+            let mut crls = Vec::new();
+            while let Some(crl) = Crl::take_opt_from(cons)? {
+                crls.push(crl);
+            }
+            Ok(crls)
+        })
+    }
+
+    fn take_signer_infos<S: decode::Source>(
+        cons: &mut decode::Constructed<S>, _strict: bool
+    ) -> Result<Vec<SignerInfo>, S::Err> {
+        cons.take_set(|cons| {
+            let mut infos = Vec::new();
+            while let Some(info) = SignerInfo::take_opt_from(cons)? {
+                infos.push(info);
+            }
+            Ok(infos)
+        })
     }
 
     /// Returns a value encoder for a reference to a signed object.
@@ -457,164 +375,29 @@ impl MultiSignedObject {
                         ),
                     )),
                     encode::sequence_as(Tag::CTX_0, // certificates
-                        self.certificates.encode_ref(),
+                        encode::iter(self.certificates.iter().map(|item| {
+                            item.encode_ref()
+                        }))
                     ),
-                    self.crls.encode_ref_as(Tag::CTX_1),
-                    encode::sequence(self.signer_infos.encode_ref()),
+                    if self.crls.is_empty() {
+                        None
+                    }
+                    else {
+                        Some(encode::sequence_as(Tag::CTX_1, // crls
+                            encode::iter(self.crls.iter().map(|item| {
+                                item.encode_ref()
+                            }))
+                        ))
+                    },
+                    encode::set(
+                        encode::iter(self.signer_infos.iter().map(|item| {
+                            item.encode_ref()
+                        }))
+                    )
                 )),
             )
         ))
     }
-}
-
-
-//------------ CertificateSet ------------------------------------------------
-
-// The captured content is the content of the set. We only support a
-// certificate choice of a certificate.
-#[derive(Clone, Debug)]
-pub struct CertificateSet(Captured);
-
-impl From<Vec<Cert>> for CertificateSet {
-    fn from(src: Vec<Cert>) -> CertificateSet {
-        CertificateSet(Captured::from_values(
-            Mode::Der,
-            encode::iter(src.iter().map(|item| item.encode_ref()))
-        ))
-    }
-}
-
-impl CertificateSet {
-    pub fn collect_certs(self) -> Vec<Cert> {
-        self.0.decode(|cons| {
-            let mut res = Vec::new();
-            while let Some(cert) = Cert::take_opt_from(cons)? {
-                res.push(cert)
-            }
-            Ok(res)
-        }).unwrap()
-    }
-}
-
-impl CertificateSet {
-    pub fn take_if<S: decode::Source>(
-        tag: Tag, cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_constructed_if(tag, |cons| {
-            cons.capture(|cons| {
-                while Cert::take_opt_from(cons)?.is_some() { }
-                Ok(())
-            })
-        }).map(CertificateSet)
-    }
-
-    /// Returns a value encoder for a reference to a signed object.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
-        &self.0
-    }
-}
-
-
-//------------ CrlSet --------------------------------------------------------
-
-// The captured content is the content of the set. We only support a
-// choice of a CRL.
-#[derive(Clone, Debug)]
-pub struct CrlSet(Captured);
-
-impl From<Vec<Crl>> for CrlSet {
-    fn from(src: Vec<Crl>) -> CrlSet {
-        CrlSet(Captured::from_values(
-            Mode::Der,
-            encode::iter(src.iter().map(|item| item.encode_ref()))
-        ))
-    }
-}
-
-impl CrlSet {
-    pub fn collect_crls(self) -> Vec<Crl> {
-        self.0.decode(|cons| {
-            let mut res = Vec::new();
-            while let Some(crl) = Crl::take_opt_from(cons)? {
-                res.push(crl)
-            }
-            Ok(res)
-        }).unwrap()
-    }
-}
-
-impl CrlSet {
-    pub fn take_opt_if<S: decode::Source>(
-        tag: Tag, cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        let res = cons.take_opt_constructed_if(tag, |cons| {
-            cons.capture(|cons| {
-                while Crl::take_opt_from(cons)?.is_some() { }
-                Ok(())
-            })
-        })?;
-        Ok(CrlSet(res.unwrap_or_else(|| Captured::empty(Mode::Der))))
-    }
-
-
-    /// Returns a value encoder for a reference to a signed object.
-    pub fn encode_ref_as<'a>(&'a self, tag: Tag) -> impl encode::Values + 'a {
-        if self.0.is_empty() {
-            None
-        }
-        else {
-            Some(encode::sequence_as(tag, &self.0))
-        }
-    }
-}
-
-
-//------------ SignerInfoSet -------------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct SignerInfoSet(Captured);
-
-impl From<Vec<SignerInfo>> for SignerInfoSet {
-    fn from(src: Vec<SignerInfo>) -> SignerInfoSet {
-        SignerInfoSet(Captured::from_values(
-            Mode::Der,
-            encode::iter(src.iter().map(|item| item.encode_ref()))
-        ))
-    }
-}
-
-impl SignerInfoSet {
-    pub fn collect_signer_infos(
-        self,
-    ) -> Vec<SignerInfo> {
-        self.0.decode(|cons| {
-            let mut res = Vec::new();
-            while let Some(crl) = SignerInfo::take_opt_from(
-                cons
-            )? {
-                res.push(crl)
-            }
-            Ok(res)
-        }).unwrap()
-    }
-}
-
-impl SignerInfoSet {
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_set(|cons| {
-            cons.capture(|cons| {
-                while SignerInfo::take_opt_from(cons)?.is_some() { }
-                Ok(())
-            })
-        }).map(SignerInfoSet)
-    }
-
-    /// Returns a value encoder for a reference to a signed object.
-    pub fn encode_ref<'a>( &'a self) -> impl encode::Values + 'a {
-        &self.0
-    } 
 }
 
 
@@ -680,6 +463,609 @@ impl SignerInfo {
             ),
             // unsignedAttrs omitted
         ))
+    }
+}
+
+
+//------------ Validator -----------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct Validation<'a> {
+    /// The RTA object we are validating.
+    rta: &'a Rta,
+
+    /// The validation chains we need to validate.
+    chains: Vec<Chain<'a>>,
+
+    /// Are we doing strict validation?
+    strict: bool,
+
+    /// What time is it, Geoff Peterson?
+    now: Time,
+}
+
+impl<'a> Validation<'a> {
+    pub fn new(
+        rta: &'a Rta, strict: bool, now: Time,
+    ) -> Result<Self, ValidationError> {
+        // Get a vec with options of refs to the CRLs. Whenever we used a CRL
+        // in a CA, we take it out. Thus, at the end we need to have all
+        // `None` in the vec.
+        let mut crls: Vec<_> = rta.signed.crls.iter().map(Some).collect();
+
+        // Ditto for the subject keys included with the content.
+        let mut keys: Vec<_> = rta.content.subject_keys.iter().map(|key| {
+            Some(*key)
+        }).collect();
+
+        // Calculate the digest of the content.
+        let digest = {
+            let mut context = rta.signed.digest_algorithm.start();
+            rta.signed.content.iter().for_each(|x| context.update(x));
+            context.finish()
+        };
+
+        // Process all certificates. CA certificates go into the CA vec and
+        // EE certificates go into a temporary option-vec which we use when
+        // creating chains from signer-infos later.
+        let mut cas = Vec::new();
+        let mut ees = Vec::new();
+        for cert in &rta.signed.certificates {
+            if cert.basic_ca().is_none() {
+                cert.inspect_ee_at(strict, now)?;
+                ees.push(Some(cert));
+            }
+            else {
+                cas.push(Ca::new(cert, &mut crls, strict, now)?);
+            }
+        }
+
+        let mut chains = Vec::new();
+        for info in &rta.signed.signer_infos {
+            chains.push(
+                Chain::new(info, &digest, &mut keys, &mut ees)?
+            )
+        }
+
+        // All subject keys need to have been used.
+        if keys.iter().any(|item| item.is_some()) {
+            return Err(ValidationError)
+        }
+
+        // All CRLs need to have been used.
+        if crls.iter().any(|item| item.is_some()) {
+            return Err(ValidationError)
+        }
+
+        // All EE certificates have to have been used.
+        if ees.iter().any(|item| item.is_some()) {
+            return Err(ValidationError)
+        }
+
+        // Create the object and advance the chains using the CA certificates
+        // we have.
+        let mut res = Validation { rta, chains, strict, now };
+        res.advance_chains(&mut cas)?;
+
+
+        // All the CA certificates have to have been used.
+        if cas.iter().any(|item| !item.used) {
+            return Err(ValidationError)
+        }
+
+        // Hurray!
+        Ok(res)
+    }
+
+    fn advance_chains(
+        &mut self, cas: &mut [Ca<'a>]
+    ) -> Result<(), ValidationError> {
+        for chain in &mut self.chains {
+            chain.advance(cas, self.strict)?;
+        }
+        Ok(())
+    }
+
+    pub fn supply_tal(&mut self, tal: &Tal) -> Result<bool, ValidationError> {
+        let mut done = true;
+        for chain in &mut self.chains {
+            if !chain.supply_tal(tal, self.strict, self.now)? {
+                done = false
+            }
+        }
+        Ok(done)
+    }
+
+    pub fn supply_ca(
+        &mut self, ca: &ResourceCert
+    ) -> Result<bool, ValidationError> {
+        let mut done = true;
+        for chain in &mut self.chains {
+            if !chain.supply_ca(ca, self.strict, self.now)? {
+                done = false
+            }
+        }
+        Ok(done)
+    }
+
+    pub fn finalize(
+        self
+    ) -> Result<&'a ResourceTaggedAttestation, ValidationError> {
+        let mut asn = AsBlocksBuilder::new();
+        let mut v4 = IpBlocksBuilder::new();
+        let mut v6 = IpBlocksBuilder::new();
+
+        for chain in &self.chains {
+            chain.finalize(&mut asn, &mut v4, &mut v6)?;
+        }
+
+        let asn = asn.finalize();
+        let v4 = v4.finalize();
+        let v6 = v6.finalize();
+
+        if asn != self.rta.content.as_resources
+            || v4 != self.rta.content.v4_resources
+            || v6 != self.rta.content.v6_resources
+        {
+            return Err(ValidationError)
+        }
+
+        Ok(self.rta)
+    }
+}
+
+
+//------------ Ca ------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+struct Ca<'a> {
+    cert: &'a Cert,
+    crl: &'a Crl,
+    used: bool,
+}
+
+impl<'a> Ca<'a> {
+    fn new(
+        cert: &'a Cert,
+        crls: &mut [Option<&'a Crl>],
+        strict: bool, now: Time,
+    ) -> Result<Self, ValidationError> {
+        cert.inspect_ca_at(strict, now)?;
+        Ok(Ca {
+            cert,
+            crl: Self::find_crl(cert, crls)?,
+            used: false
+        })
+    }
+
+    fn find_crl<'c>(
+        cert: &Cert, crls: &mut [Option<&'c Crl>]
+    ) -> Result<&'c Crl, ValidationError> {
+        for crl in crls {
+            match crl.as_ref() {
+                Some(crl) => {
+                    if *crl.authority_key_identifier()
+                        != cert.subject_key_identifier()
+                    {
+                        continue
+                    }
+                    if crl.validate(cert.subject_public_key_info()).is_err() {
+                        continue
+                    }
+                }
+                None => continue
+            }
+            return Ok(crl.take().unwrap())
+        }
+        Err(ValidationError)
+    }
+}
+
+
+//------------ Chain ---------------------------------------------------------
+
+#[derive(Clone, Debug)]
+struct Chain<'a> {
+    /// The topmost certifcate of the path.
+    cert: &'a Cert,
+
+    /// The resources of the topmost cert.
+    cert_resources: CertResources,
+
+    /// The resources of the entire path.
+    chain_resources: CertResources,
+
+    /// Has the chain been validated?
+    validated: bool,
+}
+
+impl<'a> Chain<'a> {
+    //--- new and helpers
+
+    fn new(
+        info: &SignerInfo,
+        digest: &Digest,
+        keys: &mut [Option<KeyIdentifier>],
+        ees: &mut [Option<&'a Cert>],
+    ) -> Result<Self, ValidationError> {
+        // Find and removed sid in keys.
+        match keys.iter_mut().find(|item| **item == Some(info.sid)) {
+            Some(item) => *item = None,
+            None => return Err(ValidationError)
+        }
+
+        // Verify the message digest attribute
+        if digest.as_ref() != info.message_digest.as_ref() {
+            return Err(ValidationError)
+        }
+
+        // Find th EE cert that signed this signer info.
+        let ee = Self::find_cert(info, ees)?;
+
+        let resources = CertResources::new(ee);
+        Ok(Chain {
+            cert: ee,
+            cert_resources: resources.clone(),
+            chain_resources: resources,
+            validated: false
+        })
+    }
+
+    fn find_cert(
+        info: &SignerInfo,
+        ees: &mut [Option<&'a Cert>]
+    ) -> Result<&'a Cert, ValidationError> {
+        let msg = info.signed_attrs.encode_verify();
+        for cert in ees {
+            if let Some(cert) = *cert {
+                if cert.subject_key_identifier() != info.sid {
+                    continue
+                }
+                if cert.subject_public_key_info().verify(
+                    &msg,
+                    &info.signature
+                ).is_err() {
+                    continue
+                }
+
+            }
+        }
+        Err(ValidationError)
+    }
+
+    //--- advance and helpers
+
+    fn advance(
+        &mut self,
+        cas: &mut [Ca<'a>],
+        strict: bool,
+    ) -> Result<(), ValidationError> {
+        while let Some(ca) = self.find_ca(cas, strict)? {
+            self.apply_ca(ca)?;
+        }
+        Ok(())
+    }
+
+    fn find_ca<'c>(
+        &self,
+        cas: &'c mut [Ca<'a>],
+        strict: bool,
+    ) -> Result<Option<&'c Ca<'a>>, ValidationError> {
+        // If we don’t have an authority key identifier on the cert, it is
+        // self-signed and we are done.
+        let aki = match self.cert.authority_key_identifier() {
+            Some(aki) => aki,
+            None => return Ok(None)
+        };
+
+        let mut found = false;
+        for ca in cas {
+            if ca.cert.subject_key_identifier() != aki {
+                continue
+            }
+            found = true;
+            if self.cert.verify_signature(&ca.cert, strict).is_err() {
+                continue
+            }
+            return Ok(Some(ca))
+        }
+        if found {
+            Err(ValidationError)
+        }
+        else {
+            Ok(None)
+        }
+    }
+
+    fn apply_ca(&mut self, ca: &Ca<'a>) -> Result<(), ValidationError> {
+        // Check that our cert hasn’t been revoked.
+        if ca.crl.contains(self.cert.serial_number()) {
+            return Err(ValidationError)
+        }
+
+        // Check if the CA allows us to have our resources.
+        self.verify_resources(ca)?;
+
+        // Now update self to reflect the new head of chain cert.
+        self.update_head(ca);
+
+        Ok(())
+    }
+
+    fn verify_resources(&self, ca: &Ca) -> Result<(), ValidationError> {
+        // If our cert is of the resource trimming kind, we don’t actually
+        // need to check but rather have to trim resources later on.
+        if self.cert.overclaim() == Overclaim::Trim {
+            return Ok(())
+        }
+        
+        // If we have a certain resource, it needs to be covered by the CA.
+        // If the CA has that resource as inherited, that qualifies as valid,
+        // too.
+        if let Some(blocks) = self.cert_resources.as_resources.as_ref() {
+            blocks.verify_covered(ca.cert.as_resources())?
+        }
+        if let Some(blocks) = self.cert_resources.v4_resources.as_ref() {
+            blocks.verify_covered(ca.cert.v4_resources())?
+        }
+        if let Some(blocks) = self.cert_resources.v6_resources.as_ref() {
+            blocks.verify_covered(ca.cert.v6_resources())?
+        }
+
+        Ok(())
+    }
+
+    fn update_head(&mut self, ca: &Ca<'a>) {
+        // Let’s get the CA’s resources so we can play with them.
+        let ca_resources = CertResources::new(ca.cert);
+
+        // If our current head has a resource trimming certificate, we first
+        // need to trim back the chain resources to whatever the CA allows.
+        if self.cert.overclaim() == Overclaim::Trim {
+            self.chain_resources.trim_to(&ca_resources);
+        }
+
+        // Next we update remaining inherited chain resources to what the CA
+        // has (unless it is inherited, too).
+        self.chain_resources.replace_inherited(&ca_resources);
+
+        // Now we can update the head resources and certificate, leaving
+        // inherited resources in the CA untouched.
+        self.cert_resources.update_head(ca_resources);
+    }
+
+
+    //--- supply_tal and supply_ca
+
+    fn supply_tal(
+        &mut self, tal: &Tal, strict: bool, now: Time
+    ) -> Result<bool, ValidationError> {
+        if self.validated {
+            return Ok(true)
+        }
+
+        // If we have an AKI, this isn’t a TA certificate and we don’t need
+        // to bother checking.
+        if self.cert.authority_key_identifier().is_some() {
+            return Ok(false)
+        }
+
+        // Let’s see if the key matches.
+        if self.cert.subject_public_key_info() != tal.key_info() {
+            return Ok(false)
+        }
+
+        // Finally, let’s see if we have a proper TA certificate. We only do
+        // this now so we don’t check over and over again. We also will never
+        // check a certificate that doesn’t have a matching TAL which will
+        // safe a little extra time.
+        self.cert.inspect_ta_at(strict, now)?;
+        self.cert.verify_ta_ref(strict)?;
+
+        self.validated = true;
+        Ok(true)
+    }
+
+    fn supply_ca(
+        &mut self, ca: &ResourceCert, strict: bool, now: Time
+    ) -> Result<bool, ValidationError> {
+        if self.validated {
+            return Ok(true)
+        }
+
+        // Quick check first: If we don’t have an AKI, we are our own CA and
+        // don’t need to continue here.
+        if self.cert.authority_key_identifier().is_none() {
+            return Ok(false)
+        }
+
+        // Now check properly if `ca` should be our CA and return if it isn’t.
+        //
+        // If it isn’t not all is lost. There may just be a key identifier
+        // collission or something. Unlikely but hey.
+        if self.cert.verify_issuer_claim(ca, strict).is_err()
+            || self.cert.verify_signature(ca, strict).is_err()
+        {
+            return Ok(false)
+        }
+
+        // Now let’s see if our certificate is a proper CA or EE certificate.
+        //
+        // basic_ca must be present (and true) for CA certs and not present
+        // for EE certs, so we can use that. If it has the wrong value, the
+        // cert is broken, so the check will fail and all is good.
+        //
+        // We will error out here if the cert is broken because, well, the
+        // cert is broken.
+        if self.cert.basic_ca().is_some() {
+            self.cert.inspect_ca_at(strict, now)?;
+        }
+        else {
+            self.cert.inspect_ee_at(strict, now)?;
+        }
+
+        // Finally, resources. If they don’t check out, we can error out ...
+        // I think.
+        //
+        // Remember that our cert may be of the resource trimming kind,
+        // though.
+        if self.cert.overclaim() == Overclaim::Trim {
+            self.chain_resources.trim_to_issuer(ca);
+        }
+        else {
+            self.cert_resources.verify_issuer(ca)?;
+        }
+
+        // If we still have inherited resources left, replace them with the
+        // CA cert.
+        self.chain_resources.replace_inherited_from_issuer(ca);
+
+        self.validated = true;
+        Ok(true)
+    }
+
+    //--- finalize
+
+    fn finalize(
+        &self,
+        asn: &mut AsBlocksBuilder,
+        v4: &mut IpBlocksBuilder,
+        v6: &mut IpBlocksBuilder
+    ) -> Result<(), ValidationError> {
+        if !self.validated {
+            return Err(ValidationError)
+        }
+
+        // Add all our resources to the collection of resources.
+        //
+        // We can’t really have inherited resources left (if the top was a TA
+        // certificate, we should have rejected it already in this case and
+        // otherwise we checked it against a resource CA cert from outside
+        // which always has all resources) resources left, so let’s unwrap
+        // here to indicate a programming error.
+        asn.extend(self.chain_resources.as_resources.as_ref().unwrap().iter());
+        v4.extend(self.chain_resources.v4_resources.as_ref().unwrap().iter());
+        v6.extend(self.chain_resources.v6_resources.as_ref().unwrap().iter());
+
+        Ok(())
+    }
+}
+
+
+//------------ CertResources -------------------------------------------------
+
+#[derive(Clone, Debug)]
+struct CertResources {
+    /// The AS resources.
+    ///
+    /// A value of `None` means the resources are inherited from the CA.
+    as_resources: Option<AsBlocks>,
+
+    /// The IPv4 resources.
+    ///
+    /// A value of `None` means the resources are inherited from the CA.
+    v4_resources: Option<IpBlocks>,
+
+    /// The IPv6 resources.
+    ///
+    /// A value of `None` means the resources are inherited from the CA.
+    v6_resources: Option<IpBlocks>,
+}
+
+impl CertResources {
+    fn new(cert: &Cert) -> Self {
+        CertResources {
+            as_resources: cert.as_resources().to_blocks().ok(),
+            v4_resources: cert.v4_resources().to_blocks().ok(),
+            v6_resources: cert.v6_resources().to_blocks().ok(),
+        }
+    }
+
+    fn trim_to(&mut self, ca: &CertResources) {
+        if let (Some(my), Some(them)) = (
+            self.as_resources.as_mut(), ca.as_resources.as_ref()
+        ) {
+            my.intersection_assign(them)
+        }
+        if let (Some(my), Some(them)) = (
+            self.v4_resources.as_mut(), ca.v4_resources.as_ref()
+        ) {
+            my.intersection_assign(them)
+        }
+        if let (Some(my), Some(them)) = (
+            self.v6_resources.as_mut(), ca.v6_resources.as_ref()
+        ) {
+            my.intersection_assign(them)
+        }
+    }
+
+    fn trim_to_issuer(&mut self, issuer: &ResourceCert) {
+        if let Some(res) = self.as_resources.as_mut() {
+            res.intersection_assign(issuer.as_resources())
+        }
+        if let Some(res) = self.v4_resources.as_mut() {
+            res.intersection_assign(issuer.v4_resources())
+        }
+        if let Some(res) = self.v6_resources.as_mut() {
+            res.intersection_assign(issuer.v6_resources())
+        }
+    }
+
+    fn verify_issuer(
+        &self, issuer: &ResourceCert
+    ) -> Result<(), ValidationError> {
+        if let Some(res) = self.as_resources.as_ref() {
+            if !issuer.as_resources().contains(res) {
+                return Err(ValidationError)
+            }
+        }
+        if let Some(res) = self.v4_resources.as_ref() {
+            if !issuer.v4_resources().contains(res) {
+                return Err(ValidationError)
+            }
+        }
+        if let Some(res) = self.v6_resources.as_ref() {
+            if !issuer.v6_resources().contains(res) {
+                return Err(ValidationError)
+            }
+        }
+        Ok(())
+    }
+
+    fn replace_inherited(&mut self, ca: &CertResources) {
+        if self.as_resources.is_none() {
+            self.as_resources = ca.as_resources.clone()
+        }
+        if self.v4_resources.is_none() {
+            self.v4_resources = ca.v4_resources.clone()
+        }
+        if self.v6_resources.is_none() {
+            self.v6_resources = ca.v6_resources.clone()
+        }
+    }
+
+    fn replace_inherited_from_issuer(&mut self, ca: &ResourceCert) {
+        if self.as_resources.is_none() {
+            self.as_resources = Some(ca.as_resources().clone())
+        }
+        if self.v4_resources.is_none() {
+            self.v4_resources = Some(ca.v4_resources().clone())
+        }
+        if self.v6_resources.is_none() {
+            self.v6_resources = Some(ca.v6_resources().clone())
+        }
+    }
+
+    fn update_head(&mut self, ca: CertResources) {
+        if let Some(res) = ca.as_resources {
+            self.as_resources = Some(res)
+        }
+        if let Some(res) = ca.v4_resources {
+            self.v4_resources = Some(res)
+        }
+        if let Some(res) = ca.v6_resources {
+            self.v6_resources = Some(res)
+        }
     }
 }
 
@@ -759,10 +1145,10 @@ impl AttestationBuilder {
 
     pub fn into_attestation(self) -> ResourceTaggedAttestation {
         ResourceTaggedAttestation {
-            subject_keys: self.keys.into(),
-            as_resources: self.as_resources.into(),
-            v4_resources: self.v4_resources.into(),
-            v6_resources: self.v6_resources.into(),
+            subject_keys: self.keys,
+            as_resources: self.as_resources.finalize(),
+            v4_resources: self.v4_resources.finalize(),
+            v6_resources: self.v6_resources.finalize(),
             digest_algorithm: self.digest_algorithm,
             message_digest: self.message_digest,
         }
@@ -802,9 +1188,9 @@ impl RtaBuilder {
             digest_algorithm: DigestAlgorithm::default(),
             encoded_content: rta.signed.content.to_bytes(),
             content: rta.content,
-            certificates: rta.signed.certificates.collect_certs(),
-            crls: rta.signed.crls.collect_crls(),
-            signer_infos: rta.signed.signer_infos.collect_signer_infos(),
+            certificates: rta.signed.certificates,
+            crls: rta.signed.crls,
+            signer_infos: rta.signed.signer_infos,
         }
     }
 
@@ -887,9 +1273,9 @@ impl RtaBuilder {
             signed: MultiSignedObject {
                 digest_algorithm: self.digest_algorithm,
                 content: OctetString::new(self.encoded_content),
-                certificates: self.certificates.into(),
-                crls: self.crls.into(),
-                signer_infos: self.signer_infos.into(),
+                certificates: self.certificates,
+                crls: self.crls,
+                signer_infos: self.signer_infos,
             },
             content: self.content,
         }

@@ -15,10 +15,10 @@ use std::num::ParseIntError;
 use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, OctetString, Tag, xerr};
-use bcder::encode::PrimitiveContent;
+use bcder::encode::{Nothing, PrimitiveContent};
 use crate::cert::Overclaim;
 use crate::roa::RoaIpAddress;
-use crate::x509::ValidationError;
+use crate::x509::{encode_extension, ValidationError};
 use super::chain::{Block, SharedChain};
 use super::choice::ResourcesChoice;
 
@@ -38,9 +38,22 @@ impl IpResources {
         IpResources(ResourcesChoice::Inherit)
     }
 
+    /// Creates a new AsResources with a ResourceChoice::Missing
+    pub fn missing() -> Self {
+        IpResources(ResourcesChoice::Missing)
+    }
+
     /// Creates a new IpResources for the given blocks.
+    ///
+    /// If the blocks are empty, creates a missing variant in accordance with
+    /// the specification.
     pub fn blocks(blocks: IpBlocks) -> Self {
-        IpResources(ResourcesChoice::Blocks(blocks))
+        if blocks.is_empty() {
+            IpResources::missing()
+        }
+        else {
+            IpResources(ResourcesChoice::Blocks(blocks))
+        }
     }
 
     /// Returns whether the resources are of the inherited variant.
@@ -48,9 +61,11 @@ impl IpResources {
         self.0.is_inherited()
     }
 
-    /// Returns a reference to the blocks if there are any.
-    pub fn as_blocks(&self) -> Option<&IpBlocks> {
-        self.0.as_blocks()
+    /// Returns whether the resources are empty.
+    ///
+    /// Inherited resources are not empty.
+    pub fn is_present(&self) -> bool {
+        self.0.is_present()
     }
 
     /// Converts the resources into blocks or returns an error.
@@ -114,45 +129,62 @@ impl IpResources {
         }).map(IpResources)
     }
 
-    pub fn encode_families(
-        v4: Option<Self>,
-        v6: Option<Self>
-    ) -> Option<impl encode::Values> {
-        if v4.is_none() && v6.is_none() {
-            return None
-        }
-        Some(encode::sequence((
-            v4.map(|v4| {
-                encode::sequence((
-                    AddressFamily::Ipv4.encode(),
-                    v4.encode()
-                ))
-            }),
-            v6.map(|v6| {
-                encode::sequence((
-                    AddressFamily::Ipv6.encode(),
-                    v6.encode()
-                ))
-            }),
-        )))
-    }
-
     pub fn encode(self) -> impl encode::Values {
         match self.0 {
-            ResourcesChoice::Inherit => encode::Choice2::One(().encode()),
+            ResourcesChoice::Inherit => {
+                encode::Choice3::One(().encode())
+            }
             ResourcesChoice::Blocks(blocks) => {
-                encode::Choice2::Two(blocks.encode())
+                encode::Choice3::Two(blocks.encode())
+            }
+            ResourcesChoice::Missing => {
+                encode::Choice3::Three(encode::sequence(Nothing))
             }
         }
     }
 
     pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         match self.0 {
-            ResourcesChoice::Inherit => encode::Choice2::One(().encode()),
+            ResourcesChoice::Inherit => {
+                encode::Choice3::One(().encode())
+            }
             ResourcesChoice::Blocks(ref blocks) => {
-                encode::Choice2::Two(blocks.encode_ref())
+                encode::Choice3::Two(blocks.encode_ref())
+            }
+            ResourcesChoice::Missing => {
+                encode::Choice3::Three(encode::sequence(Nothing))
             }
         }
+    }
+
+    pub fn encode_family<'a>(
+        &'a self, family: AddressFamily
+    ) -> impl encode::Values + 'a {
+        if self.is_present() {
+            Some(encode::sequence((
+                family.encode(), self.encode_ref()
+            )))
+        }
+        else {
+            None
+        }
+    }
+
+    pub fn encode_extension<'a>(
+        overclaim: Overclaim,
+        v4: &'a Self,
+        v6: &'a Self,
+    ) -> Option<impl encode::Values + 'a> {
+        if !v4.is_present() && !v6.is_present() {
+            return None
+        }
+        Some(encode_extension(
+            overclaim.ip_res_id(), true,
+            encode::sequence((
+                v4.encode_family(AddressFamily::Ipv4),
+                v6.encode_family(AddressFamily::Ipv6)
+            ))
+        ))
     }
 }
 
@@ -161,32 +193,37 @@ impl IpResources {
 
 #[derive(Clone, Debug)]
 pub struct IpResourcesBuilder {
-    res: Option<ResourcesChoice<IpBlocksBuilder>>
+    res: Option<IpBlocksBuilder>
 }
 
 impl IpResourcesBuilder {
     pub fn new() -> Self {
         IpResourcesBuilder {
-            res: None
+            res: Some(IpBlocksBuilder::new())
         }
     }
 
     pub fn inherit(&mut self) {
-        self.res = Some(ResourcesChoice::Inherit)
+        self.res = None
     }
 
     pub fn blocks<F>(&mut self, build: F)
     where F: FnOnce(&mut IpBlocksBuilder) {
-        if self.res.as_ref().map(|res| res.is_inherited()).unwrap_or(true) {
-            self.res = Some(ResourcesChoice::Blocks(IpBlocksBuilder::new()))
+        if let Some(ref mut builder) = self.res {
+            build(builder)
         }
-        build(self.res.as_mut().unwrap().as_blocks_mut().unwrap())
+        else {
+            let mut builder = IpBlocksBuilder::new();
+            build(&mut builder);
+            self.res = Some(builder)
+        }
     }
     
-    pub fn finalize(self) -> Option<IpResources> {
-        self.res.map(|choice| {
-            IpResources(choice.map_blocks(IpBlocksBuilder::finalize))
-        })
+    pub fn finalize(self) -> IpResources {
+        match self.res {
+            Some(blocks) => IpResources::blocks(blocks.finalize()),
+            None => IpResources::inherit()
+        }
     }
 }
 
@@ -259,12 +296,12 @@ impl IpBlocks {
     ///
     /// If the resources are of the inherited variant, returns an error.
     pub fn from_resources(
-        res: Option<&IpResources>
+        res: IpResources
     ) -> Result<Self, ValidationError> {
-        match res.map(|res| &res.0) {
-            Some(ResourcesChoice::Inherit) => Err(ValidationError),
-            Some(ResourcesChoice::Blocks(ref some)) => Ok(some.clone()),
-            None => Ok(IpBlocks::empty())
+        match res.0 {
+            ResourcesChoice::Missing => Ok(IpBlocks::empty()),
+            ResourcesChoice::Inherit => Err(ValidationError),
+            ResourcesChoice::Blocks(some) => Ok(some),
         }
     }
 
@@ -274,19 +311,20 @@ impl IpBlocks {
     }
 
     /// Returns an iterator over the address ranges in the block.
-    pub fn iter(&self) -> impl Iterator<Item=&IpBlock> {
-        self.0.iter()
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item=IpBlock> + 'a {
+        self.0.iter().copied()
     }
 
     /// Validates IP resources issued under these blocks.
     pub fn validate_issued(
         &self,
-        res: Option<&IpResources>,
+        res: &IpResources,
         mode: Overclaim,
     ) -> Result<IpBlocks, ValidationError> {
-        match res.map(|res| &res.0) {
-            Some(ResourcesChoice::Inherit) => Ok(self.clone()),
-            Some(ResourcesChoice::Blocks(ref blocks)) => {
+        match res.0 {
+            ResourcesChoice::Missing => Ok(Self::empty()),
+            ResourcesChoice::Inherit => Ok(self.clone()),
+            ResourcesChoice::Blocks(ref blocks) => {
                 match mode {
                     Overclaim::Refuse => {
                         if self.contains(blocks) {
@@ -301,10 +339,37 @@ impl IpBlocks {
                     }
                 }
             },
-            None => Ok(Self::empty()),
         }
     }
 
+    /// Verifies that these resources are covered by an issuer’s resources.
+    ///
+    /// This is used by bottom-up validation, therefore, issuer resources 
+    /// of the inherited kind are considered covering.
+    pub fn verify_covered(
+        &self,
+        issuer: &IpResources
+    ) -> Result<(), ValidationError> {
+        match issuer.0 {
+            ResourcesChoice::Missing => {
+                if self.0.is_empty() {
+                    Ok(())
+                }
+                else {
+                    Err(ValidationError)
+                }
+            }
+            ResourcesChoice::Inherit => Ok(()),
+            ResourcesChoice::Blocks(ref blocks) => {
+                if blocks.0.is_encompassed(&self.0) {
+                    Ok(())
+                }
+                else {
+                    Err(ValidationError)
+                }
+            }
+        }
+    }
 
     /// Returns whether the address blocks cover the given ROA address prefix.
     pub fn contains_roa(&self, addr: &RoaIpAddress) -> bool {
@@ -332,6 +397,12 @@ impl IpBlocks {
         match self.0.trim(&other.0) {
             Ok(()) => self.clone(),
             Err(owned) => IpBlocks(SharedChain::from_owned(owned))
+        }
+    }
+
+    pub fn intersection_assign(&mut self, other: &Self) {
+        if let Err(owned) = self.0.trim(&other.0) {
+            self.0 = SharedChain::from_owned(owned)
         }
     }
 
@@ -396,6 +467,14 @@ impl IpBlocks {
         encode::sequence(encode::slice(&self.0, |block| block.encode()))
     }
 
+    pub fn encode_family<'a>(
+        &'a self, family: AddressFamily
+    ) -> impl encode::Values + 'a {
+        encode::sequence((
+            family.encode(), self.encode_ref()
+        ))
+    }
+
     /// Returns an IpBlocksForFamily for IPv4 for this,
     /// to help formatting.
     pub fn as_v4(&self) -> IpBlocksForFamily {
@@ -406,6 +485,12 @@ impl IpBlocks {
     /// to help formatting.
     pub fn as_v6(&self) -> IpBlocksForFamily {
         IpBlocksForFamily::v6(&self)
+    }
+}
+
+impl Default for IpBlocks {
+    fn default() -> Self {
+        IpBlocks::empty()
     }
 }
 
@@ -481,6 +566,13 @@ impl IpBlocksBuilder {
 impl Default for IpBlocksBuilder {
     fn default() -> Self {
         IpBlocksBuilder::new()
+    }
+}
+
+impl Extend<IpBlock> for IpBlocksBuilder {
+    fn extend<T>(&mut self, iter: T)
+    where T: IntoIterator<Item = IpBlock> {
+        self.0.extend(iter)
     }
 }
 

@@ -249,6 +249,12 @@ impl KeyIdentifier {
         cons.take_value_if(Tag::OCTET_STRING, Self::from_content)
     }
 
+    pub fn take_opt_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Option<Self>, S::Err> {
+        cons.take_opt_value_if(Tag::OCTET_STRING, Self::from_content)
+    }
+
     /// Parses an encoded key identifer from a encoded content.
     pub fn from_content<S: decode::Source>(
         content: &mut decode::Content<S>
@@ -273,14 +279,13 @@ impl KeyIdentifier {
     }
 
     /// Skips over an encoded key indentifier.
-    pub fn skip_in<S: decode::Source>(
+    pub fn skip_opt_in<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<(), S::Err> {
-        while cons.take_opt_value_if(
-            Tag::OCTET_STRING, OctetString::from_content
-        )?.is_some() {
-        }
-        Ok(())
+    ) -> Result<Option<()>, S::Err> {
+        cons.take_opt_value_if(Tag::OCTET_STRING, |cons| {
+            Self::from_content(cons)?;
+            Ok(())
+        })
     }
 }
 

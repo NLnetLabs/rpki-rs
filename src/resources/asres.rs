@@ -19,11 +19,11 @@ use std::iter::FromIterator;
 use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{Tag, xerr};
-use bcder::encode::PrimitiveContent;
+use bcder::encode::{PrimitiveContent, Nothing};
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::cert::Overclaim;
-use crate::x509::ValidationError;
+use crate::x509::{encode_extension, ValidationError};
 use super::chain::{Block, SharedChain};
 use super::choice::ResourcesChoice;
 
@@ -49,9 +49,22 @@ impl AsResources {
         AsResources(ResourcesChoice::Inherit)
     }
 
+    /// Creates a new AsResources with a ResourceChoice::Missing
+    pub fn missing() -> Self {
+        AsResources(ResourcesChoice::Missing)
+    }
+
     /// Creates a new AsResources for the given blocks.
+    ///
+    /// If the blocks are empty, creates a missing variant in accordance with
+    /// the specification.
     pub fn blocks(blocks: AsBlocks) -> Self {
-        AsResources(ResourcesChoice::Blocks(blocks))
+        if blocks.is_empty() {
+            AsResources::missing()
+        }
+        else {
+            AsResources(ResourcesChoice::Blocks(blocks))
+        }
     }
 
     /// Returns whether the resources are of the inherited variant.
@@ -59,9 +72,11 @@ impl AsResources {
         self.0.is_inherited()
     }
 
-    /// Returns a reference to the blocks if there are any.
-    pub fn as_blocks(&self) -> Option<&AsBlocks> {
-        self.0.as_blocks()
+    /// Returns whether the resources are empty.
+    ///
+    /// Inherited resources are not empty.
+    pub fn is_present(&self) -> bool {
+        self.0.is_present()
     }
 
     /// Converts the resources into blocks or returns an error.
@@ -133,11 +148,16 @@ impl AsResources {
             encode::sequence_as(Tag::CTX_0,
                 match self.0 {
                     ResourcesChoice::Inherit => {
-                        encode::Choice2::One(().encode())
+                        encode::Choice3::One(().encode())
                     }
                     ResourcesChoice::Blocks(blocks) => {
-                        encode::Choice2::Two(
+                        encode::Choice3::Two(
                             encode::sequence(blocks.encode())
+                        )
+                    }
+                    ResourcesChoice::Missing => {
+                        encode::Choice3::Three(
+                            encode::sequence(Nothing)
                         )
                     }
                 }
@@ -150,17 +170,36 @@ impl AsResources {
             encode::sequence_as(Tag::CTX_0,
                 match self.0 {
                     ResourcesChoice::Inherit => {
-                        encode::Choice2::One(().encode())
+                        encode::Choice3::One(().encode())
                     }
                     ResourcesChoice::Blocks(ref blocks) => {
-                        encode::Choice2::Two(
+                        encode::Choice3::Two(
                             encode::sequence(blocks.encode_ref())
+                        )
+                    }
+                    ResourcesChoice::Missing => {
+                        encode::Choice3::Three(
+                            encode::sequence(Nothing)
                         )
                     }
                 }
             )
         )
     }
+
+    pub fn encode_extension<'a>(
+        &'a self, overclaim: Overclaim
+    ) -> impl encode::Values + 'a {
+        if self.0.is_present() {
+            Some(encode_extension(
+                overclaim.as_res_id(), true, self.encode_ref()
+            ))
+        }
+        else {
+            None
+        }
+    }
+
 }
 
 //--- Display
@@ -177,8 +216,11 @@ impl FromStr for AsResources {
     type Err = FromStrError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let choice = ResourcesChoice::from_str(s).map_err(|_| FromStrError::BadBlocks)?;
-        Ok(AsResources(choice))
+        if s == "inherit" {
+            Ok(AsResources::inherit())
+        } else {
+            AsBlocks::from_str(s).map(AsResources::blocks)
+        }
     }
 }
 
@@ -187,32 +229,41 @@ impl FromStr for AsResources {
 
 #[derive(Clone, Debug)]
 pub struct AsResourcesBuilder {
-    res: Option<ResourcesChoice<AsBlocksBuilder>>
+    /// The resources.
+    ///
+    /// A value of `None` means inherited resources, an empty builder will be
+    /// transformed into missing resources.
+    res: Option<AsBlocksBuilder>
 }
 
 impl AsResourcesBuilder {
     pub fn new() -> Self {
         AsResourcesBuilder {
-            res: None
+            res: Some(AsBlocksBuilder::new())
         }
     }
 
-    pub fn inhert(&mut self) {
-        self.res = Some(ResourcesChoice::Inherit)
+    pub fn inherit(&mut self) {
+        self.res = None
     }
 
     pub fn blocks<F>(&mut self, build: F)
     where F: FnOnce(&mut AsBlocksBuilder) {
-        if self.res.as_ref().map(|res| res.is_inherited()).unwrap_or(true) {
-            self.res = Some(ResourcesChoice::Blocks(AsBlocksBuilder::new()))
+        if let Some(ref mut builder) = self.res {
+            build(builder)
         }
-        build(self.res.as_mut().unwrap().as_blocks_mut().unwrap())
+        else {
+            let mut builder = AsBlocksBuilder::new();
+            build(&mut builder);
+            self.res = Some(builder)
+        }
     }
 
-    pub fn finalize(self) -> Option<AsResources> {
-        self.res.map(|choice| {
-            AsResources(choice.map_blocks(AsBlocksBuilder::finalize))
-        })
+    pub fn finalize(self) -> AsResources {
+        match self.res {
+            Some(blocks) => AsResources::blocks(blocks.finalize()),
+            None => AsResources::inherit(),
+        }
     }
 }
 
@@ -240,12 +291,12 @@ impl AsBlocks {
     /// If the AS resources are of the inherited variant, a validation error
     /// is returned.
     pub fn from_resources(
-        res: Option<&AsResources>
+        res: AsResources
     ) -> Result<Self, ValidationError> {
-        match res.map(|res| &res.0) {
-            Some(ResourcesChoice::Inherit) => Err(ValidationError),
-            Some(ResourcesChoice::Blocks(ref some)) => Ok(some.clone()),
-            None => Ok(AsBlocks::empty())
+        match res.0 {
+            ResourcesChoice::Missing => Ok(AsBlocks::empty()),
+            ResourcesChoice::Inherit => Err(ValidationError),
+            ResourcesChoice::Blocks(some) => Ok(some),
         }
     }
 
@@ -255,19 +306,20 @@ impl AsBlocks {
     }
 
     /// Returns an iterator over the individual AS number blocks.
-    pub fn iter(&self) -> impl Iterator<Item=&AsBlock> {
-        self.0.iter()
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item=AsBlock> + 'a {
+        self.0.iter().copied()
     }
 
     /// Validates AS resources issued under these blocks.
     pub fn validate_issued(
         &self,
-        res: Option<&AsResources>,
+        res: &AsResources,
         mode: Overclaim,
     ) -> Result<AsBlocks, ValidationError> {
-        match res.map(|res| &res.0) {
-            Some(ResourcesChoice::Inherit) => Ok(self.clone()),
-            Some(ResourcesChoice::Blocks(ref blocks)) => {
+        match res.0 {
+            ResourcesChoice::Missing => Ok(Self::empty()),
+            ResourcesChoice::Inherit => Ok(self.clone()),
+            ResourcesChoice::Blocks(ref blocks) => {
                 match mode {
                     Overclaim::Refuse => {
                         if blocks.0.is_encompassed(&self.0) {
@@ -284,8 +336,36 @@ impl AsBlocks {
                         }
                     }
                 }
-            },
-            None => Ok(Self::empty()),
+            }
+        }
+    }
+
+    /// Verifies that these resources are covered by an issuer’s resources.
+    ///
+    /// This is used by bottom-up validation, therefore, issuer resources 
+    /// of the inherited kind are considered covering.
+    pub fn verify_covered(
+        &self,
+        issuer: &AsResources
+    ) -> Result<(), ValidationError> {
+        match issuer.0 {
+            ResourcesChoice::Missing => {
+                if self.0.is_empty() {
+                    Ok(())
+                }
+                else {
+                    Err(ValidationError)
+                }
+            }
+            ResourcesChoice::Inherit => Ok(()),
+            ResourcesChoice::Blocks(ref blocks) => {
+                if blocks.0.is_encompassed(&self.0) {
+                    Ok(())
+                }
+                else {
+                    Err(ValidationError)
+                }
+            }
         }
     }
 }
@@ -307,6 +387,12 @@ impl AsBlocks {
         }
     }
 
+    pub fn intersection_assign(&mut self, other: &Self) {
+        if let Err(owned) = self.0.trim(&other.0) {
+            self.0 = SharedChain::from_owned(owned)
+        }
+    }
+
     /// Returns a new AsBlocks with the union of this and the other AsBlocks.
     ///
     /// i.e. all resources found in one or both AsBlocks.
@@ -317,9 +403,6 @@ impl AsBlocks {
             )
         )
     }
-
-
-
 }
 
 /// # Decoding and Encoding
@@ -371,6 +454,15 @@ impl AsBlocks {
 
     pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         encode::slice(&self.0, |block| block.encode())
+    }
+}
+
+
+//--- Default
+
+impl Default for AsBlocks {
+    fn default() -> Self {
+        AsBlocks::empty()
     }
 }
 
@@ -453,7 +545,7 @@ impl AsBlocksBuilder {
         AsBlocksBuilder(Vec::new())
     }
 
-    pub fn push<T: Into<AsBlock>>(&mut self, block: T) {
+    pub fn push(&mut self, block: impl Into<AsBlock>) {
         self.0.push(block.into())
     }
 
@@ -465,6 +557,13 @@ impl AsBlocksBuilder {
 impl Default for AsBlocksBuilder {
     fn default() -> Self {
         AsBlocksBuilder::new()
+    }
+}
+
+impl Extend<AsBlock> for AsBlocksBuilder {
+    fn extend<T>(&mut self, iter: T)
+    where T: IntoIterator<Item = AsBlock> {
+        self.0.extend(iter)
     }
 }
 

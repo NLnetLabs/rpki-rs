@@ -46,7 +46,7 @@ use crate::crypto::{
     KeyIdentifier, PublicKey, SignatureAlgorithm, Signer, SigningError
 };
 use crate::resources::{
-    AddressFamily, AsBlock, AsBlocksBuilder, AsResources, AsResourcesBuilder,
+    AsBlock, AsBlocksBuilder, AsResources, AsResourcesBuilder,
     IpBlock, IpBlocksBuilder, IpResources, IpResourcesBuilder
 };
 
@@ -148,7 +148,31 @@ impl Cert {
 
 /// # Validation
 ///
+/// When validating a certificate, two properties are checked: whether the
+/// certificate’s structure and content comply with the specification for
+/// resource certificates laid out in [RFC 6487] and whether the certificate
+/// has been correctly issued by its CA.
+///
+/// In some cases it is useful to perform these two steps separatedly.
+/// Therefore, methods are available both for each step and for doing both
+/// steps at once. Since we need to name these consistently, we devised the
+/// following convention:
+///
+/// The first step that validates compliance with the specification is called
+/// _inspection._ Methods are available to inspect different kinds of
+/// certificates. They all have the verb _inspect_ in their name. Only the
+/// certificate itself is necessary to perform inspection.
+///
+/// The second step checking whether the certificate was correctly issued is
+/// called _verification._ Methods are available to verify different kinds of
+/// certificates. They all have the verb _verify_ in their name and, in
+/// most cases, require access to the issuer certificate.
+/// 
+/// In addition, methods are available to perform both steps at once for
+/// different kinds of certificates. These all have _validate_ in their name.
 impl Cert {
+    //--- Validation
+
     /// Validates the certificate as a trust anchor.
     ///
     /// This validates that the certificate “is a current, self-signed RPKI
@@ -168,53 +192,8 @@ impl Cert {
         strict: bool,
         now: Time,
     ) -> Result<ResourceCert, ValidationError> {
-        self.validate_basics(strict, now)?;
-        self.validate_ca_basics(strict)?;
-
-        // 4.8.3. Authority Key Identifier. May be present, if so, must be
-        // equal to the subject key indentifier.
-        if let Some(ref aki) = self.authority_key_identifier {
-            if *aki != self.subject_key_identifier {
-                return Err(ValidationError);
-            }
-        }
-
-        // 4.8.6. CRL Distribution Points. There musn’t be one.
-        if self.crl_uri.is_some() {
-            return Err(ValidationError)
-        }
-
-        // 4.8.7. Authority Information Access. Must not be present.
-        if self.ca_issuer.is_some() {
-            return Err(ValidationError)
-        }
-
-        // 4.8.10. IP Resources. If present, musn’t be "inherit".
-        let v4_resources = IpBlocks::from_resources(
-            self.v4_resources.as_ref()
-        )?;
-        let v6_resources = IpBlocks::from_resources(
-            self.v6_resources.as_ref()
-        )?;
- 
-        // 4.8.11.  AS Resources. If present, musn’t be "inherit". That
-        // IP resources (logical) or AS resources are present has already
-        // been checked during parsing.
-        let as_resources = AsBlocks::from_resources(
-            self.as_resources.as_ref()
-        )?;
-
-        self.signed_data.verify_signature(
-            &self.subject_public_key_info
-        )?;
-
-        Ok(ResourceCert {
-            cert: self,
-            v4_resources,
-            v6_resources,
-            as_resources,
-            tal
-        })
+        self.inspect_ta_at(strict, now)?;
+        self.verify_ta(tal, strict)
     }
 
     /// Validates the certificate as a CA certificate.
@@ -237,11 +216,8 @@ impl Cert {
         strict: bool,
         now: Time,
     ) -> Result<ResourceCert, ValidationError> {
-        self.validate_basics(strict, now)?;
-        self.validate_ca_basics(strict)?;
-        self.validate_issued(issuer, strict)?;
-        self.validate_signature(issuer, strict)?;
-        self.validate_resources(issuer, strict)
+        self.inspect_ca_at(strict, now)?;
+        self.verify_ca(issuer, strict)
     }
 
     /// Validates the certificate as an EE certificate.
@@ -264,8 +240,72 @@ impl Cert {
         strict: bool,
         now: Time,
     ) -> Result<ResourceCert, ValidationError>  {
-        self.validate_basics(strict, now)?;
-        self.validate_issued(issuer, strict)?;
+        self.inspect_ee_at(strict, now)?;
+        self.verify_ee(issuer, strict)
+    }
+
+
+    //--- Inspection
+
+    pub fn inspect_ta(&self, strict: bool) -> Result<(), ValidationError> {
+        self.inspect_ta_at(strict, Time::now())
+    }
+
+    pub fn inspect_ta_at(
+        &self,
+        strict: bool,
+        now: Time
+    ) -> Result<(), ValidationError> {
+        self.inspect_basics(strict, now)?;
+        self.inspect_ca_basics(strict)?;
+
+        // 4.8.3. Authority Key Identifier. May be present, if so, must be
+        // equal to the subject key indentifier.
+        if let Some(ref aki) = self.authority_key_identifier {
+            if *aki != self.subject_key_identifier {
+                return Err(ValidationError);
+            }
+        }
+
+        // 4.8.6. CRL Distribution Points. There musn’t be one.
+        if self.crl_uri.is_some() {
+            return Err(ValidationError)
+        }
+
+        // 4.8.7. Authority Information Access. Must not be present.
+        if self.ca_issuer.is_some() {
+            return Err(ValidationError)
+        }
+
+        // 4.8.10. IP Resources.
+        // 4.8.11. AS Resources.
+        //
+        // Are checked as part of verification.
+        
+        Ok(())
+    }
+
+    pub fn inspect_ca(&self, strict: bool) -> Result<(), ValidationError> {
+        self.inspect_ca_at(strict, Time::now())
+    }
+
+    pub fn inspect_ca_at(
+        &self, strict: bool, now: Time
+    ) -> Result<(), ValidationError> {
+        self.inspect_basics(strict, now)?;
+        self.inspect_ca_basics(strict)?;
+        self.inspect_issued(strict)
+    }
+
+    pub fn inspect_ee(&self, strict: bool) -> Result<(), ValidationError> {
+        self.inspect_ee_at(strict, Time::now())
+    }
+
+    pub fn inspect_ee_at(
+        &self, strict: bool, now: Time
+    ) -> Result<(), ValidationError> {
+        self.inspect_basics(strict, now)?;
+        self.inspect_issued(strict)?;
 
         // 4.8.1. Basic Constraints: Must not be present.
         if self.basic_ca.is_some(){
@@ -285,19 +325,94 @@ impl Cert {
         {
             return Err(ValidationError)
         }
+
+        // XXX This is probably not correct?
         if self.rpki_notify.is_some() && strict {
             return Err(ValidationError)
         }
 
-        self.validate_signature(issuer, strict)?;
-        self.validate_resources(issuer, strict)
+        Ok(())
+    }
+
+
+    //--- Verification
+
+    pub fn verify_ta(
+        self, tal: Arc<TalInfo>, _strict: bool
+    ) -> Result<ResourceCert, ValidationError> {
+        // 4.8.10. IP Resources. If present, musn’t be "inherit".
+        let v4_resources = IpBlocks::from_resources(
+            self.v4_resources.clone()
+        )?;
+        let v6_resources = IpBlocks::from_resources(
+            self.v6_resources.clone()
+        )?;
+ 
+        // 4.8.11.  AS Resources. If present, musn’t be "inherit". That
+        // IP resources (logical) or AS resources are present has already
+        // been checked during parsing.
+        let as_resources = AsBlocks::from_resources(
+            self.as_resources.clone()
+        )?;
+
+        self.signed_data.verify_signature(
+            &self.subject_public_key_info
+        )?;
+
+        Ok(ResourceCert {
+            cert: self,
+            v4_resources,
+            v6_resources,
+            as_resources,
+            tal
+        })
+    }
+
+    pub fn verify_ta_ref(
+        &self, _strict: bool
+    ) -> Result<(), ValidationError> {
+        // 4.8.10. IP Resources. If present, musn’t be "inherit".
+        if self.v4_resources.is_inherited() {
+            return Err(ValidationError)
+        }
+        if self.v6_resources.is_inherited() {
+            return Err(ValidationError)
+        }
+
+        // 4.8.11.  AS Resources. If present, musn’t be "inherit".
+        if self.as_resources.is_inherited() {
+            return Err(ValidationError)
+        }
+
+        self.signed_data.verify_signature(
+            &self.subject_public_key_info
+        )?;
+
+        Ok(())
+    }
+
+
+    pub fn verify_ca(
+        self, issuer: &ResourceCert, strict: bool
+    ) -> Result<ResourceCert, ValidationError> {
+        self.verify_issuer_claim(issuer, strict)?;
+        self.verify_signature(issuer, strict)?;
+        self.verify_resources(issuer, strict)
+    }
+
+    pub fn verify_ee(
+        self, issuer: &ResourceCert, strict: bool
+    ) -> Result<ResourceCert, ValidationError> {
+        self.verify_issuer_claim(issuer, strict)?;
+        self.verify_signature(issuer, strict)?;
+        self.verify_resources(issuer, strict)
     }
 
 
     //--- Validation Components
 
-    /// Validates basic compliance with section 4 of RFC 6487.
-    fn validate_basics(
+    /// Inspects basic compliance with section 4 of RFC 6487.
+    fn inspect_basics(
         &self,
         strict: bool,
         now: Time
@@ -371,31 +486,10 @@ impl Cert {
         Ok(())
     }
 
-    /// Validates that the certificate is a correctly issued certificate.
-    fn validate_issued(
-        &self,
-        issuer: &ResourceCert,
-        _strict: bool,
-    ) -> Result<(), ValidationError> {
-        // 4.8.3. Authority Key Identifier. Must be present and match the
-        // subject key ID of `issuer`.
-        if self.authority_key_identifier()
-            != Some(issuer.cert.subject_key_identifier())
-        {
-            return Err(ValidationError)
-        }
-
+    fn inspect_issued(&self, _strict: bool) -> Result<(), ValidationError> {
         // 4.8.6. CRL Distribution Points. There must be one.
         if self.crl_uri().is_none() {
             return Err(ValidationError)
-        }
-
-        // 4.8.7. Authority Information Access. Must be present and contain
-        // the URI of the issuer certificate. Since we do top-down validation,
-        // we don’t really need that URI so – XXX – leave it unchecked for
-        // now.
-        if self.ca_issuer().is_none() {
-            return Err(ValidationError);
         }
 
         Ok(())
@@ -405,7 +499,7 @@ impl Cert {
     ///
     /// Checks the parts that are common in normal and trust anchor CA
     /// certificates.
-    fn validate_ca_basics(
+    fn inspect_ca_basics(
         &self,
         _strict: bool
     ) -> Result<(), ValidationError> {
@@ -431,21 +525,49 @@ impl Cert {
         Ok(())
     }
 
-    /// Validates the certificate’s signature.
-    fn validate_signature(
+    /// Verifies that the certificate claims to have been issued by `issuer`.
+    ///
+    /// This is only the first part of verification. You _must_ call
+    /// `verified_signature`, too.
+    pub fn verify_issuer_claim(
         &self,
         issuer: &ResourceCert,
+        _strict: bool,
+    ) -> Result<(), ValidationError> {
+        // 4.8.3. Authority Key Identifier. Must be present and match the
+        // subject key ID of `issuer`.
+        if self.authority_key_identifier()
+            != Some(issuer.cert.subject_key_identifier())
+        {
+            return Err(ValidationError)
+        }
+
+        // 4.8.7. Authority Information Access. Must be present and contain
+        // the URI of the issuer certificate. Since we do top-down validation,
+        // we don’t really need that URI so – XXX – leave it unchecked for
+        // now.
+        if self.ca_issuer().is_none() {
+            return Err(ValidationError);
+        }
+
+        Ok(())
+    }
+
+    /// Validates the certificate’s signature.
+    pub fn verify_signature(
+        &self,
+        issuer: &Cert,
         _strict: bool
     ) -> Result<(), ValidationError> {
         self.signed_data.verify_signature(
-            issuer.cert.subject_public_key_info()
+            issuer.subject_public_key_info()
         )
     }
 
     /// Validates and extracts the IP and AS resources.
     ///
     /// Upon success, this converts the certificate into a `ResourceCert`.
-    fn validate_resources(
+    fn verify_resources(
         self,
         issuer: &ResourceCert,
         _strict: bool
@@ -604,13 +726,13 @@ pub struct TbsCert {
     overclaim: Overclaim,
 
     /// IP Resources for the IPv4 address family.
-    v4_resources: Option<IpResources>,
+    v4_resources: IpResources,
 
     /// IP Resources for the IPv6 address family.
-    v6_resources: Option<IpResources>,
+    v6_resources: IpResources,
 
     /// AS Resources
-    as_resources: Option<AsResources>,
+    as_resources: AsResources,
 }
 
 
@@ -653,9 +775,9 @@ impl TbsCert {
             signed_object: None,
             rpki_notify: None,
             overclaim,
-            v4_resources: None,
-            v6_resources: None,
-            as_resources: None,
+            v4_resources: IpResources::missing(),
+            v6_resources: IpResources::missing(),
+            as_resources: AsResources::missing(),
         }
     }
 
@@ -858,18 +980,18 @@ impl TbsCert {
     }
 
     /// Returns a reference to the IPv4 address resources if present.
-    pub fn v4_resources(&self) -> Option<&IpResources> {
-        self.v4_resources.as_ref()
+    pub fn v4_resources(&self) -> &IpResources {
+        &self.v4_resources
     }
 
     /// Set the IPv4 address resources.
-    pub fn set_v4_resources(&mut self, resources: Option<IpResources>) {
+    pub fn set_v4_resources(&mut self, resources: IpResources) {
         self.v4_resources = resources
     }
 
     /// Sets the IPv4 address resources to inherit.
     pub fn set_v4_resources_inherit(&mut self) {
-        self.set_v4_resources(Some(IpResources::inherit()))
+        self.set_v4_resources(IpResources::inherit())
     }
 
     /// Builds the blocks IPv4 address resources.
@@ -883,24 +1005,22 @@ impl TbsCert {
     /// Builds the IPv4 address resources from an iterator over blocks.
     pub fn v4_resources_from_iter<I>(&mut self, iter: I)
     where I: IntoIterator<Item=IpBlock> {
-        self.v4_resources = Some(
-            IpResources::blocks(IpBlocks::from_iter(iter))
-        )
+        self.v4_resources = IpResources::blocks(IpBlocks::from_iter(iter))
     }
 
     /// Returns a reference to the IPv6 address resources if present.
-    pub fn v6_resources(&self) -> Option<&IpResources> {
-        self.v6_resources.as_ref()
+    pub fn v6_resources(&self) -> &IpResources {
+        &self.v6_resources
     }
 
     /// Set the IPv6 address resources.
-    pub fn set_v6_resources(&mut self, resources: Option<IpResources>) {
+    pub fn set_v6_resources(&mut self, resources: IpResources) {
         self.v6_resources = resources
     }
 
     /// Sets the IPv6 address resources to inherit.
     pub fn set_v6_resources_inherit(&mut self) {
-        self.set_v6_resources(Some(IpResources::inherit()))
+        self.set_v6_resources(IpResources::inherit())
     }
 
     /// Builds the blocks IPv6 address resources.
@@ -914,29 +1034,27 @@ impl TbsCert {
     /// Builds the IPv6 address resources from an iterator over blocks
     pub fn v6_resources_from_iter<I>(&mut self, iter: I)
     where I: IntoIterator<Item=IpBlock> {
-        self.v6_resources = Some(
-            IpResources::blocks(IpBlocks::from_iter(iter))
-        )
+        self.v6_resources = IpResources::blocks(IpBlocks::from_iter(iter))
     }
 
     /// Returns whether the certificate has any IP resources at all.
     pub fn has_ip_resources(&self) -> bool {
-        self.v4_resources.is_some() || self.v6_resources().is_some()
+        self.v4_resources.is_present() || self.v6_resources().is_present()
     }
 
-    /// Returns a reference to the AS resources if present.
-    pub fn as_resources(&self) -> Option<&AsResources> {
-        self.as_resources.as_ref()
+    /// Returns a reference to the AS resources.
+    pub fn as_resources(&self) -> &AsResources {
+        &self.as_resources
     }
 
     /// Set the AS resources.
-    pub fn set_as_resources(&mut self, resources: Option<AsResources>) {
+    pub fn set_as_resources(&mut self, resources: AsResources) {
         self.as_resources = resources
     }
 
     /// Sets the AS resources to inherit.
     pub fn set_as_resources_inherit(&mut self) {
-        self.set_as_resources(Some(AsResources::inherit()))
+        self.set_as_resources(AsResources::inherit())
     }
 
     /// Builds the blocks AS resources.
@@ -950,9 +1068,7 @@ impl TbsCert {
     /// Builds the AS resources from an iterator over blocks.
     pub fn as_resources_from_iter<I>(&mut self, iter: I)
     where I: IntoIterator<Item = AsBlock> {
-        self.as_resources = Some(
-            AsResources::blocks(AsBlocks::from_iter(iter))
-        )
+        self.as_resources = AsResources::blocks(AsBlocks::from_iter(iter))
     }
 }
 
@@ -1099,9 +1215,15 @@ impl TbsCert {
                 signed_object,
                 rpki_notify,
                 overclaim: overclaim.ok_or(decode::Malformed)?,
-                v4_resources,
-                v6_resources,
-                as_resources,
+                v4_resources: v4_resources.unwrap_or_else(
+                    IpResources::missing
+                ),
+                v6_resources: v6_resources.unwrap_or_else(
+                    IpResources::missing
+                ),
+                as_resources: as_resources.unwrap_or_else(
+                    AsResources::missing
+                ),
             })
         })
     }
@@ -1566,37 +1688,14 @@ impl TbsCert {
                 ),
 
                 // IP Resources
-                if self.has_ip_resources() {
-                    Some(encode_extension(
-                        self.overclaim.ip_res_id(), true,
-                        encode::sequence((
-                            self.v4_resources.as_ref().map(|v4| {
-                                encode::sequence((
-                                    AddressFamily::Ipv4.encode(),
-                                    v4.encode_ref()
-                                ))
-                            }),
-                            self.v6_resources.as_ref().map(|v6| {
-                                encode::sequence((
-                                    AddressFamily::Ipv6.encode(),
-                                    v6.encode_ref()
-                                ))
-                            }),
-                        ))
-                    ))
-                }
-                else {
-                    None
-                },
+                IpResources::encode_extension(
+                    self.overclaim(),
+                    &self.v4_resources(),
+                    &self.v6_resources()
+                ),
 
                 // AS Resources
-                self.as_resources.as_ref().map(|res| {
-                    encode_extension(
-                        self.overclaim.as_res_id(), true,
-                        res.encode_ref()
-                    )
-                })
-
+                self.as_resources.encode_extension(self.overclaim)
             )))
         ))
     }
