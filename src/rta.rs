@@ -467,7 +467,7 @@ impl SignerInfo {
 }
 
 
-//------------ Validator -----------------------------------------------------
+//------------ Validation ----------------------------------------------------
 
 #[derive(Clone, Debug)]
 pub struct Validation<'a> {
@@ -486,6 +486,12 @@ pub struct Validation<'a> {
 
 impl<'a> Validation<'a> {
     pub fn new(
+        rta: &'a Rta, strict: bool
+    ) -> Result<Self, ValidationError> {
+        Self::new_at(rta, strict, Time::now())
+    }
+
+    pub fn new_at(
         rta: &'a Rta, strict: bool, now: Time,
     ) -> Result<Self, ValidationError> {
         // Get a vec with options of refs to the CRLs. Whenever we used a CRL
