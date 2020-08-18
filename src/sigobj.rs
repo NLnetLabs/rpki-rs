@@ -156,6 +156,19 @@ impl SignedObject {
         })
     }
 
+    pub fn process<F>(
+        self,
+        issuer: &ResourceCert,
+        strict: bool,
+        check_crl: F
+    ) -> Result<OctetString, ValidationError>
+    where F: FnOnce(&Cert) -> Result<(), ValidationError> {
+        let res = self.content.clone();
+        let cert = self.validate(issuer, strict)?;
+        check_crl(cert.as_ref())?;
+        Ok(res)
+    }
+
     /// Validates the signed object.
     ///
     /// Upon success, the method returns the validated EE certificate of the
