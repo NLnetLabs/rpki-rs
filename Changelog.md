@@ -6,9 +6,14 @@ Breaking
 
 Bug Fixes
 
+* Don’t refuse a rpkiNotify SIA in EE certificates in strict validation mode. 
+  This was accidentally introduced by misreading the spec. ([#105])
+
 New
 
 Dependencies
+
+[#105]: https://github.com/NLnetLabs/rpki-rs/pull/105
 
 
 # 0.9.2

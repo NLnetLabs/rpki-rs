@@ -278,9 +278,6 @@ impl Cert {
         {
             return Err(ValidationError)
         }
-        if self.rpki_notify.is_some() && strict {
-            return Err(ValidationError)
-        }
 
         self.validate_signature(issuer, strict)?;
         self.validate_resources(issuer, strict)
