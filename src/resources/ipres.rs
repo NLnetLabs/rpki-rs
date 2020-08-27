@@ -648,6 +648,16 @@ impl IpBlock {
             IpBlock::Range(range) => range.fmt_v6(f),
         }
     }
+
+    /// Returns an object that sisplays the block as an IPv4 block.
+    pub fn display_v4(self) -> DisplayV4Block {
+        DisplayV4Block(self)
+    }
+
+    /// Returns an object that sisplays the block as an IPv4 block.
+    pub fn display_v6(self) -> DisplayV6Block {
+        DisplayV6Block(self)
+    }
 }
 
 impl IpBlock {
@@ -767,6 +777,27 @@ impl Block for IpBlock {
     }
 }
 
+
+//------------ DisplayV4Block ------------------------------------------------
+
+pub struct DisplayV4Block(IpBlock);
+
+impl fmt::Display for DisplayV4Block {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt_v4(fmt)
+    }
+}
+
+
+//------------ DisplayV6Block ------------------------------------------------
+
+pub struct DisplayV6Block(IpBlock);
+
+impl fmt::Display for DisplayV6Block {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt_v6(fmt)
+    }
+}
 
 
 //------------ AddressRange --------------------------------------------------
