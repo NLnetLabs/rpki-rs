@@ -606,17 +606,11 @@ impl Scheme {
     }
 
     pub fn is_https(self) -> bool {
-        match self {
-            Scheme::Https => true,
-            _ => false
-        }
+        matches!(self, Scheme::Https)
     }
 
     pub fn is_rsync(self) -> bool {
-        match self {
-            Scheme::Rsync => true,
-            _ => false
-        }
+        matches!(self, Scheme::Rsync)
     }
 
     pub fn as_str(self) -> &'static str {

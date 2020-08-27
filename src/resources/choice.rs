@@ -29,18 +29,12 @@ pub enum ResourcesChoice<T> {
 impl<T> ResourcesChoice<T> {
     /// Returns whether the resources are of the inherited variant.
     pub fn is_inherited(&self) -> bool {
-        match self {
-            ResourcesChoice::Inherit => true,
-            _ =>  false
-        }
+        matches!(self, ResourcesChoice::Inherit)
     }
 
     /// Returns whether the resources are present.
     pub fn is_present(&self) -> bool {
-        match self {
-            ResourcesChoice::Missing => false,
-            _ => true
-        }
+        !matches!(self, ResourcesChoice::Missing)
     }
 
     /// Converts the resources into blocks or returns an error.

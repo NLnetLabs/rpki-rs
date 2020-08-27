@@ -184,17 +184,11 @@ impl TalUri {
     }
 
     pub fn is_rsync(&self) -> bool {
-        match *self {
-            TalUri::Rsync(_) => true,
-            _ => false,
-        }
+        matches!(*self, TalUri::Rsync(_))
     }
 
     pub fn is_https(&self) -> bool {
-        match *self {
-            TalUri::Https(_) => true,
-            _ => false
-        }
+        matches!(*self, TalUri::Https(_))
     }
 }
 
