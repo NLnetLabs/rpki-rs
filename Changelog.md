@@ -4,16 +4,23 @@
 
 Breaking
 
+* The minimum required Rust version is now 1.42. ([#108])
+
 Bug Fixes
 
 New
 
-* Module `rta` for handling Resource Tagged Assertions.
+* Module `rta` for handling Resource Tagged Assertions.  ([#108])
 * `crypto::DigestAlgorithm::digest_file` allows calculating the digest
-  value of an entire file.
+  value of an entire file.  ([#108])
+* `IpBlock` can now be displayed via helper types to select IPv4 or IPv6.
+  ([#108])
+* `SignedObject::process` to validate generic signed objects and return
+  their content on success. ([#108])
 
 Dependencies
 
+[#108]: https://github.com/NLnetLabs/rpki-rs/pull/106
 
 # 0.9.2
 
