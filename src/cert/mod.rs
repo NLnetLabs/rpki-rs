@@ -1637,8 +1637,8 @@ fn take_general_name<S: decode::Source, F, T, E>(
 ) -> Result<Option<T>, S::Err>
 where F: FnMut(Bytes) -> Result<T, E> {
     cons.take_value_if(Tag::CTX_6, |content| {
-        Ia5String::from_content(content).and_then(|uri| {
-            Ok(op(uri.into_bytes()).ok())
+        Ia5String::from_content(content).map(|uri| {
+            op(uri.into_bytes()).ok()
         })
     })
 }
