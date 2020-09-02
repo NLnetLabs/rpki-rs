@@ -75,13 +75,19 @@ impl DigestAlgorithm {
 ///
 /// In RPKI signed objects, a set is limited to exactly one identifer. The
 /// allowed algorithms are limited, too. In particular, [RFC 7935] only
-/// allows SHA-256. Its algorithm identifier is defined in [RFC 4055]. The
-/// _parameters_ field may either be absent or `NULL`.
+/// allows SHA-256. Its algorithm identifier is defined in [RFC 5754]. The
+/// object identifier to be used is `id-sha256`. When encoding, the
+/// _parameters_ field must be absent, whereas when decoding, it may either
+/// be absent or `NULL`.
+///
+/// Note that this differs from [`SignatureAlgorithm`] identifiers where
+/// the `NULL` must be present when encoding.
 ///
 /// The functions and methods in this section allow decoding and encoding
 /// such values.
 ///
-/// [RFC 4055]: https://tools.ietf.org/html/rfc4055
+/// [`SignatureAlgorithm`]: ../signature/struct.SignatureAlgorithm.html
+/// [RFC 5754]: https://tools.ietf.org/html/rfc5754
 /// [RFC 7935]: https://tools.ietf.org/html/rfc7935
 impl DigestAlgorithm {
     /// Takes and returns a single digest algorithm identifier.
@@ -154,10 +160,7 @@ impl DigestAlgorithm {
 
     /// Provides an encoder for a single algorithm identifier.
     pub fn encode(self) -> impl encode::Values {
-        encode::sequence((
-            oid::SHA256.encode(),
-            ().encode(),
-        ))
+        encode::sequence(oid::SHA256.encode())
     }
 
     /// Provides an encoder for a indentifer as the sole value of a set.

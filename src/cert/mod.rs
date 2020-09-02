@@ -326,11 +326,6 @@ impl Cert {
             return Err(ValidationError)
         }
 
-        // XXX This is probably not correct?
-        if self.rpki_notify.is_some() && strict {
-            return Err(ValidationError)
-        }
-
         Ok(())
     }
 

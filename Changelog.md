@@ -8,6 +8,11 @@ Breaking
 
 Bug Fixes
 
+* Don’t refuse a rpkiNotify SIA in EE certificates in strict validation mode. 
+  This was accidentally introduced by misreading the spec. ([#105])
+* Do not include a parameter to the algorithm identifier of the SHA-256
+  digest algorithm. ([#109])
+
 New
 
 * Module `rta` for handling Resource Tagged Assertions.  ([#108])
@@ -20,7 +25,10 @@ New
 
 Dependencies
 
+[#105]: https://github.com/NLnetLabs/rpki-rs/pull/105
 [#108]: https://github.com/NLnetLabs/rpki-rs/pull/106
+[#109]: https://github.com/NLnetLabs/rpki-rs/pull/109
+
 
 # 0.9.2
 
