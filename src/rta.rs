@@ -339,13 +339,13 @@ impl MultiSignedObject {
     fn take_crls<S: decode::Source>(
         cons: &mut decode::Constructed<S>, _strict: bool
     ) -> Result<Vec<Crl>, S::Err> {
-        cons.take_constructed_if(Tag::CTX_1, |cons| {
+        cons.take_opt_constructed_if(Tag::CTX_1, |cons| {
             let mut crls = Vec::new();
             while let Some(crl) = Crl::take_opt_from(cons)? {
                 crls.push(crl);
             }
             Ok(crls)
-        })
+        }).map(|item| item.unwrap_or_default())
     }
 
     fn take_signer_infos<S: decode::Source>(
@@ -453,6 +453,7 @@ impl SignerInfo {
 
     pub fn encode_ref<'a>( &'a self) -> impl encode::Values + 'a {
         encode::sequence((
+            3u8.encode(), // version
             self.sid.encode_ref_as(Tag::CTX_0),
             self.digest_algorithm.encode(), // digestAlgorithm
             self.signed_attrs.encode_ref(), // signedAttrs
