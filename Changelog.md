@@ -22,11 +22,13 @@ New
   ([#108])
 * `SignedObject::process` to validate generic signed objects and return
   their content on success. ([#108])
+* The various steps in certificate validation are now available as
+  separate methods. ([#108])
 
 Dependencies
 
 [#105]: https://github.com/NLnetLabs/rpki-rs/pull/105
-[#108]: https://github.com/NLnetLabs/rpki-rs/pull/106
+[#108]: https://github.com/NLnetLabs/rpki-rs/pull/108
 [#109]: https://github.com/NLnetLabs/rpki-rs/pull/109
 
 
