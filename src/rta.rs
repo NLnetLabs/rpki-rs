@@ -519,7 +519,7 @@ impl<'a> Validation<'a> {
         let mut ees = Vec::new();
         for cert in &rta.signed.certificates {
             if cert.basic_ca().is_none() {
-                cert.inspect_ee_at(strict, now)?;
+                cert.inspect_detached_ee_at(strict, now)?;
                 ees.push(Some(cert));
             }
             else {
@@ -536,17 +536,17 @@ impl<'a> Validation<'a> {
 
         // All subject keys need to have been used.
         if keys.iter().any(|item| item.is_some()) {
-            return Err(ValidationError)
+            xerr!(return Err(ValidationError))
         }
 
         // All CRLs need to have been used.
         if crls.iter().any(|item| item.is_some()) {
-            return Err(ValidationError)
+            xerr!(return Err(ValidationError))
         }
 
         // All EE certificates have to have been used.
         if ees.iter().any(|item| item.is_some()) {
-            return Err(ValidationError)
+            xerr!(return Err(ValidationError))
         }
 
         // Create the object and advance the chains using the CA certificates
@@ -554,10 +554,9 @@ impl<'a> Validation<'a> {
         let mut res = Validation { rta, chains, strict, now };
         res.advance_chains(&mut cas)?;
 
-
         // All the CA certificates have to have been used.
         if cas.iter().any(|item| !item.used) {
-            return Err(ValidationError)
+            xerr!(return Err(ValidationError))
         }
 
         // Hurray!
@@ -698,12 +697,12 @@ impl<'a> Chain<'a> {
         // Find and removed sid in keys.
         match keys.iter_mut().find(|item| **item == Some(info.sid)) {
             Some(item) => *item = None,
-            None => return Err(ValidationError)
+            None => xerr!(return Err(ValidationError))
         }
 
         // Verify the message digest attribute
         if digest.as_ref() != info.message_digest.as_ref() {
-            return Err(ValidationError)
+            return xerr!(Err(ValidationError))
         }
 
         // Find th EE cert that signed this signer info.
@@ -737,7 +736,7 @@ impl<'a> Chain<'a> {
 
             }
         }
-        Err(ValidationError)
+        xerr!(Err(ValidationError))
     }
 
     //--- advance and helpers
@@ -777,7 +776,7 @@ impl<'a> Chain<'a> {
             return Ok(Some(ca))
         }
         if found {
-            Err(ValidationError)
+            xerr!(Err(ValidationError))
         }
         else {
             Ok(None)
@@ -787,7 +786,7 @@ impl<'a> Chain<'a> {
     fn apply_ca(&mut self, ca: &Ca<'a>) -> Result<(), ValidationError> {
         // Check that our cert hasn’t been revoked.
         if ca.crl.contains(self.cert.serial_number()) {
-            return Err(ValidationError)
+            xerr!(return Err(ValidationError))
         }
 
         // Check if the CA allows us to have our resources.
@@ -908,7 +907,7 @@ impl<'a> Chain<'a> {
             self.cert.inspect_ca_at(strict, now)?;
         }
         else {
-            self.cert.inspect_ee_at(strict, now)?;
+            self.cert.inspect_detached_ee_at(strict, now)?;
         }
 
         // Finally, resources. If they don’t check out, we can error out ...

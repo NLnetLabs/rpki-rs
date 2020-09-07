@@ -244,6 +244,24 @@ impl Cert {
         self.verify_ee(issuer, strict)
     }
 
+    pub fn validate_detached_ee(
+        self,
+        issuer: &ResourceCert,
+        strict: bool
+    ) -> Result<ResourceCert, ValidationError>  {
+        self.validate_detached_ee_at(issuer, strict, Time::now())
+    }
+
+    pub fn validate_detached_ee_at(
+        self,
+        issuer: &ResourceCert,
+        strict: bool,
+        now: Time,
+    ) -> Result<ResourceCert, ValidationError>  {
+        self.inspect_detached_ee_at(strict, now)?;
+        self.verify_ee(issuer, strict)
+    }
+
 
     //--- Inspection
 
@@ -309,13 +327,13 @@ impl Cert {
 
         // 4.8.1. Basic Constraints: Must not be present.
         if self.basic_ca.is_some(){
-            return Err(ValidationError)
+            xerr!(return Err(ValidationError))
         }
 
         // 4.8.4. Key Usage. Bits for CA or not CA have been checked during
         // parsing already.
         if self.key_usage != KeyUsage::Ee {
-            return Err(ValidationError)
+            xerr!(return Err(ValidationError))
         }
 
         // 4.8.8.  Subject Information Access. We need the signed object
@@ -323,7 +341,39 @@ impl Cert {
         if self.ca_repository.is_some() || self.rpki_manifest.is_some()
             || self.signed_object.is_none()
         {
-            return Err(ValidationError)
+            xerr!(return Err(ValidationError))
+        }
+
+        Ok(())
+    }
+
+    pub fn inspect_detached_ee(
+        &self, strict: bool
+    ) -> Result<(), ValidationError> {
+        self.inspect_detached_ee_at(strict, Time::now())
+    }
+
+    pub fn inspect_detached_ee_at(
+        &self, strict: bool, now: Time
+    ) -> Result<(), ValidationError> {
+        self.inspect_basics(strict, now)?;
+        self.inspect_issued(strict)?;
+
+        // 4.8.1. Basic Constraints: Must not be present.
+        if self.basic_ca.is_some(){
+            xerr!(return Err(ValidationError))
+        }
+
+        // 4.8.4. Key Usage. Bits for CA or not CA have been checked during
+        // parsing already.
+        if self.key_usage != KeyUsage::Ee {
+            xerr!(return Err(ValidationError))
+        }
+
+        // 4.8.8.  Subject Information Access. We allow the signed object one
+        // but not the other ones.
+        if self.ca_repository.is_some() || self.rpki_manifest.is_some() {
+            xerr!(return Err(ValidationError))
         }
 
         Ok(())
