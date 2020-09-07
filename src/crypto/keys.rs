@@ -249,6 +249,12 @@ impl KeyIdentifier {
         cons.take_value_if(Tag::OCTET_STRING, Self::from_content)
     }
 
+    pub fn take_opt_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Option<Self>, S::Err> {
+        cons.take_opt_value_if(Tag::OCTET_STRING, Self::from_content)
+    }
+
     /// Parses an encoded key identifer from a encoded content.
     pub fn from_content<S: decode::Source>(
         content: &mut decode::Content<S>
@@ -271,6 +277,16 @@ impl KeyIdentifier {
             Ok(res)
         }
     }
+
+    /// Skips over an encoded key indentifier.
+    pub fn skip_opt_in<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Option<()>, S::Err> {
+        cons.take_opt_value_if(Tag::OCTET_STRING, |cons| {
+            Self::from_content(cons)?;
+            Ok(())
+        })
+    }
 }
 
 
@@ -292,12 +308,10 @@ impl FromStr for KeyIdentifier {
             return Err(RepresentationError)
         }
         let mut res = KeyIdentifier(Default::default());
-        let mut pos = 0;
-        for ch in value.as_bytes().chunks(2) {
+        for (pos, ch) in value.as_bytes().chunks(2).enumerate() {
             let ch = unsafe { str::from_utf8_unchecked(ch) };
             res.0[pos] = u8::from_str_radix(ch, 16)
                             .map_err(|_| RepresentationError)?;
-            pos += 1;
         }
         Ok(res)
     }

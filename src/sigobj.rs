@@ -1,4 +1,6 @@
-// Signed objects.
+//! Signed objects.
+//
+// See RFC 6488 and RFC 5652.
 
 use std::{cmp, io};
 use bcder::{decode, encode};
@@ -154,6 +156,19 @@ impl SignedObject {
         })
     }
 
+    pub fn process<F>(
+        self,
+        issuer: &ResourceCert,
+        strict: bool,
+        check_crl: F
+    ) -> Result<Bytes, ValidationError>
+    where F: FnOnce(&Cert) -> Result<(), ValidationError> {
+        let res = self.content.clone();
+        let cert = self.validate(issuer, strict)?;
+        check_crl(cert.as_ref())?;
+        Ok(res.into_bytes())
+    }
+
     /// Validates the signed object.
     ///
     /// Upon success, the method returns the validated EE certificate of the
@@ -279,8 +294,8 @@ impl SignedObject {
 pub struct SignedAttrs(Captured);
 
 impl SignedAttrs {
-    fn new(
-        content_type: &Oid<Bytes>,
+    pub(crate) fn new(
+        content_type: &Oid<impl AsRef<[u8]>>,
         digest: &MessageDigest,
         signing_time: Option<Time>,
         binary_signing_time: Option<u64>,
@@ -537,8 +552,14 @@ impl AsRef<[u8]> for SignedAttrs {
 pub struct MessageDigest(Bytes);
 
 impl MessageDigest {
-    fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         OctetString::encode_slice(self.0.as_ref())
+    }
+}
+
+impl From<OctetString> for MessageDigest {
+    fn from(src: OctetString) -> Self {
+        MessageDigest(src.into_bytes())
     }
 }
 
@@ -604,17 +625,17 @@ pub struct SignedObjectBuilder {
     /// The IPv4 resources of the EE certificate.
     ///
     /// Defaults to not having any.
-    v4_resources: Option<IpResources>,
+    v4_resources: IpResources,
 
     /// The IPv6 resources of the EE certificate.
     ///
     /// Defaults to not having any.
-    v6_resources: Option<IpResources>,
+    v6_resources: IpResources,
 
     /// The AS resources of the EE certificate.
     ///
     /// Defaults to not having any.
-    as_resources: Option<AsResources>,
+    as_resources: AsResources,
 
     /// The signing time attribute of the signed object.
     ///
@@ -644,9 +665,9 @@ impl SignedObjectBuilder {
             crl_uri,
             ca_issuer,
             signed_object,
-            v4_resources: None,
-            v6_resources: None,
-            as_resources: None,
+            v4_resources: IpResources::missing(),
+            v6_resources: IpResources::missing(),
+            as_resources: AsResources::missing(),
             signing_time: None,
             binary_signing_time: None,
         }
@@ -717,18 +738,18 @@ impl SignedObjectBuilder {
     }
 
     /// Returns a reference to the IPv4 address resources if present.
-    pub fn v4_resources(&self) -> Option<&IpResources> {
-        self.v4_resources.as_ref()
+    pub fn v4_resources(&self) -> &IpResources {
+        &self.v4_resources
     }
 
     /// Set the IPv4 address resources.
-    pub fn set_v4_resources(&mut self, resources: Option<IpResources>) {
+    pub fn set_v4_resources(&mut self, resources: IpResources) {
         self.v4_resources = resources
     }
 
     /// Sets the IPv4 address resources to inherit.
     pub fn set_v4_resources_inherit(&mut self) {
-        self.set_v4_resources(Some(IpResources::inherit()))
+        self.set_v4_resources(IpResources::inherit())
     }
 
     /// Builds the blocks IPv4 address resources.
@@ -740,18 +761,18 @@ impl SignedObjectBuilder {
     }
 
     /// Returns a reference to the IPv6 address resources if present.
-    pub fn v6_resources(&self) -> Option<&IpResources> {
-        self.v6_resources.as_ref()
+    pub fn v6_resources(&self) -> &IpResources {
+        &self.v6_resources
     }
 
     /// Set the IPv6 address resources.
-    pub fn set_v6_resources(&mut self, resources: Option<IpResources>) {
+    pub fn set_v6_resources(&mut self, resources: IpResources) {
         self.v6_resources = resources
     }
 
     /// Sets the IPv6 address resources to inherit.
     pub fn set_v6_resources_inherit(&mut self) {
-        self.set_v6_resources(Some(IpResources::inherit()))
+        self.set_v6_resources(IpResources::inherit())
     }
 
     /// Builds the blocks IPv6 address resources.
@@ -764,22 +785,22 @@ impl SignedObjectBuilder {
 
     /// Returns whether the certificate has any IP resources at all.
     pub fn has_ip_resources(&self) -> bool {
-        self.v4_resources.is_some() || self.v6_resources().is_some()
+        self.v4_resources.is_present() || self.v6_resources().is_present()
     }
 
     /// Returns a reference to the AS resources if present.
-    pub fn as_resources(&self) -> Option<&AsResources> {
-        self.as_resources.as_ref()
+    pub fn as_resources(&self) -> &AsResources {
+        &self.as_resources
     }
 
     /// Set the AS resources.
-    pub fn set_as_resources(&mut self, resources: Option<AsResources>) {
+    pub fn set_as_resources(&mut self, resources: AsResources) {
         self.as_resources = resources
     }
 
     /// Sets the AS resources to inherit.
     pub fn set_as_resources_inherit(&mut self) {
-        self.set_as_resources(Some(AsResources::inherit()))
+        self.set_as_resources(AsResources::inherit())
     }
 
     /// Builds the blocks AS resources.
@@ -866,13 +887,10 @@ impl SignedObjectBuilder {
             binary_signing_time: self.binary_signing_time,
         })
     }
-
-
 }
 
 
 //------------ StartOfValue --------------------------------------------------
-
 
 /// Helper type for ordering signed attributes.
 ///
