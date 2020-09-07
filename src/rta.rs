@@ -722,8 +722,8 @@ impl<'a> Chain<'a> {
         ees: &mut [Option<&'a Cert>]
     ) -> Result<&'a Cert, ValidationError> {
         let msg = info.signed_attrs.encode_verify();
-        for cert in ees {
-            if let Some(cert) = *cert {
+        for item in ees {
+            if let Some(cert) = *item {
                 if cert.subject_key_identifier() != info.sid {
                     continue
                 }
@@ -733,8 +733,10 @@ impl<'a> Chain<'a> {
                 ).is_err() {
                     continue
                 }
-
+                *item = None;
+                return Ok(cert)
             }
+
         }
         xerr!(Err(ValidationError))
     }
