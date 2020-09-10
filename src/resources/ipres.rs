@@ -381,6 +381,16 @@ impl IpBlocks {
         }
         false
     }
+
+    pub fn intersects_block(&self, block: impl Into<IpBlock>) -> bool {
+        let block = block.into();
+        for range in self.iter() {
+            if range.intersects(&block) {
+                return true
+            }
+        }
+        return false;
+    }
 }
 
 /// # Set operations
