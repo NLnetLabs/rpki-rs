@@ -389,7 +389,7 @@ impl IpBlocks {
                 return true
             }
         }
-        return false;
+        false;
     }
 }
 
