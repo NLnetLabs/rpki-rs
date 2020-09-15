@@ -645,7 +645,6 @@ impl IpBlock {
         matches!(*self, IpBlock::Prefix(prefix) if prefix.len == 0)
     }
 
-
     /// The smallest address of the block.
     pub fn min(&self) -> Addr {
         match *self {

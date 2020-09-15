@@ -636,6 +636,15 @@ impl AsBlock {
             }
         }
     }
+
+    /// Returns whether this is a block covering all AS Ids.
+    pub fn is_whole_range(&self) -> bool {
+        matches!(
+            *self,
+            AsBlock::Range(range)
+                if range.min() == AsId::MIN && range.max() == AsId::MAX
+        )
+    }
 }
 
 impl AsBlock {
