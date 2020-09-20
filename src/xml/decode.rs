@@ -6,7 +6,7 @@ use quick_xml::events::{BytesStart, Event};
 
 /// An XML reader.
 ///
-/// This struct holds all state necessary for parsing an XML documnet.
+/// This struct holds all state necessary for parsing an XML document.
 pub struct Reader<R: io::BufRead> {
     reader: quick_xml::Reader<R>,
     buf: Vec<u8>,
