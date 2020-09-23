@@ -5,6 +5,8 @@
 Breaking
 
 * The minimum required Rust version is now 1.42. ([#108])
+* The type for RRDP serial numbers has been changed to `u46` from `usize`.
+  This affects the various traits in the `rrdp` module. ([#111])
 
 Bug Fixes
 
@@ -36,6 +38,7 @@ Dependencies
 [#108]: https://github.com/NLnetLabs/rpki-rs/pull/108
 [#109]: https://github.com/NLnetLabs/rpki-rs/pull/109
 [#110]: https://github.com/NLnetLabs/rpki-rs/pull/110
+[#111]: https://github.com/NLnetLabs/rpki-rs/pull/111
 
 
 # 0.9.2
