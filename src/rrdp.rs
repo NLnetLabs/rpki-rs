@@ -12,9 +12,9 @@ use crate::xml::decode::{Reader, Name, Error};
 
 pub struct NotificationFile {
     pub session_id: Uuid,
-    pub serial: usize,
+    pub serial: u64,
     pub snapshot: UriAndHash,
-    pub deltas: Vec<(usize, UriAndHash)>,
+    pub deltas: Vec<(u64, UriAndHash)>,
 }
 
 impl NotificationFile {
@@ -131,7 +131,7 @@ pub trait ProcessSnapshot {
     fn meta(
         &mut self,
         session_id: Uuid,
-        serial: usize
+        serial: u64,
     ) -> Result<(), Self::Err>;
 
     fn publish(
@@ -241,7 +241,7 @@ pub trait ProcessDelta {
     fn meta(
         &mut self,
         session_id: Uuid,
-        serial: usize
+        serial: u64,
     ) -> Result<(), Self::Err>;
 
     fn publish(
@@ -471,7 +471,7 @@ mod test {
         fn meta(
             &mut self,
             _session_id: Uuid,
-            _serial: usize
+            _serial: u64,
         ) -> Result<(), Self::Err> {
             Ok(())
         }
@@ -491,7 +491,7 @@ mod test {
         fn meta(
             &mut self,
             _session_id: Uuid,
-            _serial: usize
+            _serial: u64,
         ) -> Result<(), Self::Err> {
             Ok(())
         }
