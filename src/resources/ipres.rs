@@ -381,6 +381,29 @@ impl IpBlocks {
         }
         false
     }
+
+    /// Returns whether the address blocks cover the given address block.
+    pub fn contains_block(&self, block: impl Into<IpBlock>) -> bool {
+        let block = block.into();
+        let (min, max) = (block.min(), block.max());
+        for range in self.iter() {
+            if range.min() <= min && range.max() >= max {
+                return true
+            }
+        }
+        false
+    }
+
+    /// Returns whether the address blocks intersects the given address block.
+    pub fn intersects_block(&self, block: impl Into<IpBlock>) -> bool {
+        let block = block.into();
+        for range in self.iter() {
+            if range.intersects(&block) {
+                return true
+            }
+        }
+        false
+    }
 }
 
 /// # Set operations
@@ -615,6 +638,11 @@ impl IpBlock {
             let addr = Ipv6Addr::from_str(s)?.into();
             Ok(IpBlock::Range(AddressRange::new(addr, addr)))
         }
+    }
+
+    /// Returns whether the block is prefix with address length zero.
+    pub fn is_slash_zero(&self) -> bool {
+        matches!(*self, IpBlock::Prefix(prefix) if prefix.len == 0)
     }
 
     /// The smallest address of the block.
@@ -1818,6 +1846,19 @@ mod test {
         assert!(IpBlock::from_str("127.0.0.0/-282").is_err());
         assert!(IpBlock::from_str("f700::/282").is_err());
         assert!(IpBlock::from_str("f700:/-282").is_err());
+    }
+
+    #[test]
+    fn block_is_slash_zero() {
+        assert!(IpBlock::from_str("0.0.0.0/0").unwrap().is_slash_zero());
+        assert!(IpBlock::from_str("::/0").unwrap().is_slash_zero());
+        assert!(!IpBlock::from_str("0.0.0.0/10").unwrap().is_slash_zero());
+        assert!(!IpBlock::from_str("::/10").unwrap().is_slash_zero());
+        assert!(
+            !IpBlock::from_str(
+                "0.0.0.0-255.255.255.255"
+            ).unwrap().is_slash_zero()
+        );
     }
 
     #[test]

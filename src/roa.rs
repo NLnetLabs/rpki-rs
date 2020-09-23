@@ -371,6 +371,14 @@ impl FriendlyRoaIpAddress {
         FriendlyRoaIpAddress { addr, v4 }
     }
 
+    pub fn prefix(&self) -> Prefix {
+        self.addr.prefix
+    }
+
+    pub fn is_v4(&self) -> bool {
+        self.v4
+    }
+
     pub fn address(&self) -> IpAddr {
         if self.v4 {
             self.addr.prefix.to_v4().into()
