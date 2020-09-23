@@ -24,12 +24,18 @@ New
   their content on success. ([#108])
 * The various steps in certificate validation are now available as
   separate methods. ([#108])
+* New methods:
+  * `resources::AsBlock::is_whole_range` ([#110)]
+  * `resources::IpBlock::is_slash_zero` ([#110)]
+  * `resources::IpBlocks::contains_block` and `intersects_block` ([#110)]
+  * `roa::FriendlyRoaIpAddress::prefix` and `is_v4` ([#110)]
 
 Dependencies
 
 [#105]: https://github.com/NLnetLabs/rpki-rs/pull/105
 [#108]: https://github.com/NLnetLabs/rpki-rs/pull/108
 [#109]: https://github.com/NLnetLabs/rpki-rs/pull/109
+[#110]: https://github.com/NLnetLabs/rpki-rs/pull/110
 
 
 # 0.9.2
