@@ -641,7 +641,7 @@ impl FromStr for CrlEntry {
 ///
 /// Since the new rules for manifest handling clarify that each CA must only
 /// ever have exactly one CRL at any given time, this type is now obsolete.
-#[deprecated(since = "0.10", note = "new manifest rules only allow one CRL")]
+#[deprecated(since = "0.10.0", note = "new manifest rules only allow one CRL")]
 #[allow(deprecated)]
 #[derive(Clone, Debug)]
 pub struct CrlStore {

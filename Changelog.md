@@ -7,6 +7,10 @@ Breaking
 * The minimum required Rust version is now 1.42. ([#108])
 * The type for RRDP serial numbers has been changed to `u46` from `usize`.
   This affects the various traits in the `rrdp` module. ([#111])
+* `crl::CrlStore` has been deprecated. The new rules for manifest handling
+  have clarified that there must only ever be one CRL for each CA. The
+  `CrlStore` was designed to make it easier to deal with cases where there
+  are multiple CRLs and is therefore not necessary any more. ([#112])
 
 Bug Fixes
 
@@ -39,6 +43,7 @@ Dependencies
 [#109]: https://github.com/NLnetLabs/rpki-rs/pull/109
 [#110]: https://github.com/NLnetLabs/rpki-rs/pull/110
 [#111]: https://github.com/NLnetLabs/rpki-rs/pull/111
+[#112]: https://github.com/NLnetLabs/rpki-rs/pull/112
 
 
 # 0.9.2
