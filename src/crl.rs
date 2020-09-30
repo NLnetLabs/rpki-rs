@@ -638,6 +638,11 @@ impl FromStr for CrlEntry {
 /// This type allows to store CRLs you have seen in case you may need them
 /// again soon. This is useful when validating the objects issued by a CA as
 /// they likely all refer to the same CRL, so keeping it around makes sense.
+///
+/// Since the new rules for manifest handling clarify that each CA must only
+/// ever have exactly one CRL at any given time, this type is now obsolete.
+#[deprecated(since = "0.10.0", note = "new manifest rules only allow one CRL")]
+#[allow(deprecated)]
 #[derive(Clone, Debug)]
 pub struct CrlStore {
     /// The CRLs in the store.
@@ -649,6 +654,7 @@ pub struct CrlStore {
     cache_serials: bool,
 }
 
+#[allow(deprecated)]
 impl CrlStore {
     /// Creates a new CRL store.
     pub fn new() -> Self {
@@ -684,6 +690,7 @@ impl CrlStore {
     }
 }
 
+#[allow(deprecated)]
 impl Default for CrlStore {
     fn default() -> Self {
         Self::new()
