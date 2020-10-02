@@ -25,6 +25,16 @@ pub const RSA_ENCRYPTION: ConstOid
 pub const SHA256_WITH_RSA_ENCRYPTION: ConstOid
     = Oid(&[42, 134, 72, 134, 247, 13, 1, 1, 11]);
 
+/// [RFC 5480](https://tools.ietf.org/html/rfc5480) `ecPublicKey`.
+///
+/// Indentifies public keys for ellipic curve cryptography.
+pub const EC_PUBLIC_KEY: ConstOid = Oid(&[42, 134, 72, 206, 61, 2, 1]);
+
+/// [RFC 5480](https://tools.ietf.org/html/rfc5480) `secp256r1`.
+///
+/// Identifies the P-256 curve for elliptic curve cryptography.
+pub const SECP256R1: ConstOid = Oid(&[42, 134, 72, 206, 61, 3, 1, 7]);
+
 
 pub const SIGNED_DATA: Oid<&[u8]>
     = Oid(&[42, 134, 72, 134, 247, 13, 1, 7, 2]);
@@ -65,6 +75,9 @@ pub const CT_RPKI_MANIFEST: ConstOid
     = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 16, 1, 26]);
 pub const CT_RESOURCE_TAGGED_ATTESTATION: ConstOid
     = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 16, 1, 36]);
+
+pub const KP_BGPSEC_ROUTER: ConstOid
+    = Oid(&[43, 6, 1, 5, 5, 7, 3, 30]);
 
 pub const PE_AUTHORITY_INFO_ACCESS: Oid<&[u8]>
     = Oid(&[43, 6, 1, 5, 5, 7, 1, 1]);

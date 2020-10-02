@@ -738,7 +738,7 @@ mod signer_test {
     #[test]
     fn build_ta_cert() {
         let mut signer = OpenSslSigner::new();
-        let key = signer.create_key(PublicKeyFormat::default()).unwrap();
+        let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
         let pubkey = signer.get_key_info(&key).unwrap();
         let crl = TbsCertList::new(
             Default::default(),

@@ -69,7 +69,7 @@ use crate::resources::{
 ///
 /// Finally, _TA certificates_ are the installed trust anchors. These are
 /// self-signed.
-/// 
+///
 /// If a certificate is stored in a file, you can use the [`decode`] function
 /// to parse the entire file. If the certificate is part of some other
 /// structure, the [`take_from`] and [`from_constructed`] functions can be
@@ -167,7 +167,7 @@ impl Cert {
 /// called _verification._ Methods are available to verify different kinds of
 /// certificates. They all have the verb _verify_ in their name and, in
 /// most cases, require access to the issuer certificate.
-/// 
+///
 /// In addition, methods are available to perform both steps at once for
 /// different kinds of certificates. These all have _validate_ in their name.
 impl Cert {
@@ -220,12 +220,15 @@ impl Cert {
         self.verify_ca(issuer, strict)
     }
 
-    /// Validates the certificate as an EE certificate.
+    /// Validates the certificate as an EE RPKI-internal certificate.
     ///
     /// For validation to succeed, the certificate needs to have been signed
     /// by the provided `issuer` certificate.
     ///
     /// Note that this does _not_ check the CRL.
+    ///
+    /// Note further that this method should not be used for router
+    /// certificates. Use `validate_router` for that.
     pub fn validate_ee(
         self,
         issuer: &ResourceCert,
@@ -260,6 +263,24 @@ impl Cert {
     ) -> Result<ResourceCert, ValidationError>  {
         self.inspect_detached_ee_at(strict, now)?;
         self.verify_ee(issuer, strict)
+    }
+
+    pub fn validate_router(
+        &self,
+        issuer: &ResourceCert,
+        strict: bool
+    ) -> Result<(), ValidationError> {
+        self.validate_router_at(issuer, strict, Time::now())
+    }
+
+    pub fn validate_router_at(
+        &self,
+        issuer: &ResourceCert,
+        strict: bool,
+        now: Time,
+    ) -> Result<(), ValidationError> {
+        self.inspect_router_at(strict, now)?;
+        self.verify_router(issuer, strict)
     }
 
 
@@ -299,7 +320,7 @@ impl Cert {
         // 4.8.11. AS Resources.
         //
         // Are checked as part of verification.
-        
+
         Ok(())
     }
 
@@ -379,6 +400,100 @@ impl Cert {
         Ok(())
     }
 
+    pub fn inspect_router(
+        &self, strict: bool
+    ) -> Result<(), ValidationError> {
+        self.inspect_router_at(strict, Time::now())
+    }
+
+    pub fn inspect_router_at(
+        &self, strict: bool, now: Time
+    ) -> Result<(), ValidationError> {
+        // 4.2 Serial Number: must be unique over the CA. We cannot check
+        // here, and -- XXX --- probably don’t care?
+
+        // 4.3 Signature Algorithm: limited to those in RFC 6485. Already
+        // checked in parsing.
+        //
+        // However, RFC 5280 demands that the two mentions of the signature
+        // algorithm are the same. So we do that here.
+        if self.signature != self.signed_data.signature().algorithm() {
+            return Err(ValidationError)
+        }
+
+        // 4.4 Issuer: must have certain format.
+        Name::validate_router(&self.issuer, strict)?;
+
+        // 4.5 Subject: same as 4.4.
+        Name::validate_router(&self.subject, strict)?;
+
+        // 4.6 Validity. Check according to RFC 5280.
+        self.validity.validate_at(now)?;
+
+        // 4.7 Subject Public Key Info: limited algorithms.
+        if !self.subject_public_key_info().allow_router_cert() {
+            xerr!(return Err(ValidationError))
+        }
+
+        // 4.8.1. Basic Constraints. Must not be present.
+        if self.basic_ca.is_some(){
+            xerr!(return Err(ValidationError))
+        }
+
+        // 4.8.2. Subject Key Identifer. Must be the SHA-1 hash of the octets
+        // of the subjectPublicKey.
+        if self.subject_key_identifier() !=
+                             self.subject_public_key_info().key_identifier() {
+            return Err(ValidationError)
+        }
+
+        // 4.8.3. Authority Key Identifier. Will be checked during
+        // verification later.
+
+        // 4.8.4. Key Usage. Must be EE.
+        if self.key_usage != KeyUsage::Ee {
+            xerr!(return Err(ValidationError))
+        }
+
+        // 4.8.5. Extended Key Usage.
+        //
+        // Must be present and contain at least the kp-bgpsec-router OID.
+        self.inspect_router_eku(strict)?;
+
+        // 4.8.6. CRL Distribution Points. There must be one.
+        if self.crl_uri().is_none() {
+            return Err(ValidationError)
+        }
+
+        // 4.8.7. Authority Information Access. Differs between TA and other
+        // certificates.
+
+        // 4.8.8.  Subject Information Access. There must be none.
+        if self.ca_repository().is_some() || self.rpki_manifest().is_some()
+            || self.signed_object().is_some() || self.rpki_notify().is_some()
+        {
+            return Err(ValidationError)
+        }
+
+        // 4.8.9.  Certificate Policies. XXX I think this can be ignored.
+        // At least for now.
+
+        // 4.8.10.  IP Resources.  Must not be present.
+        if self.v4_resources().is_present() || self.v6_resources().is_present()
+        {
+            return Err(ValidationError)
+        }
+
+        // 4.8.11.  AS Resources. Differs between trust anchor and issued
+        // certificates.
+        if !self.as_resources().is_present()
+            || self.as_resources().is_inherited()
+        {
+            return Err(ValidationError)
+        }
+
+        Ok(())
+    }
 
     //--- Verification
 
@@ -392,7 +507,7 @@ impl Cert {
         let v6_resources = IpBlocks::from_resources(
             self.v6_resources.clone()
         )?;
- 
+
         // 4.8.11.  AS Resources. If present, musn’t be "inherit". That
         // IP resources (logical) or AS resources are present has already
         // been checked during parsing.
@@ -436,7 +551,6 @@ impl Cert {
         Ok(())
     }
 
-
     pub fn verify_ca(
         self, issuer: &ResourceCert, strict: bool
     ) -> Result<ResourceCert, ValidationError> {
@@ -451,6 +565,14 @@ impl Cert {
         self.verify_issuer_claim(issuer, strict)?;
         self.verify_signature(issuer, strict)?;
         self.verify_resources(issuer, strict)
+    }
+
+    pub fn verify_router(
+        &self, issuer: &ResourceCert, strict: bool
+    ) -> Result<(), ValidationError> {
+        self.verify_issuer_claim(issuer, strict)?;
+        self.verify_signature(issuer, strict)?;
+        self.verify_as_resources(issuer, strict)
     }
 
 
@@ -477,24 +599,26 @@ impl Cert {
             return Err(ValidationError)
         }
 
-        // 4.4 Issuer: must have certain format. 
+        // 4.4 Issuer: must have certain format.
         Name::validate_rpki(&self.issuer, strict)?;
 
         // 4.5 Subject: same as 4.4.
         Name::validate_rpki(&self.subject, strict)?;
-        
+
         // 4.6 Validity. Check according to RFC 5280.
         self.validity.validate_at(now)?;
 
-        // 4.7 Subject Public Key Info: limited algorithms. Already checked
-        // during parsing.
+        // 4.7 Subject Public Key Info: limited algorithms.
+        if !self.subject_public_key_info().allow_rpki_cert() {
+            xerr!(return Err(ValidationError))
+        }
 
         // 4.8.1. Basic Constraints. Differing requirements for CA and EE
         // certificates.
-        
+
         // 4.8.2. Subject Key Identifer. Must be the SHA-1 hash of the octets
         // of the subjectPublicKey.
-        if self.subject_key_identifier() != 
+        if self.subject_key_identifier() !=
                              self.subject_public_key_info().key_identifier() {
             return Err(ValidationError)
         }
@@ -524,7 +648,7 @@ impl Cert {
 
         // 4.8.10.  IP Resources. Differs between trust anchor and issued
         // certificates.
-        
+
         // 4.8.11.  AS Resources. Differs between trust anchor and issued
         // certificates.
 
@@ -568,6 +692,29 @@ impl Cert {
         }
 
         Ok(())
+    }
+
+    /// Inspects a router certificate’s extended key usage.
+    fn inspect_router_eku(
+        &self, _strict: bool
+    ) -> Result<(), ValidationError> {
+        match self.extended_key_usage() {
+            Some(captured) => {
+                // We already know that the content is a sequence of OIDs
+                // (that has been tested in take_extended_key_usage). So we
+                // can return successfully as soon as we find our OID.
+                let mut captured = captured.clone();
+                while let Some(oid) = captured.decode_partial(|cons| {
+                    Oid::take_opt_from(cons)
+                })? {
+                    if oid == oid::KP_BGPSEC_ROUTER {
+                        return Ok(())
+                    }
+                }
+                Err(ValidationError)
+            }
+            None => Err(ValidationError)
+        }
     }
 
     /// Verifies that the certificate claims to have been issued by `issuer`.
@@ -634,6 +781,18 @@ impl Cert {
             cert: self,
             tal: issuer.tal.clone(),
         })
+    }
+
+    /// Validates the AS resources for router certificates.
+    fn verify_as_resources(
+        &self,
+        issuer: &ResourceCert,
+        _strict: bool
+    ) -> Result<(), ValidationError> {
+        let _ = issuer.as_resources.validate_issued(
+            self.as_resources(), self.overclaim()
+        )?;
+        Ok(())
     }
 }
 
@@ -2052,7 +2211,7 @@ mod signer_test {
     #[test]
     fn build_ta_cert() {
         let mut signer = OpenSslSigner::new();
-        let key = signer.create_key(PublicKeyFormat::default()).unwrap();
+        let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
         let pubkey = signer.get_key_info(&key).unwrap();
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
         let mut cert = TbsCert::new(

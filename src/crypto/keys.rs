@@ -4,7 +4,7 @@ use std::{error, fmt, io, str};
 use std::convert::{TryFrom, TryInto};
 use std::str::FromStr;
 use bcder::{decode, encode};
-use bcder::{BitString, Mode, OctetString, Tag};
+use bcder::{BitString, Mode, OctetString, Oid, Tag};
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use ring::{digest, signature};
@@ -23,12 +23,42 @@ use ring::signature::VerificationAlgorithm;
 
 /// The formats of public keys used by RPKI.
 ///
-/// Currently, RPKI uses exactly one type of public keys, RSA keys with a size
-/// of 2048 bits. However, as that might change in the future, we are not
-/// hard-coding that format but rather use this type – which for the time
-/// being is zero-sized.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct PublicKeyFormat(());
+/// The public key formats are currently defined in section 3 of [RFC 7935]
+/// for resource certificates and section 3 of [RFC 8608] for BGPSec router
+/// certifcates. A variant is defined for each algorithm described in these
+/// documents.
+///
+/// [RFC 7935]: https://tools.ietf.org/html/rfc7935
+/// [RFC 8608]: https://tools.ietf.org/html/rfc8608
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PublicKeyFormat {
+    /// An RSA public key.
+    ///
+    /// These keys must be used by all RPKI resource certificates.
+    Rsa,
+
+    /// An ECDSA public key for the P-256 elliptic curve.
+    ///
+    /// These keys must be used by all BGPSec router certificates.
+    EcdsaP256,
+}
+
+impl PublicKeyFormat {
+    /// Returns whether the format is acceptable for RPKI-internal certificates.
+    ///
+    /// RPKI-internal certificates in this context are those used within the
+    /// repository itself, i.e., CA certificates and EE certificates for
+    /// signed objects.
+    pub fn allow_rpki_cert(self) -> bool {
+        matches!(self, PublicKeyFormat::Rsa)
+    }
+
+    /// Returns whether the format is acceptable for router certificates.
+    pub fn allow_router_cert(self) -> bool {
+        matches!(self, PublicKeyFormat::EcdsaP256)
+    }
+}
+
 
 /// # ASN.1 Algorithm Identifiers
 ///
@@ -41,14 +71,19 @@ pub struct PublicKeyFormat(());
 ///      parameters         ANY DEFINED BY algorithm OPTIONAL }
 /// ```
 ///
-/// Right now, the object identifier needs to be that of `rsaEncryption`
-/// defined by [RFC 4055] and the parameters must be present and NULL.
-/// Then parsing, we generously also allow it to be absent altogether.
-///
 /// The functions and methods in this section allow decoding and encoding of
 /// these identifiers.
 ///
+/// For RSA keys, the object identifier needs to be that of `rsaEncryption`
+/// defined by [RFC 4055] and the parameters must be present and NULL.
+/// When parsing, we generously also allow it to be absent altogether.
+///
+/// For ECDSA keys, the object identifer needs to be `ecPublicKey` defined
+/// in [RFC 5480] with the parameter being the object identifier `secp256r1`
+/// defined in the same RFC.
+///
 /// [RFC 4055]: https://tools.ietf.org/html/rfc4055
+/// [RFC 5480]: https://tools.ietf.org/html/rfc5480
 impl PublicKeyFormat{
     /// Takes and returns a algorithm identifier.
     ///
@@ -64,17 +99,40 @@ impl PublicKeyFormat{
     fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        oid::RSA_ENCRYPTION.skip_if(cons)?;
-        cons.take_opt_null()?;
-        Ok(PublicKeyFormat::default())
+        let alg = Oid::take_from(cons)?;
+        if alg == oid::RSA_ENCRYPTION {
+            cons.take_opt_null()?;
+            Ok(PublicKeyFormat::Rsa)
+        }
+        else if alg == oid::EC_PUBLIC_KEY {
+            oid::SECP256R1.skip_if(cons)?;
+            Ok(PublicKeyFormat::EcdsaP256)
+        }
+        else {
+            Err(decode::Error::Malformed.into())
+        }
     }
 
     /// Provides an encoder for the algorihm identifier.
     pub fn encode(self) -> impl encode::Values {
-        encode::sequence((
-            oid::RSA_ENCRYPTION.encode(),
-            ().encode(),
-        ))
+        match self {
+            PublicKeyFormat::Rsa => {
+                encode::Choice2::One(
+                    encode::sequence((
+                        oid::RSA_ENCRYPTION.encode(),
+                        ().encode(),
+                    ))
+                )
+            }
+            PublicKeyFormat::EcdsaP256 => {
+                encode::Choice2::Two(
+                    encode::sequence((
+                        oid::EC_PUBLIC_KEY.encode(),
+                        oid::SECP256R1.encode(),
+                    ))
+                )
+            }
+        }
     }
 }
 
@@ -90,14 +148,33 @@ pub struct PublicKey {
 
 
 impl PublicKey {
-    pub fn algorithm(&self) -> &PublicKeyFormat {
-        &self.algorithm
+    /// Returns the algorithm of this public key.
+    pub fn algorithm(&self) -> PublicKeyFormat {
+        self.algorithm
     }
 
+    /// Returns the bits of this public key.
     pub fn bits(&self) -> &[u8] {
         self.bits.octet_slice().unwrap()
     }
 
+    /// Returns whether the key is acceptable for RPKI-internal certificates.
+    ///
+    /// RPKI-internal certificates in this context are those used within the
+    /// repository itself, i.e., CA certificates and EE certificates for
+    /// signed objects.
+    pub fn allow_rpki_cert(&self) -> bool {
+        self.algorithm.allow_rpki_cert()
+    }
+
+    /// Returns whether the key is acceptable for BGPSec router certificates.
+    pub fn allow_router_cert(&self) -> bool {
+        self.algorithm.allow_router_cert()
+    }
+
+    /// Returns a key identifier for this key.
+    ///
+    /// The identifier will be the SHA1 hash of the key’s bits.
     pub fn key_identifier(&self) -> KeyIdentifier {
         KeyIdentifier::try_from(
             digest::digest(
@@ -108,9 +185,16 @@ impl PublicKey {
     }
 
     /// Verifies a signature using this public key.
+    ///
+    /// Currently, only keys for which `allow_rpki_cert` returns `true`
+    /// can be used for verification. All other keys will always return an
+    /// error.
     pub fn verify(
         &self, message: &[u8], signature: &Signature
     ) -> Result<(), VerificationError> {
+        if !self.allow_rpki_cert() {
+            return Err(VerificationError)
+        }
         signature::RSA_PKCS1_2048_8192_SHA256.verify(
             Input::from(self.bits()),
             Input::from(message),
@@ -123,7 +207,7 @@ impl PublicKey {
 /// # As `SubjectPublicKeyInfo`
 ///
 /// Public keys are included in X.509 certificates as `SubjectPublicKeyInfo`
-/// structures. As these are contain the same information as `PublicKey`,
+/// structures. As these contain the same information as `PublicKey`,
 /// it can be decoded from and encoded to such sequences.
 impl PublicKey {
     pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
