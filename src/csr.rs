@@ -387,7 +387,7 @@ mod test {
         use crate::crypto::PublicKeyFormat;
 
         let mut signer = OpenSslSigner::new();
-        let key = signer.create_key(PublicKeyFormat::default()).unwrap();
+        let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
 
 
         let ca_repo = rsync("rsync://localhost/repo/");

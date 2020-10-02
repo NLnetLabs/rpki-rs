@@ -656,7 +656,7 @@ mod signer_test {
 
     fn make_roa() -> Roa {
         let mut signer = OpenSslSigner::new();
-        let key = signer.create_key(PublicKeyFormat::default()).unwrap();
+        let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
         let pubkey = signer.get_key_info(&key).unwrap();
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
 

@@ -8,7 +8,7 @@ use bcder::{decode, encode};
 use bcder::{
     BitString, Captured, ConstOid, Mode, OctetString, Oid, Tag, Unsigned, xerr
 };
-use bcder::string::PrintableString;
+use bcder::string::{PrintableString, Utf8String};
 use bcder::decode::Source;
 use bcder::encode::PrimitiveContent;
 use chrono::{
@@ -103,6 +103,7 @@ impl Name {
         }).map(Name)
     }
 
+    /// Validate the name to conform with resource certificates.
     pub fn validate_rpki(&self, strict: bool) -> Result<(), ValidationError> {
         if strict {
             self.0.clone().decode(|cons| {
@@ -135,10 +136,82 @@ impl Name {
                         Ok(())
                     })? {}
                     Ok(())
-                })
+                })?;
+                // Common name is MUST.
+                if cn {
+                    Ok(())
+                }
+                else {
+                    Err(decode::Error::Malformed)
+                }
             })?
         }
         Ok(())
+    }
+
+    /// Validate the name to conform with BGPSec router certificates.
+    pub fn validate_router(
+        &self, strict: bool
+    ) -> Result<(), ValidationError> {
+        if strict {
+            self.0.clone().decode(|cons| {
+                let mut cn = false;
+                let mut sn = false;
+                cons.take_sequence(|cons| {
+                    while let Some(()) = cons.take_opt_set(|cons| {
+                        while let Some(()) = cons.take_opt_sequence(|cons| {
+                            let id = Oid::take_from(cons)?;
+                            if id == oid::AT_COMMON_NAME {
+                                if cn {
+                                    xerr!(
+                                        return Err(decode::Error::Malformed)
+                                    )
+                                }
+                                Self::skip_router_string(cons)?;
+                                cn = true;
+                            }
+                            else if id == oid::AT_SERIAL_NUMBER {
+                                if sn {
+                                    xerr!(
+                                        return Err(decode::Error::Malformed)
+                                    )
+                                }
+                                Self::skip_router_string(cons)?;
+                                sn = true;
+                            }
+                            Ok(())
+                        })? { }
+                        Ok(())
+                    })? {}
+                    Ok(())
+                })?;
+                // Common name is MUST.
+                if cn {
+                    Ok(())
+                }
+                else {
+                    Err(decode::Error::Malformed)
+                }
+            })?
+        }
+        Ok(())
+    }
+
+    /// Skips a value if it is a PrintableString or UTF8String.
+    fn skip_router_string<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<(), S::Err> {
+        cons.take_value(|tag, content| {
+            if tag == Tag::PRINTABLE_STRING {
+                PrintableString::from_content(content).map(|_| ())
+            }
+            else if tag == Tag::UTF8_STRING {
+                Utf8String::from_content(content).map(|_| ())
+            }
+            else {
+                Err(decode::Error::Malformed.into())
+            }
+        })
     }
 
     /// Derives a name from a public key info.

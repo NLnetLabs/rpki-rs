@@ -133,7 +133,12 @@ pub struct KeyId(usize);
 struct KeyPair(PKey<Private>);
 
 impl KeyPair {
-    fn new(_algorithm: PublicKeyFormat) -> Result<Self, io::Error> {
+    fn new(algorithm: PublicKeyFormat) -> Result<Self, io::Error> {
+        if algorithm != PublicKeyFormat::Rsa {
+            return Err(io::Error::new(
+                io::ErrorKind::Other, "invalid algorithm"
+            ));
+        }
         // Issues unwrapping this indicate a bug in the openssl library.
         // So, there is no way to recover.
         let rsa = Rsa::generate(2048)?;
@@ -198,7 +203,7 @@ pub mod tests {
     #[test]
     fn info_sign_delete() {
         let mut s = OpenSslSigner::new();
-        let ki = s.create_key(PublicKeyFormat::default()).unwrap();
+        let ki = s.create_key(PublicKeyFormat::Rsa).unwrap();
         let data = b"foobar";
         let _ = s.get_key_info(&ki).unwrap();
         let _ = s.sign(&ki, SignatureAlgorithm::default(), data).unwrap();
