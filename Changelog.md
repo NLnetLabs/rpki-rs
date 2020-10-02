@@ -4,13 +4,18 @@
 
 Breaking
 
-* The minimum required Rust version is now 1.42. ([#108])
-* The type for RRDP serial numbers has been changed to `u46` from `usize`.
+* `crypto::key::PublicKeyFormat` has been changed into an enum in order to
+  be able to deal with two different possible public key algorithms. It
+  and `crypto::key::PublicKey` also received functions to determine
+  whether the algorithms and keys are allowed in regular RPKI certificates
+  or router certificates. ([#113])
+* The type for RRDP serial numbers has been changed to `u64` from `usize`.
   This affects the various traits in the `rrdp` module. ([#111])
 * `crl::CrlStore` has been deprecated. The new rules for manifest handling
   have clarified that there must only ever be one CRL for each CA. The
   `CrlStore` was designed to make it easier to deal with cases where there
   are multiple CRLs and is therefore not necessary any more. ([#112])
+* The minimum required Rust version is now 1.42. ([#108])
 
 Bug Fixes
 
@@ -21,6 +26,8 @@ Bug Fixes
 
 New
 
+* `cert::Cert` can now decode, inspect, and verify BGPSec router
+  certificates. ([#113])
 * Module `rta` for handling Resource Tagged Assertions.  ([#108])
 * `crypto::DigestAlgorithm::digest_file` allows calculating the digest
   value of an entire file.  ([#108])
@@ -44,6 +51,7 @@ Dependencies
 [#110]: https://github.com/NLnetLabs/rpki-rs/pull/110
 [#111]: https://github.com/NLnetLabs/rpki-rs/pull/111
 [#112]: https://github.com/NLnetLabs/rpki-rs/pull/112
+[#113]: https://github.com/NLnetLabs/rpki-rs/pull/113
 
 
 # 0.9.2
