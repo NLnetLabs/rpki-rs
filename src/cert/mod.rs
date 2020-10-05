@@ -1274,6 +1274,19 @@ impl TbsCert {
     where I: IntoIterator<Item = AsBlock> {
         self.as_resources = AsResources::blocks(AsBlocks::from_iter(iter))
     }
+
+    /// Returns whether this is a CA certificate if validation succeeds.
+    pub fn is_ca(&self) -> bool {
+        self.basic_ca.unwrap_or(false)
+    }
+
+    /// Returns whether this is a self-signed certificate if valid.
+    pub fn is_self_signed(&self) -> bool {
+        match self.authority_key_identifier {
+            Some(aki) => aki == self.subject_key_identifier,
+            None => true
+        }
+    }
 }
 
 

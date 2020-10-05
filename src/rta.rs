@@ -750,6 +750,7 @@ impl<'a> Chain<'a> {
     ) -> Result<(), ValidationError> {
         while let Some(ca) = self.find_ca(cas, strict)? {
             self.apply_ca(ca)?;
+            ca.used = true;
         }
         Ok(())
     }
@@ -758,10 +759,14 @@ impl<'a> Chain<'a> {
         &self,
         cas: &'c mut [Ca<'a>],
         strict: bool,
-    ) -> Result<Option<&'c Ca<'a>>, ValidationError> {
+    ) -> Result<Option<&'c mut Ca<'a>>, ValidationError> {
         // If we don’t have an authority key identifier on the cert, it is
-        // self-signed and we are done.
+        // self-signed and we are done. If we do have one and it is the same
+        // as the subject key identifier, it is self-signed, too.
         let aki = match self.cert.authority_key_identifier() {
+            Some(aki) if aki == self.cert.subject_key_identifier() => {
+                return Ok(None)
+            }
             Some(aki) => aki,
             None => return Ok(None)
         };
@@ -840,6 +845,7 @@ impl<'a> Chain<'a> {
         // Now we can update the head resources and certificate, leaving
         // inherited resources in the CA untouched.
         self.cert_resources.update_head(ca_resources);
+        self.cert = ca.cert;
     }
 
 
@@ -852,9 +858,9 @@ impl<'a> Chain<'a> {
             return Ok(true)
         }
 
-        // If we have an AKI, this isn’t a TA certificate and we don’t need
-        // to bother checking.
-        if self.cert.authority_key_identifier().is_some() {
+        // If we have a self-signed certificate, it is a TA certificate and
+        // we don’t need to bother checking.
+        if self.cert.is_self_signed() {
             return Ok(false)
         }
 
