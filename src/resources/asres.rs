@@ -359,7 +359,7 @@ impl AsBlocks {
             }
             ResourcesChoice::Inherit => Ok(()),
             ResourcesChoice::Blocks(ref blocks) => {
-                if blocks.0.is_encompassed(&self.0) {
+                if self.0.is_encompassed(&blocks.0) {
                     Ok(())
                 }
                 else {
