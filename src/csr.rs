@@ -333,9 +333,9 @@ impl CsrAttributes {
                 }
             })?;
 
-            let basic_ca = basic_ca.ok_or_else(|| decode::Malformed)?;
-            let key_usage = key_usage.ok_or_else(|| decode::Malformed)?;
-            let sia = sia.ok_or_else(|| decode::Malformed)?;
+            let basic_ca = basic_ca.ok_or(decode::Malformed)?;
+            let key_usage = key_usage.ok_or(decode::Malformed)?;
+            let sia = sia.ok_or(decode::Malformed)?;
 
             Ok(CsrAttributes {
                     basic_ca, key_usage, extended_key_usage, sia
