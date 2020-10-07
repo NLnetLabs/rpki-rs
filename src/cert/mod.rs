@@ -422,7 +422,7 @@ impl Cert {
         }
 
         // 4.4 Issuer: must have certain format.
-        Name::validate_router(&self.issuer, strict)?;
+        Name::validate_rpki(&self.issuer, strict)?;
 
         // 4.5 Subject: same as 4.4.
         Name::validate_router(&self.subject, strict)?;
@@ -1310,6 +1310,7 @@ impl TbsCert {
             let subject = Name::take_from(cons)?;
             let subject_public_key_info = PublicKey::take_from(cons)?;
 
+
             // issuerUniqueID and subjectUniqueID must not be present in
             // resource certificates. So extension is next.
 
@@ -1945,7 +1946,7 @@ where F: FnMut(Bytes) -> Result<T, E> {
         let uri = Ia5String::from_content(content)?;
         if let Ok(uri) = op(uri.into_bytes()) {
             if res.is_some() {
-                return Err(decode::Malformed.into())
+                xerr!(return Err(decode::Malformed.into()))
             }
             res = Some(uri)
         }
@@ -1953,7 +1954,7 @@ where F: FnMut(Bytes) -> Result<T, E> {
     })? {}
     match res {
         Some(res) => Ok(res),
-        None => Err(decode::Malformed.into())
+        None => xerr!(Err(decode::Malformed.into()))
     }
 }
 
@@ -2188,12 +2189,21 @@ mod test {
     use super::*;
 
     #[test]
-    fn decode_certs() {
+    fn decode_and_inspect_certs() {
         Cert::decode(
             include_bytes!("../../test-data/ta.cer").as_ref()
+        ).unwrap().inspect_ta_at(
+            true, Time::utc(2020, 11, 01, 12, 00, 00)
         ).unwrap();
         Cert::decode(
             include_bytes!("../../test-data/ca1.cer").as_ref()
+        ).unwrap().inspect_ca_at(
+            true, Time::utc(2020, 05, 01, 12, 00, 00)
+        ).unwrap();
+        Cert::decode(
+            include_bytes!("../../test-data/router.cer").as_ref()
+        ).unwrap().inspect_router_at(
+            true, Time::utc(2020, 11, 01, 12, 00, 00)
         ).unwrap();
     }
 
