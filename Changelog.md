@@ -1,6 +1,6 @@
 # Changelog
 
-# Unreleased next version
+## 0.10.0
 
 Breaking
 
@@ -17,18 +17,11 @@ Breaking
   are multiple CRLs and is therefore not necessary any more. ([#112])
 * The minimum required Rust version is now 1.42. ([#108])
 
-Bug Fixes
-
-* Don’t refuse a rpkiNotify SIA in EE certificates in strict validation mode. 
-  This was accidentally introduced by misreading the spec. ([#105])
-* Do not include a parameter to the algorithm identifier of the SHA-256
-  digest algorithm. ([#109])
-
 New
 
 * `cert::Cert` can now decode, inspect, and verify BGPSec router
   certificates. ([#113])
-* Module `rta` for handling Resource Tagged Assertions.  ([#108])
+* Module `rta` for handling Resource Tagged Assertions. ([#108])
 * `crypto::DigestAlgorithm::digest_file` allows calculating the digest
   value of an entire file.  ([#108])
 * `IpBlock` can now be displayed via helper types to select IPv4 or IPv6.
@@ -43,7 +36,13 @@ New
   * `resources::IpBlocks::contains_block` and `intersects_block` ([#110)]
   * `roa::FriendlyRoaIpAddress::prefix` and `is_v4` ([#110)]
 
-Dependencies
+Bug Fixes
+
+* Don’t refuse an rpkiNotify SIA in EE certificates in strict validation mode. 
+  The spec is somewhat contradictory on whether they are allowed or now,
+  so we should allow them. ([#105])
+* Do not include a parameter to the algorithm identifier of the SHA-256
+  digest algorithm. ([#109])
 
 [#105]: https://github.com/NLnetLabs/rpki-rs/pull/105
 [#108]: https://github.com/NLnetLabs/rpki-rs/pull/108
@@ -54,7 +53,7 @@ Dependencies
 [#113]: https://github.com/NLnetLabs/rpki-rs/pull/113
 
 
-# 0.9.2
+## 0.9.2
 
 New
 
@@ -64,7 +63,7 @@ New
 [#106]: https://github.com/NLnetLabs/rpki-rs/pull/106
 
 
-# 0.9.1
+## 0.9.1
 
 New
 
@@ -87,7 +86,7 @@ Dependencies
 [#103]: https://github.com/NLnetLabs/rpki-rs/pull/102
 
 
-# 0.9.0
+## 0.9.0
 
 Breaking
 
@@ -109,7 +108,7 @@ Dependencies
 [@dadepo]: https://github.com/dadepo
 
 
-# 0.8.3
+## 0.8.3
 
 Bug Fixes
 
@@ -119,7 +118,7 @@ Bug Fixes
 [(#93)]: https://github.com/NLnetLabs/rpki-rs/pull/93
 
 
-# 0.8.2
+## 0.8.2
 
 Bug Fixes
 
@@ -129,7 +128,7 @@ Bug Fixes
 [(#91)]: https://github.com/NLnetLabs/rpki-rs/pull/91
 
 
-# 0.8.1
+## 0.8.1
 
 New
 
@@ -144,7 +143,7 @@ Bug Fixes
 [(#88)]: https://github.com/NLnetLabs/rpki-rs/pull/88
 
 
-# 0.8.0
+## 0.8.0
 
 Breaking
 
@@ -168,7 +167,7 @@ Bug Fixes
 [(#85)]: https://github.com/NLnetLabs/rpki-rs/pull/85
 
 
-# 0.7.0
+## 0.7.0
 
 Breaking
 
@@ -200,7 +199,7 @@ Other Changes
 [(#80)]: https://github.com/NLnetLabs/rpki-rs/pull/80
 
 
-# 0.6.0
+## 0.6.0
 
 Breaking
 
@@ -239,7 +238,7 @@ Bug Fixes
 [(#73)]: https://github.com/NLnetLabs/rpki-rs/pull/73
 
 
-# 0.5.0
+## 0.5.0
 
 Breaking
 
@@ -285,7 +284,7 @@ Dependencies
 [(#57)]: https://github.com/NLnetLabs/rpki-rs/pull/57
 
 
-# 0.4.0
+## 0.4.0
 
 Breaking
 
