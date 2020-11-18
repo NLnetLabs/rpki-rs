@@ -3,7 +3,7 @@
 //! The certificates used in RPKI are called _resource certificates._ They
 //! are defined in [RFC 6487] as a profile on regular Internet PKI
 //! certificates defined in [RFC 5280]. While they use the format defined
-//! for X.509 certificates, the allowed vales for various fields are limited
+//! for X.509 certificates, the allowed values for various fields are limited
 //! making the overall structure more simple and predictable.
 //!
 //! This module implements raw resource certificates in the type [`Cert`] and
