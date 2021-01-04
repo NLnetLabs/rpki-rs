@@ -1,7 +1,7 @@
 extern crate rpki;
 
 use std::{env, fs};
-use rpki::cert::Cert;
+use rpki::repository::cert::Cert;
 
 
 fn main() {

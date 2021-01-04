@@ -17,12 +17,12 @@ use bcder::{
 };
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
-use serde::{Serialize, Serializer, Deserialize, Deserializer};
-use crate::{oid, uri};
-use crate::cert::{Cert, ResourceCert};
-use crate::crypto::{DigestAlgorithm, Signer, SigningError};
-use crate::sigobj::{SignedObject, SignedObjectBuilder};
-use crate::x509::{Serial, Time, ValidationError};
+use crate::uri;
+use super::oid;
+use super::cert::{Cert, ResourceCert};
+use super::crypto::{DigestAlgorithm, Signer, SigningError};
+use super::sigobj::{SignedObject, SignedObjectBuilder};
+use super::x509::{Serial, Time, ValidationError};
 
 
 //------------ Manifest ------------------------------------------------------
@@ -78,7 +78,7 @@ impl Manifest {
     }
 
     /// Returns a value encoder for a reference to the manifest.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         self.signed.encode_ref()
     }
 
@@ -130,8 +130,9 @@ impl borrow::Borrow<ManifestContent> for Manifest {
 
 //--- Deserialize and Serialize
 
-impl Serialize for Manifest {
-    fn serialize<S: Serializer>(
+#[cfg(feature = "serde")]
+impl serde::Serialize for Manifest {
+    fn serialize<S: serde::Serializer>(
         &self,
         serializer: S
     ) -> Result<S::Ok, S::Error> {
@@ -141,8 +142,9 @@ impl Serialize for Manifest {
     }
 }
 
-impl<'de> Deserialize<'de> for Manifest {
-    fn deserialize<D: Deserializer<'de>>(
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Manifest {
+    fn deserialize<D: serde::Deserializer<'de>>(
         deserializer: D
     ) -> Result<Self, D::Error> {
         use serde::de;
@@ -339,7 +341,7 @@ impl ManifestContent {
 
 
     /// Returns a value encoder for a reference to the content.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             self.manifest_number.encode(),
             self.this_update.encode_generalized_time(),
@@ -441,7 +443,7 @@ impl FileAndHash<Bytes, Bytes> {
 
 impl<F: AsRef<[u8]>, H: AsRef<[u8]>> FileAndHash<F, H> {
     /// Returns a value encoder for a reference.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             OctetString::encode_slice_as(self.file.as_ref(), Tag::IA5_STRING),
             BitString::encode_slice(self.hash.as_ref(), 0),

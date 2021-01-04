@@ -20,10 +20,8 @@ use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{Tag, xerr};
 use bcder::encode::{PrimitiveContent, Nothing};
-use serde::de;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use crate::cert::Overclaim;
-use crate::x509::{encode_extension, ValidationError};
+use super::super::cert::Overclaim;
+use super::super::x509::{encode_extension, ValidationError};
 use super::chain::{Block, SharedChain};
 use super::choice::ResourcesChoice;
 
@@ -40,7 +38,8 @@ use super::choice::ResourcesChoice;
 /// be an actual set of AS numbers associated with the certificate – this is
 /// the `AsResources::Blocks` variant –, or the AS resources of the issuer can
 /// be inherited – the `AsResources::Inherit` variant.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AsResources(ResourcesChoice<AsBlocks>);
 
 impl AsResources {
@@ -165,7 +164,7 @@ impl AsResources {
         )
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence(
             encode::sequence_as(Tag::CTX_0,
                 match self.0 {
@@ -187,9 +186,9 @@ impl AsResources {
         )
     }
 
-    pub fn encode_extension<'a>(
-        &'a self, overclaim: Overclaim
-    ) -> impl encode::Values + 'a {
+    pub fn encode_extension(
+        &self, overclaim: Overclaim
+    ) -> impl encode::Values + '_ {
         if self.0.is_present() {
             Some(encode_extension(
                 overclaim.as_res_id(), true, self.encode_ref()
@@ -306,7 +305,7 @@ impl AsBlocks {
     }
 
     /// Returns an iterator over the individual AS number blocks.
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item=AsBlock> + 'a {
+    pub fn iter(&self) -> impl Iterator<Item=AsBlock> + '_ {
         self.0.iter().copied()
     }
 
@@ -398,9 +397,7 @@ impl AsBlocks {
     /// i.e. all resources found in one or both AsBlocks.
     pub fn union(&self, other: &Self) -> Self {
         AsBlocks(
-            FromIterator::from_iter(
-                self.0.iter().cloned().chain(other.0.iter().cloned())
-            )
+            self.0.iter().cloned().chain(other.0.iter().cloned()).collect()
         )
     }
 }
@@ -427,21 +424,18 @@ impl AsBlocks {
     ) -> Result<Self, S::Err> {
         let mut err = None;
 
-        let res = SharedChain::from_iter(
-            iter::repeat_with(|| AsBlock::take_opt_from(cons))
-                .map(|item| {
-                    match item {
-                        Ok(Some(val)) => Some(val),
-                        Ok(None) => None,
-                        Err(e) => {
-                            err = Some(e);
-                            None
-                        }
-                    }
-                })
-                .take_while(|item| item.is_some())
-                .map(Option::unwrap)
-        );
+        let res = iter::repeat_with(||
+            AsBlock::take_opt_from(cons)
+        ).map(|item| {
+            match item {
+                Ok(Some(val)) => Some(val),
+                Ok(None) => None,
+                Err(e) => {
+                    err = Some(e);
+                    None
+                }
+            }
+        }).take_while(|item| item.is_some()).map(Option::unwrap).collect();
         match err {
             Some(err) => Err(err),
             None => Ok(AsBlocks(res))
@@ -452,7 +446,7 @@ impl AsBlocks {
         encode::slice(self.0, |block| block.encode())
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::slice(&self.0, |block| block.encode())
     }
 }
@@ -516,8 +510,9 @@ impl fmt::Display for AsBlocks {
 
 //--- Serialize and Deserialize
 
-impl Serialize for AsBlocks {
-    fn serialize<S: Serializer>(
+#[cfg(feature = "serde")]
+impl serde::Serialize for AsBlocks {
+    fn serialize<S: serde::Serializer>(
         &self,
         serializer: S
     ) -> Result<S::Ok, S::Error> {
@@ -525,12 +520,13 @@ impl Serialize for AsBlocks {
     }
 }
 
-impl<'de> Deserialize<'de> for AsBlocks {
-    fn deserialize<D: Deserializer<'de>>(
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for AsBlocks {
+    fn deserialize<D: serde::Deserializer<'de>>(
         deserializer: D
     ) -> Result<Self, D::Error> {
         let string = String::deserialize(deserializer)?;
-        Ok(Self::from_str(&string).map_err(de::Error::custom)?)
+        Ok(Self::from_str(&string).map_err(serde::de::Error::custom)?)
     }
 }
 
@@ -550,7 +546,7 @@ impl AsBlocksBuilder {
     }
 
     pub fn finalize(self) -> AsBlocks {
-        AsBlocks(SharedChain::from_iter(self.0.into_iter()))
+        AsBlocks(self.0.into_iter().collect())
     }
 }
 
@@ -1054,6 +1050,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
     fn as_resources_inherit_serde() {
         let resources_str = "inherit";
         let as_resources = AsResources::from_str(resources_str).unwrap();
@@ -1065,6 +1062,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
     fn as_resources_concrete_serde() {
         let resources_str = "AS6500-AS65005, AS65007";
         let as_resources = AsResources::from_str(resources_str).unwrap();

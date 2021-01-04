@@ -6,29 +6,10 @@
 //! these resources. In particular, RPKI is currently used for route origin
 //! validation where these statements list the AS numbers that are allowed
 //! to originate routes for prefixes.
-//!
-//! This crate will eventually implement all functionality necessary to both
-//! produce and validate RPKI data. It currently implements everything
-//! necessary for validation and is slowly gaining the ability to produce
-//! objects as well.
-//!
-//! Documentation for the items in this crate is currently somewhat sparse.
-//! This will be rectified in upcoming releases.
 
-pub mod cert;
-pub mod crl;
-pub mod crypto;
-pub mod csr;
-pub mod manifest;
-pub mod oid;
-pub mod resources;
-pub mod roa;
+
+pub mod repository;
 pub mod rrdp;
-pub mod rta;
-pub mod sigobj;
-pub mod tal;
 pub mod uri;
-pub mod x509;
 pub mod xml;
 
-mod util;

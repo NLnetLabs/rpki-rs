@@ -8,17 +8,18 @@ use bcder::{Captured, Mode, OctetString, Oid, Tag, xerr};
 use bcder::encode::PrimitiveContent;
 use bcder::string::OctetStringSource;
 use bytes::Bytes;
-use crate::{oid, uri};
-use crate::cert::{Cert, KeyUsage, Overclaim, ResourceCert, TbsCert};
-use crate::crypto::{
+use crate::uri;
+use super::oid;
+use super::cert::{Cert, KeyUsage, Overclaim, ResourceCert, TbsCert};
+use super::crypto::{
     Digest, DigestAlgorithm, KeyIdentifier, Signature, SignatureAlgorithm,
     Signer, SigningError
 };
-use crate::resources::{
+use super::resources::{
     AsBlocksBuilder, AsResources, AsResourcesBuilder, IpBlocksBuilder,
     IpResources, IpResourcesBuilder
 };
-use crate::x509::{Name, Serial, Time, ValidationError, Validity, update_once};
+use super::x509::{Name, Serial, Time, ValidationError, Validity, update_once};
 
 
 //------------ SignedObject --------------------------------------------------
@@ -231,7 +232,7 @@ impl SignedObject {
     }
 
     /// Returns a value encoder for a reference to a signed object.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             oid::SIGNED_DATA.encode(), // contentType
             encode::sequence_as(Tag::CTX_0, // content
@@ -275,7 +276,7 @@ impl SignedObject {
 ///
 /// These attributes, in their DER encoded form, are what the signature is
 /// calculated over. Annoyingly, the encoding uses the signed attribute set
-/// with a tag for SET OF, not [0] as it would be found in the actual data.
+/// with a tag for SET OF, not \[0\] as it would be found in the actual data.
 ///
 /// Technically, signed objects need to be DER encoded, anyway, so we would
 /// not need to re-encode the signed attributes other than sticking the SET OF
@@ -513,7 +514,7 @@ impl SignedAttrs {
         })
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence_as(Tag::CTX_0, &self.0)
     }
 
@@ -552,7 +553,7 @@ impl AsRef<[u8]> for SignedAttrs {
 pub struct MessageDigest(Bytes);
 
 impl MessageDigest {
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         OctetString::encode_slice(self.0.as_ref())
     }
 }

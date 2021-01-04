@@ -1,7 +1,7 @@
 extern crate rpki;
 
 use std::{env, fs};
-use rpki::manifest::Manifest;
+use rpki::repository::manifest::Manifest;
 
 
 fn main() {

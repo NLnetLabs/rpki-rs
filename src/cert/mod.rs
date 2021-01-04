@@ -21,7 +21,7 @@ pub use self::builder::CertBuilder;
 
 
 pub mod builder;
-pub mod ext;
+//pub mod ext;
 
 use std::{borrow, ops};
 use std::iter::FromIterator;

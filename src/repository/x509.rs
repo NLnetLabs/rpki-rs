@@ -14,12 +14,10 @@ use bcder::encode::PrimitiveContent;
 use chrono::{
     Datelike, DateTime, Duration, LocalResult, Timelike, TimeZone, Utc
 };
-use serde::de;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use crate::crypto::{
+use super::crypto::{
     PublicKey, Signature, SignatureAlgorithm, Signer, VerificationError
 };
-use crate::oid;
+use super::oid;
 
 
 //------------ Functions -----------------------------------------------------
@@ -243,7 +241,7 @@ impl Name {
         Name(Captured::from_values(Mode::Der, values))
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         &self.0
     }
 }
@@ -475,8 +473,9 @@ impl PrimitiveContent for Serial {
 
 //--- Deserialize and Serialize
 
-impl Serialize for Serial {
-    fn serialize<S: Serializer>(
+#[cfg(feature = "serde")]
+impl serde::Serialize for Serial {
+    fn serialize<S: serde::Serializer>(
         &self,
         serializer: S
     ) -> Result<S::Ok, S::Error> {
@@ -485,10 +484,33 @@ impl Serialize for Serial {
     }
 }
 
-impl<'de> Deserialize<'de> for Serial {
-    fn deserialize<D: Deserializer<'de>>(
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Serial {
+    fn deserialize<D: serde::Deserializer<'de>>(
         deserializer: D
     ) -> Result<Self, D::Error> {
+        struct SerialVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for SerialVisitor {
+            type Value = Serial;
+
+            fn expecting(
+                &self, formatter: &mut fmt::Formatter
+            ) -> fmt::Result {
+                write!(formatter, "a string containing a serial number")
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where E: serde::de::Error {
+                Serial::from_str(s).map_err(serde::de::Error::custom)
+            }
+
+            fn visit_string<E>(self, s: String) -> Result<Self::Value, E>
+            where E: serde::de::Error {
+                Serial::from_str(&s).map_err(serde::de::Error::custom)
+            }
+        }
+
         deserializer.deserialize_str(SerialVisitor)
     }
 }
@@ -550,7 +572,7 @@ impl SignedData {
         ).map_err(Into::into)
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             &self.data,
             self.signature.algorithm().x509_encode(),
@@ -583,10 +605,8 @@ impl<'a> PrimitiveContent for SignatureValueContent<'a> {
 
 //------------ Time ----------------------------------------------------------
 
-#[derive(
-    Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd,
-    Serialize
-)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Time(DateTime<Utc>);
 
 impl Time {
@@ -954,7 +974,8 @@ impl PrimitiveContent for GeneralizedTime {
 
 //------------ Validity ------------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Copy, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Validity {
     not_before: Time,
     not_after: Time,
@@ -1021,30 +1042,6 @@ impl Validity {
             self.not_before.encode_varied(),
             self.not_after.encode_varied(),
         ))
-    }
-}
-
-
-//------------ SerialVisitor -------------------------------------------------
-
-/// Private helper class for deserializing serials.
-struct SerialVisitor;
-
-impl<'de> de::Visitor<'de> for SerialVisitor {
-    type Value = Serial;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "a string containing a serial number")
-    }
-
-    fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
-    where E: de::Error {
-        Serial::from_str(s).map_err(de::Error::custom)
-    }
-
-    fn visit_string<E>(self, s: String) -> Result<Self::Value, E>
-    where E: de::Error {
-        Serial::from_str(&s).map_err(de::Error::custom)
     }
 }
 

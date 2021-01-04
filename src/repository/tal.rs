@@ -10,9 +10,8 @@ use std::sync::Arc;
 use bytes::Bytes;
 use bcder::decode;
 use log::{debug, error};
-use serde::{Deserialize, Serialize};
-use crate::crypto::PublicKey;
-use super::uri;
+use crate::uri;
+use super::crypto::PublicKey;
 
 
 //------------ Tal -----------------------------------------------------------
@@ -159,9 +158,8 @@ fn next_entry(entry: &DirEntry) -> Result<Option<Tal>, ReadError> {
 
 //------------ TalUri --------------------------------------------------------
 
-#[derive(
-    Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize
-)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TalUri {
     Rsync(uri::Rsync),
     Https(uri::Https),

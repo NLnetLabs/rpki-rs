@@ -1,14 +1,18 @@
 //! URIs.
 
-use std::{error, fmt, hash, io, str};
+use std::{error, fmt, hash, str};
 use std::convert::TryFrom;
-use std::str::FromStr;
-use bcder::encode;
-use bcder::{Mode, Tag};
-use bcder::encode::PrimitiveContent;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use serde::de;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+#[cfg(feature = "repository")] use std::io;
+#[cfg(feature = "repository")] use bcder::encode;
+#[cfg(feature = "repository")] use bcder::{Mode, Tag};
+#[cfg(feature = "repository")] use bcder::encode::PrimitiveContent;
+#[cfg(feature = "serde")] use std::str::FromStr;
+#[cfg(feature = "serde")] use serde::de;
+#[cfg(feature = "serde")] use serde::{
+    Deserialize, Deserializer, Serialize, Serializer
+};
 
 
 //------------ Rsync ---------------------------------------------------------
@@ -199,7 +203,8 @@ impl Rsync {
         ))
     }
 
-    pub fn encode_general_name<'a>(&'a self) -> impl encode::Values + 'a {
+    #[cfg(feature = "repository")]
+    pub fn encode_general_name(&self) -> impl encode::Values + '_ {
         self.encode_as(Tag::CTX_6)
     }
 }
@@ -226,6 +231,7 @@ impl str::FromStr for Rsync {
 
 //--- Serialize and Deserialize
 
+#[cfg(feature = "serde")]
 impl Serialize for Rsync {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where S: Serializer {
@@ -233,6 +239,7 @@ impl Serialize for Rsync {
     }
 }
 
+#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for Rsync {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de> {
@@ -243,6 +250,7 @@ impl<'de> Deserialize<'de> for Rsync {
 
 //--- PrimitiveContent
 
+#[cfg(feature = "repository")]
 impl<'a> encode::PrimitiveContent for &'a Rsync {
     const TAG: Tag = Tag::IA5_STRING;
 
@@ -431,7 +439,8 @@ impl Https {
         unsafe { str::from_utf8_unchecked(self.uri.as_ref()) }
     }
 
-    pub fn encode_general_name<'a>(&'a self) -> impl encode::Values + 'a {
+    #[cfg(feature = "repository")]
+    pub fn encode_general_name(&self) -> impl encode::Values + '_ {
         self.encode_as(Tag::CTX_6)
     }
 
@@ -531,6 +540,7 @@ impl hash::Hash for Https {
 
 //--- Serialize and Deserialize
 
+#[cfg(feature = "serde")]
 impl Serialize for Https {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where S: Serializer {
@@ -538,6 +548,7 @@ impl Serialize for Https {
     }
 }
 
+#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for Https {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de> {
@@ -548,6 +559,7 @@ impl<'de> Deserialize<'de> for Https {
 
 //--- PrimitiveContent
 
+#[cfg(feature = "repository")]
 impl<'a> encode::PrimitiveContent for &'a Https {
     const TAG: Tag = Tag::IA5_STRING;
 
@@ -635,14 +647,17 @@ impl fmt::Display for Scheme {
 //------------ UriVisitor ----------------------------------------------------
 
 /// Private helper type for implementing deserialization.
+#[cfg(feature = "serde")]
 struct UriVisitor<V>(std::marker::PhantomData<V>);
 
+#[cfg(feature = "serde")]
 impl<V> Default for UriVisitor<V> {
     fn default() -> Self {
         UriVisitor(std::marker::PhantomData)
     }
 }
 
+#[cfg(feature = "serde")]
 impl<'de, V> serde::de::Visitor<'de> for UriVisitor<V>
 where
     V: FromStr + TryFrom<String>,

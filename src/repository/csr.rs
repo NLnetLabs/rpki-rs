@@ -22,14 +22,12 @@
 use bcder::{decode, encode, xerr};
 use bcder::{BitString, Captured, Mode, OctetString, Oid, Tag};
 use bcder::encode::{PrimitiveContent, Constructed};
-use bytes::Bytes;
-use serde::{Serialize, Serializer, Deserialize, Deserializer};
-use crate::{oid, uri};
-use crate::cert::{KeyUsage, Sia, TbsCert};
-use crate::cert::builder;
-use crate::crypto::{SignatureAlgorithm, PublicKey};
-use crate::crypto::signer::{Signer, SigningError};
-use crate::x509::{Name, SignedData, ValidationError};
+use crate::uri;
+use super::oid;
+use super::cert::{CertBuilder, KeyUsage, Sia, TbsCert};
+use super::crypto::{SignatureAlgorithm, PublicKey};
+use super::crypto::signer::{Signer, SigningError};
+use super::x509::{Name, SignedData, ValidationError};
 
 
 //------------ Csr -----------------------------------------------------------
@@ -137,7 +135,7 @@ impl Csr {
 ///
 impl Csr {
     /// Returns a value encoder for a reference to the csr.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         self.signed_data.encode_ref()
     }
 
@@ -175,15 +173,15 @@ impl Csr {
             Constructed::new(Tag::CTX_0, encode::sequence((
                 oid::EXTENSION_REQUEST.encode_ref(),
                 encode::set(encode::sequence((
-                    builder::extension(
+                    CertBuilder::extension(
                         &oid::CE_BASIC_CONSTRAINTS, true,
                         encode::sequence(true.encode())
                     ),
-                    builder::extension(
+                    CertBuilder::extension(
                         &oid::CE_KEY_USAGE, true,
                         KeyUsage::Ca.encode()
                     ),
-                    builder::extension(
+                    CertBuilder::extension(
                         &oid::PE_SUBJECT_INFO_ACCESS, false,
                         encode::sequence((
                             encode::sequence((
@@ -224,21 +222,27 @@ impl Csr {
 
 //--- Deserialize and Serialize
 
-impl Serialize for Csr {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+#[cfg(feature = "serde")]
+impl serde::Serialize for Csr {
+    fn serialize<S: serde::Serializer>(
+        &self, serializer: S
+    ) -> Result<S::Ok, S::Error> {
         let bytes = self.to_captured().into_bytes();
         let b64 = base64::encode(&bytes);
         b64.serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for Csr {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Csr {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
         use serde::de;
 
         let string = String::deserialize(deserializer)?;
         let decoded = base64::decode(&string).map_err(de::Error::custom)?;
-        let bytes = Bytes::from(decoded);
+        let bytes = bytes::Bytes::from(decoded);
         Csr::decode(bytes).map_err(de::Error::custom)
     }
 }

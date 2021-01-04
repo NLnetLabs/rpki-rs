@@ -3,23 +3,18 @@
 //! For details, see RFC 6482.
 
 use std::mem;
-use std::iter::FromIterator;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Oid, Tag, xerr};
 use bcder::encode::{PrimitiveContent, Values};
-use bytes::Bytes;
-use serde::{Serialize, Serializer, Deserialize, Deserializer};
-use crate::oid;
-use crate::cert::{Cert, ResourceCert};
-use crate::crypto::{Signer, SigningError};
-use crate::resources::{
-    Addr, AddressFamily, AsId, IpBlocks, IpResources, Prefix
-};
-use crate::sigobj::{SignedObject, SignedObjectBuilder};
-use crate::tal::TalInfo;
-use crate::x509::ValidationError;
+use super::oid;
+use super::cert::{Cert, ResourceCert};
+use super::crypto::{Signer, SigningError};
+use super::resources::{Addr, AddressFamily, AsId, IpResources, Prefix};
+use super::sigobj::{SignedObject, SignedObjectBuilder};
+use super::tal::TalInfo;
+use super::x509::ValidationError;
 
 
 //------------ Roa -----------------------------------------------------------
@@ -59,7 +54,7 @@ impl Roa {
     }
 
     /// Returns a value encoder for a reference to a ROA.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         self.signed.encode_ref()
     }
 
@@ -77,21 +72,27 @@ impl Roa {
 
 //--- Deserialize and Serialize
 
-impl Serialize for Roa {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+#[cfg(feature = "serde")]
+impl serde::Serialize for Roa {
+    fn serialize<S: serde::Serializer>(
+        &self, serializer: S
+    ) -> Result<S::Ok, S::Error> {
         let bytes = self.to_captured().into_bytes();
         let b64 = base64::encode(&bytes);
         b64.serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for Roa {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Roa {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
         use serde::de;
 
         let string = String::deserialize(deserializer)?;
         let decoded = base64::decode(&string).map_err(de::Error::custom)?;
-        let bytes = Bytes::from(decoded);
+        let bytes = bytes::Bytes::from(decoded);
         Roa::decode(bytes, true).map_err(de::Error::custom)
     }
 }
@@ -128,9 +129,9 @@ impl RouteOriginAttestation {
         self.status.take_cert()
     }
 
-    pub fn iter<'a>(
-        &'a self
-    ) -> impl Iterator<Item=FriendlyRoaIpAddress> + 'a {
+    pub fn iter(
+        &self
+    ) -> impl Iterator<Item=FriendlyRoaIpAddress> + '_ {
         self.v4_addrs.iter().map(|addr| FriendlyRoaIpAddress::new(addr, true))
             .chain(
                 self.v6_addrs.iter()
@@ -214,7 +215,7 @@ impl RouteOriginAttestation {
         Ok(())
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             // version is DEFAULT
             self.as_id.encode(),
@@ -253,10 +254,10 @@ impl RoaIpAddresses {
         RoaIpAddressIter(self.0.as_ref())
     }
 
-    fn encode_ref_family<'a>(
-        &'a self,
+    fn encode_ref_family(
+        &self,
         family: [u8; 2]
-    ) -> Option<impl encode::Values + 'a> {
+    ) -> Option<impl encode::Values + '_> {
         if self.0.is_empty() {
             None
         }
@@ -599,12 +600,12 @@ impl RoaIpAddressesBuilder {
     }
 
     pub fn to_resources(&self) -> IpResources {
-        IpResources::blocks(IpBlocks::from_iter(
-            self.addrs.iter().map(|addr| addr.prefix.into())
-        ))
+        IpResources::blocks(
+            self.addrs.iter().map(|addr| addr.prefix.into()).collect()
+        )
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence(
             encode::slice(self.addrs.as_slice(), |v: &RoaIpAddress| v.encode())
         )

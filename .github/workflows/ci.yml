@@ -15,18 +15,36 @@ jobs:
       uses: hecrj/setup-rust-action@v1
       with:
         rust-version: ${{ matrix.rust }}
+
+    # Because of all the features, we run build and test twice -- once with
+    # full features and once without any features at all -- to make it more
+    # likely that everything works.
+    #
+    # On Windows, we don’t ever want to have to deal with OpenSSL, so we have
+    # a special feature __windows_ci_all that replaces --all-features.
+
+    # Clippy.
+    #
+    # Only do this once with all features enabled.
+    # Don’t do them on nightly since its Clippy occasionally fails
     - if: matrix.rust != 'nightly'
       run: rustup component add clippy
     - if: matrix.os != 'windows-latest' && matrix.rust != 'nightly'
       run: cargo clippy --all --all-features -- -D warnings
+    - if: matrix.os == 'windows-latest' && matrix.rust != 'nightly'
+      run: cargo clippy --all --features __windows_ci_all -- -D warnings
+
+    # Build
     - if: matrix.os != 'windows-latest'
       run: cargo build --verbose --all --all-features
+    - if: matrix.os == 'windows-latest'
+      run: cargo build --verbose  --all --features __windows_ci_all
+    - run: cargo build --verbose --all
+
+    # Test
     - if: matrix.os != 'windows-latest'
       run: cargo test --verbose --all --all-features
-    - if: matrix.os == 'windows-latest' && matrix.rust != 'nightly'
-      run: cargo clippy --all -- -D warnings
     - if: matrix.os == 'windows-latest'
-      run: cargo build --verbose --all
-    - if: matrix.os == 'windows-latest'
-      run: cargo test --verbose --all
+      run: cargo test --verbose --all --features __windows_ci_all
+    - run: cargo test --verbose --all
 
