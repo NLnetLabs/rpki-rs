@@ -1097,7 +1097,7 @@ mod test {
 
     #[test]
     fn signed_data_decode_then_encode() {
-        let data = include_bytes!("../test-data/ta.cer");
+        let data = include_bytes!("../../test-data/ta.cer");
         let obj = SignedData::decode(data.as_ref()).unwrap();
         let mut encoded = Vec::new();
         obj.encode_ref().write_encoded(Mode::Der, &mut encoded).unwrap();

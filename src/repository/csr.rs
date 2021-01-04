@@ -366,7 +366,7 @@ mod test {
 
     #[test]
     fn parse_drl_csr() {
-        let bytes = include_bytes!("../test-data/drl-csr.der");
+        let bytes = include_bytes!("../../test-data/drl-csr.der");
 
         let csr = Csr::decode(bytes.as_ref()).unwrap();
 
@@ -420,7 +420,7 @@ mod test {
 
     #[test]
     fn serde_csr() {
-        let bytes = include_bytes!("../test-data/drl-csr.der");
+        let bytes = include_bytes!("../../test-data/drl-csr.der");
         let csr = Csr::decode(bytes.as_ref()).unwrap();
 
         let csr_ser = serde_json::to_string(&csr).unwrap();

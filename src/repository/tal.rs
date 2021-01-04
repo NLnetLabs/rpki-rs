@@ -321,10 +321,10 @@ mod test {
 
     #[test]
     fn tal_read() {
-        let tal = include_bytes!("../test-data/ripe.tal");
+        let tal = include_bytes!("../../test-data/ripe.tal");
         let tal = Tal::read("ripe.tal", &mut tal.as_ref()).unwrap();
         let cert = Cert::decode(Bytes::from_static(
-            include_bytes!("../test-data/ta.cer")
+            include_bytes!("../../test-data/ta.cer")
         )).unwrap();
         assert_eq!(
             tal.key_info(),
@@ -334,7 +334,7 @@ mod test {
 
     #[test]
     fn prefer_https() {
-        let tal = include_bytes!("../test-data/ripe.tal");
+        let tal = include_bytes!("../../test-data/ripe.tal");
         let mut tal = Tal::read("ripe.tal", &mut tal.as_ref()).unwrap();
         tal.uris = vec![
             TalUri::from_slice(b"rsync://a.example.com/1/1").unwrap(),

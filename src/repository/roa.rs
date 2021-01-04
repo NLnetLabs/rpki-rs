@@ -636,7 +636,7 @@ mod test {
     fn decode_roa() {
         assert!(
             Roa::decode(
-                include_bytes!("../test-data/example-ripe.roa").as_ref(),
+                include_bytes!("../../test-data/example-ripe.roa").as_ref(),
                 false
             ).is_ok()
         )
