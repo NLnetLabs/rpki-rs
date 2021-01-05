@@ -161,10 +161,7 @@ impl<Sock, Source> Connection<Sock, Source> {
     /// If there hasn’t been a negotation yet, returns the lowest protocol
     /// version we support, which currently is 0.
     fn version(&self) -> u8 {
-        match self.version {
-            Some(version) => version,
-            None => 0
-        }
+        self.version.unwrap_or(0)
     }
 }
 
