@@ -496,8 +496,8 @@ impl ManifestHash {
 
 #[cfg(test)]
 mod test {
-    use crate::cert::Cert;
-    use crate::tal::TalInfo;
+    use crate::repository::cert::Cert;
+    use crate::repository::tal::TalInfo;
     use super::*;
 
     #[test]
@@ -521,17 +521,17 @@ mod test {
     }
 }
 
-#[cfg(all(test, feature="softkeys"))]
+#[cfg(all(test, feature = "softkeys"))]
 mod signer_test {
     use std::str::FromStr;
     use bcder::encode::Values;
-    use crate::cert::{KeyUsage, Overclaim, TbsCert};
-    use crate::crypto::{PublicKeyFormat, Signer};
-    use crate::crypto::softsigner::OpenSslSigner;
-    use crate::resources::{AsId, Prefix};
     use crate::uri;
-    use crate::tal::TalInfo;
-    use crate::x509::Validity;
+    use crate::repository::cert::{KeyUsage, Overclaim, TbsCert};
+    use crate::repository::crypto::{PublicKeyFormat, Signer};
+    use crate::repository::crypto::softsigner::OpenSslSigner;
+    use crate::repository::resources::{AsId, Prefix};
+    use crate::repository::tal::TalInfo;
+    use crate::repository::x509::Validity;
     use super::*;
 
     fn make_test_manifest() -> Manifest {
@@ -586,6 +586,7 @@ mod signer_test {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
     fn serde_manifest() {
         let mft = make_test_manifest();
         let serialized = serde_json::to_string(&mft).unwrap();

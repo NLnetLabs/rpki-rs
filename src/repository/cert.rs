@@ -2662,11 +2662,11 @@ mod test {
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
     use std::str::FromStr;
-    use crate::cert::Cert;
-    use crate::crypto::PublicKeyFormat;
-    use crate::crypto::softsigner::OpenSslSigner;
-    use crate::resources::{AsId, Prefix};
-    use crate::tal::TalInfo;
+    use crate::repository::cert::Cert;
+    use crate::repository::crypto::PublicKeyFormat;
+    use crate::repository::crypto::softsigner::OpenSslSigner;
+    use crate::repository::resources::{AsId, Prefix};
+    use crate::repository::tal::TalInfo;
     use super::*;
 
 

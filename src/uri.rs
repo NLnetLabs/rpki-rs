@@ -871,6 +871,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
     fn rsync_serde() {
         use serde_json::{from_str, to_string};
 
@@ -880,6 +881,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
     fn https_serde_string() {
         use serde_json::{from_str, to_string};
 
@@ -889,6 +891,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
     fn https_serde_reader() {
         let uri = Https::from_str("https://example.com/some/stuff").unwrap();
         let json = serde_json::to_string(&uri).unwrap();

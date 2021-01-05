@@ -316,7 +316,7 @@ impl fmt::Display for ReadError {
 #[cfg(test)]
 mod test {
     use bytes::Bytes;
-    use crate::cert::Cert;
+    use crate::repository::cert::Cert;
     use super::*;
 
     #[test]

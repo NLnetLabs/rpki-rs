@@ -737,8 +737,8 @@ mod test {
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
     use super::*;
-    use crate::crypto::PublicKeyFormat;
-    use crate::crypto::softsigner::OpenSslSigner;
+    use crate::repository::crypto::PublicKeyFormat;
+    use crate::repository::crypto::softsigner::OpenSslSigner;
 
     #[test]
     fn build_ta_cert() {

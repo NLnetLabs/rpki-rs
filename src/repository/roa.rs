@@ -647,12 +647,12 @@ mod test {
 mod signer_test {
     use std::str::FromStr;
     use bcder::encode::Values;
-    use crate::cert::{KeyUsage, Overclaim, TbsCert};
-    use crate::crypto::{PublicKeyFormat, Signer};
-    use crate::crypto::softsigner::OpenSslSigner;
-    use crate::resources::{AsId, Prefix};
     use crate::uri;
-    use crate::x509::Validity;
+    use crate::repository::cert::{KeyUsage, Overclaim, TbsCert};
+    use crate::repository::crypto::{PublicKeyFormat, Signer};
+    use crate::repository::crypto::softsigner::OpenSslSigner;
+    use crate::repository::resources::{AsId, Prefix};
+    use crate::repository::x509::Validity;
     use super::*;
 
     fn make_roa() -> Roa {
@@ -699,9 +699,9 @@ mod signer_test {
     fn encode_roa() {
         make_roa();
     }
-        
 
     #[test]
+    #[cfg(feature = "serde")]
     fn serde_roa() {
         let roa = make_roa();
 

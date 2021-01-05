@@ -937,7 +937,7 @@ impl io::Write for StartOfValue {
 
 #[cfg(test)]
 mod test {
-    use crate::tal::TalInfo;
+    use crate::repository::tal::TalInfo;
     use super::*;
 
     #[test]
@@ -967,10 +967,10 @@ mod signer_test {
     use bcder::Oid;
     use bcder::encode::Values;
     use crate::uri;
-    use crate::crypto::PublicKeyFormat;
-    use crate::crypto::softsigner::OpenSslSigner;
-    use crate::resources::{AsId, Prefix};
-    use crate::tal::TalInfo;
+    use crate::repository::crypto::PublicKeyFormat;
+    use crate::repository::crypto::softsigner::OpenSslSigner;
+    use crate::repository::resources::{AsId, Prefix};
+    use crate::repository::tal::TalInfo;
     use super::*;
         
     #[test]

@@ -387,8 +387,8 @@ mod test {
     #[cfg(all(test, feature="softkeys"))]
     fn build_csr() {
 
-        use crate::crypto::softsigner::OpenSslSigner;
-        use crate::crypto::PublicKeyFormat;
+        use crate::repository::crypto::softsigner::OpenSslSigner;
+        use crate::repository::crypto::PublicKeyFormat;
 
         let mut signer = OpenSslSigner::new();
         let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
