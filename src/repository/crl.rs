@@ -720,6 +720,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
     fn serde_crl() {
         let der = include_bytes!("../../test-data/ta.crl");
         let crl = Crl::decode(bytes::Bytes::from_static(der)).unwrap();

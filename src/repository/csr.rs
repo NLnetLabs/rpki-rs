@@ -419,6 +419,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
     fn serde_csr() {
         let bytes = include_bytes!("../../test-data/drl-csr.der");
         let csr = Csr::decode(bytes.as_ref()).unwrap();

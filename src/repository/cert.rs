@@ -2647,6 +2647,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
     fn serde_cert() {
         let der = include_bytes!("../../test-data/ta.cer");
         let cert = Cert::decode(Bytes::from_static(der)).unwrap();
