@@ -10,6 +10,7 @@
 
 pub mod repository;
 pub mod rrdp;
+pub mod rtr;
 pub mod uri;
 pub mod xml;
 
