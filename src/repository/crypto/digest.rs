@@ -8,7 +8,7 @@ use ring::digest;
 use bcder::{decode, encode};
 use bcder::encode::PrimitiveContent;
 use bcder::Tag;
-use crate::oid;
+use super::super::oid;
 
 // Re-export the things from ring for actual digest generation.
 pub use ring::digest::Digest;

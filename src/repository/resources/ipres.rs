@@ -16,9 +16,9 @@ use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, OctetString, Tag, xerr};
 use bcder::encode::{Nothing, PrimitiveContent};
-use crate::cert::Overclaim;
-use crate::roa::RoaIpAddress;
-use crate::x509::{encode_extension, ValidationError};
+use super::super::cert::Overclaim;
+use super::super::roa::RoaIpAddress;
+use super::super::x509::{encode_extension, ValidationError};
 use super::chain::{Block, SharedChain};
 use super::choice::ResourcesChoice;
 
@@ -143,7 +143,7 @@ impl IpResources {
         }
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         match self.0 {
             ResourcesChoice::Inherit => {
                 encode::Choice3::One(().encode())
@@ -157,9 +157,9 @@ impl IpResources {
         }
     }
 
-    pub fn encode_family<'a>(
-        &'a self, family: AddressFamily
-    ) -> impl encode::Values + 'a {
+    pub fn encode_family(
+        &self, family: AddressFamily
+    ) -> impl encode::Values + '_ {
         if self.is_present() {
             Some(encode::sequence((
                 family.encode(), self.encode_ref()
@@ -311,7 +311,7 @@ impl IpBlocks {
     }
 
     /// Returns an iterator over the address ranges in the block.
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item=IpBlock> + 'a {
+    pub fn iter(&self) -> impl Iterator<Item=IpBlock> + '_ {
         self.0.iter().copied()
     }
 
@@ -434,9 +434,7 @@ impl IpBlocks {
     /// i.e. all resources found in one or both IpBlocks.
     pub fn union(&self, other: &Self) -> Self {
         IpBlocks(
-            FromIterator::from_iter(
-                self.0.iter().cloned().chain(other.0.iter().cloned())
-            )
+            self.0.iter().cloned().chain(other.0.iter().cloned()).collect()
         )
     }
 }
@@ -461,21 +459,18 @@ impl IpBlocks {
     ) -> Result<Self, S::Err> {
         let mut err = None;
 
-        let res = SharedChain::from_iter(
-            iter::repeat_with(|| IpBlock::take_opt_from(cons))
-                .map(|item| {
-                    match item {
-                        Ok(Some(val)) => Some(val),
-                        Ok(None) => None,
-                        Err(e) => {
-                            err = Some(e);
-                            None
-                        }
-                    }
-                })
-                .take_while(|item| item.is_some())
-                .map(Option::unwrap)
-        );
+        let res = iter::repeat_with(||
+            IpBlock::take_opt_from(cons)
+        ).map(|item| {
+            match item {
+                Ok(Some(val)) => Some(val),
+                Ok(None) => None,
+                Err(e) => {
+                    err = Some(e);
+                    None
+                }
+            }
+        }).take_while(|item| item.is_some()).map(Option::unwrap).collect();
         match err {
             Some(err) => Err(err),
             None => Ok(IpBlocks(res))
@@ -486,13 +481,13 @@ impl IpBlocks {
         encode::sequence(encode::slice(self.0, |block| block.encode()))
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence(encode::slice(&self.0, |block| block.encode()))
     }
 
-    pub fn encode_family<'a>(
-        &'a self, family: AddressFamily
-    ) -> impl encode::Values + 'a {
+    pub fn encode_family(
+        &self, family: AddressFamily
+    ) -> impl encode::Values + '_ {
         encode::sequence((
             family.encode(), self.encode_ref()
         ))
@@ -582,7 +577,7 @@ impl IpBlocksBuilder {
     }
 
     pub fn finalize(self) -> IpBlocks {
-        IpBlocks::from_iter(self.0.into_iter())
+        self.0.into_iter().collect()
     }
 }
 

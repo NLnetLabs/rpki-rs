@@ -17,12 +17,12 @@ use bcder::{
 };
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
-use serde::{Serialize, Serializer, Deserialize, Deserializer};
-use crate::{oid, uri};
-use crate::cert::{Cert, ResourceCert};
-use crate::crypto::{DigestAlgorithm, Signer, SigningError};
-use crate::sigobj::{SignedObject, SignedObjectBuilder};
-use crate::x509::{Serial, Time, ValidationError};
+use crate::uri;
+use super::oid;
+use super::cert::{Cert, ResourceCert};
+use super::crypto::{DigestAlgorithm, Signer, SigningError};
+use super::sigobj::{SignedObject, SignedObjectBuilder};
+use super::x509::{Serial, Time, ValidationError};
 
 
 //------------ Manifest ------------------------------------------------------
@@ -78,7 +78,7 @@ impl Manifest {
     }
 
     /// Returns a value encoder for a reference to the manifest.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         self.signed.encode_ref()
     }
 
@@ -130,8 +130,9 @@ impl borrow::Borrow<ManifestContent> for Manifest {
 
 //--- Deserialize and Serialize
 
-impl Serialize for Manifest {
-    fn serialize<S: Serializer>(
+#[cfg(feature = "serde")]
+impl serde::Serialize for Manifest {
+    fn serialize<S: serde::Serializer>(
         &self,
         serializer: S
     ) -> Result<S::Ok, S::Error> {
@@ -141,8 +142,9 @@ impl Serialize for Manifest {
     }
 }
 
-impl<'de> Deserialize<'de> for Manifest {
-    fn deserialize<D: Deserializer<'de>>(
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Manifest {
+    fn deserialize<D: serde::Deserializer<'de>>(
         deserializer: D
     ) -> Result<Self, D::Error> {
         use serde::de;
@@ -339,7 +341,7 @@ impl ManifestContent {
 
 
     /// Returns a value encoder for a reference to the content.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             self.manifest_number.encode(),
             self.this_update.encode_generalized_time(),
@@ -441,7 +443,7 @@ impl FileAndHash<Bytes, Bytes> {
 
 impl<F: AsRef<[u8]>, H: AsRef<[u8]>> FileAndHash<F, H> {
     /// Returns a value encoder for a reference.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             OctetString::encode_slice_as(self.file.as_ref(), Tag::IA5_STRING),
             BitString::encode_slice(self.hash.as_ref(), 0),
@@ -494,8 +496,8 @@ impl ManifestHash {
 
 #[cfg(test)]
 mod test {
-    use crate::cert::Cert;
-    use crate::tal::TalInfo;
+    use crate::repository::cert::Cert;
+    use crate::repository::tal::TalInfo;
     use super::*;
 
     #[test]
@@ -503,33 +505,33 @@ mod test {
         let talinfo = TalInfo::from_name("foo".into()).into_arc();
         let at = Time::utc(2019, 5, 1, 0, 0, 0);
         let issuer = Cert::decode(
-            include_bytes!("../test-data/ta.cer").as_ref()
+            include_bytes!("../../test-data/ta.cer").as_ref()
         ).unwrap();
         let issuer = issuer.validate_ta_at(talinfo, false, at).unwrap();
         let obj = Manifest::decode(
-            include_bytes!("../test-data/ta.mft").as_ref(),
+            include_bytes!("../../test-data/ta.mft").as_ref(),
             false
         ).unwrap();
         obj.validate_at(&issuer, false, at).unwrap();
         let obj = Manifest::decode(
-            include_bytes!("../test-data/ca1.mft").as_ref(),
+            include_bytes!("../../test-data/ca1.mft").as_ref(),
             false
         ).unwrap();
         assert!(obj.validate_at(&issuer, false, at).is_err());
     }
 }
 
-#[cfg(all(test, feature="softkeys"))]
+#[cfg(all(test, feature = "softkeys"))]
 mod signer_test {
     use std::str::FromStr;
     use bcder::encode::Values;
-    use crate::cert::{KeyUsage, Overclaim, TbsCert};
-    use crate::crypto::{PublicKeyFormat, Signer};
-    use crate::crypto::softsigner::OpenSslSigner;
-    use crate::resources::{AsId, Prefix};
     use crate::uri;
-    use crate::tal::TalInfo;
-    use crate::x509::Validity;
+    use crate::repository::cert::{KeyUsage, Overclaim, TbsCert};
+    use crate::repository::crypto::{PublicKeyFormat, Signer};
+    use crate::repository::crypto::softsigner::OpenSslSigner;
+    use crate::repository::resources::{AsId, Prefix};
+    use crate::repository::tal::TalInfo;
+    use crate::repository::x509::Validity;
     use super::*;
 
     fn make_test_manifest() -> Manifest {
@@ -584,6 +586,7 @@ mod signer_test {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
     fn serde_manifest() {
         let mft = make_test_manifest();
         let serialized = serde_json::to_string(&mft).unwrap();

@@ -1,7 +1,7 @@
 extern crate rpki;
 
 use std::{env, fs};
-use rpki::roa::Roa;
+use rpki::repository::roa::Roa;
 
 
 fn main() {

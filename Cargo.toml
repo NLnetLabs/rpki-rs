@@ -1,6 +1,6 @@
 [package]
 name = "rpki"
-version = "0.10.0-bis"
+version = "0.11.0-dev"
 edition = "2018"
 authors = ["The NLnet Labs RPKI Team <rpki@nlnetlabs.nl>"]
 description = "A library for validating and creating RPKI data."
@@ -12,24 +12,48 @@ categories = ["network-programming"]
 license = "BSD-3-Clause"
 
 [dependencies]
-base64          = "^0.13.0"
-bcder           = "^0.5.0"
+base64          = { version = "^0.13.0", optional = true }
+bcder           = { version = "^0.5.0", optional = true }
 bytes           = "^0.5.4"
 chrono          = { version = "^0.4.10", features = [ "serde" ] }
 log             = "^0.4.7"
 openssl         = { version = "^0.10.23", optional = true }
-quick-xml       = "^0.19.0"
-ring            = "0.16.11"
-serde           = { version = "^1.0.95", features = [ "derive" ] }
+quick-xml       = { version = "^0.19.0", optional = true }
+ring            = { version = "0.16.11", optional = true }
+serde           = { version = "^1.0.95", optional = true, features = [ "derive" ] }
 slab            = { version = "^0.4.1", optional = true }
 uuid            = "^0.8.1"
-untrusted       = "0.7.0"
+untrusted       = { version = "0.7.0", optional = true }
 
 [dev-dependencies]
 serde_json      = "^1.0.40"
 
 [features]
 default = []
-softkeys = [ "openssl", "slab" ]
+
+# Main components of the crate.
+repository = [ "base64", "bcder", "ring", "untrusted" ]
+rrdp = [ "xml", "base64", "ring" ]
+
+# Dependent components of the crate.
+xml = [ "quick-xml" ]
+
+# Extra features provided.
+softkeys = [ "repository", "openssl", "slab" ]
 extra-debug = [ "bcder/extra-debug" ]
 
+# Dummy features for Windows CI runs where we don’t want to have to deal
+# with OpenSSL
+__windows_ci_all = [ "repository", "rrdp", "serde", "extra-debug" ]
+
+[[bin]]
+name = "readcer"
+required-features = [ "repository" ]
+
+[[bin]]
+name = "readmft"
+required-features = [ "repository" ]
+
+[[bin]]
+name = "readroa"
+required-features = [ "repository" ]

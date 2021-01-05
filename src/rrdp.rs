@@ -1,5 +1,7 @@
 //! Parsing the XML representations.
 
+#![cfg(feature = "rrdp")]
+
 use std::{fmt, io, ops, str};
 use log::info;
 use ring::digest;

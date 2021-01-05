@@ -3,8 +3,7 @@
 /// This is a private module used only internally.
 
 use std::fmt;
-use serde::{Deserialize, Serialize};
-use crate::x509::ValidationError;
+use super::super::x509::ValidationError;
 
 
 //------------ ResourcesChoice -----------------------------------------------
@@ -12,7 +11,8 @@ use crate::x509::ValidationError;
 /// The option to either include or inherit resources.
 ///
 /// This is generic over the type of included resources.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ResourcesChoice<T> {
     /// There are no resources of this type.
     ///

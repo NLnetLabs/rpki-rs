@@ -4,7 +4,7 @@ use bcder::{decode, encode};
 use bcder::encode::PrimitiveContent;
 use bcder::Oid;
 use bytes::Bytes;
-use crate::oid;
+use super::super::oid;
 use super::keys::PublicKeyFormat;
 
 

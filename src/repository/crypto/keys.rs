@@ -9,14 +9,12 @@ use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use ring::{digest, signature};
 use ring::error::Unspecified;
-use serde::de;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use untrusted::Input;
-use crate::oid;
-use crate::util::hex;
-use crate::x509::{Name, RepresentationError};
-use super::signature::Signature;
 use ring::signature::VerificationAlgorithm;
+use untrusted::Input;
+use super::super::oid;
+use super::super::util::hex;
+use super::super::x509::{Name, RepresentationError};
+use super::signature::Signature;
 
 
 //------------ PublicKeyFormat -----------------------------------------------
@@ -232,14 +230,14 @@ impl PublicKey {
         ))
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             self.algorithm.encode(),
             self.bits.encode_ref()
         ))
     }
 
-    pub fn encode_subject_name<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_subject_name(&self) -> impl encode::Values + '_ {
         encode::sequence(
             encode::set(
                 encode::sequence((
@@ -454,8 +452,9 @@ impl PrimitiveContent for KeyIdentifier {
 
 //--- Deserialize and Serialize
 
-impl Serialize for KeyIdentifier {
-    fn serialize<S: Serializer>(
+#[cfg(feature = "serde")]
+impl serde::Serialize for KeyIdentifier {
+    fn serialize<S: serde::Serializer>(
         &self,
         serializer: S
     ) -> Result<S::Ok, S::Error> {
@@ -464,35 +463,36 @@ impl Serialize for KeyIdentifier {
     }
 }
 
-impl<'de> Deserialize<'de> for KeyIdentifier {
-    fn deserialize<D: Deserializer<'de>>(
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for KeyIdentifier {
+    fn deserialize<D: serde::Deserializer<'de>>(
         deserializer: D
     ) -> Result<Self, D::Error> {
+        struct KeyIdentifierVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for KeyIdentifierVisitor {
+            type Value = KeyIdentifier;
+
+            fn expecting(
+                &self, formatter: &mut fmt::Formatter
+            ) -> fmt::Result {
+                write!(formatter,
+                    "a string containing a key identifier as hex digits"
+                )
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where E: serde::de::Error {
+                KeyIdentifier::from_str(s).map_err(serde::de::Error::custom)
+            }
+
+            fn visit_string<E>(self, s: String) -> Result<Self::Value, E>
+            where E: serde::de::Error {
+                KeyIdentifier::from_str(&s).map_err(serde::de::Error::custom)
+            }
+        }
+
         deserializer.deserialize_str(KeyIdentifierVisitor)
-    }
-}
-
-
-//------------ KeyIdentifierVisitor -----------------------------------------
-
-/// Private helper type for implementing deserialization of KeyIdentifier.
-struct KeyIdentifierVisitor;
-
-impl<'de> de::Visitor<'de> for KeyIdentifierVisitor {
-    type Value = KeyIdentifier;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "a string containing a key identifier as hex digits")
-    }
-
-    fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
-    where E: de::Error {
-        KeyIdentifier::from_str(s).map_err(de::Error::custom)
-    }
-
-    fn visit_string<E>(self, s: String) -> Result<Self::Value, E>
-    where E: de::Error {
-        KeyIdentifier::from_str(&s).map_err(de::Error::custom)
     }
 }
 

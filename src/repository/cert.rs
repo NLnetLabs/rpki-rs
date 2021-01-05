@@ -17,12 +17,6 @@
 //! [RFC 5280]: https://tools.ietf.org/html/rfc5280
 //! [RFC 6487]: https://tools.ietf.org/html/rfc5487
 
-pub use self::builder::CertBuilder;
-
-
-pub mod builder;
-pub mod ext;
-
 use std::{borrow, ops};
 use std::iter::FromIterator;
 use std::sync::Arc;
@@ -33,21 +27,19 @@ use bcder::{
     BitString, Captured, ConstOid, Ia5String, Mode, OctetString, Oid, Tag
 };
 use bytes::Bytes;
-use serde::{Serialize, Serializer, Deserialize, Deserializer};
-use crate::oid;
-use crate::resources::{AsBlocks, IpBlocks};
-use crate::tal::TalInfo;
 use crate::uri;
-use crate::x509::{
-    Name, SignedData, Serial, Time, Validity, ValidationError,
-    encode_extension, update_first, update_once
-};
-use crate::crypto::{
+use super::crypto::{
     KeyIdentifier, PublicKey, SignatureAlgorithm, Signer, SigningError
 };
-use crate::resources::{
-    AsBlock, AsBlocksBuilder, AsResources, AsResourcesBuilder,
-    IpBlock, IpBlocksBuilder, IpResources, IpResourcesBuilder
+use super::oid;
+use super::resources::{
+    AsBlock, AsBlocks, AsBlocksBuilder, AsResources, AsResourcesBuilder,
+    IpBlock, IpBlocks, IpBlocksBuilder, IpResources, IpResourcesBuilder
+};
+use super::tal::TalInfo;
+use super::x509::{
+    Name, SignedData, Serial, Time, Validity, ValidationError,
+    encode_extension, update_first, update_once
 };
 
 
@@ -135,7 +127,7 @@ impl Cert {
     }
 
     /// Returns a value encoder for a reference to the certificate.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         self.signed_data.encode_ref()
     }
 
@@ -828,16 +820,22 @@ impl borrow::Borrow<TbsCert> for Cert {
 
 //--- Deserialize and Serialize
 
-impl Serialize for Cert {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+#[cfg(feature = "serde")]
+impl serde::Serialize for Cert {
+    fn serialize<S: serde::Serializer>(
+        &self, serializer: S
+    ) -> Result<S::Ok, S::Error> {
         let bytes = self.to_captured().into_bytes();
         let b64 = base64::encode(&bytes);
         b64.serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for Cert {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Cert {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
         use serde::de;
 
         let string = String::deserialize(deserializer)?;
@@ -1778,7 +1776,7 @@ impl TbsCert {
     }
 
     /// Returns an encoder for the value.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             encode::sequence_as(Tag::CTX_0, 2.encode()), // version
             self.serial_number.encode(),
@@ -1988,6 +1986,447 @@ impl Sia {
     }
     pub(crate) fn rpki_notify(&self) -> Option<&uri::Https> {
         self.rpki_notify.as_ref()
+    }
+}
+
+
+//------------ CertBuilder ---------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct CertBuilder {
+    //  The following lists how all the parts to go into the final certificate
+    //  are to be generated. It also mentions all the parts that don’t need to
+    //  be stored in the builder.
+
+    //--- Certificate
+    //
+    //  tbsCertificate: see below,
+    //  signatureAlgorithm and signature: generated when signing the final
+    //     certificate
+
+    //--- TBSCertificate
+
+    //  Version.
+    //
+    //  This is always present and v3, which really is 2.
+
+    /// Serial number.
+    ///
+    /// This is required for all certificates. The standard demands twenty
+    /// digits, u128 gives us 38, so this should be fine.
+    serial_number: u128,
+
+    /// Signature.
+    ///
+    /// This is the signature algorithm and must be identical to the one used
+    /// on the outer value. Thus, it needs to be set when constructing the
+    /// certifcate for signing.
+
+    /// Issuer.
+    ///
+    /// This needs to be identical to the subject of the issuing certificate.
+    /// It needs to be presented when creating the builder.
+    issuer: Name,    
+
+    /// Validity.
+    ///
+    /// This needs to be present for all certificates.
+    validity: Validity,
+
+    /// Subject.
+    ///
+    /// This needs to be present for all certifications. In RPKI, we commonly
+    /// derive the name from the public key of the certificate, so this is an
+    /// option. If it is not set explicitely, we derive the name.
+    subject: Option<Name>, // XXX NameBuilder?
+
+    /// Subject Public Key Info
+    ///
+    /// This is required for all certificates. However, because we sometimes
+    /// use one-off certificates that only receive their key info very late
+    /// in the process, we won’t store the key info but take it as an
+    /// argument for encoding.
+
+    //  Issuer Unique ID, Subject Unique ID
+    //
+    //  These must not be present.
+
+    //--- Extensions
+
+    /// Basic Constraints
+    ///
+    /// Needs to be present and critical and the cA boolean set to true for
+    /// a CA and TA certificate. We simply remember whether we are making a
+    /// CA certificate here.
+    ca: bool,
+
+    //  Subject Key Identifier
+    //
+    //  Must be present and non-critical. It is the SHA1 of the BIT STRING
+    //  of the Subject Public Key, so we take it from
+    //  subject_public_key_info.
+
+    /// Authority Key Identifier
+    ///
+    /// Must be present except in trust-anchor certificates and non-critical.
+    /// It must contain the subject key identifier of issuing certificate.
+    authority_key_identifier: Option<OctetString>, 
+
+    //  Key Usage.
+    //
+    //  Must be present and critical. For CA certificates, keyCertSign and
+    //  CRLSign are set, for EE certificates, digitalSignature bit is set.
+
+    //  Extended Key Usage
+    //
+    //  This is only allowed in router keys. For now, we will not support
+    //  this.
+    
+    /// CRL Distribution Points
+    ///
+    /// Must be present and non-critical except in self-signed certificates.
+    /// For RPKI it is very restricted and boils down to a list of URIs. Most
+    /// likely, it will be exactly one. So for now, we allow at most one.
+    crl_distribution: Option<uri::Rsync>,
+
+    /// Authority Information Access
+    ///
+    /// Except for self-signed certificates, must be present and non-critical.
+    /// There must be one rsync URI as a id-ad-caIssuer. Additional URIs may
+    /// be present, but we don’t support that as of now.
+    authority_info_access: Option<uri::Rsync>,
+
+    //  Subject Information Access
+    // 
+    //  Must be present and non-critical. There are essentially three
+    //  access methods that may be present. id-ad-rpkiManifest points to the
+    //  manifest of a CA, id-ad-signedObject points to the signed object of
+    //  an EE certificate. id-ad-rpkiNotify points to the RRDP notification
+    //  file of a CA. We only support one of each and simply add whatever is
+    //  there.
+
+    /// Subject Information Access of type `id-ad-caRepository`
+    ca_repository: Option<uri::Rsync>,
+
+    /// Subject Information Access of type `id-ad-rpkiManifest`
+    rpki_manifest: Option<uri::Rsync>,
+
+    /// Subject Information Access of type `id-ad-signedObject`
+    signed_object: Option<uri::Rsync>,
+
+    /// Subject Information Access of type `id-ad-rpkiNotify`
+    rpki_notify: Option<uri::Https>,
+
+    /// Certificate Policies
+    ///
+    /// This is chosen via the value of the overclaim mode,
+    overclaim: Overclaim,
+
+    /// IPv4 Resources
+    ///
+    /// One of the resources must be present. The IPv4 resources are part of
+    /// the IP resources which, if present, it must be critical.
+    v4_resources: IpResourcesBuilder,
+
+    /// IPv6 Resources
+    ///
+    /// One of the resources must be present. The IPv4 resources are part of
+    /// the IP resources which, if present, it must be critical.
+    v6_resources: IpResourcesBuilder,
+
+    /// AS Resources
+    ///
+    /// If present, it must be critical. One of the resources must be
+    /// present.
+    as_resources: AsResourcesBuilder,
+}
+
+impl CertBuilder {
+    pub fn new(
+        serial_number: u128,
+        issuer: Name,
+        validity: Validity,
+        ca: bool
+    ) -> Self {
+        CertBuilder {
+            serial_number,
+            issuer,
+            validity,
+            subject: None,
+            ca,
+            authority_key_identifier: None,
+            crl_distribution: None,
+            authority_info_access: None,
+            ca_repository: None,
+            rpki_manifest: None,
+            signed_object: None,
+            rpki_notify: None,
+            overclaim: Overclaim::Refuse,
+            v4_resources: IpResourcesBuilder::new(),
+            v6_resources: IpResourcesBuilder::new(),
+            as_resources: AsResourcesBuilder::new(),
+        }
+    }
+
+    pub fn subject(&mut self, name: Name) -> &mut Self {
+        self.subject = Some(name);
+        self
+    }
+
+    pub fn authority_key_identifier(
+        &mut self, id: OctetString
+    ) -> &mut Self {
+        self.authority_key_identifier = Some(id);
+        self
+    }
+
+    pub fn crl_distribution(&mut self, uri: uri::Rsync) -> &mut Self {
+        self.crl_distribution = Some(uri);
+        self
+    }
+
+    pub fn authority_info_access(&mut self, uri: uri::Rsync) -> &mut Self {
+        self.authority_info_access = Some(uri);
+        self
+    }
+
+    pub fn ca_repository(&mut self, uri: uri::Rsync) -> &mut Self {
+        self.ca_repository = Some(uri);
+        self
+    }
+
+    pub fn rpki_manifest(&mut self, uri: uri::Rsync) -> &mut Self {
+        self.rpki_manifest = Some(uri);
+        self
+    }
+
+    pub fn signed_object(&mut self, uri: uri::Rsync) -> &mut Self {
+        self.signed_object = Some(uri);
+        self
+    }
+
+    pub fn rpki_notify(&mut self, uri: uri::Https) -> &mut Self {
+        self.rpki_notify = Some(uri);
+        self
+    }
+
+    pub fn overclaim(&mut self, overclaim: Overclaim) -> &mut Self {
+        self.overclaim = overclaim;
+        self
+    }
+
+    pub fn inherit_v4(&mut self) -> &mut Self {
+        self.v4_resources.inherit();
+        self
+    }
+
+    pub fn inherit_v6(&mut self) -> &mut Self {
+        self.v6_resources.inherit();
+        self
+    }
+
+    pub fn inherit_as(&mut self) -> &mut Self {
+        self.as_resources.inherit();
+        self
+    }
+
+    pub fn v4_blocks<F>(&mut self, build: F) -> &mut Self
+    where F: FnOnce(&mut IpBlocksBuilder) {
+        self.v4_resources.blocks(build);
+        self
+    }
+
+    pub fn v6_blocks<F>(&mut self, build: F) -> &mut Self
+    where F: FnOnce(&mut IpBlocksBuilder) {
+        self.v6_resources.blocks(build);
+        self
+    }
+
+    pub fn as_blocks<F>(&mut self, build: F) -> &mut Self
+    where F: FnOnce(&mut AsBlocksBuilder) {
+        self.as_resources.blocks(build);
+        self
+    }
+    
+    /// Finalizes the certificate and returns an encoder for it.
+    pub fn encode<S: Signer>(
+        self,
+        signer: &S,
+        key: &S::KeyId,
+        alg: SignatureAlgorithm,
+        public_key: &PublicKey,
+    ) -> Result<impl encode::Values, SigningError<S::Error>> {
+        let tbs_cert = self.encode_tbs_cert(alg, public_key);
+        let (alg, signature) = signer.sign(key, alg, &tbs_cert)?.unwrap();
+        Ok(encode::sequence((
+            tbs_cert,
+            alg.x509_encode(),
+            BitString::new(0, signature).encode()
+        )))
+    }
+
+    fn encode_tbs_cert(
+        mut self,
+        alg: SignatureAlgorithm,
+        public_key: &PublicKey,
+    ) -> Captured {
+        if self.subject.is_none() {
+            self.subject = Some(Name::from_pub_key(public_key))
+        }
+        Captured::from_values(Mode::Der, encode::sequence((
+            encode::sequence_as(Tag::CTX_0, 2.encode()), // version
+            self.serial_number.encode(),
+            alg.x509_encode(),
+            self.issuer.encode_ref(),
+            self.validity.encode(),
+            match self.subject.as_ref() {
+                Some(subject) => encode::Choice2::One(subject.encode_ref()),
+                None => {
+                    encode::Choice2::Two(
+                        public_key.encode_subject_name()
+                    )
+                }
+            },
+            public_key.encode_ref(),
+            // no issuerUniqueID, no subjectUniqueID
+            encode::sequence_as(Tag::CTX_3, encode::sequence((
+                // Basic Constraints
+                if self.ca {
+                    Some(Self::extension(
+                        &oid::CE_BASIC_CONSTRAINTS, true,
+                        encode::sequence(true.encode())
+                    ))
+                }
+                else { None },
+
+                // Subject Key Identifier
+                Self::extension(
+                    &oid::CE_SUBJECT_KEY_IDENTIFIER, false,
+                    OctetString::encode_slice(
+                        public_key.key_identifier()
+                    )
+                ),
+
+                // Authority Key Identifier
+                self.authority_key_identifier.as_ref().map(|id| {
+                    Self::extension(
+                        &oid::CE_AUTHORITY_KEY_IDENTIFIER, false,
+                        encode::sequence(id.encode_ref_as(Tag::CTX_0))
+                    )
+                }),
+
+                // Key Usage
+                Self::extension(
+                    &oid::CE_KEY_USAGE, true,
+                    if self.ca {
+                        // Bits 5 and 6 must be set.
+                        b"\x01\x06".encode_as(Tag::BIT_STRING)
+                    }
+                    else {
+                        // Bit 0 must be set.
+                        b"\x07\x80".encode_as(Tag::BIT_STRING)
+                    }
+                ),
+
+                // Extented Key Usage: currently not supported.
+
+                // CRL Distribution Points
+                self.crl_distribution.as_ref().map(|uri| {
+                    Self::extension(
+                        &oid::CE_CRL_DISTRIBUTION_POINTS, false,
+                        encode::sequence( // CRLDistributionPoints
+                            encode::sequence( // DistributionPoint
+                                encode::sequence_as(Tag::CTX_0, // distrib.Pt.
+                                    encode::sequence_as(Tag::CTX_0, // fullName
+                                        encode::sequence( // GeneralNames
+                                            uri.encode_general_name()
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                }),
+
+                // Authority Inforamtion Access
+                self.authority_info_access.as_ref().map(|uri| {
+                    Self::extension(
+                        &oid::PE_AUTHORITY_INFO_ACCESS, false,
+                        encode::sequence(
+                            encode::sequence((
+                                oid::AD_CA_ISSUERS.encode(),
+                                uri.encode_general_name()
+                            ))
+                        )
+                    )
+                }),
+
+                // Subject Information Access
+                Self::extension(
+                    &oid::PE_SUBJECT_INFO_ACCESS, false,
+                    encode::sequence((
+                        self.ca_repository.as_ref().map(|uri| {
+                            encode::sequence((
+                                oid::AD_CA_REPOSITORY.encode(),
+                                uri.encode_general_name()
+                            ))
+                        }),
+                        self.rpki_manifest.as_ref().map(|uri| {
+                            encode::sequence((
+                                oid::AD_RPKI_MANIFEST.encode(),
+                                uri.encode_general_name()
+                            ))
+                        }),
+                        self.signed_object.as_ref().map(|uri| {
+                            encode::sequence((
+                                oid::AD_SIGNED_OBJECT.encode(),
+                                uri.encode_general_name()
+                            ))
+                        }),
+                        self.rpki_notify.as_ref().map(|uri| {
+                            encode::sequence((
+                                oid::AD_RPKI_NOTIFY.encode(),
+                                uri.encode_general_name()
+                            ))
+                        })
+                    ))
+                ),
+
+                // Certificate Policies
+                Self::extension(
+                    &oid::CE_CERTIFICATE_POLICIES, true,
+                    encode::sequence(
+                        encode::sequence(
+                            oid::CP_IPADDR_ASNUMBER.encode()
+                        )
+                    )
+                ),
+
+                // IP Resources
+                IpResources::encode_extension(
+                    self.overclaim,
+                    &self.v4_resources.finalize(),
+                    &self.v6_resources.finalize()
+                ),
+
+                // AS Resources
+                self.as_resources.finalize().encode_extension(
+                    self.overclaim
+                ),
+            )))
+        )))
+    }
+
+    pub(crate) fn extension<V: encode::Values>(
+        oid: &'static ConstOid,
+        critical: bool,
+        content: V
+    ) -> impl encode::Values {
+        encode::sequence((
+            oid.encode(),
+            critical.encode(),
+            OctetString::encode_wrapped(Mode::Der, content)
+        ))
     }
 }
 
@@ -2208,6 +2647,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
     fn serde_cert() {
         let der = include_bytes!("../../test-data/ta.cer");
         let cert = Cert::decode(Bytes::from_static(der)).unwrap();
@@ -2223,11 +2663,11 @@ mod test {
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
     use std::str::FromStr;
-    use crate::cert::Cert;
-    use crate::crypto::PublicKeyFormat;
-    use crate::crypto::softsigner::OpenSslSigner;
-    use crate::resources::{AsId, Prefix};
-    use crate::tal::TalInfo;
+    use crate::repository::cert::Cert;
+    use crate::repository::crypto::PublicKeyFormat;
+    use crate::repository::crypto::softsigner::OpenSslSigner;
+    use crate::repository::resources::{AsId, Prefix};
+    use crate::repository::tal::TalInfo;
     use super::*;
 
 
@@ -2254,4 +2694,5 @@ mod signer_test {
         cert.validate_ta(talinfo, true).unwrap();
     }
 }
+
 

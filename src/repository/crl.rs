@@ -20,13 +20,12 @@ use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Oid, Tag, xerr};
 use bcder::encode::PrimitiveContent;
-use bytes::Bytes;
-use serde::{Serialize, Serializer, Deserialize, Deserializer};
-use crate::{oid, uri};
-use crate::crypto::{
+use crate::uri;
+use super::oid;
+use super::crypto::{
     KeyIdentifier, PublicKey, SignatureAlgorithm, Signer, SigningError
 };
-use crate::x509::{
+use super::x509::{
     Name, RepresentationError, Serial, SignedData, Time, ValidationError,
     encode_extension, update_once
 };
@@ -131,7 +130,7 @@ impl Crl {
         self.signed_data.verify_signature(public_key)
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         self.signed_data.encode_ref()
     }
 
@@ -161,21 +160,27 @@ impl AsRef<TbsCertList<RevokedCertificates>> for Crl {
 
 //--- Deserialize and Serialize
 
-impl Serialize for Crl {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+#[cfg(feature = "serde")]
+impl serde::Serialize for Crl {
+    fn serialize<S: serde::Serializer>(
+        &self, serializer: S
+    ) -> Result<S::Ok, S::Error> {
         let bytes = self.to_captured().into_bytes();
         let b64 = base64::encode(&bytes);
         b64.serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for Crl {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Crl {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
         use serde::de;
 
         let string = String::deserialize(deserializer)?;
         let decoded = base64::decode(&string).map_err(de::Error::custom)?;
-        let bytes = Bytes::from(decoded);
+        let bytes = bytes::Bytes::from(decoded);
         Crl::decode(bytes).map_err(de::Error::custom)
     }
 }
@@ -425,7 +430,7 @@ impl TbsCertList<RevokedCertificates> {
     }
 
     /// Returns a value encoder for a reference to this value.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             1.encode(), // version
             self.signature.x509_encode(),
@@ -520,7 +525,7 @@ impl RevokedCertificates {
     }
 
     /// Returns a value encoder for a reference to the value.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence(&self.0)
     }
 
@@ -707,17 +712,18 @@ mod test {
     #[test]
     fn decode_certs() {
         Crl::decode(
-            include_bytes!("../test-data/ta.crl").as_ref()
+            include_bytes!("../../test-data/ta.crl").as_ref()
         ).unwrap();
         Crl::decode(
-            include_bytes!("../test-data/ca1.crl").as_ref()
+            include_bytes!("../../test-data/ca1.crl").as_ref()
         ).unwrap();
     }
 
     #[test]
+    #[cfg(feature = "serde")]
     fn serde_crl() {
-        let der = include_bytes!("../test-data/ta.crl");
-        let crl = Crl::decode(Bytes::from_static(der)).unwrap();
+        let der = include_bytes!("../../test-data/ta.crl");
+        let crl = Crl::decode(bytes::Bytes::from_static(der)).unwrap();
 
         let serialized = serde_json::to_string(&crl).unwrap();
         let deser_crl: Crl = serde_json::from_str(&serialized).unwrap();
@@ -732,8 +738,8 @@ mod test {
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
     use super::*;
-    use crate::crypto::PublicKeyFormat;
-    use crate::crypto::softsigner::OpenSslSigner;
+    use crate::repository::crypto::PublicKeyFormat;
+    use crate::repository::crypto::softsigner::OpenSslSigner;
 
     #[test]
     fn build_ta_cert() {
