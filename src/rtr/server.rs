@@ -12,9 +12,9 @@ use futures_util::pin_mut;
 use futures_util::future::Either;
 use log::debug;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::stream::{Stream, StreamExt};
 use tokio::sync::broadcast;
 use tokio::task::spawn;
+use tokio_stream::{Stream, StreamExt};
 use super::pdu;
 use super::payload::{Action, Payload, Timing};
 use super::state::State;
@@ -488,7 +488,7 @@ struct NotifyReceiver(Option<broadcast::Receiver<()>>);
 
 impl NotifyReceiver {
     pub async fn recv(&mut self) {
-        use tokio::sync::broadcast::{RecvError, TryRecvError};
+        use tokio::sync::broadcast::error::{RecvError, TryRecvError};
 
         if let Some(ref mut rx) = self.0 {
             match rx.recv().await {
