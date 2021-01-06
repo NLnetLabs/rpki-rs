@@ -11,6 +11,7 @@ Breaking
   processing of RPKI repository objects, `rrdp` for RRDP support, and
   `serde` for adding serde support to repository objects. ([#119])
 * Upgrade `bytes` and `tokio` to 1.0. ([#121])
+* The minimum required Rust version is now 1.43. ([#121])
 
 New
 
