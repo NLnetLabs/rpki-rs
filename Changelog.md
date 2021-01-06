@@ -4,14 +4,31 @@
 
 Breaking
 
+* Restructured content by moving all modules related to processing RPKI
+  repository objects to a new `repository` module. ([#119])
+* Introduced features for selecting which parts of the crate are required.
+  For the content previously included, these are: `repository` for
+  processing of RPKI repository objects, `rrdp` for RRDP support, and
+  `serde` for adding serde support to repository objects. ([#119])
+* Upgrade `bytes` and `tokio` to 1.0. ([#121])
+
 New
+
+* New module `rtr`, enabled via the feature `rtr` that contains what was
+  previously available via the separated `rpki-rtr` crate. ([#120])
 
 Bug Fixes
 
-Other
+Other Changes
+
+[#119]: https://github.com/NLnetLabs/rpki-rs/pull/119
+[#120]: https://github.com/NLnetLabs/rpki-rs/pull/120
+[#121]: https://github.com/NLnetLabs/rpki-rs/pull/121
 
 
 ## 0.10.0
+
+Released 2020-10-07.
 
 Breaking
 
