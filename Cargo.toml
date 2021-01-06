@@ -12,24 +12,25 @@ categories = ["network-programming"]
 license = "BSD-3-Clause"
 
 [dependencies]
-base64          = { version = "^0.13.0", optional = true }
-bcder           = { version = "^0.5.0", optional = true }
-bytes           = "^0.5.4"
-futures-util    = { version = "^0.3", optional = true }
-chrono          = { version = "^0.4.10", features = [ "serde" ] }
-log             = "^0.4.7"
-openssl         = { version = "^0.10.23", optional = true }
-quick-xml       = { version = "^0.19.0", optional = true }
+base64          = { version = "0.13.0", optional = true }
+bcder           = { version = "0.6.0", optional = true }
+bytes           = "1.0"
+futures-util    = { version = "0.3", optional = true }
+chrono          = { version = "0.4.10", features = [ "serde" ] }
+log             = "0.4.7"
+openssl         = { version = "0.10.23", optional = true }
+quick-xml       = { version = "0.20.0", optional = true }
 ring            = { version = "0.16.11", optional = true }
-serde           = { version = "^1.0.95", optional = true, features = [ "derive" ] }
-slab            = { version = "^0.4.1", optional = true }
-tokio           = { version="0.2.11", optional = true, features = ["io-util", "rt-core", "stream", "sync", "tcp", "time"] }
+serde           = { version = "1.0.95", optional = true, features = [ "derive" ] }
+slab            = { version = "0.4.1", optional = true }
+tokio           = { version = "1.0", optional = true, features = ["io-util",  "net", "rt", "sync", "time"] }
+tokio-stream    = { version = "0.1", optional = true }
 uuid            = "^0.8.1"
 untrusted       = { version = "0.7.0", optional = true }
 
 [dev-dependencies]
-serde_json      = "^1.0.40"
-tokio           = { version="0.2.11", features=["dns", "macros"]}
+serde_json      = "1.0.40"
+tokio           = { version="1.0", features=["net", "macros"]}
 
 [features]
 default = []
@@ -37,7 +38,7 @@ default = []
 # Main components of the crate.
 repository = [ "base64", "bcder", "ring", "untrusted" ]
 rrdp       = [ "xml", "base64", "ring" ]
-rtr        = [ "futures-util", "tokio" ]
+rtr        = [ "futures-util", "tokio", "tokio-stream" ]
 
 # Dependent components of the crate.
 xml = [ "quick-xml" ]
