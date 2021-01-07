@@ -2,7 +2,7 @@
 
 use std::{error, fmt, hash, str};
 use std::convert::TryFrom;
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{BufMut, Bytes, BytesMut};
 
 #[cfg(feature = "repository")] use std::io;
 #[cfg(feature = "repository")] use bcder::encode;
@@ -30,15 +30,32 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 //
 //     SPACE CONTROL " # < > ? [ \\ ] ^ ` { | }
 //
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Rsync {
-    module: RsyncModule,
-    path: Bytes
+    /// The bytes of the URI.
+    bytes: Bytes,
+
+    /// Index where the module portion starts.
+    ///
+    /// Everything before that is the scheme (always `"rsync://"), the
+    /// authority, and a single slash.
+    module_start: usize,
+
+    /// Index where the path portion starts.
+    ///
+    /// This is the position of the first character after the slash.
+    path_start: usize,
 }
 
 impl Rsync {
-    pub fn new(module: RsyncModule, path: Bytes) -> Self {
-        Rsync { module, path }
+    /// Creates a new URI from a module and a path.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if `path` contains bytes that are not allowed in
+    /// an rsync URI’s path.
+    pub fn new(module: RsyncModule, path: &[u8]) -> Self {
+        module.uri.join(path.as_ref())
     }
 
     pub fn from_string(s: String) -> Result<Self, Error> {
@@ -49,18 +66,16 @@ impl Rsync {
         Self::from_bytes(Bytes::copy_from_slice(slice))
     }
 
-    pub fn from_bytes(mut bytes: Bytes) -> Result<Self, Error> {
+    pub fn from_bytes(bytes: Bytes) -> Result<Self, Error> {
         if !is_uri_ascii(&bytes) {
             return Err(Error::NotAscii)
         }
 
-        match Scheme::take(&mut bytes) {
-            Ok(Scheme::Rsync) => {}
-            _ => return Err(Error::BadScheme)
+        if !starts_with_ignore_case(&bytes, b"rsync://") {
+            return Err(Error::BadScheme)
         }
-
         let (authority, module) = {
-            let mut parts = bytes.splitn(3, |ch| *ch == b'/');
+            let mut parts = bytes[8..].splitn(3, |ch| *ch == b'/');
             let authority = match parts.next() {
                 Some(part) => part.len(),
                 None => return Err(Error::BadUri)
@@ -71,18 +86,16 @@ impl Rsync {
             };
             (authority, module)
         };
-        let authority = bytes.split_to(authority);
-        bytes.advance(1);
-        let module = bytes.split_to(module);
-        if bytes.is_empty() {
-            return Err(Error::BadUri)
-        }
-        bytes.advance(1);
-        Self::check_path(&bytes)?;
-        Ok(Rsync {
-            module: RsyncModule::new(authority, module),
-            path: bytes
-        })
+
+        // +9: preceding "rsync://", trailing "/"
+        let module_start = 9 + authority;
+
+        // +1: trailing "/"
+        let path_start = module_start + module + 1;
+
+        let res = Rsync { bytes, module_start, path_start };
+        Self::check_path(res.path().as_bytes())?;
+        Ok(res)
     }
 
     /// Moves the URI to its own memory.
@@ -92,8 +105,7 @@ impl Rsync {
     /// This method moves the URI to a new memory location allowing the
     /// previous location to potentially be freed.
     pub fn unshare(&mut self) {
-        self.module.unshare();
-        self.path = Bytes::copy_from_slice(self.path.as_ref());
+        self.bytes = Bytes::copy_from_slice(self.bytes.as_ref());
     }
 
     fn check_path(path: &[u8]) -> Result<(), Error> {
@@ -120,59 +132,72 @@ impl Rsync {
         }
     }
 
-    pub fn module(&self) -> &RsyncModule {
-        &self.module
+    pub fn as_str(&self) -> &str {
+        unsafe { ::std::str::from_utf8_unchecked(self.bytes.as_ref()) }
     }
 
-    pub fn to_module(&self) -> RsyncModule {
-        self.module.clone()
+    pub fn module(&self) -> RsyncModule {
+        let mut uri = self.clone();
+        uri.bytes.truncate(self.path_start);
+        RsyncModule {
+            uri
+        }
     }
 
     pub fn authority(&self) -> &str {
-        self.module.authority()
+        &self.as_str()[8..(self.module_start - 1)]
+    }
+
+    fn module_str(&self) -> &str {
+        &self.as_str()[self.module_start..(self.path_start - 1)]
     }
 
     pub fn path(&self) -> &str {
-        unsafe { ::std::str::from_utf8_unchecked(self.path.as_ref()) }
+        &self.as_str()[self.path_start..]
+    }
+
+    pub fn path_bytes(&self) -> &[u8] {
+        &self.bytes[self.path_start..]
     }
 
     pub fn parent(&self) -> Option<Self> {
         // rsplit always returns at least one element.
-        let tail = self.path.rsplit(|ch| *ch == b'/').next().unwrap().len();
+        let tail = self.path().rsplit(|ch| ch == '/').next().unwrap().len();
         if tail == 0 {
             None
         }
         else {
             let mut res = self.clone();
-            if tail == self.path.len() {
-                res.path = Bytes::from_static(b"")
-            }
-            else {
-                res.path = self.path.slice(
-                    0..self.path.len() - tail - 1
-                );
-            }
+            res.bytes.truncate(self.bytes.len() - tail);
             Some(res)
         }
     }
 
+    /// Returns a copy of the URI extends by the given path.
+    ///
+    /// # Panics
+    ///
+    /// The method panics if `path` is not a valid path.
     pub fn join(&self, path: &[u8]) -> Self {
         assert!(is_uri_ascii(path));
+        Self::check_path(path).unwrap();
         let mut res = BytesMut::with_capacity(
-            self.path.len() + path.len() + 1
+            self.bytes.len() + path.len() + 1
         );
-        if !self.path.is_empty() {
-            res.put_slice(self.path.as_ref());
-            if !self.path.ends_with(b"/") {
-                res.put_slice(b"/");
-            }
+        res.extend_from_slice(&self.bytes);
+        if !res.ends_with(b"/") {
+            res.extend_from_slice(b"/");
         }
-        res.put_slice(path);
-        Self::new(self.module.clone(), res.freeze())
+        res.extend_from_slice(path);
+        Rsync {
+            bytes: res.freeze(),
+            module_start: self.module_start,
+            path_start: self.path_start,
+        }
     }
 
     pub fn ends_with(&self, extension: &str) -> bool {
-        self.path.ends_with(extension.as_bytes())
+        self.path().ends_with(extension)
     }
 
     /// Returns some relative path of self as a sub path of other, as long as
@@ -180,10 +205,10 @@ impl Rsync {
     /// the returned slice is empty. If other is not a parent of self, then
     /// None is returned.
     pub fn relative_to(&self, other: &Rsync) -> Option<&[u8]> {
-        if self.module == other.module {
-            if self.path.starts_with(other.path.as_ref()) {
-                let cut_len = other.path.len();
-                let (_, rel) = self.path.split_at(cut_len);
+        if self.eq_module(other) {
+            if self.path_bytes().starts_with(other.path_bytes()) {
+                let cut_len = other.path_bytes().len();
+                let (_, rel) = self.path_bytes().split_at(cut_len);
                 Some(rel)
             } else {
                 None
@@ -196,11 +221,19 @@ impl Rsync {
     /// Returns true if this uri is a directory and it contains the other
     /// uri.
     pub fn is_parent_of(&self, other: &Rsync) -> bool {
-        self.module == other.module &&
-        (self.path.is_empty() || (
+        self.eq_module(other) &&
+        (self.path_bytes().is_empty() || (
             self.ends_with("/") &&
-            other.path.starts_with(self.path.as_ref())
+            other.path_bytes().starts_with(self.path_bytes())
         ))
+    }
+
+    /// Returns whether the two URIs are in the same module.
+    fn eq_module(&self, other: &Rsync) -> bool {
+        self.path_start == other.path_start
+        && self.bytes[..self.path_start].eq_ignore_ascii_case(
+            &other.bytes[..other.path_start]
+        )
     }
 
     #[cfg(feature = "repository")]
@@ -229,13 +262,58 @@ impl str::FromStr for Rsync {
 }
 
 
+//--- AsRef
+
+impl AsRef<[u8]> for Rsync {
+    fn as_ref(&self) -> &[u8] {
+        self.bytes.as_ref()
+    }
+}
+
+impl AsRef<str> for Rsync {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+
+//--- PartialEq and Eq
+
+impl<T: AsRef<[u8]>> PartialEq<T> for Rsync {
+    fn eq(&self, other: &T) -> bool {
+        let other = other.as_ref();
+        if self.bytes.len() != other.len() {
+            return false
+        }
+        self.bytes[..self.module_start].eq_ignore_ascii_case(
+            &other[..self.module_start]
+        )
+        && self.bytes[self.module_start..] == other[self.module_start..]
+    }
+}
+
+impl Eq for Rsync { }
+
+
+//--- Hash
+
+impl hash::Hash for Rsync {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        for ch in &self.bytes[..self.module_start] {
+            ch.to_ascii_lowercase().hash(state)
+        }
+        self.bytes[self.module_start].hash(state)
+    }
+}
+
+
 //--- Serialize and Deserialize
 
 #[cfg(feature = "serde")]
 impl Serialize for Rsync {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where S: Serializer {
-        self.to_string().serialize(serializer)
+        self.as_str().serialize(serializer)
     }
 }
 
@@ -255,9 +333,7 @@ impl<'a> encode::PrimitiveContent for &'a Rsync {
     const TAG: Tag = Tag::IA5_STRING;
 
     fn encoded_len(&self, _: Mode) -> usize {
-        // "rsync://" + authority + "/" + module + "/" + path
-        10 + self.module.authority.len() + self.module.module.len()
-        + self.path.len()
+        self.bytes.len()
     }
 
     fn write_encoded<W: io::Write>(
@@ -265,13 +341,7 @@ impl<'a> encode::PrimitiveContent for &'a Rsync {
         _mode: Mode,
         target: &mut W
     ) -> Result<(), io::Error> {
-        target.write_all(b"rsync://")?;
-        target.write_all(self.module.authority.as_ref())?;
-        target.write_all(b"/")?;
-        target.write_all(self.module.module.as_ref())?;
-        target.write_all(b"/")?;
-        target.write_all(self.path.as_ref())?;
-        Ok(())
+        target.write_all(&self.bytes)
     }
 }
 
@@ -280,31 +350,42 @@ impl<'a> encode::PrimitiveContent for &'a Rsync {
 
 impl fmt::Display for Rsync {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.module.fmt(f)?;
-        if !self.path.is_empty() {
-            write!(f, "{}", self.path())?;
-        }
-        Ok(())
+        f.write_str(self.as_str())
     }
 }
 
 
 //------------ RsyncModule ---------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct RsyncModule {
-    authority: Bytes,
-    module: Bytes,
+    uri: Rsync,
 }
 
 impl RsyncModule {
+    /// Creates a new valud from an authority and a module.
+    ///
+    /// # Panics
+    ///
+    /// The function panics if `authority` or `module` contain illegal
+    /// characters.
     pub fn new<A, M>(authority: A, module: M) -> Self
-    where A: Into<Bytes>, M: Into<Bytes> {
-        let authority = authority.into();
-        let module = module.into();
-        assert!(is_uri_ascii(authority.as_ref()));
-        assert!(is_uri_ascii(module.as_ref()));
-        RsyncModule { authority, module }
+    where A: AsRef<[u8]>, M: AsRef<[u8]> {
+        let authority = authority.as_ref();
+        let module = module.as_ref();
+
+        let mut res = BytesMut::with_capacity(
+            // "rsync://" authority "/" module "/"
+            authority.len() + module.len() + 10
+        );
+        res.extend_from_slice(b"rsync://");
+        res.extend_from_slice(authority);
+        res.extend_from_slice(b"/");
+        res.extend_from_slice(module);
+        res.extend_from_slice(b"/");
+        RsyncModule {
+            uri: Rsync::from_bytes(res.freeze()).unwrap()
+        }
     }
 
     /// Moves the value to its own memory.
@@ -314,48 +395,20 @@ impl RsyncModule {
     /// This method moves the URI to a new memory location allowing the
     /// previous location to potentially be freed.
     pub fn unshare(&mut self) {
-        self.authority = Bytes::copy_from_slice(self.authority.as_ref());
-        self.module = Bytes::copy_from_slice(self.module.as_ref());
+        self.uri.unshare()
     }
 
 
     pub fn to_uri(&self) -> Rsync {
-        Rsync {
-            module: self.clone(),
-            path: Bytes::from_static(b""),
-        }
+        self.uri.clone()
     }
 
     pub fn authority(&self) -> &str {
-        unsafe { ::std::str::from_utf8_unchecked(self.authority.as_ref()) }
+        self.uri.authority()
     }
 
     pub fn module(&self) -> &str {
-        unsafe { ::std::str::from_utf8_unchecked(self.module.as_ref()) }
-    }
-}
-
-
-//--- PartialEq and Eq
-
-impl PartialEq for RsyncModule {
-    fn eq(&self, other: &Self) -> bool {
-        self.authority.eq_ignore_ascii_case(other.authority.as_ref())
-        && self.module == other.module
-    }
-}
-
-impl Eq for RsyncModule { }
-
-
-//--- Hash
-
-impl hash::Hash for RsyncModule {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        for ch in self.authority.iter() {
-            ch.to_ascii_lowercase().hash(state)
-        }
-        self.module.hash(state)
+        self.uri.module_str()
     }
 }
 
@@ -611,12 +664,6 @@ impl Scheme {
         }
     }
 
-    fn take(bytes: &mut Bytes) -> Result<Scheme, Error> {
-        let (res, len) = Self::from_prefix(bytes.as_ref())?;
-        bytes.advance(len);
-        Ok(res)
-    }
-
     pub fn is_https(self) -> bool {
         matches!(self, Scheme::Https)
     }
@@ -737,6 +784,21 @@ impl error::Error for Error { }
 mod tests {
     use super::*;
     use std::str::FromStr;
+
+    #[test]
+    fn rsync_components() {
+        let uri = Rsync::from_slice(b"rsync://host/module/foo/bar").unwrap();
+        assert_eq!(uri.module().authority(), "host");
+        assert_eq!(uri.authority(), "host");
+        assert_eq!(uri.module().module(), "module");
+        assert_eq!(uri.path(), "foo/bar");
+
+        let uri = Rsync::from_slice(b"rsync://host/module/").unwrap();
+        assert_eq!(uri.module().authority(), "host");
+        assert_eq!(uri.authority(), "host");
+        assert_eq!(uri.module().module(), "module");
+        assert_eq!(uri.path(), "");
+    }
 
     #[test]
     fn rsync_check_uri() {
@@ -876,7 +938,7 @@ mod tests {
         use serde_json::{from_str, to_string};
 
         let uri = Rsync::from_str("rsync://localhost/mod_b/a/b").unwrap();
-        let res = from_str(&to_string(&uri).unwrap()).unwrap();
+        let res = from_str::<Rsync>(&to_string(&uri).unwrap()).unwrap();
         assert_eq!(uri, res);
     }
 
