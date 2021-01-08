@@ -7,6 +7,7 @@
 //! validation where these statements list the AS numbers that are allowed
 //! to originate routes for prefixes.
 
+#![allow(clippy::unknown_clippy_lints)]
 
 pub mod repository;
 pub mod rrdp;
