@@ -23,8 +23,20 @@ use bytes::{BufMut, Bytes, BytesMut};
 /// which in turn references RFC 3986. Only absolute URIs including an
 /// authority are allowed.
 ///
-/// Parsing is simplified in that it only checks for the correct structure and
-/// that no forbidden characters are present.
+/// Unlike specified in the RFC but following the way the rsync daemon works,
+/// we enforce an rsync URI to consist of three parts: an authority, module
+/// name, and path. The URI then is formed as such:
+///
+/// ```text
+/// rsync://authority/module-name/path
+/// ```
+///
+/// The path can be empty, but authority and module name cannot.
+///
+/// Parsing is simplified in that it only checks that a URI follows this
+/// general structure and does not contain any forbidden characters. In
+/// addition, empty path segments or path segments consisting solely of a
+/// single or double full stop are rejected.
 ///
 //  In particular, forbidden characters are
 //
@@ -32,7 +44,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 //
 #[derive(Clone, Debug)]
 pub struct Rsync {
-    /// The bytes of the URI.
+    /// The bytes of the URI including everything.
     bytes: Bytes,
 
     /// Index where the module portion starts.
@@ -49,41 +61,39 @@ pub struct Rsync {
 
 impl Rsync {
     /// Creates a new URI from a module and a path.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if `path` contains bytes that are not allowed in
-    /// an rsync URI’s path.
-    pub fn new(module: RsyncModule, path: &[u8]) -> Self {
+    pub fn new(module: RsyncModule, path: &[u8]) -> Result<Self, Error> {
         module.uri.join(path.as_ref())
     }
 
+    /// Converts an owned string into a URI if it contains a valid URI.
     pub fn from_string(s: String) -> Result<Self, Error> {
         Self::from_bytes(Bytes::from(s))
     }
 
+    /// Cratesa a new URI with the content given by `slice`.
     pub fn from_slice(slice: &[u8]) -> Result<Self, Error> {
         Self::from_bytes(Bytes::copy_from_slice(slice))
     }
 
+    /// Converts a bytes value into a URI.
     pub fn from_bytes(bytes: Bytes) -> Result<Self, Error> {
-        if !is_uri_ascii(&bytes) {
-            return Err(Error::NotAscii)
-        }
-
+        check_uri_ascii(&bytes)?;
         if !starts_with_ignore_case(&bytes, b"rsync://") {
             return Err(Error::BadScheme)
         }
         let (authority, module) = {
             let mut parts = bytes[8..].splitn(3, |ch| *ch == b'/');
-            let authority = match parts.next() {
-                Some(part) => part.len(),
-                None => return Err(Error::BadUri)
+            let authority = match parts.next().map(|s| s.len()) {
+                Some(len) if len > 0 => len,
+                _ => return Err(Error::BadUri)
             };
-            let module = match parts.next() {
-                Some(part) => part.len(),
-                None => return Err(Error::BadUri)
+            let module = match parts.next().map(|s| s.len()) {
+                Some(len) if len > 0 => len,
+                _ => return Err(Error::BadUri)
             };
+            if parts.next().is_none() {
+                return Err(Error::BadUri)
+            }
             (authority, module)
         };
 
@@ -108,6 +118,10 @@ impl Rsync {
         self.bytes = Bytes::copy_from_slice(self.bytes.as_ref());
     }
 
+    /// Checks additional requirements of the path portion.
+    ///
+    /// This does _not_ check whether the slice consists of allowed characters
+    /// only. Use `check_uri_ascii` for that.
     fn check_path(path: &[u8]) -> Result<(), Error> {
         // Don’t allow ".." anywhere. Don’t allow empty segments except at the
         // end.
@@ -132,10 +146,12 @@ impl Rsync {
         }
     }
 
+    /// Returns the URI’s content as a string slice.
     pub fn as_str(&self) -> &str {
         unsafe { ::std::str::from_utf8_unchecked(self.bytes.as_ref()) }
     }
 
+    /// Returns the URI’s module.
     pub fn module(&self) -> RsyncModule {
         let mut uri = self.clone();
         uri.bytes.truncate(self.path_start);
@@ -144,88 +160,163 @@ impl Rsync {
         }
     }
 
+    /// Returns the URI’s authority part as a string slice.
     pub fn authority(&self) -> &str {
         &self.as_str()[8..(self.module_start - 1)]
     }
 
-    fn module_str(&self) -> &str {
+    /// Returns the URI’s module name as a string slice.
+    pub fn module_name(&self) -> &str {
         &self.as_str()[self.module_start..(self.path_start - 1)]
     }
 
+    /// Returns the URI’s path as a string slice.
+    ///
+    /// The path does _not_ start with a slash. As a consequence, an empty
+    /// path results in an empty string.
     pub fn path(&self) -> &str {
         &self.as_str()[self.path_start..]
     }
 
+    /// Returns the URI’s path as a bytes slice.
     pub fn path_bytes(&self) -> &[u8] {
         &self.bytes[self.path_start..]
     }
 
+    /// Returns the parent URI.
+    ///
+    /// The parent URI is the URI with the last path segment removed. If a
+    /// URI has no path segment, the method returns `None`. If a URI is
+    /// returned, it’s path will have a trailing slash to indicate that it
+    /// is a directory.
+    ///
+    /// Keep in mind that a URI with an empty path will still have the module
+    /// name after the authority part. The method will never return a URI
+    /// with an empty module name.
+    #[allow(clippy::manual_strip)] // str::strip_suffix not in 1.44
     pub fn parent(&self) -> Option<Self> {
-        // rsplit always returns at least one element.
-        let tail = self.path().rsplit(|ch| ch == '/').next().unwrap().len();
-        if tail == 0 {
+        let path = self.path();
+        let path = if path.ends_with('/') {
+            &path[..path.len() - 1]
+        }
+        else {
+            path
+        };
+        if path.is_empty() {
             None
         }
         else {
+            let len = match path.rfind('/') {
+                Some(idx) => self.path_start + idx + 1, // Trailing slash
+                None => self.path_start
+            };
             let mut res = self.clone();
-            res.bytes.truncate(self.bytes.len() - tail);
+            res.bytes.truncate(len);
             Some(res)
         }
     }
 
     /// Returns a copy of the URI extends by the given path.
     ///
-    /// # Panics
+    /// Returns an error if `path` contains illegal characters or path
+    /// segments that are empty or comprised of only a single or double full
+    /// stop. In other words, the method does not resolve double full stop
+    /// segments into parent directories. In addition, a path starting with
+    /// a slash will lead to an error, too.
     ///
-    /// The method panics if `path` is not a valid path.
-    pub fn join(&self, path: &[u8]) -> Self {
-        assert!(is_uri_ascii(path));
-        Self::check_path(path).unwrap();
-        let mut res = BytesMut::with_capacity(
-            self.bytes.len() + path.len() + 1
-        );
-        res.extend_from_slice(&self.bytes);
-        if !res.ends_with(b"/") {
-            res.extend_from_slice(b"/");
+    /// If `path` is empty, returns a clone of itself.
+    pub fn join(&self, path: &[u8]) -> Result<Self, Error> {
+        if path.is_empty() {
+            return Ok(self.clone())
         }
+
+        check_uri_ascii(path)?;
+        Self::check_path(path)?;
+        let mut res = if self.bytes.ends_with(b"/") {
+            let mut res = BytesMut::with_capacity(
+                self.bytes.len() + path.len() + 1
+            );
+            res.extend_from_slice(&self.bytes);
+            res
+        }
+        else {
+            let mut res = BytesMut::with_capacity(
+                self.bytes.len() + path.len() + 2
+            );
+            res.extend_from_slice(&self.bytes);
+            res.extend_from_slice(b"/");
+            res
+        };
         res.extend_from_slice(path);
-        Rsync {
+        Ok(Rsync {
             bytes: res.freeze(),
             module_start: self.module_start,
             path_start: self.path_start,
-        }
+        })
     }
 
     pub fn ends_with(&self, extension: &str) -> bool {
         self.path().ends_with(extension)
     }
 
-    /// Returns some relative path of self as a sub path of other, as long as
-    /// other is a parent. If self and other are the same, or equal, then the
-    /// the returned slice is empty. If other is not a parent of self, then
-    /// None is returned.
-    pub fn relative_to(&self, other: &Rsync) -> Option<&[u8]> {
-        if self.eq_module(other) {
-            if self.path_bytes().starts_with(other.path_bytes()) {
-                let cut_len = other.path_bytes().len();
-                let (_, rel) = self.path_bytes().split_at(cut_len);
-                Some(rel)
-            } else {
-                None
-            }
-        } else {
-            None
+    /// Returns the relative path from some other URI to self.
+    ///
+    /// If `other` is a parent of `self`, returns the path leading from
+    /// other to self. If `other` and `self` are the same, returns an empty
+    /// slice. Otherwise returns `None`.
+    ///
+    /// In other words, the method returns that path that should be passed
+    /// to [`other.join`][Rsync::join] to receive a URI that is equal to self.
+    #[allow(clippy::manual_strip)] // str::strip_suffix not in 1.44
+    pub fn relative_to(&self, other: &Rsync) -> Option<&str> {
+        if !self.eq_module(other) {
+            return None
         }
+
+        // Reminder: other is the shorter one.
+
+        // Get the two paths. Drop a possible trailing slash from other_path
+        // just so we have a single case.
+        let self_path = self.path();
+        let other_path = other.path();
+
+        // If other_path is empty, self_path is the relative path.
+        if other_path.is_empty() {
+            return Some(self_path)
+        }
+
+        let other_path = if other_path.ends_with('/') {
+            &other_path[..other_path.len() - 1]
+        }
+        else {
+            other_path
+        };
+
+        // self_path needs to start with other_path. They either are the same
+        // or the next thing in self_path needs to be a slash.
+        if !self_path.starts_with(other_path) {
+            return None
+        }
+        if self_path.len() == other_path.len() {
+            return Some("")
+        }
+        if self_path.as_bytes()[other_path.len()] != b'/' {
+            return None
+        }
+
+        // Now we know that self_path is long enough and we can just return
+        // the rest.
+        Some(&self_path[other_path.len() + 1..])
     }
 
-    /// Returns true if this uri is a directory and it contains the other
-    /// uri.
+    /// Returns whether self is a parent directory of another URI.
+    ///
+    /// If self and other are identical, they are _not_ parents of each other.
     pub fn is_parent_of(&self, other: &Rsync) -> bool {
-        self.eq_module(other) &&
-        (self.path_bytes().is_empty() || (
-            self.ends_with("/") &&
-            other.path_bytes().starts_with(self.path_bytes())
-        ))
+        match other.relative_to(self) {
+            Some(path) => !path.is_empty(),
+            None => false
+        }
     }
 
     /// Returns whether the two URIs are in the same module.
@@ -408,7 +499,7 @@ impl RsyncModule {
     }
 
     pub fn module(&self) -> &str {
-        self.uri.module_str()
+        self.uri.module_name()
     }
 }
 
@@ -457,9 +548,7 @@ impl Https {
     }
 
     pub fn from_bytes(bytes: Bytes) -> Result<Self, Error> {
-        if !is_uri_ascii(&bytes) {
-            return Err(Error::NotAscii)
-        }
+        check_uri_ascii(&bytes)?;
         let (scheme, start) = Scheme::from_prefix(bytes.as_ref())?;
         if !scheme.is_https() {
             return Err(Error::BadScheme)
@@ -503,8 +592,8 @@ impl Https {
 
     /// This function will join this URI and the given path. If the current
     /// URI does not end with a trailing '/', it will be injected.
-    pub fn join(&self, path: &[u8]) -> Self {
-        assert!(is_uri_ascii(path));
+    pub fn join(&self, path: &[u8]) -> Result<Self, Error> {
+        check_uri_ascii(path)?;
         let mut res = BytesMut::with_capacity(
             self.uri.len() + self.uri.len() + 1
         );
@@ -516,10 +605,10 @@ impl Https {
 
         res.put_slice(path);
 
-        Https {
+        Ok(Https {
             uri: res.freeze(),
             path_idx: self.path_idx
-        }
+        })
     }
 }
 
@@ -741,13 +830,19 @@ pub fn starts_with_ignore_case(s: &[u8], expected: &[u8]) -> bool {
     }
 }
 
-pub fn is_uri_ascii<S: AsRef<[u8]>>(slice: S) -> bool {
-    slice.as_ref().iter().all(|&ch| {
+#[allow(clippy::blocks_in_if_conditions)]
+pub fn check_uri_ascii<S: AsRef<[u8]>>(slice: S) -> Result<(), Error> {
+    if slice.as_ref().iter().all(|&ch| {
         ch > b' ' && ch != b'"' && ch != b'#' && ch != b'<' && ch != b'>'
             && ch != b'?' && ch != b'[' && ch != b'\\' && ch != b']'
             && ch != b'^' && ch != b'`' && ch != b'{' && ch != b'|'
             && ch != b'}' && ch < 0x7F
-    })
+    }) {
+        Ok(())
+    }
+    else {
+        Err(Error::InvalidCharacters)
+    }
 }
 
 
@@ -755,7 +850,7 @@ pub fn is_uri_ascii<S: AsRef<[u8]>>(slice: S) -> bool {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Error {
-    NotAscii,
+    InvalidCharacters,
     BadUri,
     BadScheme,
     DotSegments,
@@ -765,7 +860,7 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(match *self {
-            Error::NotAscii => "invalid characters",
+            Error::InvalidCharacters=> "invalid characters",
             Error::BadUri => "bad URI",
             Error::BadScheme => "bad URI scheme",
             Error::DotSegments => "URI with dot path segments",
@@ -786,22 +881,40 @@ mod tests {
     use std::str::FromStr;
 
     #[test]
+    fn rsync_from_str() {
+        assert!(Rsync::from_str("").is_err());
+        assert!(Rsync::from_str("rsync://").is_err());
+        assert!(Rsync::from_str("rsync://host/").is_err());
+        assert!(Rsync::from_str("rsync://host/module").is_err());
+        assert!(Rsync::from_str("rsync://host/module/").is_ok());
+        assert!(Rsync::from_str("rsync:////foo").is_err());
+        assert!(Rsync::from_str("rsync:///module/foo").is_err());
+        assert!(Rsync::from_str("rsync://host//foo").is_err());
+        assert!(Rsync::from_str("rsync://host/module/foo/").is_ok());
+        assert!(Rsync::from_str("rsync://host/module/foo/bar").is_ok());
+        assert!(Rsync::from_str("fsync://host/module/foo/bar").is_err());
+        assert!(Rsync::from_str("rsync:// host/module/foo/bar").is_err());
+        assert!(Rsync::from_str("rsync://host/ module/foo/bar").is_err());
+        assert!(Rsync::from_str("rsync://host/module/f oo/bar").is_err());
+    }
+
+    #[test]
     fn rsync_components() {
         let uri = Rsync::from_slice(b"rsync://host/module/foo/bar").unwrap();
         assert_eq!(uri.module().authority(), "host");
         assert_eq!(uri.authority(), "host");
-        assert_eq!(uri.module().module(), "module");
+        assert_eq!(uri.module_name(), "module");
         assert_eq!(uri.path(), "foo/bar");
 
         let uri = Rsync::from_slice(b"rsync://host/module/").unwrap();
         assert_eq!(uri.module().authority(), "host");
         assert_eq!(uri.authority(), "host");
-        assert_eq!(uri.module().module(), "module");
+        assert_eq!(uri.module_name(), "module");
         assert_eq!(uri.path(), "");
     }
 
     #[test]
-    fn rsync_check_uri() {
+    fn rsync_from_slice() {
         assert!(Rsync::from_slice(b"rsync://host/module/foo/bar").is_ok());
         assert!(Rsync::from_slice(b"rsync://host/module/foo/bar/").is_ok());
         assert_eq!(
@@ -831,18 +944,334 @@ mod tests {
     }
 
     #[test]
-    fn resolve_relative_rsync_path() {
-        let a = Rsync::from_str("rsync://localhost/module/a").unwrap();
-        let a_b = Rsync::from_str("rsync://localhost/module/a/b").unwrap();
-        let c = Rsync::from_str("rsync://localhost/module/c").unwrap();
-        let m2_a_b = Rsync::from_str("rsync://localhost/mod_b/a/b").unwrap();
+    fn rsync_parent() {
+        assert_eq!(
+            Rsync::from_str(
+                "rsync://host/module/foo/bar/baz/"
+            ).unwrap().parent(),
+            Some(Rsync::from_str(
+                "rsync://host/module/foo/bar/"
+            ).unwrap())
+        );
+        assert_eq!(
+            Rsync::from_str(
+                "rsync://host/module/foo/bar/baz"
+            ).unwrap().parent(),
+            Some(Rsync::from_str(
+                "rsync://host/module/foo/bar/"
+            ).unwrap())
+        );
+        assert_eq!(
+            Rsync::from_str(
+                "rsync://host/module/foo/bar/baz"
+            ).unwrap().parent(),
+            Some(Rsync::from_str(
+                "rsync://host/module/foo/bar/"
+            ).unwrap())
+        );
+        assert_eq!(
+            Rsync::from_str(
+                "rsync://host/module/foo/bar/"
+            ).unwrap().parent(),
+            Some(Rsync::from_str(
+                "rsync://host/module/foo/"
+            ).unwrap())
+        );
+        assert_eq!(
+            Rsync::from_str(
+                "rsync://host/module/foo/bar"
+            ).unwrap().parent(),
+            Some(Rsync::from_str(
+                "rsync://host/module/foo/"
+            ).unwrap())
+        );
+        assert_eq!(
+            Rsync::from_str(
+                "rsync://host/module/foo/"
+            ).unwrap().parent(),
+            Some(Rsync::from_str(
+                "rsync://host/module/"
+            ).unwrap())
+        );
+        assert_eq!(
+            Rsync::from_str(
+                "rsync://host/module/foo"
+            ).unwrap().parent(),
+            Some(Rsync::from_str(
+                "rsync://host/module/"
+            ).unwrap())
+        );
+        assert!(
+            Rsync::from_str(
+                "rsync://host/module/"
+            ).unwrap().parent().is_none()
+        );
+        assert!(
+            Rsync::from_str(
+                "rsync://host/module/foo/"
+            ).unwrap().parent().unwrap().parent().is_none()
+        );
+    }
 
-        assert_eq!(Some(b"".as_ref()), a.relative_to(&a));
-        assert_eq!(Some(b"/b".as_ref()), a_b.relative_to(&a));
-        assert_eq!(None, a_b.relative_to(&c));
-        assert_eq!(None, c.relative_to(&a));
-        assert_eq!(None, a.relative_to(&a_b));
-        assert_eq!(None, m2_a_b.relative_to(&a));
+    #[test]
+    fn rsync_join() {
+        // Append empty path
+        assert_eq!(
+            Rsync::from_str("rsync://host/module/").unwrap().join(
+                b""
+            ).unwrap().as_str(),
+            "rsync://host/module/"
+        );
+
+        // Append path to URI with empty path.
+        assert_eq!(
+            Rsync::from_str("rsync://host/module/").unwrap().join(
+                b"foo"
+            ).unwrap().as_str(),
+            "rsync://host/module/foo"
+        );
+        assert_eq!(
+            Rsync::from_str("rsync://host/module/").unwrap().join(
+                b"foo/"
+            ).unwrap().as_str(),
+            "rsync://host/module/foo/"
+        );
+        assert_eq!(
+            Rsync::from_str("rsync://host/module/").unwrap().join(
+                b"foo/bar"
+            ).unwrap().as_str(),
+            "rsync://host/module/foo/bar"
+        );
+
+        // Append path to URI with non-empty path not ending in a slash.
+        assert_eq!(
+            Rsync::from_str("rsync://host/module/some").unwrap().join(
+                b"foo"
+            ).unwrap().as_str(),
+            "rsync://host/module/some/foo"
+        );
+        assert_eq!(
+            Rsync::from_str("rsync://host/module/some").unwrap().join(
+                b"foo/"
+            ).unwrap().as_str(),
+            "rsync://host/module/some/foo/"
+        );
+        assert_eq!(
+            Rsync::from_str("rsync://host/module/some").unwrap().join(
+                b"foo/bar"
+            ).unwrap().as_str(),
+            "rsync://host/module/some/foo/bar"
+        );
+
+        // Append path to URI with non-empty path ending in a slash.
+        assert_eq!(
+            Rsync::from_str("rsync://host/module/some/").unwrap().join(
+                b"foo"
+            ).unwrap().as_str(),
+            "rsync://host/module/some/foo"
+        );
+        assert_eq!(
+            Rsync::from_str("rsync://host/module/some/").unwrap().join(
+                b"foo/"
+            ).unwrap().as_str(),
+            "rsync://host/module/some/foo/"
+        );
+        assert_eq!(
+            Rsync::from_str("rsync://host/module/some/").unwrap().join(
+                b"foo/bar"
+            ).unwrap().as_str(),
+            "rsync://host/module/some/foo/bar"
+        );
+
+        // Error cases
+        assert!(
+            Rsync::from_str("rsync://host/module/").unwrap().join(
+                b"."
+            ).is_err()
+        );
+        assert!(
+            Rsync::from_str("rsync://host/module/").unwrap().join(
+                b"foo/."
+            ).is_err()
+        );
+        assert!(
+            Rsync::from_str("rsync://host/module/").unwrap().join(
+                b".."
+            ).is_err()
+        );
+        assert!(
+            Rsync::from_str("rsync://host/module/").unwrap().join(
+                b"foo/../bar"
+            ).is_err()
+        );
+        assert!(
+            Rsync::from_str("rsync://host/module/").unwrap().join(
+                b"../bar"
+            ).is_err()
+        );
+        assert!(
+            Rsync::from_str("rsync://host/module/").unwrap().join(
+                b"/bar"
+            ).is_err()
+        );
+    }
+
+    #[test]
+    fn rsync_relative_to() {
+        let m = Rsync::from_str("rsync://host/module/").unwrap();
+        let m_a = Rsync::from_str("rsync://host/module/a").unwrap();
+        let m_a_ = Rsync::from_str("rsync://host/module/a/").unwrap();
+        let m_ab = Rsync::from_str("rsync://host/module/ab").unwrap();
+        let m_ab_ = Rsync::from_str("rsync://host/module/ab/").unwrap();
+        let m_a_b = Rsync::from_str("rsync://host/module/a/b").unwrap();
+        let m_a_b_ = Rsync::from_str("rsync://host/module/a/b/").unwrap();
+        let m_a_c = Rsync::from_str("rsync://host/module/a/c").unwrap();
+        let m_a_c_ = Rsync::from_str("rsync://host/module/a/c/").unwrap();
+        let m_c = Rsync::from_str("rsync://host/module/c").unwrap();
+        let m_c_ = Rsync::from_str("rsync://host/module/c/").unwrap();
+        let m2 = Rsync::from_str("rsync://host/mod_b/").unwrap();
+        let m2_a_b = Rsync::from_str("rsync://host/mod_b/a/b").unwrap();
+
+        assert_eq!(m.relative_to(&m), Some(""));
+        assert_eq!(m.relative_to(&m_a), None);
+        assert_eq!(m.relative_to(&m_a_b_), None);
+        assert_eq!(m.relative_to(&m2), None);
+
+        assert_eq!(m_a.relative_to(&m), Some("a"));
+        assert_eq!(m_a.relative_to(&m_a), Some(""));
+        assert_eq!(m_a.relative_to(&m_a_), Some(""));
+        assert_eq!(m_a.relative_to(&m_a_b), None);
+        assert_eq!(m_a.relative_to(&m_ab), None);
+        assert_eq!(m_a.relative_to(&m_a_b_), None);
+        assert_eq!(m_a.relative_to(&m_c), None);
+        assert_eq!(m_a.relative_to(&m_c_), None);
+        assert_eq!(m_a.relative_to(&m2), None);
+
+        assert_eq!(m_a_.relative_to(&m), Some("a/"));
+        assert_eq!(m_a_.relative_to(&m_a), Some(""));
+        assert_eq!(m_a_.relative_to(&m_a_), Some(""));
+        assert_eq!(m_a_.relative_to(&m_a_b), None);
+        assert_eq!(m_a_.relative_to(&m_ab), None);
+        assert_eq!(m_a_.relative_to(&m_a_b_), None);
+        assert_eq!(m_a_.relative_to(&m_c), None);
+        assert_eq!(m_a_.relative_to(&m_c_), None);
+        assert_eq!(m_a_.relative_to(&m2), None);
+
+        assert_eq!(m_ab.relative_to(&m_a), None);
+        assert_eq!(m_ab.relative_to(&m_a_), None);
+        assert_eq!(m_ab.relative_to(&m_a_b), None);
+
+        assert_eq!(m_ab_.relative_to(&m_a), None);
+        assert_eq!(m_ab_.relative_to(&m_a_), None);
+        assert_eq!(m_ab_.relative_to(&m_a_b), None);
+
+        assert_eq!(m_a_b.relative_to(&m), Some("a/b"));
+        assert_eq!(m_a_b.relative_to(&m_a), Some("b"));
+        assert_eq!(m_a_b.relative_to(&m_a_), Some("b"));
+        assert_eq!(m_a_b.relative_to(&m_a_b_), Some(""));
+        assert_eq!(m_a_b.relative_to(&m_a_b), Some(""));
+        assert_eq!(m_a_b.relative_to(&m_ab), None);
+        assert_eq!(m_a_b.relative_to(&m_ab_), None);
+        assert_eq!(m_a_b.relative_to(&m_a_c), None);
+        assert_eq!(m_a_b.relative_to(&m_a_c_), None);
+        assert_eq!(m_a_b.relative_to(&m_c), None);
+        assert_eq!(m_a_b.relative_to(&m_c_), None);
+        assert_eq!(m_a_b.relative_to(&m2), None);
+        assert_eq!(m_a_b.relative_to(&m2_a_b), None);
+
+        assert_eq!(m_a_b_.relative_to(&m), Some("a/b/"));
+        assert_eq!(m_a_b_.relative_to(&m_a), Some("b/"));
+        assert_eq!(m_a_b_.relative_to(&m_a_), Some("b/"));
+        assert_eq!(m_a_b_.relative_to(&m_a_b_), Some(""));
+        assert_eq!(m_a_b_.relative_to(&m_a_b), Some(""));
+        assert_eq!(m_a_b_.relative_to(&m_ab), None);
+        assert_eq!(m_a_b_.relative_to(&m_ab_), None);
+        assert_eq!(m_a_b_.relative_to(&m_a_c), None);
+        assert_eq!(m_a_b_.relative_to(&m_a_c_), None);
+        assert_eq!(m_a_b_.relative_to(&m_c), None);
+        assert_eq!(m_a_b_.relative_to(&m_c_), None);
+        assert_eq!(m_a_b_.relative_to(&m2), None);
+        assert_eq!(m_a_b_.relative_to(&m2_a_b), None);
+    }
+
+    #[test]
+    fn rsync_is_parent_of() {
+        // As long as is_parent_is is implemented in terms of relative_to,
+        // we can keep this short.
+        let m = Rsync::from_str("rsync://host/module/").unwrap();
+        let m_a = Rsync::from_str("rsync://host/module/a").unwrap();
+        let m_a_b = Rsync::from_str("rsync://host/module/a/b").unwrap();
+        let m2_a_b = Rsync::from_str("rsync://host/mod_b/a/b").unwrap();
+
+        assert!(!m.is_parent_of(&m));
+        assert!( m.is_parent_of(&m_a));
+        assert!( m.is_parent_of(&m_a_b));
+        assert!(!m.is_parent_of(&m2_a_b));
+        assert!(!m_a.is_parent_of(&m));
+        assert!(!m_a.is_parent_of(&m_a));
+        assert!( m_a.is_parent_of(&m_a_b));
+        assert!(!m_a.is_parent_of(&m2_a_b));
+        assert!(!m_a_b.is_parent_of(&m));
+        assert!(!m_a_b.is_parent_of(&m_a));
+        assert!(!m_a_b.is_parent_of(&m_a_b));
+        assert!(!m_a_b.is_parent_of(&m2_a_b));
+        assert!(!m2_a_b.is_parent_of(&m));
+        assert!(!m2_a_b.is_parent_of(&m_a));
+        assert!(!m2_a_b.is_parent_of(&m_a_b));
+        assert!(!m2_a_b.is_parent_of(&m2_a_b));
+    }
+
+    #[test]
+    fn rsync_partial_eq() {
+        assert_eq!(
+            Rsync::from_str("rsync://host/module/").unwrap(),
+            "rsync://host/module/"
+        );
+        assert_eq!(
+            Rsync::from_str("rsyNc://hOst/module/").unwrap(),
+            "rsync://host/module/"
+        );
+
+        assert_eq!(
+            Rsync::from_str("rsync://host/module/path").unwrap(),
+            "rsync://host/module/path"
+        );
+        assert_eq!(
+            Rsync::from_str("rsyNc://hOst/module/path").unwrap(),
+            "rsync://host/module/path"
+        );
+        assert_ne!(
+            Rsync::from_str("rsync://host/module/pAth").unwrap(),
+            "rsync://host/module/path"
+        );
+    }
+
+    #[test]
+    fn rsync_hash() {
+        fn hash(uri: &str) -> u64 {
+            use std::hash::{Hash, Hasher};
+
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            Rsync::from_str(uri).unwrap().hash(&mut hasher);
+            hasher.finish()
+        }
+
+        assert_eq!(
+            hash("rsync://host/module/"),
+            hash("rsync://host/module/")
+        );
+        assert_eq!(
+            hash("rsyNc://hOst/module/"),
+            hash("rsync://host/module/")
+        );
+        assert_eq!(
+            hash("rsync://host/module/path"),
+            hash("rsync://host/module/path")
+        );
+        assert_eq!(
+            hash("rsyNc://hOst/module/path"),
+            hash("rsync://host/module/path")
+        );
     }
 
     #[test]
@@ -965,13 +1394,19 @@ mod tests {
 
     #[test]
     fn https_join() {
-        let base_uri_no_trailing_slash = Https::from_str("https://example.com/some").unwrap();
-        let base_uri_trailing_slash = Https::from_str("https://example.com/some/").unwrap();
+        let base_uri_no_trailing_slash = Https::from_str(
+            "https://example.com/some"
+        ).unwrap();
+        let base_uri_trailing_slash = Https::from_str(
+            "https://example.com/some/"
+        ).unwrap();
         let sub = "sub/".as_bytes();
 
-        let expected = Https::from_str("https://example.com/some/sub/").unwrap();
+        let expected = Https::from_str(
+            "https://example.com/some/sub/"
+        ).unwrap();
 
-        assert_eq!(base_uri_no_trailing_slash.join(sub), expected);
-        assert_eq!(base_uri_trailing_slash.join(sub), expected);
+        assert_eq!(base_uri_no_trailing_slash.join(sub).unwrap(), expected);
+        assert_eq!(base_uri_trailing_slash.join(sub).unwrap(), expected);
     }
 }

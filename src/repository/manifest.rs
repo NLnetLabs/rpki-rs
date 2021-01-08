@@ -277,7 +277,7 @@ impl ManifestContent {
         self.iter().map(move |item| {
             let (file, hash) = item.into_pair();
             (
-                base.join(file.as_ref()),
+                base.join(file.as_ref()).unwrap(),
                 ManifestHash::new(hash, alg)
             )
         })
