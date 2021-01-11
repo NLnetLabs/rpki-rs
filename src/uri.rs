@@ -1,6 +1,7 @@
 //! URIs.
 
 use std::{error, fmt, hash, str};
+use std::borrow::Cow;
 use std::convert::TryFrom;
 use bytes::{BufMut, Bytes, BytesMut};
 
@@ -163,6 +164,21 @@ impl Rsync {
     /// Returns the URI’s authority part as a string slice.
     pub fn authority(&self) -> &str {
         &self.as_str()[8..(self.module_start - 1)]
+    }
+
+    /// Returns a canonical version of authority part.
+    ///
+    /// Since host names are case-insensitive, the authority part can be
+    /// provided in different ways. This returns a version of the authority
+    /// with all ASCII letters in lowercase.
+    pub fn canonical_authority(&self) -> Cow<str> {
+        let authority = self.authority();
+        if authority.as_bytes().iter().any(u8::is_ascii_uppercase) {
+            Cow::Owned(authority.to_ascii_lowercase())
+        }
+        else {
+            Cow::Borrowed(authority)
+        }
     }
 
     /// Returns the URI’s module name as a string slice.
