@@ -839,7 +839,7 @@ pub fn check_uri_ascii<S: AsRef<[u8]>>(slice: S) -> Result<(), Error> {
     }
 }
 
-const fn is_u8_uri_ascii(ch: u8) -> bool {
+fn is_u8_uri_ascii(ch: u8) -> bool {
     matches!(
         ch,
         b'!' | b'$'..=b';' | b'=' | b'A'..=b'Z' | b'_' | b'a'..=b'z' | b'~'
