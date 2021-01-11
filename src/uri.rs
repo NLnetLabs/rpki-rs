@@ -957,6 +957,22 @@ mod tests {
     }
 
     #[test]
+    fn rsync_canonical_authority() {
+        assert_eq!(
+            Rsync::from_str(
+                "rsync://host/module/foo"
+            ).unwrap().canonical_authority(),
+            "host"
+        );
+        assert_eq!(
+            Rsync::from_str(
+                "rsync://hOSt/module/foo"
+            ).unwrap().canonical_authority(),
+            "host"
+        );
+    }
+
+    #[test]
     fn rsync_from_slice() {
         assert!(Rsync::from_slice(b"rsync://host/module/foo/bar").is_ok());
         assert!(Rsync::from_slice(b"rsync://host/module/foo/bar/").is_ok());
