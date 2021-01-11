@@ -830,19 +830,20 @@ pub fn starts_with_ignore_case(s: &[u8], expected: &[u8]) -> bool {
     }
 }
 
-#[allow(clippy::blocks_in_if_conditions)]
 pub fn check_uri_ascii<S: AsRef<[u8]>>(slice: S) -> Result<(), Error> {
-    if slice.as_ref().iter().all(|&ch| {
-        ch > b' ' && ch != b'"' && ch != b'#' && ch != b'<' && ch != b'>'
-            && ch != b'?' && ch != b'[' && ch != b'\\' && ch != b']'
-            && ch != b'^' && ch != b'`' && ch != b'{' && ch != b'|'
-            && ch != b'}' && ch < 0x7F
-    }) {
+    if slice.as_ref().iter().all(|&ch| is_u8_uri_ascii(ch)) {
         Ok(())
     }
     else {
         Err(Error::InvalidCharacters)
     }
+}
+
+const fn is_u8_uri_ascii(ch: u8) -> bool {
+    matches!(
+        ch,
+        b'!' | b'$'..=b';' | b'=' | b'A'..=b'Z' | b'_' | b'a'..=b'z' | b'~'
+    )
 }
 
 
@@ -879,6 +880,32 @@ impl error::Error for Error { }
 mod tests {
     use super::*;
     use std::str::FromStr;
+
+    #[test]
+    fn rsync_uri_characters() {
+        assert!(Rsync::from_str("rsync://host/module/ ").is_err());
+        assert!(Rsync::from_str("rsync://host/module/\"").is_err());
+        assert!(Rsync::from_str("rsync://host/module/#").is_err());
+        assert!(Rsync::from_str("rsync://host/module/<").is_err());
+        assert!(Rsync::from_str("rsync://host/module/>").is_err());
+        assert!(Rsync::from_str("rsync://host/module/?").is_err());
+        assert!(Rsync::from_str("rsync://host/module/[").is_err());
+        assert!(Rsync::from_str("rsync://host/module/\\").is_err());
+        assert!(Rsync::from_str("rsync://host/module/]").is_err());
+        assert!(Rsync::from_str("rsync://host/module/^").is_err());
+        assert!(Rsync::from_str("rsync://host/module/`").is_err());
+        assert!(Rsync::from_str("rsync://host/module/{").is_err());
+        assert!(Rsync::from_str("rsync://host/module/|").is_err());
+        assert!(Rsync::from_str("rsync://host/module/}").is_err());
+        assert!(
+            Rsync::from_str(
+                "rsync://host/module/\
+                $%&'()*+,-./0123456789:;=\
+                ABCDEFGHIJKLMNOPQRSTUVWXYZ_\
+                abcdefghijklmnopqrstuvwxyz~"
+            ).is_ok()
+        );
+    }
 
     #[test]
     fn rsync_from_str() {
