@@ -10,6 +10,10 @@ Breaking
   For the content previously included, these are: `repository` for
   processing of RPKI repository objects, `rrdp` for RRDP support, and
   `serde` for adding serde support to repository objects. ([#119])
+* Restructured handling of rsync URIs: There is now only a single type
+  `uri::Rsync` for both rsync module URIs and URIs below module level.
+  The type `uri::RsyncModule` has been dropped. Instead, `uri::Rsync` now
+  allows access to the URI’s content as a single bytes slice. ([#124])
 * Upgrade `bytes` and `tokio` to 1.0. ([#121])
 * The minimum required Rust version is now 1.43. ([#121])
 
@@ -25,6 +29,7 @@ Other Changes
 [#119]: https://github.com/NLnetLabs/rpki-rs/pull/119
 [#120]: https://github.com/NLnetLabs/rpki-rs/pull/120
 [#121]: https://github.com/NLnetLabs/rpki-rs/pull/121
+[#124]: https://github.com/NLnetLabs/rpki-rs/pull/124
 
 
 ## 0.10.0
