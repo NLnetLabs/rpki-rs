@@ -61,11 +61,6 @@ pub struct Rsync {
 }
 
 impl Rsync {
-    /// Creates a new URI from a module and a path.
-    pub fn new(module: RsyncModule, path: &[u8]) -> Result<Self, Error> {
-        module.uri.join(path.as_ref())
-    }
-
     /// Converts an owned string into a URI if it contains a valid URI.
     pub fn from_string(s: String) -> Result<Self, Error> {
         Self::from_bytes(Bytes::from(s))
@@ -147,18 +142,19 @@ impl Rsync {
         }
     }
 
+    /// Returns the URI’s content as a bytes slice.
+    pub fn as_slice(&self) -> &[u8] {
+        self.bytes.as_ref()
+    }
+
     /// Returns the URI’s content as a string slice.
     pub fn as_str(&self) -> &str {
         unsafe { ::std::str::from_utf8_unchecked(self.bytes.as_ref()) }
     }
 
-    /// Returns the URI’s module.
-    pub fn module(&self) -> RsyncModule {
-        let mut uri = self.clone();
-        uri.bytes.truncate(self.path_start);
-        RsyncModule {
-            uri
-        }
+    /// Returns the URI’s content as a bytes value.
+    pub fn to_bytes(&self) -> Bytes {
+        self.bytes.clone()
     }
 
     /// Returns the URI’s authority part as a string slice.
@@ -184,6 +180,33 @@ impl Rsync {
     /// Returns the URI’s module name as a string slice.
     pub fn module_name(&self) -> &str {
         &self.as_str()[self.module_start..(self.path_start - 1)]
+    }
+
+    /// Returns the URI’s module.
+    ///
+    /// The module is identical to the a URI with an empty path.
+    pub fn module(&self) -> &str {
+        &self.as_str()[..self.path_start]
+    }
+
+    /// Returns the URI’s canonical module.
+    ///
+    /// This is the same as the module but with the authority in canonical
+    /// form.
+    pub fn canonical_module(&self) -> Cow<str> {
+        if self.authority().as_bytes().iter().any(u8::is_ascii_uppercase) {
+            let mut res = String::with_capacity(self.path_start);
+            res.push_str("rsync://");
+            res.push_str(self.authority());
+            res.make_ascii_lowercase();
+            res.push('/');
+            res.push_str(self.module_name());
+            res.push('/');
+            Cow::Owned(res)
+        }
+        else {
+            Cow::Borrowed(self.module())
+        }
     }
 
     /// Returns the URI’s path as a string slice.
@@ -458,73 +481,6 @@ impl<'a> encode::PrimitiveContent for &'a Rsync {
 impl fmt::Display for Rsync {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(self.as_str())
-    }
-}
-
-
-//------------ RsyncModule ---------------------------------------------------
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct RsyncModule {
-    uri: Rsync,
-}
-
-impl RsyncModule {
-    /// Creates a new valud from an authority and a module.
-    ///
-    /// # Panics
-    ///
-    /// The function panics if `authority` or `module` contain illegal
-    /// characters.
-    pub fn new<A, M>(authority: A, module: M) -> Self
-    where A: AsRef<[u8]>, M: AsRef<[u8]> {
-        let authority = authority.as_ref();
-        let module = module.as_ref();
-
-        let mut res = BytesMut::with_capacity(
-            // "rsync://" authority "/" module "/"
-            authority.len() + module.len() + 10
-        );
-        res.extend_from_slice(b"rsync://");
-        res.extend_from_slice(authority);
-        res.extend_from_slice(b"/");
-        res.extend_from_slice(module);
-        res.extend_from_slice(b"/");
-        RsyncModule {
-            uri: Rsync::from_bytes(res.freeze()).unwrap()
-        }
-    }
-
-    /// Moves the value to its own memory.
-    ///
-    /// Values use shared memory in order to allow cheap copying which may
-    /// result in large allocations being kept around longer than necessary.
-    /// This method moves the URI to a new memory location allowing the
-    /// previous location to potentially be freed.
-    pub fn unshare(&mut self) {
-        self.uri.unshare()
-    }
-
-
-    pub fn to_uri(&self) -> Rsync {
-        self.uri.clone()
-    }
-
-    pub fn authority(&self) -> &str {
-        self.uri.authority()
-    }
-
-    pub fn module(&self) -> &str {
-        self.uri.module_name()
-    }
-}
-
-
-//--- Display
-
-impl fmt::Display for RsyncModule {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "rsync://{}/{}/", self.authority(), self.module())
     }
 }
 
@@ -944,13 +900,11 @@ mod tests {
     #[test]
     fn rsync_components() {
         let uri = Rsync::from_slice(b"rsync://host/module/foo/bar").unwrap();
-        assert_eq!(uri.module().authority(), "host");
         assert_eq!(uri.authority(), "host");
         assert_eq!(uri.module_name(), "module");
         assert_eq!(uri.path(), "foo/bar");
 
         let uri = Rsync::from_slice(b"rsync://host/module/").unwrap();
-        assert_eq!(uri.module().authority(), "host");
         assert_eq!(uri.authority(), "host");
         assert_eq!(uri.module_name(), "module");
         assert_eq!(uri.path(), "");
@@ -969,6 +923,46 @@ mod tests {
                 "rsync://hOSt/module/foo"
             ).unwrap().canonical_authority(),
             "host"
+        );
+    }
+
+    #[test]
+    fn rsync_module() {
+        assert_eq!(
+            Rsync::from_str("rsync://host/module/").unwrap().module(),
+            "rsync://host/module/"
+        );
+        assert_eq!(
+            Rsync::from_str("rsync://host/module/foo").unwrap().module(),
+            "rsync://host/module/"
+        );
+    }
+
+    #[test]
+    fn rsync_canonical_module() {
+        assert_eq!(
+            Rsync::from_str(
+                "rsync://host/module/"
+            ).unwrap().canonical_module(),
+            "rsync://host/module/"
+        );
+        assert_eq!(
+            Rsync::from_str(
+                "rsync://host/module/foo"
+            ).unwrap().canonical_module(),
+            "rsync://host/module/"
+        );
+        assert_eq!(
+            Rsync::from_str(
+                "rsync://hOst/module/"
+            ).unwrap().canonical_module(),
+            "rsync://host/module/"
+        );
+        assert_eq!(
+            Rsync::from_str(
+                "rsync://hOst/module/foo"
+            ).unwrap().canonical_module(),
+            "rsync://host/module/"
         );
     }
 
