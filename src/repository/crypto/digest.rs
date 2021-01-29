@@ -27,6 +27,22 @@ pub use ring::digest::Digest;
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct DigestAlgorithm(());
 
+impl DigestAlgorithm {
+    /// Creates a value representing the SHA-256 algorithm.
+    pub fn sha256() -> Self {
+        DigestAlgorithm(())
+    }
+
+    /// Returns whether the algorithm is in fact SHA-256.
+    pub fn is_sha256(self) -> bool {
+        true
+    }
+
+    /// Returns the digest size in octets for this algorithm.
+    pub fn digest_len(&self) -> usize {
+        32
+    }
+}
 
 /// # Creating Digest Values
 ///

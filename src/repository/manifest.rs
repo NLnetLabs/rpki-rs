@@ -489,6 +489,16 @@ impl ManifestHash {
             self.algorithm.digest(t.as_ref()).as_ref()
         ).map_err(|_| ValidationError)
     }
+
+    /// Returns the digest algorithm of the hash.
+    pub fn algorithm(&self) -> DigestAlgorithm {
+        self.algorithm
+    }
+
+    /// Returns the hash value as a bytes slice.
+    pub fn as_slice(&self) -> &[u8] {
+        self.hash.as_ref()
+    }
 }
 
 
