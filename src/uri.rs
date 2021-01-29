@@ -46,6 +46,9 @@ use bytes::{BufMut, Bytes, BytesMut};
 #[derive(Clone, Debug)]
 pub struct Rsync {
     /// The bytes of the URI including everything.
+    ///
+    /// Since this is guaranteed to only contain a subset of ASCII
+    /// characters, it is also a valid `str`.
     bytes: Bytes,
 
     /// Index where the module portion starts.
@@ -56,7 +59,8 @@ pub struct Rsync {
 
     /// Index where the path portion starts.
     ///
-    /// This is the position of the first character after the slash.
+    /// This is the position of the first character after the slash following
+    /// the module name.
     path_start: usize,
 }
 
@@ -66,7 +70,7 @@ impl Rsync {
         Self::from_bytes(Bytes::from(s))
     }
 
-    /// Cratesa a new URI with the content given by `slice`.
+    /// Creates a new URI with the content given by `slice`.
     pub fn from_slice(slice: &[u8]) -> Result<Self, Error> {
         Self::from_bytes(Bytes::copy_from_slice(slice))
     }
@@ -149,6 +153,7 @@ impl Rsync {
 
     /// Returns the URI’s content as a string slice.
     pub fn as_str(&self) -> &str {
+        // self.bytes is always a valid `str`.
         unsafe { ::std::str::from_utf8_unchecked(self.bytes.as_ref()) }
     }
 
@@ -184,7 +189,7 @@ impl Rsync {
 
     /// Returns the URI’s module.
     ///
-    /// The module is identical to the a URI with an empty path.
+    /// The module is identical to a URI with an empty path.
     pub fn module(&self) -> &str {
         &self.as_str()[..self.path_start]
     }
@@ -550,6 +555,7 @@ impl Https {
     }
 
     pub fn as_str(&self) -> &str {
+        // self.uri is always a valid `str`.
         unsafe { str::from_utf8_unchecked(self.uri.as_ref()) }
     }
 
