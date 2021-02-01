@@ -188,6 +188,13 @@ impl TalUri {
     pub fn is_https(&self) -> bool {
         matches!(*self, TalUri::Https(_))
     }
+
+    pub fn as_str(&self) -> &str {
+        match *self {
+            TalUri::Rsync(ref inner) => inner.as_str(),
+            TalUri::Https(ref inner) => inner.as_str(),
+        }
+    }
 }
 
 
