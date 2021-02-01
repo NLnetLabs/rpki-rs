@@ -21,6 +21,12 @@ New
 
 * New module `rtr`, enabled via the feature `rtr` that contains what was
   previously available via the separated `rpki-rtr` crate. ([#120])
+* `ManifestHash` now allows access to its components via the `algorithm`
+  and `as_slice` methods. ([#126])
+* `DigestAlgorithm` instances can now be created for the SHA-256 algorithm
+  and values can be checked whether they in fact represent the SHA-256
+  algorithm. Values now also provide the associated digest length via the
+  new `digest_len` method. ([#126])
 
 Bug Fixes
 
@@ -30,6 +36,7 @@ Other Changes
 [#120]: https://github.com/NLnetLabs/rpki-rs/pull/120
 [#121]: https://github.com/NLnetLabs/rpki-rs/pull/121
 [#124]: https://github.com/NLnetLabs/rpki-rs/pull/124
+[#126]: https://github.com/NLnetLabs/rpki-rs/pull/126
 
 
 ## 0.10.0
