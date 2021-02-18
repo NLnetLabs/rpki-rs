@@ -27,11 +27,11 @@ jobs:
     #
     # Only do this once with all features enabled.
     # Don’t do them on nightly since its Clippy occasionally fails
-    - if: matrix.rust != 'nightly'
+    - if: matrix.rust != 'stable'
       run: rustup component add clippy
-    - if: matrix.os != 'windows-latest' && matrix.rust != 'nightly'
+    - if: matrix.os != 'windows-latest' && matrix.rust != 'stable'
       run: cargo clippy --all --all-features -- -D warnings
-    - if: matrix.os == 'windows-latest' && matrix.rust != 'nightly'
+    - if: matrix.os == 'windows-latest' && matrix.rust != 'stable'
       run: cargo clippy --all --features __windows_ci_all -- -D warnings
 
     # Build
