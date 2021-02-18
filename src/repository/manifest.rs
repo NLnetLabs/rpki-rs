@@ -467,7 +467,7 @@ impl<F: AsRef<[u8]>, H: AsRef<[u8]>> AsRef<Self> for FileAndHash<F, H> {
 ///
 /// This type knows the hash value itself plus the digest algorithm used for
 /// this hash and thus can verify objects.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ManifestHash {
     hash: Bytes,
     algorithm: DigestAlgorithm,
