@@ -390,6 +390,7 @@ impl UriAndHash {
 /// Since RRDP exclusively uses SHA-256, this is essentially a wrapper around
 /// a 32 byte array.
 #[derive(Clone, Copy, Eq, hash::Hash, PartialEq)]
+#[repr(transparent)]
 pub struct Hash([u8; 32]);
 
 impl Hash {
