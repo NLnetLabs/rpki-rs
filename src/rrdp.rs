@@ -2,7 +2,8 @@
 
 #![cfg(feature = "rrdp")]
 
-use std::{fmt, io, ops, str};
+use std::{error, fmt, hash, io, str};
+use std::convert::TryFrom;
 use log::info;
 use ring::digest;
 use uuid::Uuid;
@@ -249,14 +250,14 @@ pub trait ProcessDelta {
     fn publish(
         &mut self,
         uri: uri::Rsync,
-        hash: Option<DigestHex>,
+        hash: Option<Hash>,
         data: Vec<u8>,
     ) -> Result<(), Self::Err>;
 
     fn withdraw(
         &mut self,
         uri: uri::Rsync,
-        hash: DigestHex,
+        hash: Hash,
     ) -> Result<(), Self::Err>;
 
 
@@ -364,11 +365,11 @@ pub trait ProcessDelta {
 #[derive(Clone, Debug)]
 pub struct UriAndHash {
     uri: uri::Https,
-    hash: DigestHex,
+    hash: Hash,
 }
 
 impl UriAndHash {
-    pub fn new(uri: uri::Https, hash: DigestHex) -> Self {
+    pub fn new(uri: uri::Https, hash: Hash) -> Self {
         UriAndHash { uri, hash }
     }
 
@@ -376,67 +377,124 @@ impl UriAndHash {
         &self.uri
     }
 
-    pub fn hash(&self) -> &DigestHex {
+    pub fn hash(&self) -> &Hash {
         &self.hash
     }
 }
 
 
-//------------ DigestHex -----------------------------------------------------
+//------------ Hash ----------------------------------------------------------
 
-/// A helper type to encode a digest as a sequence of hex-digits.
-#[derive(Clone, Debug)]
-pub struct DigestHex(Vec<u8>);
+/// The hash of RRDP files.
+///
+/// Since RRDP exclusively uses SHA-256, this is essentially a wrapper around
+/// a 32 byte array.
+#[derive(Clone, Copy, Eq, hash::Hash, PartialEq)]
+pub struct Hash([u8; 32]);
 
-impl From<Vec<u8>> for DigestHex {
-    fn from(value: Vec<u8>) -> DigestHex {
-        DigestHex(value)
-    }
-}
-
-impl From<digest::Digest> for DigestHex {
-    fn from(value: digest::Digest) -> DigestHex {
-        DigestHex(Vec::from(value.as_ref()))
-    }
-}
-
-impl str::FromStr for DigestHex {
-    type Err = &'static str;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut res = Vec::new();
-        let mut s = s.chars();
-        while let Some(first) = s.next() {
-            let first = first.to_digit(16).ok_or("invalid digest")?;
-            let second = s.next().ok_or("invalid digest")?
-                .to_digit(16).ok_or("invalid digest")?;
-
-            res.push((first << 4 | second) as u8);
-        }
-        Ok(DigestHex(res))
-    }
-}
-
-impl ops::Deref for DigestHex {
-    type Target = [u8];
-
-    fn deref(&self) -> &[u8] {
+impl Hash {
+    /// Returns a reference to the octets as a slice.
+    pub fn as_slice(&self) -> &[u8] {
         self.0.as_ref()
     }
 }
 
-impl AsRef<[u8]> for DigestHex {
+
+//--- From, TryFrom, and FromStr
+
+impl From<[u8;32]> for Hash {
+    fn from(value: [u8;32]) -> Hash {
+        Hash(value)
+    }
+}
+
+impl From<Hash> for [u8; 32] {
+    fn from(src: Hash) -> Self {
+        src.0
+    }
+}
+
+impl<'a> TryFrom<&'a [u8]> for Hash {
+    type Error = std::array::TryFromSliceError;
+
+    fn try_from(src: &'a [u8]) -> Result<Self, Self::Error> {
+        TryFrom::try_from(src).map(Hash)
+    }
+}
+
+impl TryFrom<digest::Digest> for Hash {
+    type Error = AlgorithmError;
+
+    fn try_from(digest: digest::Digest) -> Result<Self, Self::Error> {
+        // XXX This doesn’t properly check the algorithm.
+        TryFrom::try_from(
+            digest.as_ref()
+        ).map(Hash).map_err(|_| AlgorithmError(()))
+    }
+}
+
+impl str::FromStr for Hash {
+    type Err = ParseHashError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() != 64 {
+            return Err(ParseHashError::bad_length())
+        }
+        let mut res = [0u8; 32];
+        let mut s = s.chars();
+        for pos in 0..32 {
+            let first = s.next().ok_or(
+                ParseHashError::bad_chars()
+            )?.to_digit(16).ok_or(
+                ParseHashError::bad_chars()
+            )?;
+            let second = s.next().ok_or(
+                ParseHashError::bad_chars()
+            )?.to_digit(16).ok_or(
+                ParseHashError::bad_chars()
+            )?;
+            res[pos] = (first << 4 | second) as u8;
+        }
+        Ok(Hash(res))
+    }
+}
+
+
+//--- AsRef
+
+impl AsRef<[u8]> for Hash {
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
     }
 }
 
-impl fmt::Display for DigestHex {
+
+//--- PartialEq
+//
+// PartialEq<Self> and Eq are derived.
+
+impl PartialEq<digest::Digest> for Hash {
+    fn eq(&self, other: &digest::Digest) -> bool {
+        // XXX This doesn’t properly check the algorithm.
+        self.0.as_ref() == other.as_ref()
+    }
+}
+
+
+//--- Display and Debug
+
+impl fmt::Display for Hash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for &ch in self.0.as_slice() {
+        for &ch in self.as_slice() {
             write!(f, "{:02x}", ch)?;
         }
         Ok(())
+    }
+}
+
+impl fmt::Debug for Hash {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Hash({})", self)
     }
 }
 
@@ -457,6 +515,49 @@ const SNAPSHOT: Name = Name::qualified(NS, b"snapshot");
 const DELTA: Name = Name::qualified(NS, b"delta");
 const PUBLISH: Name = Name::qualified(NS, b"publish");
 const WITHDRAW: Name = Name::qualified(NS, b"withdraw");
+
+
+//============ Errors ========================================================
+
+//------------ AlgorithmError ------------------------------------------------
+
+/// A digest was of the wrong algorithm.
+#[derive(Clone, Copy, Debug)]
+pub struct AlgorithmError(());
+
+impl fmt::Display for AlgorithmError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("algorithm mismatch")
+    }
+}
+
+impl error::Error for AlgorithmError { }
+
+
+//------------ ParseHashError ------------------------------------------------
+
+/// An error happened while parsing a hash.
+#[derive(Clone, Copy, Debug)]
+pub struct ParseHashError(&'static str);
+
+impl ParseHashError {
+    const fn bad_length() -> Self {
+        ParseHashError("invalid length")
+    }
+
+    const fn bad_chars() -> Self {
+        ParseHashError("invalid characters")
+    }
+}
+
+impl fmt::Display for ParseHashError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl error::Error for ParseHashError { }
+
 
 
 //============ Tests =========================================================
@@ -501,7 +602,7 @@ mod test {
         fn publish(
             &mut self,
             _uri: uri::Rsync,
-            _hash: Option<DigestHex>,
+            _hash: Option<Hash>,
             _data: Vec<u8>,
         ) -> Result<(), Self::Err> {
             Ok(())
@@ -510,7 +611,7 @@ mod test {
         fn withdraw(
             &mut self,
             _uri: uri::Rsync,
-            _hash: DigestHex,
+            _hash: Hash,
         ) -> Result<(), Self::Err> {
             Ok(())
         }
