@@ -444,14 +444,14 @@ impl str::FromStr for Hash {
         let mut s = s.chars();
         for octet in &mut res {
             let first = s.next().ok_or_else(
-                || ParseHashError::bad_chars()
+                ParseHashError::bad_chars
             )?.to_digit(16).ok_or_else(
-                || ParseHashError::bad_chars()
+                ParseHashError::bad_chars
             )?;
             let second = s.next().ok_or_else(
-                || ParseHashError::bad_chars()
+                ParseHashError::bad_chars
             )?.to_digit(16).ok_or_else(
-                || ParseHashError::bad_chars()
+                ParseHashError::bad_chars
             )?;
             *octet = (first << 4 | second) as u8;
         }
