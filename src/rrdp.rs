@@ -442,18 +442,18 @@ impl str::FromStr for Hash {
         }
         let mut res = [0u8; 32];
         let mut s = s.chars();
-        for pos in 0..32 {
-            let first = s.next().ok_or(
-                ParseHashError::bad_chars()
-            )?.to_digit(16).ok_or(
-                ParseHashError::bad_chars()
+        for octet in &mut res {
+            let first = s.next().ok_or_else(
+                || ParseHashError::bad_chars()
+            )?.to_digit(16).ok_or_else(
+                || ParseHashError::bad_chars()
             )?;
-            let second = s.next().ok_or(
-                ParseHashError::bad_chars()
-            )?.to_digit(16).ok_or(
-                ParseHashError::bad_chars()
+            let second = s.next().ok_or_else(
+                || ParseHashError::bad_chars()
+            )?.to_digit(16).ok_or_else(
+                || ParseHashError::bad_chars()
             )?;
-            res[pos] = (first << 4 | second) as u8;
+            *octet = (first << 4 | second) as u8;
         }
         Ok(Hash(res))
     }
