@@ -8,7 +8,7 @@ use log::info;
 use ring::digest;
 use uuid::Uuid;
 use crate::uri;
-use crate::xml::decode::{Reader, Name, Error};
+use crate::xml::decode::{Content, Error as XmlError, Reader, Name};
 
 
 //------------ NotificationFile ----------------------------------------------
@@ -21,20 +21,20 @@ pub struct NotificationFile {
 }
 
 impl NotificationFile {
-    pub fn parse<R: io::BufRead>(reader: R) -> Result<Self, Error> {
+    pub fn parse<R: io::BufRead>(reader: R) -> Result<Self, XmlError> {
         let mut reader = Reader::new(reader);
 
         let mut session_id = None;
         let mut serial = None;
         let mut outer = reader.start(|element| {
             if element.name() != NOTIFICATION {
-                return Err(Error::Malformed)
+                return Err(XmlError::Malformed)
             }
 
             element.attributes(|name, value| match name {
                 b"version" => {
                     if value.ascii_into::<u8>()? != 1 {
-                        return Err(Error::Malformed)
+                        return Err(XmlError::Malformed)
                     }
                     Ok(())
                 }
@@ -46,7 +46,7 @@ impl NotificationFile {
                     serial = Some(value.ascii_into()?);
                     Ok(())
                 }
-                _ => Err(Error::Malformed)
+                _ => Err(XmlError::Malformed)
             })
         })?;
 
@@ -57,7 +57,7 @@ impl NotificationFile {
             match element.name() {
                 SNAPSHOT => {
                     if snapshot.is_some() {
-                        return Err(Error::Malformed)
+                        return Err(XmlError::Malformed)
                     }
                     let mut uri = None;
                     let mut hash = None;
@@ -70,14 +70,14 @@ impl NotificationFile {
                             hash = Some(value.ascii_into()?);
                             Ok(())
                         }
-                        _ => Err(Error::Malformed)
+                        _ => Err(XmlError::Malformed)
                     })?;
                     match (uri, hash) {
                         (Some(uri), Some(hash)) => {
                             snapshot = Some(UriAndHash::new(uri, hash));
                             Ok(())
                         }
-                        _ => Err(Error::Malformed)
+                        _ => Err(XmlError::Malformed)
                     }
                 }
                 DELTA => {
@@ -97,17 +97,17 @@ impl NotificationFile {
                             hash = Some(value.ascii_into()?);
                             Ok(())
                         }
-                        _ => Err(Error::Malformed)
+                        _ => Err(XmlError::Malformed)
                     })?;
                     match (serial, uri, hash) {
                         (Some(serial), Some(uri), Some(hash)) => {
                             deltas.push((serial, UriAndHash::new(uri, hash)));
                             Ok(())
                         }
-                        _ => Err(Error::Malformed)
+                        _ => Err(XmlError::Malformed)
                     }
                 }
-                _ => Err(Error::Malformed)
+                _ => Err(XmlError::Malformed)
             }
         })? {
             content.take_end(&mut reader)?;
@@ -120,7 +120,7 @@ impl NotificationFile {
             (Some(session_id), Some(serial), Some(snapshot)) => {
                 Ok(NotificationFile { session_id, serial, snapshot, deltas })
             }
-            _ => Err(Error::Malformed)
+            _ => Err(XmlError::Malformed)
         }
     }
 }
@@ -129,7 +129,7 @@ impl NotificationFile {
 //------------ ProcessSnapshot -----------------------------------------------
 
 pub trait ProcessSnapshot {
-    type Err: From<Error>;
+    type Err: From<ProcessError>;
 
     fn meta(
         &mut self,
@@ -140,7 +140,7 @@ pub trait ProcessSnapshot {
     fn publish(
         &mut self,
         uri: uri::Rsync,
-        data: Vec<u8>,
+        data: &mut ObjectReader,
     ) -> Result<(), Self::Err>;
 
     fn process<R: io::BufRead>(
@@ -154,13 +154,13 @@ pub trait ProcessSnapshot {
         let mut outer = reader.start(|element| {
             if element.name() != SNAPSHOT {
                 info!("Bad outer: not snapshot, but {:?}", element.name());
-                return Err(Error::Malformed)
+                return Err(XmlError::Malformed)
             }
             element.attributes(|name, value| match name {
                 b"version" => {
                     if value.ascii_into::<u8>()? != 1 {
                         info!("Bad version");
-                        return Err(Error::Malformed)
+                        return Err(XmlError::Malformed)
                     }
                     Ok(())
                 }
@@ -174,10 +174,10 @@ pub trait ProcessSnapshot {
                 }
                 _ => {
                     info!("Bad attribute on snapshot.");
-                    Err(Error::Malformed)
+                    Err(XmlError::Malformed)
                 }
             })
-        })?;
+        }).map_err(Into::into)?;
 
         match (session_id, serial) {
             (Some(session_id), Some(serial)) => {
@@ -185,7 +185,7 @@ pub trait ProcessSnapshot {
             }
             _ => {
                 info!("Missing session or serial");
-                return Err(Error::Malformed.into())
+                return Err(ProcessError::malformed().into())
             }
         }
 
@@ -194,7 +194,7 @@ pub trait ProcessSnapshot {
             let inner = outer.take_opt_element(&mut reader, |element| {
                 if element.name() != PUBLISH {
                 info!("Bad inner: not publish");
-                    return Err(Error::Malformed)
+                    return Err(ProcessError::malformed())
                 }
                 element.attributes(|name, value| match name {
                     b"uri" => {
@@ -203,7 +203,7 @@ pub trait ProcessSnapshot {
                     }
                     _ => {
                         info!("Bad attribute on publish.");
-                        Err(Error::Malformed)
+                        Err(ProcessError::malformed())
                     }
                 })
             })?;
@@ -213,24 +213,16 @@ pub trait ProcessSnapshot {
             };
             let uri = match uri {
                 Some(uri) => uri,
-                None => return Err(Error::Malformed.into())
+                None => return Err(ProcessError::malformed().into())
             };
-            let data = inner.take_text(&mut reader, |text| {
-                let text: Vec<_> = text.to_ascii()?.as_bytes()
-                .iter().filter_map(|b| {
-                    if b.is_ascii_whitespace() { None }
-                    else { Some(*b) }
-                }).collect();
-                base64::decode(&text).map_err(|_| {
-                    Error::Malformed
-                })
+            ObjectReader::process_text(&mut inner, &mut reader, |reader| {
+                self.publish(uri, reader)
             })?;
-            self.publish(uri, data)?;
-            inner.take_end(&mut reader)?;
+            inner.take_end(&mut reader).map_err(Into::into)?;
         }
 
-        outer.take_end(&mut reader)?;
-        reader.end()?;
+        outer.take_end(&mut reader).map_err(Into::into)?;
+        reader.end().map_err(Into::into)?;
         Ok(())
     }
 }
@@ -239,7 +231,7 @@ pub trait ProcessSnapshot {
 //------------ ProcessDelta --------------------------------------------------
 
 pub trait ProcessDelta {
-    type Err: From<Error>;
+    type Err: From<ProcessError>;
 
     fn meta(
         &mut self,
@@ -251,7 +243,7 @@ pub trait ProcessDelta {
         &mut self,
         uri: uri::Rsync,
         hash: Option<Hash>,
-        data: Vec<u8>,
+        data: &mut ObjectReader,
     ) -> Result<(), Self::Err>;
 
     fn withdraw(
@@ -271,12 +263,12 @@ pub trait ProcessDelta {
         let mut serial = None;
         let mut outer = reader.start(|element| {
             if element.name() != DELTA {
-                return Err(Error::Malformed)
+                return Err(ProcessError::malformed())
             }
             element.attributes(|name, value| match name {
                 b"version" => {
                     if value.ascii_into::<u8>()? != 1 {
-                        return Err(Error::Malformed)
+                        return Err(ProcessError::malformed())
                     }
                     Ok(())
                 }
@@ -288,7 +280,7 @@ pub trait ProcessDelta {
                     serial = Some(value.ascii_into()?);
                     Ok(())
                 }
-                _ => Err(Error::Malformed)
+                _ => Err(ProcessError::malformed())
             })
         })?;
 
@@ -296,7 +288,7 @@ pub trait ProcessDelta {
             (Some(session_id), Some(serial)) => {
                 self.meta(session_id, serial)?;
             }
-            _ => return Err(Error::Malformed.into()),
+            _ => return Err(ProcessError::malformed().into())
         }
 
         loop {
@@ -307,7 +299,7 @@ pub trait ProcessDelta {
                 match element.name() {
                     PUBLISH => action = Some(Action::Publish),
                     WITHDRAW => action = Some(Action::Withdraw),
-                    _ => return Err(Error::Malformed),
+                    _ => return Err(ProcessError::malformed()),
                 };
                 element.attributes(|name, value| match name {
                     b"uri" => {
@@ -318,7 +310,7 @@ pub trait ProcessDelta {
                         hash = Some(value.ascii_into()?);
                         Ok(())
                     }
-                    _ => Err(Error::Malformed)
+                    _ => Err(ProcessError::malformed())
                 })
             })?;
             let mut inner = match inner {
@@ -327,33 +319,27 @@ pub trait ProcessDelta {
             };
             let uri = match uri {
                 Some(uri) => uri,
-                None => return Err(Error::Malformed.into())
+                None => return Err(ProcessError::malformed().into())
             };
             match action.unwrap() { // Or we'd have exited already.
                 Action::Publish => {
-                    let data = inner.take_text(&mut reader, |text| {
-                        let text: Vec<_> = text.to_ascii()?.as_bytes()
-                        .iter().filter_map(|b| {
-                            if b.is_ascii_whitespace() { None }
-                            else { Some(*b) }
-                        }).collect();
-                        base64::decode(&text)
-                            .map_err(|_| Error::Malformed)
-                    })?;
-                    self.publish(uri, hash, data)?;
+                    ObjectReader::process_text(
+                        &mut inner, &mut reader,
+                        |reader| self.publish(uri, hash, reader)
+                    )?;
                 }
                 Action::Withdraw => {
                     let hash = match hash {
                         Some(hash) => hash,
-                        None => return Err(Error::Malformed.into())
+                        None => return Err(ProcessError::malformed().into())
                     };
                     self.withdraw(uri, hash)?;
                 }
             }
-            inner.take_end(&mut reader)?;
+            inner.take_end(&mut reader).map_err(Into::into)?;
         }
-        outer.take_end(&mut reader)?;
-        reader.end()?;
+        outer.take_end(&mut reader).map_err(Into::into)?;
+        reader.end().map_err(Into::into)?;
         Ok(())
     }
 
@@ -508,6 +494,45 @@ enum Action {
 }
 
 
+//------------ ObjectReader --------------------------------------------------
+
+pub struct ObjectReader<'a>(
+    base64::read::DecoderReader<'a, &'a [u8]>
+);
+
+impl<'a> ObjectReader<'a> {
+    fn process_text<R, T, E, F> (
+        content: &mut Content,
+        reader: &mut Reader<R>,
+        op: F
+    ) -> Result<T, E>
+    where
+        R: io::BufRead,
+        E: From<ProcessError>,
+        F: FnOnce(&mut ObjectReader) -> Result<T, E>
+    {
+        let data_b64: Vec<_> = content.take_text(reader,  |text| {
+            Ok(text.to_ascii()?.as_bytes().iter().filter_map(|b| {
+                    if b.is_ascii_whitespace() { None }
+                    else { Some(*b) }
+            }).collect())
+        })?;
+        let mut data_b64 = data_b64.as_slice();
+        op(
+            &mut ObjectReader(base64::read::DecoderReader::new(
+                &mut data_b64, base64::STANDARD
+            ))
+        )
+    }
+}
+
+impl<'a> io::Read for ObjectReader<'a> {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
+        self.0.read(buf)
+    }
+}
+
+
 //------------ Xml Names -----------------------------------------------------
 
 const NS: &[u8] = b"http://www.ripe.net/rpki/rrdp";
@@ -560,6 +585,36 @@ impl fmt::Display for ParseHashError {
 impl error::Error for ParseHashError { }
 
 
+//------------ ProcessError --------------------------------------------------
+
+/// An error occurred while processing RRDP data.
+#[derive(Debug)]
+pub enum ProcessError {
+    /// An IO error happened.
+    Io(io::Error),
+
+    /// The XML was not correctly formed.
+    Xml(XmlError),
+}
+
+impl ProcessError {
+    fn malformed() -> Self {
+        ProcessError::Xml(XmlError::Malformed)
+    }
+}
+
+impl From<io::Error> for ProcessError {
+    fn from(err: io::Error) -> Self {
+        ProcessError::Io(err)
+    }
+}
+
+impl From<XmlError> for ProcessError {
+    fn from(err: XmlError) -> Self {
+        ProcessError::Xml(err)
+    }
+}
+
 
 //============ Tests =========================================================
 
@@ -570,7 +625,7 @@ mod test {
     pub struct Test;
 
     impl ProcessSnapshot for Test {
-        type Err = Error;
+        type Err = XmlError;
 
         fn meta(
             &mut self,
@@ -590,7 +645,7 @@ mod test {
     }
 
     impl ProcessDelta for Test {
-        type Err = Error;
+        type Err = XmlError;
 
         fn meta(
             &mut self,
