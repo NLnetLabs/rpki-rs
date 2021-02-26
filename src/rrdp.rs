@@ -636,7 +636,7 @@ mod test {
     pub struct Test;
 
     impl ProcessSnapshot for Test {
-        type Err = XmlError;
+        type Err = ProcessError;
 
         fn meta(
             &mut self,
@@ -649,14 +649,14 @@ mod test {
         fn publish(
             &mut self,
             _uri: uri::Rsync,
-            _data: Vec<u8>,
+            _data: &mut ObjectReader,
         ) -> Result<(), Self::Err> {
             Ok(())
         }
     }
 
     impl ProcessDelta for Test {
-        type Err = XmlError;
+        type Err = ProcessError;
 
         fn meta(
             &mut self,
@@ -670,7 +670,7 @@ mod test {
             &mut self,
             _uri: uri::Rsync,
             _hash: Option<Hash>,
-            _data: Vec<u8>,
+            _data: &mut ObjectReader,
         ) -> Result<(), Self::Err> {
             Ok(())
         }
