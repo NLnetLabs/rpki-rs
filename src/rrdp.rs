@@ -363,8 +363,8 @@ impl UriAndHash {
         &self.uri
     }
 
-    pub fn hash(&self) -> &Hash {
-        &self.hash
+    pub fn hash(&self) -> Hash {
+        self.hash
     }
 }
 
