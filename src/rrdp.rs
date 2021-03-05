@@ -1,4 +1,24 @@
-//! Parsing the XML representations.
+//! Parsing and processing of RRDP responses.
+//!
+//! This module provides the scaffolding for client-side processing of the
+//! RPKI Repository Delta Protocol (RRDP) as defined in [RFC 8182].
+//!
+//! Processing is done in two parts. The RRDP notification file is parsed into
+//! a value of type [`NotificationFile`]. Processing of snapshot and delta
+//! files is done incrementally via the [`ProcessSnapshot`] and
+//! [`ProcessDelta`] traits since these files can become rather big.
+//!
+//! The module does not provide at HTTP client. Rather, it relies on the
+//! `std::io::Read` trait for processing. As such, it is also not compatible
+//! with async processing.
+//!
+//! A note on terminology: to avoid confusion, the term ‘file’ refers to the
+//! RRDP data itself, i.e., the notification, snapshot, and delta files. The
+//! repository’s content synchronized using RRDP also consists of a set of
+//! files, which we will refer to as ‘objects.’
+//!
+//! [RFC 8182]: https://tools.ietf.org/html/rfc8182
+//!
 
 #![cfg(feature = "rrdp")]
 
@@ -13,14 +33,43 @@ use crate::xml::decode::{Content, Error as XmlError, Reader, Name};
 
 //------------ NotificationFile ----------------------------------------------
 
+/// The RRDP Update Notification File.
+///
+/// This type represents the decoded content of the RRDP Update Notification
+/// File. It can be read from a reader via the [`parse`][Self::parse]
+/// function. All elements are accessible as attributes.
 pub struct NotificationFile {
+    /// The identifier of the current session of the server.
+    ///
+    /// Delta updates can only be used if the session ID of the last processed
+    /// update matches this value.
     pub session_id: Uuid,
+
+    /// The serial number of the most recent update provided by the server.
+    ///
+    /// Serial numbers increase by one between each update.
     pub serial: u64,
+
+    /// The URI and hash value of the most recent snapshot.
+    ///
+    /// The snapshot contains a complete set of all data published via the
+    /// repository. It can be processed using the [`ProcessSnapshot`] trait.
     pub snapshot: UriAndHash,
+
+    /// The list of available delta updates.
+    ///
+    /// The first element of the vec’s items is the serial number of the
+    /// delta and the second element is the URI of the location of the delta
+    /// and its hash. Deltas can be processed using the [`ProcessDelta`]
+    /// trait.
+    ///
+    /// Note that after parsing, the list will be in the order as received
+    /// from the server. It will _not_ be ordered.
     pub deltas: Vec<(u64, UriAndHash)>,
 }
 
 impl NotificationFile {
+    /// Parses the notification file from its XML representation.
     pub fn parse<R: io::BufRead>(reader: R) -> Result<Self, XmlError> {
         let mut reader = Reader::new(reader);
 
@@ -128,21 +177,49 @@ impl NotificationFile {
 
 //------------ ProcessSnapshot -----------------------------------------------
 
+/// A type that can process an RRDP snapshot.
+///
+/// The trait contains two required methods: [`meta`][Self::meta] is called
+/// once at the beginning of the snapshot and gives the processor a chance to
+/// check if the session ID and serial number are as expected. Then,
+/// [`publish`][Self::publish] is called for each published object.
+/// The processor can abort at any time by returning an error.
+///
+/// The provided method [`process`][Self::process] drives the actual
+/// processing and should thus be called when using a type that implements
+/// this trait.
 pub trait ProcessSnapshot {
+    /// The error type returned by the processor.
     type Err: From<ProcessError>;
 
+    /// Processes the snapshot meta data.
+    ///
+    /// The method is called before any other method and is passed the
+    /// session ID and serial number encountered in the outermost tag of the
+    /// snapshot file’s XML. If they don’t match the expected values, the
+    /// processor should abort processing by returning an error.
     fn meta(
         &mut self,
         session_id: Uuid,
         serial: u64,
     ) -> Result<(), Self::Err>;
 
+    /// Processes a published object.
+    ///
+    /// The object is identified by the provided rsync URI. The object’s data
+    /// is provided via a reader.
     fn publish(
         &mut self,
         uri: uri::Rsync,
         data: &mut ObjectReader,
     ) -> Result<(), Self::Err>;
 
+    /// Processes a snapshot file.
+    ///
+    /// The file’s content is read from `reader`. The two required methods
+    /// are called as appropriate. If the reader fails, parsing fails, or the
+    /// methods return an error, processing is aborted and an error is
+    /// returned.
     fn process<R: io::BufRead>(
         &mut self,
         reader: R
@@ -230,15 +307,41 @@ pub trait ProcessSnapshot {
 
 //------------ ProcessDelta --------------------------------------------------
 
+/// A type that can process an RRDP delta.
+///
+/// The trait contains three required methods: [`meta`][Self::meta] is called
+/// once at the beginning of the snapshot and gives the processor a chance to
+/// check if the session ID and serial number are as expected. Then,
+/// [`publish`][Self::publish] is called for each newly published or
+/// updated object and [`withdraw`][Self::withdraw] is called for each
+/// deleted object. The processor can abort at any time by returning an error.
+///
+/// The provided method [`process`][Self::process] drives the actual
+/// processing and should thus be called when using a type that implements
+/// this trait.
 pub trait ProcessDelta {
+    /// The error type returned by the processor.
     type Err: From<ProcessError>;
 
+    /// Processes the delta meta data.
+    ///
+    /// The method is called before any other method and is passed the
+    /// session ID and serial number encountered in the outermost tag of the
+    /// delta file’s XML. If they don’t match the expected values, the
+    /// processor should abort processing by returning an error.
     fn meta(
         &mut self,
         session_id: Uuid,
         serial: u64,
     ) -> Result<(), Self::Err>;
 
+    /// Processes a published object.
+    ///
+    /// The object is identified by the rsync URI provided in `uri`. If the
+    /// object is updated, the hash over the previous content of the object
+    /// is given in `hash`. If the object is newly published, `hash` will be
+    /// `None`. The (new) content of the object is provided via the reader in
+    /// `data`.
     fn publish(
         &mut self,
         uri: uri::Rsync,
@@ -246,6 +349,11 @@ pub trait ProcessDelta {
         data: &mut ObjectReader,
     ) -> Result<(), Self::Err>;
 
+    /// Processes a withdrawn object.
+    ///
+    /// The object is identified by the rsync URI provided in `uri`. The hash
+    /// over the expected content of the object to be deleted is given in
+    /// `hash`.
     fn withdraw(
         &mut self,
         uri: uri::Rsync,
@@ -253,6 +361,13 @@ pub trait ProcessDelta {
     ) -> Result<(), Self::Err>;
 
 
+    /// Processes a delta file.
+    ///
+    /// The file’s content is taken from `reader`. The content is parsed and
+    /// the three required methods are called as required.
+    ///
+    /// If the reader fails, parsing fails, or the methods return an error,
+    /// processing is aborted and an error is returned.
     fn process<R: io::BufRead>(
         &mut self,
         reader: R
@@ -348,33 +463,59 @@ pub trait ProcessDelta {
 
 //------------ UriAndHash ----------------------------------------------------
 
+/// The URI of an RRDP file and a SHA-256 hash over its content.
+///
+/// In order to detect accidental or malicious modifications of the data
+/// all references to RRDP files are given with a SHA-256 hash over the
+/// expected content of that file, allowing a client to verify they got the
+/// right file.
 #[derive(Clone, Debug)]
 pub struct UriAndHash {
+    /// The URI of the RRDP file.
     uri: uri::Https,
+
+    /// The expected SHA-256 hash over the file’s content.
     hash: Hash,
 }
 
 impl UriAndHash {
+    /// Creates a new URI-and-hash pair.
     pub fn new(uri: uri::Https, hash: Hash) -> Self {
         UriAndHash { uri, hash }
     }
 
+    /// Returns a reference to the URI.
     pub fn uri(&self) -> &uri::Https {
         &self.uri
     }
 
+    /// Returns the expected SHA-256 hash.
     pub fn hash(&self) -> Hash {
         self.hash
+    }
+
+    /// Converts the pair into just the URI.
+    pub fn into_uri(self) -> uri::Https {
+        self.uri
+    }
+
+    /// Converts `self` into a pair of URI and hash.
+    pub fn into_pair(self) -> (uri::Https, Hash) {
+        (self.uri, self.hash)
     }
 }
 
 
 //------------ Hash ----------------------------------------------------------
 
-/// The hash of RRDP files.
+/// A hash over RRDP data.
 ///
-/// Since RRDP exclusively uses SHA-256, this is essentially a wrapper around
-/// a 32 byte array.
+/// This hash is used both for verifying the correctness of RRDP files as well
+/// as update or deletion of the right objects.
+///
+/// RRDP exclusively uses SHA-256 and provides no means of chosing a different
+/// algorithm. Consequently, this type is essentially a wrapper around a 32
+/// byte array holding SHA-256 output.
 #[derive(Clone, Copy, Eq, hash::Hash, PartialEq)]
 #[repr(transparent)]
 pub struct Hash([u8; 32]);
@@ -488,19 +629,35 @@ impl fmt::Debug for Hash {
 
 //------------ Action --------------------------------------------------------
 
+/// The choice of actions in a delta file.
 enum Action {
+    /// An object is to be inserted or updated.
+    ///
+    /// The object is to be updated, if a hash is given. Otherwise it is
+    /// to be inserted.
     Publish,
+
+    /// An object is to be deleted.
     Withdraw,
 }
 
 
 //------------ ObjectReader --------------------------------------------------
 
+/// A reader providing the content of an object.
+///
+/// The content is included in base64 encoding in the RRDP’s XML. This reader
+/// provides access to the decoded data via the standard `Read` trait.
 pub struct ObjectReader<'a>(
+    /// The base64 encoded data.
     base64::read::DecoderReader<'a, &'a [u8]>
 );
 
 impl<'a> ObjectReader<'a> {
+    /// Processes XML PCDATA as object content.
+    ///
+    /// An object reader is created and passed to the closure `op` for
+    /// actual processing.
     fn process_text<R, T, E, F> (
         content: &mut Content,
         reader: &mut Reader<R>,
@@ -533,7 +690,7 @@ impl<'a> io::Read for ObjectReader<'a> {
 }
 
 
-//------------ Xml Names -----------------------------------------------------
+//------------ XML Names -----------------------------------------------------
 
 const NS: &[u8] = b"http://www.ripe.net/rpki/rrdp";
 const NOTIFICATION: Name = Name::qualified(NS, b"notification");
@@ -567,10 +724,12 @@ impl error::Error for AlgorithmError { }
 pub struct ParseHashError(&'static str);
 
 impl ParseHashError {
+    /// Creates an error for when the hash value was of the wrong length.
     const fn bad_length() -> Self {
         ParseHashError("invalid length")
     }
 
+    /// Creates an error for when the hash value contained illegal characters.
     const fn bad_chars() -> Self {
         ParseHashError("invalid characters")
     }
@@ -598,6 +757,7 @@ pub enum ProcessError {
 }
 
 impl ProcessError {
+    /// Creates an error when the XML was malformed.
     fn malformed() -> Self {
         ProcessError::Xml(XmlError::Malformed)
     }
