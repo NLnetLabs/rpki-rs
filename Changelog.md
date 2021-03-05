@@ -14,6 +14,10 @@ Breaking
   `uri::Rsync` for both rsync module URIs and URIs below module level.
   The type `uri::RsyncModule` has been dropped. Instead, `uri::Rsync` now
   allows access to the URI’s content as a single bytes slice. ([#124])
+* The `rrdp` module now provides access to object content via a reader
+  rather then decoding it into a vec. In addition, `rrdp::DigestHex` has
+  been renamed to the more clear `rrdp::Hash` and turned into a wrapper
+  around a fixed-size array. ([#129])
 * Upgrade `bytes` and `tokio` to 1.0. ([#121])
 * The minimum required Rust version is now 1.43. ([#121])
 
@@ -39,6 +43,7 @@ Other Changes
 [#124]: https://github.com/NLnetLabs/rpki-rs/pull/124
 [#126]: https://github.com/NLnetLabs/rpki-rs/pull/126
 [#128]: https://github.com/NLnetLabs/rpki-rs/pull/128
+[#129]: https://github.com/NLnetLabs/rpki-rs/pull/129
 
 
 ## 0.10.0
