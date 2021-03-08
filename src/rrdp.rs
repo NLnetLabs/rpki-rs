@@ -64,7 +64,7 @@ pub struct NotificationFile {
     /// trait.
     ///
     /// Note that after parsing, the list will be in the order as received
-    /// from the server. That is, it not be ordered by serial numbers.
+    /// from the server. That is, it may not be ordered by serial numbers.
     pub deltas: Vec<(u64, UriAndHash)>,
 }
 
@@ -672,6 +672,7 @@ impl<'a> ObjectReader<'a> {
         E: From<ProcessError>,
         F: FnOnce(&mut ObjectReader) -> Result<T, E>
     {
+        // XXX This could probably do with a bit of optimization.
         let data_b64: Vec<_> = content.take_text(reader,  |text| {
             // The text is supposed to be xsd:base64Binary which only allows
             // the base64 characters plus whitespace.
