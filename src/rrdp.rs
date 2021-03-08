@@ -8,7 +8,7 @@
 //! files is done incrementally via the [`ProcessSnapshot`] and
 //! [`ProcessDelta`] traits since these files can become rather big.
 //!
-//! The module does not provide at HTTP client. Rather, it relies on the
+//! The module does not provide an HTTP client. Rather, it relies on the
 //! `std::io::Read` trait for processing. As such, it is also not compatible
 //! with async processing.
 //!
@@ -64,7 +64,7 @@ pub struct NotificationFile {
     /// trait.
     ///
     /// Note that after parsing, the list will be in the order as received
-    /// from the server. It will _not_ be ordered.
+    /// from the server. That is, it not be ordered by serial numbers.
     pub deltas: Vec<(u64, UriAndHash)>,
 }
 
@@ -514,10 +514,10 @@ impl UriAndHash {
 /// as update or deletion of the right objects.
 ///
 /// RRDP exclusively uses SHA-256 and provides no means of chosing a different
-/// algorithm. Consequently, this type is essentially a wrapper around a 32
-/// byte array holding SHA-256 output.
+/// algorithm. Consequently, this type is a wrapper around a 32 byte array
+/// holding SHA-256 output.
 #[derive(Clone, Copy, Eq, hash::Hash, PartialEq)]
-#[repr(transparent)]
+#[repr(transparent)] // ensure that size_of::<Hash>() == 32.
 pub struct Hash([u8; 32]);
 
 impl Hash {
@@ -564,22 +564,26 @@ impl TryFrom<digest::Digest> for Hash {
 impl str::FromStr for Hash {
     type Err = ParseHashError;
 
+    /// Parses a string into a hash.
+    ///
+    /// The string must consist of exactly 64 hexadecimal digits and nothing
+    /// else.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.len() != 64 {
-            return Err(ParseHashError::bad_length())
+            return Err(ParseHashError::BAD_LENGTH)
         }
         let mut res = [0u8; 32];
         let mut s = s.chars();
         for octet in &mut res {
-            let first = s.next().ok_or_else(
-                ParseHashError::bad_chars
-            )?.to_digit(16).ok_or_else(
-                ParseHashError::bad_chars
+            let first = s.next().ok_or(
+                ParseHashError::BAD_LENGTH
+            )?.to_digit(16).ok_or(
+                ParseHashError::BAD_CHARS
             )?;
-            let second = s.next().ok_or_else(
-                ParseHashError::bad_chars
-            )?.to_digit(16).ok_or_else(
-                ParseHashError::bad_chars
+            let second = s.next().ok_or(
+                ParseHashError::BAD_LENGTH
+            )?.to_digit(16).ok_or(
+                ParseHashError::BAD_CHARS
             )?;
             *octet = (first << 4 | second) as u8;
         }
@@ -669,6 +673,8 @@ impl<'a> ObjectReader<'a> {
         F: FnOnce(&mut ObjectReader) -> Result<T, E>
     {
         let data_b64: Vec<_> = content.take_text(reader,  |text| {
+            // The text is supposed to be xsd:base64Binary which only allows
+            // the base64 characters plus whitespace.
             Ok(text.to_ascii()?.as_bytes().iter().filter_map(|b| {
                     if b.is_ascii_whitespace() { None }
                     else { Some(*b) }
@@ -724,15 +730,11 @@ impl error::Error for AlgorithmError { }
 pub struct ParseHashError(&'static str);
 
 impl ParseHashError {
-    /// Creates an error for when the hash value was of the wrong length.
-    const fn bad_length() -> Self {
-        ParseHashError("invalid length")
-    }
+    /// The error when the hash value was of the wrong length.
+    const BAD_LENGTH: Self = ParseHashError("invalid length");
 
-    /// Creates an error for when the hash value contained illegal characters.
-    const fn bad_chars() -> Self {
-        ParseHashError("invalid characters")
-    }
+    /// The error when the hash value contained illegal characters.
+    const BAD_CHARS: Self = ParseHashError("invalid characters");
 }
 
 impl fmt::Display for ParseHashError {
