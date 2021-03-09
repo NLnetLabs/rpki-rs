@@ -95,7 +95,10 @@ impl<'b, 'n> Element<'b, 'n> {
     /// We don’t support qualified attributes. We will also not check for
     /// those.
     pub fn attributes<F, E>(&self, mut op: F) -> Result<(), E>
-    where F: FnMut(&[u8], AttrValue) -> Result<(), E>, E: From<Error> {
+    where
+        F: FnMut(&[u8], AttrValue) -> Result<(), E>,
+        E: From<Error>
+    {
         for attr in self.start.attributes() {
             let attr = attr.map_err(Into::into)?;
             if attr.key == b"xmlns" {
@@ -154,7 +157,11 @@ impl Content {
         reader: &mut Reader<R>,
         op: F
     ) -> Result<Option<Content>, E>
-    where R: io::BufRead, F: FnOnce(Element) -> Result<(), E>, E: From<Error> {
+    where
+        R: io::BufRead,
+        F: FnOnce(Element) -> Result<(), E>,
+        E: From<Error>
+    {
         if self.empty {
             return Ok(None)
         }
@@ -192,7 +199,11 @@ impl Content {
         reader: &mut Reader<R>,
         op: F
     ) -> Result<T, E>
-    where R: io::BufRead, F: FnOnce(Text) -> Result<T, E>, E: From<Error> {
+    where
+        R: io::BufRead,
+        F: FnOnce(Text) -> Result<T, E>,
+        E: From<Error>
+    {
         if self.empty {
             return Err(Error::Malformed.into())
         }
