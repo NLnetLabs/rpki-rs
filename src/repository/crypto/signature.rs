@@ -2,7 +2,7 @@
 
 use bcder::{decode, encode};
 use bcder::encode::PrimitiveContent;
-use bcder::Oid;
+use bcder::{Oid, Tag};
 use bytes::Bytes;
 use super::super::oid;
 use super::keys::PublicKeyFormat;
@@ -14,14 +14,28 @@ use super::keys::PublicKeyFormat;
 ///
 /// These are the algorithms used for creating and verifying signatures. For
 /// RPKI, [RFC 7935] allows only one algorithm, RSA PKCS #1 v1.5 with
-/// SHA-256. Because of that, this type is currently a zero-sized struct.
-/// Should additional algorithms ever be allowed, it will change into an
-/// enum.
+/// SHA-256. However, there are two possible representations of the
+/// non-existant algorithm parameters. In certain circumstances, it is
+/// imporant that these two representations do not compare as equal.
+/// Therefore, this type keeps track of the representation used.
+///
+/// Should additional algorithms be introduced into RPKI, this type will be
+/// adjusted accordingly.
+///
+/// You can construct the signature algorithm currently preferred for RPKI
+/// via the `Default` implementation.
 ///
 /// [RFC 7935]: https://tools.ietf.org/html/rfc7935
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub struct SignatureAlgorithm(());
-
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct SignatureAlgorithm {
+    /// Is the parameter field present?
+    ///
+    /// If `true`, then a parameter field is present and NULL. Otherwise it
+    /// is missing.
+    ///
+    /// Constructed values will always have this set to `true`.
+    has_parameter: bool
+}
 
 impl SignatureAlgorithm {
     /// Returns the preferred public key format for this algorithm.
@@ -57,8 +71,12 @@ impl SignatureAlgorithm {
 ///
 /// The parameters field for the former identifier can be either NULL or
 /// missing and must be NULL for the latter. We will, however, accept an
-/// absent field for the latter as well. When constructing identifiers,
-/// we will always include a parameters field and set it to NULL.
+/// absent field for the latter as well. In both cases, the returned value
+/// will remember whether there was a parameters field. Values with and
+/// without parameters will not compare equal.
+///
+/// When constructing identifiers, we will always include a parameters field
+/// and set it to NULL, independently of what the value says.
 ///
 /// [RFC 3370]: https://tools.ietf.org/html/rfc3370
 /// [RFC 4055]: https://tools.ietf.org/html/rfc4055
@@ -79,8 +97,10 @@ impl SignatureAlgorithm {
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         oid::SHA256_WITH_RSA_ENCRYPTION.skip_if(cons)?;
-        cons.take_opt_null()?;
-        Ok(SignatureAlgorithm::default())
+        let has_parameter = cons.take_opt_primitive_if(
+            Tag::NULL, |_| Ok(())
+        )?.is_some();
+        Ok(SignatureAlgorithm { has_parameter })
     }
 
     /// Takes a signature algorithm identifier for CMS objects.
@@ -102,8 +122,10 @@ impl SignatureAlgorithm {
         {
             return Err(decode::Malformed.into())
         }
-        cons.take_opt_null()?;
-        Ok(SignatureAlgorithm::default())
+        let has_parameter = cons.take_opt_primitive_if(
+            Tag::NULL, |_| Ok(())
+        )?.is_some();
+        Ok(SignatureAlgorithm { has_parameter })
     }
 
     /// Provides an encoder for X.509 objects.
@@ -120,6 +142,15 @@ impl SignatureAlgorithm {
             oid::RSA_ENCRYPTION.encode(),
             ().encode(),
         ))
+    }
+}
+
+
+//--- Default
+
+impl Default for SignatureAlgorithm {
+    fn default() -> Self {
+        SignatureAlgorithm { has_parameter: true }
     }
 }
 
