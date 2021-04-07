@@ -526,7 +526,7 @@ impl<'de> serde::Deserialize<'de> for AsBlocks {
         deserializer: D
     ) -> Result<Self, D::Error> {
         let string = String::deserialize(deserializer)?;
-        Ok(Self::from_str(&string).map_err(serde::de::Error::custom)?)
+        Self::from_str(&string).map_err(serde::de::Error::custom)
     }
 }
 
