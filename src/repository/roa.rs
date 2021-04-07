@@ -281,7 +281,7 @@ impl<'a> Iterator for RoaIpAddressIter<'a> {
 
 //------------ RoaIpAddress --------------------------------------------------
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct RoaIpAddress {
     prefix: Prefix,
     max_length: Option<u8>
@@ -296,11 +296,11 @@ impl RoaIpAddress {
         RoaIpAddress::new(Prefix::new(addr, len), max_len)
     }
 
-    pub fn prefix(&self) -> Prefix {
+    pub fn prefix(self) -> Prefix {
         self.prefix
     }
 
-    pub fn range(&self) -> (Addr, Addr) {
+    pub fn range(self) -> (Addr, Addr) {
         self.prefix.range()
     }
 }
@@ -347,7 +347,7 @@ impl RoaIpAddress {
 
 //------------ FriendlyRoaIpAddress ------------------------------------------
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct FriendlyRoaIpAddress {
     addr: RoaIpAddress,
     v4: bool
@@ -358,15 +358,15 @@ impl FriendlyRoaIpAddress {
         FriendlyRoaIpAddress { addr, v4 }
     }
 
-    pub fn prefix(&self) -> Prefix {
+    pub fn prefix(self) -> Prefix {
         self.addr.prefix
     }
 
-    pub fn is_v4(&self) -> bool {
+    pub fn is_v4(self) -> bool {
         self.v4
     }
 
-    pub fn address(&self) -> IpAddr {
+    pub fn address(self) -> IpAddr {
         if self.v4 {
             self.addr.prefix.to_v4().into()
         }
@@ -375,11 +375,11 @@ impl FriendlyRoaIpAddress {
         }
     }
 
-    pub fn address_length(&self) -> u8 {
+    pub fn address_length(self) -> u8 {
         self.addr.prefix.addr_len()
     }
 
-    pub fn max_length(&self) -> u8 {
+    pub fn max_length(self) -> u8 {
         self.addr.max_length.unwrap_or_else(||
             self.addr.prefix.addr_len()
         )
