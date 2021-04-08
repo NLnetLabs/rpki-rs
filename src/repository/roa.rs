@@ -601,6 +601,7 @@ mod signer_test {
     use crate::repository::crypto::{PublicKeyFormat, Signer};
     use crate::repository::crypto::softsigner::OpenSslSigner;
     use crate::repository::resources::{AsId, Prefix};
+    use crate::repository::tal::TalInfo;
     use crate::repository::x509::Validity;
     use super::*;
 
