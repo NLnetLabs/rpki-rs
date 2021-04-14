@@ -18,6 +18,9 @@ Breaking
   rather then decoding it into a vec. In addition, `rrdp::DigestHex` has
   been renamed to the more clear `rrdp::Hash` and turned into a wrapper
   around a fixed-size array. ([#129])
+* `SignedObject::process` and `Roa::process` now also return the EE
+  certificate on success. ([#131])
+* `RoaIpAddress` and `FriendlyRoaIpAddress` are now `Copy`. ([#131])
 * Upgrade `bytes` and `tokio` to 1.0. ([#121])
 * The minimum required Rust version is now 1.43. ([#121])
 
@@ -35,6 +38,10 @@ New
 
 Bug Fixes
 
+* `Validity::from_duration` now correctly deals with negative durations.
+  ([#131])
+
+
 Other Changes
 
 [#119]: https://github.com/NLnetLabs/rpki-rs/pull/119
@@ -44,6 +51,7 @@ Other Changes
 [#126]: https://github.com/NLnetLabs/rpki-rs/pull/126
 [#128]: https://github.com/NLnetLabs/rpki-rs/pull/128
 [#129]: https://github.com/NLnetLabs/rpki-rs/pull/129
+[#131]: https://github.com/NLnetLabs/rpki-rs/pull/131
 
 
 ## 0.10.0

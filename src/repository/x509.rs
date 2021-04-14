@@ -990,10 +990,10 @@ impl Validity {
         let not_before = Time::now();
         let not_after = Time::new(Utc::now() + duration);
         if not_before < not_after {
-            Validity { not_before, not_after }
+            Validity::new(not_before, not_after)
         }
         else {
-            Validity { not_after, not_before }
+            Validity::new(not_after, not_before)
         }
     }
 

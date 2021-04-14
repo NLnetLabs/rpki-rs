@@ -2,9 +2,7 @@
 //!
 //! For details, see RFC 6482.
 
-use std::mem;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::sync::Arc;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Oid, Tag, xerr};
 use bcder::encode::{PrimitiveContent, Values};
@@ -13,7 +11,6 @@ use super::cert::{Cert, ResourceCert};
 use super::crypto::{Signer, SigningError};
 use super::resources::{Addr, AddressFamily, AsId, IpResources, Prefix};
 use super::sigobj::{SignedObject, SignedObjectBuilder};
-use super::tal::TalInfo;
 use super::x509::ValidationError;
 
 
@@ -45,12 +42,12 @@ impl Roa {
         issuer: &ResourceCert,
         strict: bool,
         check_crl: F
-    ) -> Result<RouteOriginAttestation, ValidationError>
+    ) -> Result<(ResourceCert, RouteOriginAttestation), ValidationError>
     where F: FnOnce(&Cert) -> Result<(), ValidationError> {
         let cert = self.signed.validate(issuer, strict)?;
         check_crl(cert.as_ref())?;
-        self.content.validate(cert)?;
-        Ok(self.content)
+        self.content.validate(&cert)?;
+        Ok((cert, self.content))
     }
 
     /// Returns a value encoder for a reference to a ROA.
@@ -105,7 +102,6 @@ pub struct RouteOriginAttestation {
     as_id: AsId,
     v4_addrs: RoaIpAddresses,
     v6_addrs: RoaIpAddresses,
-    status: RoaStatus,
 }
 
 impl RouteOriginAttestation {
@@ -119,14 +115,6 @@ impl RouteOriginAttestation {
 
     pub fn v6_addrs(&self) -> &RoaIpAddresses {
         &self.v6_addrs
-    }
-
-    pub fn status(&self) -> &RoaStatus {
-        &self.status
-    }
-
-    pub fn take_cert(&mut self) -> Option<ResourceCert> {
-        self.status.take_cert()
     }
 
     pub fn iter(
@@ -180,14 +168,13 @@ impl RouteOriginAttestation {
                     Some(addrs) => addrs,
                     None => RoaIpAddresses(Captured::empty(Mode::Der))
                 },
-                status: RoaStatus::Unknown,
             })
         })
     }
 
     fn validate(
         &mut self,
-        cert: ResourceCert
+        cert: &ResourceCert
     ) -> Result<(), ValidationError> {
         if !self.v4_addrs.is_empty() {
             let blocks = cert.v4_resources();
@@ -211,7 +198,6 @@ impl RouteOriginAttestation {
                 }
             }
         }
-        self.status = RoaStatus::Valid { cert };
         Ok(())
     }
 
@@ -295,7 +281,7 @@ impl<'a> Iterator for RoaIpAddressIter<'a> {
 
 //------------ RoaIpAddress --------------------------------------------------
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct RoaIpAddress {
     prefix: Prefix,
     max_length: Option<u8>
@@ -310,11 +296,11 @@ impl RoaIpAddress {
         RoaIpAddress::new(Prefix::new(addr, len), max_len)
     }
 
-    pub fn prefix(&self) -> Prefix {
+    pub fn prefix(self) -> Prefix {
         self.prefix
     }
 
-    pub fn range(&self) -> (Addr, Addr) {
+    pub fn range(self) -> (Addr, Addr) {
         self.prefix.range()
     }
 }
@@ -361,7 +347,7 @@ impl RoaIpAddress {
 
 //------------ FriendlyRoaIpAddress ------------------------------------------
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct FriendlyRoaIpAddress {
     addr: RoaIpAddress,
     v4: bool
@@ -372,15 +358,15 @@ impl FriendlyRoaIpAddress {
         FriendlyRoaIpAddress { addr, v4 }
     }
 
-    pub fn prefix(&self) -> Prefix {
+    pub fn prefix(self) -> Prefix {
         self.addr.prefix
     }
 
-    pub fn is_v4(&self) -> bool {
+    pub fn is_v4(self) -> bool {
         self.v4
     }
 
-    pub fn address(&self) -> IpAddr {
+    pub fn address(self) -> IpAddr {
         if self.v4 {
             self.addr.prefix.to_v4().into()
         }
@@ -389,50 +375,14 @@ impl FriendlyRoaIpAddress {
         }
     }
 
-    pub fn address_length(&self) -> u8 {
+    pub fn address_length(self) -> u8 {
         self.addr.prefix.addr_len()
     }
 
-    pub fn max_length(&self) -> u8 {
+    pub fn max_length(self) -> u8 {
         self.addr.max_length.unwrap_or_else(||
             self.addr.prefix.addr_len()
         )
-    }
-}
-
-
-//------------ RoaStatus -----------------------------------------------------
-
-#[derive(Clone, Debug)]
-#[allow(clippy::large_enum_variant)]
-pub enum RoaStatus {
-    Valid {
-        cert: ResourceCert,
-    },
-    Invalid {
-        // XXX Add information for why this is invalid.
-    },
-    Unknown
-}
-
-impl RoaStatus {
-    pub fn take_cert(&mut self) -> Option<ResourceCert> {
-        let res = mem::replace(self, RoaStatus::Unknown);
-        match res {
-            RoaStatus::Valid { cert, .. } => Some(cert),
-            RoaStatus::Invalid { .. } => {
-                *self = RoaStatus::Invalid { };
-                None
-            }
-            RoaStatus::Unknown => None
-        }
-    }
-
-    pub fn tal(&self) -> Option<&Arc<TalInfo>> {
-        match *self {
-            RoaStatus::Valid { ref cert, .. } => Some(cert.tal()),
-            _ => None
-        }
     }
 }
 
@@ -528,7 +478,6 @@ impl RoaBuilder {
             as_id: self.as_id,
             v4_addrs: self.v4.to_addresses(),
             v6_addrs: self.v6.to_addresses(),
-            status: RoaStatus::Unknown,
         }
     }
 
@@ -652,6 +601,7 @@ mod signer_test {
     use crate::repository::crypto::{PublicKeyFormat, Signer};
     use crate::repository::crypto::softsigner::OpenSslSigner;
     use crate::repository::resources::{AsId, Prefix};
+    use crate::repository::tal::TalInfo;
     use crate::repository::x509::Validity;
     use super::*;
 

@@ -162,12 +162,12 @@ impl SignedObject {
         issuer: &ResourceCert,
         strict: bool,
         check_crl: F
-    ) -> Result<Bytes, ValidationError>
+    ) -> Result<(ResourceCert, Bytes), ValidationError>
     where F: FnOnce(&Cert) -> Result<(), ValidationError> {
         let res = self.content.clone();
         let cert = self.validate(issuer, strict)?;
         check_crl(cert.as_ref())?;
-        Ok(res.into_bytes())
+        Ok((cert, res.into_bytes()))
     }
 
     /// Validates the signed object.
