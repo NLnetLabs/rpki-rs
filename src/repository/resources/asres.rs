@@ -20,7 +20,6 @@ use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{Tag, xerr};
 use bcder::encode::{PrimitiveContent, Nothing};
-use serde::{Deserialize, Deserializer};
 use super::super::cert::Overclaim;
 use super::super::x509::{encode_extension, ValidationError};
 use super::chain::{Block, SharedChain};
@@ -955,8 +954,9 @@ impl FromStr for AsId {
 
 //--- Deserialize
 
-impl<'de> Deserialize<'de> for AsId {
-    fn deserialize<D: Deserializer<'de>>(
+#[cfg(feature = "serde")]
+impl<'de> serde::de::Deserialize<'de> for AsId {
+    fn deserialize<D: serde::de::Deserializer<'de>>(
         deserializer: D
     ) -> Result<Self, D::Error> {
         struct Visitor;
