@@ -20,6 +20,7 @@ use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{Tag, xerr};
 use bcder::encode::{PrimitiveContent, Nothing};
+use serde::{Deserialize, Deserializer};
 use super::super::cert::Overclaim;
 use super::super::x509::{encode_extension, ValidationError};
 use super::chain::{Block, SharedChain};
@@ -932,6 +933,7 @@ impl From<AsId> for u32 {
     }
 }
 
+
 //--- FromStr
 
 impl FromStr for AsId {
@@ -949,6 +951,36 @@ impl FromStr for AsId {
         Ok(AsId(id))
     }
 }
+
+
+//--- Deserialize
+
+impl<'de> Deserialize<'de> for AsId {
+    fn deserialize<D: Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
+        struct Visitor;
+
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = AsId;
+
+            fn expecting(
+                &self, formatter: &mut fmt::Formatter
+            ) -> fmt::Result {
+                write!(formatter, "a string with an AS number")
+            }
+
+            fn visit_str<E: serde::de::Error>(
+                self, v: &str
+            ) -> Result<Self::Value, E> {
+                AsId::from_str(v).map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_str(Visitor)
+    }
+}
+
 
 //--- Add
 
