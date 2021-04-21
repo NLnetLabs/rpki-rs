@@ -20,6 +20,8 @@ use super::payload::{Action, Payload, Timing};
 use super::state::State;
 
 
+//============ Traits ========================================================
+
 //------------ VrpSource -----------------------------------------------------
 
 /// A source of VRPs for an RTR server.
@@ -72,6 +74,26 @@ pub trait VrpSource: Clone + Sync + Send + 'static {
 }
 
 
+//------------ Socket --------------------------------------------------------
+
+/// A stream socket to be used for an RTR connection.
+///
+/// Apart frombeing to read and write asynchronously and be spawned into an
+/// async task, the trait allows additional processing when the client has
+/// successfully updated.
+pub trait Socket: AsyncRead + AsyncWrite + Unpin + Sync + Send + 'static {
+    /// The client has been successfully updated.
+    ///
+    /// The new client state after the update is given as well as whether the
+    /// update was, in fact, a reset.
+    fn update(&self, state: State, reset: bool) {
+        let _ = (state, reset);
+    }
+}
+
+impl Socket for tokio::net::TcpStream { }
+
+
 //------------ Server --------------------------------------------------------
 
 /// An RTR server.
@@ -110,9 +132,8 @@ impl<Listener, Source> Server<Listener, Source> {
     /// return with an error if the listener socket errors out.
     pub async fn run<Sock>(mut self) -> Result<(), io::Error>
     where
-        Listener:
-            Stream<Item = Result<Sock, io::Error>> + Unpin,
-        Sock: AsyncRead + AsyncWrite + Unpin + Sync + Send + 'static,
+        Listener: Stream<Item = Result<Sock, io::Error>> + Unpin,
+        Sock: Socket,
         Source: VrpSource,
     {
         while let Some(sock) = self.listener.next().await {
@@ -167,11 +188,7 @@ impl<Sock, Source> Connection<Sock, Source> {
 
 /// # High-level operation
 ///
-impl<Sock, Source> Connection<Sock, Source>
-where
-    Sock: AsyncRead + AsyncWrite + Unpin + Sync + Send + 'static,
-    Source: VrpSource
-{
+impl<Sock: Socket, Source: VrpSource> Connection<Sock, Source> {
     /// Runs the connection until it is done.
     ///
     /// Returns successfully if the connection was closed cleanly. Returns an
@@ -343,11 +360,7 @@ where Sock: AsyncRead + Unpin {
 
 /// # Sending
 ///
-impl<Sock, Source> Connection<Sock, Source>
-where
-    Sock: AsyncWrite + Unpin + Sync + Send + 'static,
-    Source: VrpSource
-{
+impl<Sock: Socket, Source: VrpSource> Connection<Sock, Source> {
     /// Sends out a response to a serial query.
     ///
     /// The client’s current state is in `state`. Responds accordingly on
@@ -374,7 +387,9 @@ where
                 let timing = self.source.timing();
                 pdu::EndOfData::new(
                     self.version(), state, timing
-                ).write(&mut self.sock).await
+                ).write(&mut self.sock).await?;
+                self.sock.update(state, true);
+                Ok(())
             }
             None => {
                 debug!("RTR server: source ain't got no diff for that.");
@@ -407,7 +422,9 @@ where
         let timing = self.source.timing();
         pdu::EndOfData::new(
             self.version(), state, timing
-        ).write(&mut self.sock).await
+        ).write(&mut self.sock).await?;
+        self.sock.update(state, true);
+        Ok(())
     }
 
     /// Sends an error response.
