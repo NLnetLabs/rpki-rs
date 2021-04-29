@@ -2646,6 +2646,12 @@ mod test {
         ).unwrap();
     }
 
+    /// Tests that inconsistent algorithm encoding fail validation.
+    ///
+    /// Specifically, tests that a certificate with different encoding of
+    /// the signature algorithm paramteres (NULL value v. not present) in
+    /// the outer certificate structure and inside the TbsCertificate will
+    /// be rejected during the inspection step.
     #[test]
     fn signature_algorithm_mismatch() {
         let roa = crate::repository::roa::Roa::decode(
