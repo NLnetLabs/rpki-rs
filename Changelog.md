@@ -35,12 +35,15 @@ New
   and values can be checked whether they in fact represent the SHA-256
   algorithm. Values now also provide the associated digest length via the
   new `digest_len` method. ([#126])
+* Certificate and signed object validation (strictly speaking: inspection) now
+  follow OpenSSL’s practice of refusing certificates with mismatching encoding
+  of the signature algorithm inside and outside the signed portion.
+  ([#130])
 
 Bug Fixes
 
 * `Validity::from_duration` now correctly deals with negative durations.
   ([#131])
-
 
 Other Changes
 
@@ -51,6 +54,7 @@ Other Changes
 [#126]: https://github.com/NLnetLabs/rpki-rs/pull/126
 [#128]: https://github.com/NLnetLabs/rpki-rs/pull/128
 [#129]: https://github.com/NLnetLabs/rpki-rs/pull/129
+[#139]: https://github.com/NLnetLabs/rpki-rs/pull/130
 [#131]: https://github.com/NLnetLabs/rpki-rs/pull/131
 
 
