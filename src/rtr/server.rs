@@ -78,9 +78,9 @@ pub trait VrpSource: Clone + Sync + Send + 'static {
 
 /// A stream socket to be used for an RTR connection.
 ///
-/// Apart frombeing to read and write asynchronously and be spawned into an
-/// async task, the trait allows additional processing when the client has
-/// successfully updated.
+/// Apart from being abile to read and write asynchronously and being spawned
+/// as an async task, the trait allows additional processing when the client
+/// has successfully updated.
 pub trait Socket: AsyncRead + AsyncWrite + Unpin + Sync + Send + 'static {
     /// The client has been successfully updated.
     ///
