@@ -2646,6 +2646,39 @@ mod test {
         ).unwrap();
     }
 
+    /// Tests that inconsistent algorithm encoding fail validation.
+    ///
+    /// Specifically, tests that a certificate with different encoding of
+    /// the signature algorithm paramteres (NULL value v. not present) in
+    /// the outer certificate structure and inside the TbsCertificate will
+    /// be rejected during the inspection step.
+    #[test]
+    fn signature_algorithm_mismatch() {
+        let roa = crate::repository::roa::Roa::decode(
+            include_bytes!(
+                "../../test-data/example-ripe.roa"
+            ).as_ref(),
+            false
+        ).unwrap();
+        assert!(
+            roa.cert().inspect_ee_at(
+                true, Time::utc(2020, 05, 01, 0, 0, 0)
+            ).is_ok()
+        );
+
+        let mft = crate::repository::manifest::Manifest::decode(
+            include_bytes!(
+                "../../test-data/signature-alg-mismatch.mft"
+            ).as_ref(),
+            false
+        ).unwrap();
+        assert!(
+            mft.cert().inspect_ee_at(
+                true, Time::utc(2020, 05, 01, 0, 0, 0)
+            ).is_err()
+        );
+    }
+
     #[test]
     #[cfg(feature = "serde")]
     fn serde_cert() {
