@@ -932,6 +932,7 @@ impl From<AsId> for u32 {
     }
 }
 
+
 //--- FromStr
 
 impl FromStr for AsId {
@@ -949,6 +950,47 @@ impl FromStr for AsId {
         Ok(AsId(id))
     }
 }
+
+
+//--- Serialize and Deserialize
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for AsId {
+    fn serialize<S: serde::Serializer>(
+        &self, serializer: S
+    ) -> Result<S::Ok, S::Error> {
+        let s = format!("{}", self);
+        serializer.serialize_str(&s)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::de::Deserialize<'de> for AsId {
+    fn deserialize<D: serde::de::Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
+        struct Visitor;
+
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = AsId;
+
+            fn expecting(
+                &self, formatter: &mut fmt::Formatter
+            ) -> fmt::Result {
+                write!(formatter, "a string with an AS number")
+            }
+
+            fn visit_str<E: serde::de::Error>(
+                self, v: &str
+            ) -> Result<Self::Value, E> {
+                AsId::from_str(v).map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_str(Visitor)
+    }
+}
+
 
 //--- Add
 
@@ -1000,53 +1042,61 @@ impl error::Error for FromStrError { }
 #[cfg(test)]
 mod test {
     use super::*;
+    use serde_test::{Token, assert_de_tokens, assert_tokens};
 
     #[test]
     fn as_id_from_str() {
-        let as1 = AsId::from_str("AS1").unwrap();
-        assert_eq!(as1, AsId(1))
+        assert_eq!(AsId::from_str("AS1").unwrap(), AsId(1));
+        assert_eq!(AsId::from_str("As1").unwrap(), AsId(1));
+        assert_eq!(AsId::from_str("1").unwrap(), AsId(1));
     }
 
     #[test]
-    fn as_id_from_str_without_as_prefix() {
-        let as1 = AsId::from_str("1").unwrap();
-        assert_eq!(as1, AsId(1))
+    fn as_id_display() {
+        assert_eq!(format!("{}", AsId(1)), "AS1");
     }
 
     #[test]
-    fn as_block_from_range_str() {
-        let expected_str = "AS1-AS3";
-        let block = AsBlock::from_str(expected_str).unwrap();
-        assert_eq!(expected_str, &block.to_string())
+    fn as_id_serde() {
+        assert_tokens(&AsId(12), &[Token::Str("AS12")]);
+        assert_de_tokens(&AsId(12), &[Token::Str("as12")]);
+        assert_de_tokens(&AsId(12), &[Token::Str("12")]);
     }
 
     #[test]
-    fn as_block_from_wrong_range_str() {
-        let expected_str = "AS1-";
-        let block_err = AsBlock::from_str(expected_str).err();
-        assert_eq!(Some(FromStrError::BadRange), block_err)
-    }
+    fn as_block_from_str() {
+        // Good
+        assert_eq!(
+            AsBlock::from_str("AS1").unwrap(),
+            AsId(1).into()
+        );
+        assert_eq!(
+            AsBlock::from_str("AS1-AS3").unwrap(),
+            AsRange::new(AsId(1), AsId(3)).into()
+        );
 
-
-    #[test]
-    fn as_block_from_asid_str() {
-        let expected_str = "AS1";
-        let block = AsBlock::from_str(expected_str).unwrap();
-        assert_eq!(expected_str, &block.to_string())
+        // Bad
+        assert!(AsBlock::from_str("AS1-").is_err());
     }
 
     #[test]
     fn as_blocks_from_str() {
-        let expected_str = "AS1, AS3-AS7";
-        let blocks = AsBlocks::from_str(expected_str).unwrap();
-        assert_eq!(expected_str, &blocks.to_string())
-    }
+        fn good(left: &str, right: Vec<AsBlock>) {
+            assert_eq!(
+                AsBlocks::from_str(left).unwrap().iter().collect::<Vec<_>>(),
+                right
+            );
+        }
 
-    #[test]
-    fn as_blocks_from_empty_str() {
-        let expected_str = "";
-        let blocks = AsBlocks::from_str(expected_str).unwrap();
-        assert_eq!(expected_str, &blocks.to_string())
+        good(
+            "AS1, AS3-AS7", 
+            vec![AsId(1).into(), AsRange::new(AsId(3), AsId(7)).into()]
+        );
+        good(
+            "AS1,AS3-AS7", 
+            vec![AsId(1).into(), AsRange::new(AsId(3), AsId(7)).into()]
+        );
+        good("", Vec::new());
     }
 
     #[test]
