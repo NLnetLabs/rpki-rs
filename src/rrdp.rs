@@ -855,6 +855,15 @@ mod test {
     }
 
     #[test]
+    fn lolz_notification() {
+        assert!(
+            NotificationFile::parse(
+                include_bytes!("../test-data/lolz-notification.xml").as_ref()
+            ).is_err()
+        );
+    }
+
+    #[test]
     fn ripe_snapshot() {
         <Test as ProcessSnapshot>::process(
             &mut Test,
