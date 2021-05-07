@@ -137,7 +137,7 @@ impl Csr {
 ///
 impl Csr {
     /// Returns a value encoder for a reference to the csr.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         self.signed_data.encode_ref()
     }
 

@@ -231,7 +231,7 @@ impl SignedObject {
     }
 
     /// Returns a value encoder for a reference to a signed object.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             oid::SIGNED_DATA.encode(), // contentType
             encode::sequence_as(Tag::CTX_0, // content
@@ -513,7 +513,7 @@ impl SignedAttrs {
         })
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence_as(Tag::CTX_0, &self.0)
     }
 
@@ -552,7 +552,7 @@ impl AsRef<[u8]> for SignedAttrs {
 pub struct MessageDigest(Bytes);
 
 impl MessageDigest {
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         OctetString::encode_slice(self.0.as_ref())
     }
 }

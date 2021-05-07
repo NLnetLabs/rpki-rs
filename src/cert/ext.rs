@@ -79,10 +79,7 @@ pub struct Extensions {
 ///
 impl Extensions {
     pub fn basic_ca(&self) -> Option<bool> {
-        match &self.basic_ca {
-            Some(ca) => Some(ca.ca),
-            None => None
-        }
+        self.basic_ca.as_ref().map(|ca|ca.ca)
     }
 
     pub fn subject_key_id(&self) -> &OctetString {
@@ -94,10 +91,7 @@ impl Extensions {
     }
 
     pub fn authority_key_id(&self) -> Option<&OctetString> {
-        match &self.authority_key_id {
-            Some(a) => Some(a.authority_key_id()),
-            None => None
-        }
+        self.authority_key_id.as_ref().map(|a| a.authority_key_id())
     }
 
     pub fn authority_info_access(&self) -> Option<&UriGeneralName> {
@@ -506,16 +500,15 @@ impl BasicCa {
         basic_ca: &mut Option<Self>
     ) -> Result<(), S::Err> {
         update_once(basic_ca, || {
-            let ca = match cons.take_sequence(|cons| cons.take_opt_bool())? {
-                Some(res) => res,
-                None => false
-            };
+            let ca = cons
+                .take_sequence(|cons| cons.take_opt_bool())?
+                .unwrap_or(false);
 
             Ok(Self{critical, ca})
         })
     }
 
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode(&self) -> impl encode::Values + '_ {
         encode_extension(
             oid::CE_BASIC_CONSTRAINTS,
             self.critical,
@@ -551,11 +544,11 @@ impl KeyIdentifier {
         self.0.encode_as(tag)
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         self.0.encode_ref()
     }
 
-    pub fn encode_ref_as<'a>(&'a self, tag: Tag) -> impl encode::Values + 'a {
+    pub fn encode_ref_as(&self, tag: Tag) -> impl encode::Values + '_ {
         self.0.encode_ref_as(tag)
     }
 }
@@ -625,7 +618,7 @@ impl SubjectKeyIdentifier {
         )
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode_extension(
             oid::CE_SUBJECT_KEY_IDENTIFIER,
             false,
@@ -705,7 +698,7 @@ impl AuthorityKeyIdentifier {
         )
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode_extension(
             oid::CE_AUTHORITY_KEY_IDENTIFIER,
             false,
@@ -947,7 +940,7 @@ impl CrlNumber {
         })
     }
 
-    pub fn encode<'a>(& 'a self) -> impl encode::Values + 'a {
+    pub fn encode(&self) -> impl encode::Values + '_ {
         encode::sequence((
             oid::CE_CRL_NUMBER.encode(),
             OctetString::encode_wrapped(Mode::Der, self.number.encode())

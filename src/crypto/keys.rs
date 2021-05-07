@@ -232,14 +232,14 @@ impl PublicKey {
         ))
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             self.algorithm.encode(),
             self.bits.encode_ref()
         ))
     }
 
-    pub fn encode_subject_name<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_subject_name(&self) -> impl encode::Values + '_ {
         encode::sequence(
             encode::set(
                 encode::sequence((
