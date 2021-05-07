@@ -135,7 +135,7 @@ impl Cert {
     }
 
     /// Returns a value encoder for a reference to the certificate.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         self.signed_data.encode_ref()
     }
 
@@ -1778,7 +1778,7 @@ impl TbsCert {
     }
 
     /// Returns an encoder for the value.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             encode::sequence_as(Tag::CTX_0, 2.encode()), // version
             self.serial_number.encode(),

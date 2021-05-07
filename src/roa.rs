@@ -3,7 +3,6 @@
 //! For details, see RFC 6482.
 
 use std::mem;
-use std::iter::FromIterator;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use bcder::{decode, encode};
@@ -15,7 +14,7 @@ use crate::oid;
 use crate::cert::{Cert, ResourceCert};
 use crate::crypto::{Signer, SigningError};
 use crate::resources::{
-    Addr, AddressFamily, AsId, IpBlocks, IpResources, Prefix
+    Addr, AddressFamily, AsId, IpResources, Prefix
 };
 use crate::sigobj::{SignedObject, SignedObjectBuilder};
 use crate::tal::TalInfo;
@@ -59,7 +58,7 @@ impl Roa {
     }
 
     /// Returns a value encoder for a reference to a ROA.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         self.signed.encode_ref()
     }
 
@@ -128,9 +127,7 @@ impl RouteOriginAttestation {
         self.status.take_cert()
     }
 
-    pub fn iter<'a>(
-        &'a self
-    ) -> impl Iterator<Item=FriendlyRoaIpAddress> + 'a {
+    pub fn iter(&self) -> impl Iterator<Item=FriendlyRoaIpAddress> + '_ {
         self.v4_addrs.iter().map(|addr| FriendlyRoaIpAddress::new(addr, true))
             .chain(
                 self.v6_addrs.iter()
@@ -214,7 +211,7 @@ impl RouteOriginAttestation {
         Ok(())
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             // version is DEFAULT
             self.as_id.encode(),
@@ -253,10 +250,10 @@ impl RoaIpAddresses {
         RoaIpAddressIter(self.0.as_ref())
     }
 
-    fn encode_ref_family<'a>(
-        &'a self,
+    fn encode_ref_family(
+        &self,
         family: [u8; 2]
-    ) -> Option<impl encode::Values + 'a> {
+    ) -> Option<impl encode::Values + '_> {
         if self.0.is_empty() {
             None
         }
@@ -599,12 +596,12 @@ impl RoaIpAddressesBuilder {
     }
 
     pub fn to_resources(&self) -> IpResources {
-        IpResources::blocks(IpBlocks::from_iter(
-            self.addrs.iter().map(|addr| addr.prefix.into())
-        ))
+        IpResources::blocks(
+            self.addrs.iter().map(|addr| addr.prefix.into()).collect()
+        )
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence(
             encode::slice(self.addrs.as_slice(), |v: &RoaIpAddress| v.encode())
         )
