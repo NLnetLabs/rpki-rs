@@ -463,7 +463,6 @@ impl<T: Block> Chain<T> {
                                         //   |- other -|
                                         if self_min == self_max {
                                             take_next_self = true;
-                                            take_next_other = true;
                                         }
                                         //             |-- self ----|
                                         //   |- other -|
@@ -472,9 +471,8 @@ impl<T: Block> Chain<T> {
                                             // of other_max. Note that we no that there is at least one
                                             // bigger value (self_max) so it's safe to unwrap.
                                             self_item.0 = T::next(other_max).unwrap();
-                                                
-                                            take_next_other = true;
                                         }
+                                        take_next_other = true;
                                     }
                                     //               |-- self ----|
                                     //   |- other -|
