@@ -165,7 +165,7 @@ impl AsResources {
         )
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence(
             encode::sequence_as(Tag::CTX_0,
                 match self.0 {
@@ -187,9 +187,9 @@ impl AsResources {
         )
     }
 
-    pub fn encode_extension<'a>(
-        &'a self, overclaim: Overclaim
-    ) -> impl encode::Values + 'a {
+    pub fn encode_extension(
+        &self, overclaim: Overclaim
+    ) -> impl encode::Values + '_ {
         if self.0.is_present() {
             Some(encode_extension(
                 overclaim.as_res_id(), true, self.encode_ref()
@@ -306,7 +306,7 @@ impl AsBlocks {
     }
 
     /// Returns an iterator over the individual AS number blocks.
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item=AsBlock> + 'a {
+    pub fn iter(&self) -> impl Iterator<Item=AsBlock> + '_ {
         self.0.iter().copied()
     }
 
@@ -403,9 +403,7 @@ impl AsBlocks {
     /// i.e. all resources found in one or both AsBlocks.
     pub fn union(&self, other: &Self) -> Self {
         AsBlocks(
-            FromIterator::from_iter(
-                self.0.iter().cloned().chain(other.0.iter().cloned())
-            )
+            self.0.iter().cloned().chain(other.0.iter().cloned()).collect()
         )
     }
 }
@@ -432,7 +430,7 @@ impl AsBlocks {
     ) -> Result<Self, S::Err> {
         let mut err = None;
 
-        let res = SharedChain::from_iter(
+        let res = 
             iter::repeat_with(|| AsBlock::take_opt_from(cons))
                 .map(|item| {
                     match item {
@@ -444,9 +442,10 @@ impl AsBlocks {
                         }
                     }
                 })
-                .take_while(|item| item.is_some())
-                .map(Option::unwrap)
-        );
+            .take_while(|item| item.is_some())
+            .map(Option::unwrap)
+            .collect();
+
         match err {
             Some(err) => Err(err),
             None => Ok(AsBlocks(res))
@@ -457,7 +456,7 @@ impl AsBlocks {
         encode::slice(self.0, |block| block.encode())
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::slice(&self.0, |block| block.encode())
     }
 }
@@ -535,7 +534,7 @@ impl<'de> Deserialize<'de> for AsBlocks {
         deserializer: D
     ) -> Result<Self, D::Error> {
         let string = String::deserialize(deserializer)?;
-        Ok(Self::from_str(&string).map_err(de::Error::custom)?)
+        Self::from_str(&string).map_err(de::Error::custom)
     }
 }
 
@@ -555,7 +554,7 @@ impl AsBlocksBuilder {
     }
 
     pub fn finalize(self) -> AsBlocks {
-        AsBlocks(SharedChain::from_iter(self.0.into_iter()))
+        AsBlocks(self.0.into_iter().collect())
     }
 }
 

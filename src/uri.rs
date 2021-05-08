@@ -199,7 +199,7 @@ impl Rsync {
         ))
     }
 
-    pub fn encode_general_name<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_general_name(&self) -> impl encode::Values + '_ {
         self.encode_as(Tag::CTX_6)
     }
 }
@@ -431,7 +431,7 @@ impl Https {
         unsafe { str::from_utf8_unchecked(self.uri.as_ref()) }
     }
 
-    pub fn encode_general_name<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_general_name(&self) -> impl encode::Values + '_ {
         self.encode_as(Tag::CTX_6)
     }
 

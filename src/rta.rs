@@ -58,7 +58,7 @@ impl Rta {
     }
 
     /// Returns a value encoder for a reference to a ROA.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         self.signed.encode_ref()
     }
 
@@ -209,7 +209,7 @@ impl ResourceTaggedAttestation {
         })
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             // version is DEFAULT
             encode::set(
@@ -226,7 +226,7 @@ impl ResourceTaggedAttestation {
         ))
     }
 
-    fn encode_as_resources<'a>(&'a self) -> impl encode::Values + 'a {
+    fn encode_as_resources(&self) -> impl encode::Values + '_ {
         if self.as_resources.is_empty() {
             None
         }
@@ -239,7 +239,7 @@ impl ResourceTaggedAttestation {
         }
     }
 
-    fn encode_ip_resources<'a>(&'a self) -> impl encode::Values + 'a {
+    fn encode_ip_resources(&self) -> impl encode::Values + '_ {
         if self.v4_resources.is_empty() && self.v6_resources.is_empty() {
             return None
         }
@@ -361,7 +361,7 @@ impl MultiSignedObject {
     }
 
     /// Returns a value encoder for a reference to a signed object.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             oid::SIGNED_DATA.encode(), // contentType
             encode::sequence_as(Tag::CTX_0, // content
@@ -451,7 +451,7 @@ impl SignerInfo {
         })
     }
 
-    pub fn encode_ref<'a>( &'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref( &self) -> impl encode::Values + '_ {
         encode::sequence((
             3u8.encode(), // version
             self.sid.encode_ref_as(Tag::CTX_0),

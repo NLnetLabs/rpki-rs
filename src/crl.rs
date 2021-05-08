@@ -131,7 +131,7 @@ impl Crl {
         self.signed_data.verify_signature(public_key)
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         self.signed_data.encode_ref()
     }
 
@@ -425,7 +425,7 @@ impl TbsCertList<RevokedCertificates> {
     }
 
     /// Returns a value encoder for a reference to this value.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             1.encode(), // version
             self.signature.x509_encode(),
@@ -520,7 +520,7 @@ impl RevokedCertificates {
     }
 
     /// Returns a value encoder for a reference to the value.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence(&self.0)
     }
 

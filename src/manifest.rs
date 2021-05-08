@@ -78,7 +78,7 @@ impl Manifest {
     }
 
     /// Returns a value encoder for a reference to the manifest.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         self.signed.encode_ref()
     }
 
@@ -339,7 +339,7 @@ impl ManifestContent {
 
 
     /// Returns a value encoder for a reference to the content.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             self.manifest_number.encode(),
             self.this_update.encode_generalized_time(),
@@ -441,7 +441,7 @@ impl FileAndHash<Bytes, Bytes> {
 
 impl<F: AsRef<[u8]>, H: AsRef<[u8]>> FileAndHash<F, H> {
     /// Returns a value encoder for a reference.
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             OctetString::encode_slice_as(self.file.as_ref(), Tag::IA5_STRING),
             BitString::encode_slice(self.hash.as_ref(), 0),

@@ -243,7 +243,7 @@ impl Name {
         Name(Captured::from_values(Mode::Der, values))
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         &self.0
     }
 }
@@ -550,7 +550,7 @@ impl SignedData {
         ).map_err(Into::into)
     }
 
-    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             &self.data,
             self.signature.algorithm().x509_encode(),
@@ -969,10 +969,10 @@ impl Validity {
         let not_before = Time::now();
         let not_after = Time::new(Utc::now() + duration);
         if not_before < not_after {
-            Validity { not_before, not_after }
+            Validity::new(not_before, not_after)
         }
         else {
-            Validity { not_after, not_before }
+            Validity::new(not_after, not_before)
         }
     }
 
