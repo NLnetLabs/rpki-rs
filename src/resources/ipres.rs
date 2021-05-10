@@ -414,7 +414,7 @@ impl IpBlocks {
         other.0.is_encompassed(&self.0)
     }
 
-    /// Return the intersection of this IpBlocks and the other. I.e. all
+    /// Returns the intersection of this IpBlocks and the other. I.e. all
     /// resources which are found in both.
     pub fn intersection(&self, other: &Self) -> Self {
         match self.0.trim(&other.0) {
@@ -427,6 +427,11 @@ impl IpBlocks {
         if let Err(owned) = self.0.trim(&other.0) {
             self.0 = SharedChain::from_owned(owned)
         }
+    }
+
+    /// Returns the resources found in self, but not in other.
+    pub fn difference(&self, other: &Self) -> Self {
+        IpBlocks(SharedChain::from_owned(self.0.difference(&other.0)))
     }
 
     /// Returns a new IpBlocks with the union of this and the other IpBlocks.
@@ -802,6 +807,10 @@ impl Block for IpBlock {
     fn next(item: Self::Item) -> Option<Self::Item> {
         item.0.checked_add(1).map(Addr)
     }
+
+    fn previous(item: Self::Item) -> Option<Self::Item> {
+        item.0.checked_sub(1).map(Addr)
+    }
 }
 
 
@@ -1068,6 +1077,10 @@ impl Block for AddressRange {
 
     fn next(item: Self::Item) -> Option<Self::Item> {
         item.0.checked_add(1).map(Addr)
+    }
+
+    fn previous(item: Self::Item) -> Option<Self::Item> {
+        item.0.checked_sub(1).map(Addr)
     }
 }
 
@@ -1735,6 +1748,25 @@ mod test {
         let expected = IpBlocks::empty();
         assert_eq!(expected, this.intersection(&other));
         assert_eq!(expected, other.intersection(&this));
+    }
+
+    #[test]
+    fn ip_blocks_difference() {
+        // This delegates to Chain::difference which is well tested
+        // There is no difference ultimately between IPv4 and IPv6 for this,
+        // it's all based on min and max numbers. So we can just test
+        // with v4 to have a more readable example of this.
+        let v4_left = "10.0.0.0, 10.1.0.0-10.1.2.255, 192.168.0.0/16";
+        let v4_right = "10.0.0.0/24, 192.168.255.0/24";
+        let v4_expected = "10.1.0.0-10.1.2.255, 192.168.0.0-192.168.254.255";
+
+        let v4_left = IpBlocks::from_str(v4_left).unwrap();
+        let v4_right = IpBlocks::from_str(v4_right).unwrap();
+        let v4_expected = IpBlocks::from_str(v4_expected).unwrap();
+
+        let v4_found = v4_left.difference(&v4_right);
+
+        assert_eq!(v4_expected, v4_found);
     }
 
     #[test]
