@@ -295,211 +295,208 @@ impl<T: Block> Chain<T> {
         if self.is_empty() {
             return OwnedChain::empty();
         }
-        // In this case we need to walk over both chains
-        else {
-            // Walk both `self` and `other` using iterators
-            
-            // We know that self is not empty so we can unwrap the first
-            // and break out of the loop below when we run out of next.
-
-            
-            let mut self_iter = self.iter();
-            let mut self_item = {
-                self_iter.next().map(|item| (item.min(), item.max())).unwrap()
-            };
-
-            let mut other_iter = other.iter();
-            let mut other_item = other_iter.next();
-
-            loop {
-                
-                
-                // Given that we iterate over both chains, both chains are sorted,
-                // and chain items are never adjacent, we can walk the iterators
-                // for both chains and compare things, progressing once we have
-                // moved beyond the 'max' of any element.
-                
-                // In the logic below we will check each corner case, and:
-                //  - add parts of `self_item` not found in other to the result
-                //  - progress to unprocessed parts of `self_item` if needed
-                //  - keep track whether we need to try to take the next `self_item`
-                //  - keep track whether we need to try to take the next `other_item`
-                //
-                // We will keep looping as long as we have a `self_item`
-                
-                let mut take_next_self = false;
-                let mut take_next_other = false;
-                
-                let self_min = self_item.0;
-                let self_max = self_item.1;
-
-                match other_item {
-                    None => {
-                        // we get to keep the self_item entirely
-                        res.push(T::new(self_item.0, self_item.1));
-                        take_next_self = true;
-                    }
-                    Some(other_item) => {
-                        let other_min = other_item.min();
-                        let other_max = other_item.max();
         
-                        match self_min.cmp(&other_min) {
-                            Ordering::Less => {
-                                // self starts before other
-                                match self_max.cmp(&other_min) {
-                                    //   |-- self --|
-                                    //                |-- other
-                                    //
-                                    //   Includes single element items:
-                                    //   | 
-                                    //      |--
-                                    Ordering::Less => {
-                                        // we get to keep the self_item entirely
-                                        res.push(T::new(self_item.0, self_item.1));
-                                        take_next_self = true;
-                                    },
-                                    //   |-- self --|
-                                    //              |-- other
-                                    Ordering::Equal => {
-                                        // we get to keep the self_item until other starts
-                                        let end = T::previous(other_min).unwrap();
-                                        res.push(T::new(self_item.0, end));
-                                        take_next_self = true;
-                                    },
-                                    //   |-- self --------|
-                                    //       |- other --|-|--| (3 cases)
-                                    Ordering::Greater => {
-                                        // we get to keep the self_item until other starts
-                                        let end = T::previous(other_min).unwrap();
-                                        res.push(T::new(self_item.0, end));
-                                        
-                                        match self_max.cmp(&other_max) {
-                                            //   |-- self ----|
-                                            //       |- other --|
-                                            Ordering::Less => {
-                                                take_next_self = true;
-                                                // keep other, it may overlap with the next self
-                                            }
-                                            //   |-- self ----|
-                                            //       |- other |
-                                            Ordering::Equal => {
-                                                take_next_self = true;
-                                                take_next_other = true;
-                                            }
-                                            //   |-- self  ------|
-                                            //      |-- other -|
-                                            Ordering::Greater => {
-                                                // Keep *this* self_item, but change the min to the right
-                                                // of other_max. Note that we no that there is at least one
-                                                // bigger value (self_max) so it's safe to unwrap.
-                                                self_item.0 = T::next(other_max).unwrap();
-                                                take_next_other = true;
-                                            }
-                                        }
-                                    }
-                                }
-                                
-                            },
-                            Ordering::Equal => {
-                                // self and other start at the same spot
-                                match self_max.cmp(&other_max) {
-                                    //   |-- self ----|
-                                    //   |- other -------|
-                                    Ordering::Less => {
-                                        take_next_self = true;
-                                        // just keep other it may still overlap with the next self
-                                    }
-                                    //   |-- self ----|
-                                    //   |- other ----|
-                                    Ordering::Equal => {
-                                        take_next_self = true;
-                                        take_next_other = true;
-                                    }
-                                    //   |-- self ----|
-                                    //   |- other -|
-                                    Ordering::Greater => {
-                                        // Keep *this* self_item, but change the min to the right
-                                        // of other_max. Note that we no that there is at least one
-                                        // bigger value (self_max) so it's safe to unwrap.
-                                        self_item.0 = T::next(other_max).unwrap();
-                                        
-                                        take_next_other = true;
-                                    }
-                                }
-                            },
-                            Ordering::Greater => {
-                                // self starts after other
-                                match self_min.cmp(&other_max) {
-                                    //      |-- self ----|
-                                    //   |- other -|-----|----|
-                                    Ordering::Less => {
-                                        match self_max.cmp(&other_max) {
-                                            //      |-- self ----|
-                                            //   |- other -----------|
-                                            Ordering::Less => {
-                                                take_next_self = true;
-                                                // keep other, it may overlap with the next self
-                                            }
-                                            //      |-- self ----|
-                                            //   |- other -------|
-                                            Ordering::Equal => {
-                                                take_next_self = true;
-                                                take_next_other = true;
-                                            }
-                                            //      |-- self ----|
-                                            //   |- other -|
-                                            Ordering::Greater => {
-                                                // Keep *this* self_item, but change the min to the right
-                                                // of other_max. Note that we no that there is at least one
-                                                // bigger value (self_max) so it's safe to unwrap.
-                                                self_item.0 = T::next(other_max).unwrap();
-                                                
-                                                take_next_other = true;
-                                            }
-                                        }
-                                    }
-                                    Ordering::Equal => {
-                                        //             | (self of 1 element where min == max)
-                                        //   |- other -|
-                                        if self_min == self_max {
+        // In this case we need to walk over both chains using iterators.
+        
+        // We know that self is not empty so we can unwrap the first
+        // and break out of the loop below when we run out of next.
+
+        let mut self_iter = self.iter();
+        let mut self_item = {
+            self_iter.next().map(|item| (item.min(), item.max())).unwrap()
+        };
+
+        let mut other_iter = other.iter();
+        let mut other_item = other_iter.next();
+
+        loop {
+            
+            
+            // Given that we iterate over both chains, both chains are sorted,
+            // and chain items are never adjacent, we can walk the iterators
+            // for both chains and compare things, progressing once we have
+            // moved beyond the 'max' of any element.
+            
+            // In the logic below we will check each corner case, and:
+            //  - add parts of `self_item` not found in other to the result
+            //  - progress to unprocessed parts of `self_item` if needed
+            //  - keep track whether we need to try to take the next `self_item`
+            //  - keep track whether we need to try to take the next `other_item`
+            //
+            // We will keep looping as long as we have a `self_item`
+            
+            let mut take_next_self = false;
+            let mut take_next_other = false;
+            
+            let self_min = self_item.0;
+            let self_max = self_item.1;
+
+            match other_item {
+                None => {
+                    // we get to keep the self_item entirely
+                    res.push(T::new(self_item.0, self_item.1));
+                    take_next_self = true;
+                }
+                Some(other_item) => {
+                    let other_min = other_item.min();
+                    let other_max = other_item.max();
+    
+                    match self_min.cmp(&other_min) {
+                        Ordering::Less => {
+                            // self starts before other
+                            match self_max.cmp(&other_min) {
+                                //   |-- self --|
+                                //                |-- other
+                                //
+                                //   Includes single element items:
+                                //   | 
+                                //      |--
+                                Ordering::Less => {
+                                    // we get to keep the self_item entirely
+                                    res.push(T::new(self_item.0, self_item.1));
+                                    take_next_self = true;
+                                },
+                                //   |-- self --|
+                                //              |-- other
+                                Ordering::Equal => {
+                                    // we get to keep the self_item until other starts
+                                    let end = T::previous(other_min).unwrap();
+                                    res.push(T::new(self_item.0, end));
+                                    take_next_self = true;
+                                },
+                                //   |-- self --------|
+                                //       |- other --|-|--| (3 cases)
+                                Ordering::Greater => {
+                                    // we get to keep the self_item until other starts
+                                    let end = T::previous(other_min).unwrap();
+                                    res.push(T::new(self_item.0, end));
+                                    
+                                    match self_max.cmp(&other_max) {
+                                        //   |-- self ----|
+                                        //       |- other --|
+                                        Ordering::Less => {
                                             take_next_self = true;
+                                            // keep other, it may overlap with the next self
                                         }
-                                        //             |-- self ----|
-                                        //   |- other -|
-                                        else {
+                                        //   |-- self ----|
+                                        //       |- other |
+                                        Ordering::Equal => {
+                                            take_next_self = true;
+                                            take_next_other = true;
+                                        }
+                                        //   |-- self  ------|
+                                        //      |-- other -|
+                                        Ordering::Greater => {
                                             // Keep *this* self_item, but change the min to the right
                                             // of other_max. Note that we no that there is at least one
                                             // bigger value (self_max) so it's safe to unwrap.
                                             self_item.0 = T::next(other_max).unwrap();
+                                            take_next_other = true;
                                         }
-                                        take_next_other = true;
-                                    }
-                                    //               |-- self ----|
-                                    //   |- other -|
-                                    Ordering::Greater => {
-                                        // nothing to do in this iteration, see if there
-                                        // is a next other to compare to self
-                                        take_next_other = true;
                                     }
                                 }
                             }
-
-                        }
-                    }               
-                }
-
-                if take_next_other {
-                    other_item = other_iter.next();
-                }
-
-                if take_next_self {
-                    // get the next self item, or break out if there is none, then we are done.
-                    match self_iter.next() {
-                        Some(item) => {
-                            self_item = (item.min(), item.max());
+                            
                         },
-                        None => break
+                        Ordering::Equal => {
+                            // self and other start at the same spot
+                            match self_max.cmp(&other_max) {
+                                //   |-- self ----|
+                                //   |- other -------|
+                                Ordering::Less => {
+                                    take_next_self = true;
+                                    // just keep other it may still overlap with the next self
+                                }
+                                //   |-- self ----|
+                                //   |- other ----|
+                                Ordering::Equal => {
+                                    take_next_self = true;
+                                    take_next_other = true;
+                                }
+                                //   |-- self ----|
+                                //   |- other -|
+                                Ordering::Greater => {
+                                    // Keep *this* self_item, but change the min to the right
+                                    // of other_max. Note that we no that there is at least one
+                                    // bigger value (self_max) so it's safe to unwrap.
+                                    self_item.0 = T::next(other_max).unwrap();
+                                    
+                                    take_next_other = true;
+                                }
+                            }
+                        },
+                        Ordering::Greater => {
+                            // self starts after other
+                            match self_min.cmp(&other_max) {
+                                //      |-- self ----|
+                                //   |- other -|-----|----|
+                                Ordering::Less => {
+                                    match self_max.cmp(&other_max) {
+                                        //      |-- self ----|
+                                        //   |- other -----------|
+                                        Ordering::Less => {
+                                            take_next_self = true;
+                                            // keep other, it may overlap with the next self
+                                        }
+                                        //      |-- self ----|
+                                        //   |- other -------|
+                                        Ordering::Equal => {
+                                            take_next_self = true;
+                                            take_next_other = true;
+                                        }
+                                        //      |-- self ----|
+                                        //   |- other -|
+                                        Ordering::Greater => {
+                                            // Keep *this* self_item, but change the min to the right
+                                            // of other_max. Note that we no that there is at least one
+                                            // bigger value (self_max) so it's safe to unwrap.
+                                            self_item.0 = T::next(other_max).unwrap();
+                                            
+                                            take_next_other = true;
+                                        }
+                                    }
+                                }
+                                Ordering::Equal => {
+                                    //             | (self of 1 element where min == max)
+                                    //   |- other -|
+                                    if self_min == self_max {
+                                        take_next_self = true;
+                                    }
+                                    //             |-- self ----|
+                                    //   |- other -|
+                                    else {
+                                        // Keep *this* self_item, but change the min to the right
+                                        // of other_max. Note that we no that there is at least one
+                                        // bigger value (self_max) so it's safe to unwrap.
+                                        self_item.0 = T::next(other_max).unwrap();
+                                    }
+                                    take_next_other = true;
+                                }
+                                //               |-- self ----|
+                                //   |- other -|
+                                Ordering::Greater => {
+                                    // nothing to do in this iteration, see if there
+                                    // is a next other to compare to self
+                                    take_next_other = true;
+                                }
+                            }
+                        }
+
                     }
+                }               
+                    }               
+
+            if take_next_other {
+                other_item = other_iter.next();
+            }
+
+            if take_next_self {
+                // get the next self item, or break out if there is none, then we are done.
+                match self_iter.next() {
+                    Some(item) => {
+                        self_item = (item.min(), item.max());
+                    },
+                    None => break
                 }
             }
         }
