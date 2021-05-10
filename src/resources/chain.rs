@@ -283,8 +283,7 @@ impl<T: Block> Chain<T> {
         Err(unsafe { OwnedChain::from_vec_unchecked(res) })
     }
 
-    /// Returns an OwnedChain<T> containing the difference, i.e. the
-    /// values that are in `self` but not in `other`.
+    /// Returns a chain with the items that are in `self` but not in `other`.
     pub fn difference<C: AsRef<Chain<T>>>(
         &self, other: &C
     ) -> OwnedChain<T> {
