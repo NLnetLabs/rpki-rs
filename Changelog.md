@@ -2,6 +2,8 @@
 
 ## 0.10.1
 
+Released 2021-05-10.
+
 New
 
 * `resources::AsBlocks::difference` and `resources::IpBlocks::difference`.
