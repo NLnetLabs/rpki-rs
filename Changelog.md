@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.10.1
+
+New
+
+* `resources::AsBlocks::difference` and `resources::IpBlocks::difference`.
+  ([#138])
+
+[#138]: https://github.com/NLnetLabs/rpki-rs/pull/138
+
+
 ## 0.10.0
 
 Breaking
