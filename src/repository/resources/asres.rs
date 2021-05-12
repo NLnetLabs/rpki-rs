@@ -392,6 +392,11 @@ impl AsBlocks {
         }
     }
 
+    /// Returns a new AsBlocks with the values found in self, but not in other.
+    pub fn difference(&self, other: &Self) -> Self {
+        AsBlocks(SharedChain::from_owned(self.0.difference(&other.0)))
+    }    
+
     /// Returns a new AsBlocks with the union of this and the other AsBlocks.
     ///
     /// i.e. all resources found in one or both AsBlocks.
@@ -765,6 +770,10 @@ impl Block for AsBlock {
     fn next(item: Self::Item) -> Option<Self::Item> {
         item.0.checked_add(1).map(AsId)
     }
+
+    fn previous(item: Self::Item) -> Option<Self::Item> {
+        item.0.checked_sub(1).map(AsId)
+    }
 }
 
 //--- Display
@@ -862,6 +871,10 @@ impl Block for AsRange {
 
     fn next(item: Self::Item) -> Option<Self::Item> {
         item.0.checked_add(1).map(AsId)
+    }
+
+    fn previous(item: Self::Item) -> Option<Self::Item> {
+        item.0.checked_sub(1).map(AsId)
     }
 }
 
@@ -1098,6 +1111,23 @@ mod test {
         );
         good("", Vec::new());
     }
+
+    #[test]
+    fn as_blocks_difference() {
+        // This delegates to Chain::difference which is well tested
+        let left = "AS1, AS3-AS7";
+        let right = "AS2, AS5-AS7";
+        let expected = "AS1, AS3-AS4";
+
+        let left = AsBlocks::from_str(left).unwrap();
+        let right = AsBlocks::from_str(right).unwrap();
+        let expected = AsBlocks::from_str(expected).unwrap();
+
+        let found = left.difference(&right);
+
+        assert_eq!(expected, found);
+    }
+
 
     #[test]
     #[cfg(feature = "serde")]
