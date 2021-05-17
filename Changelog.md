@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased next version
+## 0.11.0
+
+Released 2021-05-17.
 
 Breaking
 
