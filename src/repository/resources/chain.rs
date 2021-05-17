@@ -11,6 +11,7 @@
 
 use std::{iter, mem, ops};
 use std::cmp::{min, max};
+use std::cmp::Ordering;
 use std::sync::Arc;
 
 
@@ -31,6 +32,9 @@ pub trait Block: Clone {
     /// Returns the item immediately following the given item.
     fn next(item: Self::Item) -> Option<Self::Item>;
 
+    /// Returns the item immediately preceding the given item.
+    fn previous(item: Self::Item) -> Option<Self::Item>;
+
     /// Returns a pair of the smallest and largest item in the block.
     fn bounds(&self) -> (Self::Item, Self::Item) {
         (self.min(), self.max())
@@ -41,7 +45,7 @@ pub trait Block: Clone {
         self.min() <= item && self.max() >= item
     }
 
-    /// Returnes whether a block intersects with another block.
+    /// Returns whether a block intersects with another block.
     fn intersects(&self, other: &Self) -> bool {
         self.min() <= other.max() && self.max() >= other.min()
     }
@@ -280,6 +284,226 @@ impl<T: Block> Chain<T> {
         Err(unsafe { OwnedChain::from_vec_unchecked(res) })
     }
 
+    /// Returns a chain with the items that are in `self` but not in `other`.
+    pub fn difference<C: AsRef<Chain<T>>>(
+        &self, other: &C
+    ) -> OwnedChain<T> {
+        let other = other.as_ref();
+        let mut res: Vec<T> = vec![];
+        
+        // Border case: if self is empty, then the result is an empty OwnedChain.
+        if self.is_empty() {
+            return OwnedChain::empty();
+        }
+        
+        // In this case we need to walk over both chains using iterators.
+        
+        // We know that self is not empty so we can unwrap the first
+        // and break out of the loop below when we run out of next.
+
+        let mut self_iter = self.iter();
+        let mut self_item = {
+            self_iter.next().map(|item| (item.min(), item.max())).unwrap()
+        };
+
+        let mut other_iter = other.iter();
+        let mut other_item = other_iter.next();
+
+        loop {
+            
+            
+            // Given that we iterate over both chains, both chains are sorted,
+            // and chain items are never adjacent, we can walk the iterators
+            // for both chains and compare things, progressing once we have
+            // moved beyond the 'max' of any element.
+            
+            // In the logic below we will check each corner case, and:
+            //  - add parts of `self_item` not found in other to the result
+            //  - progress to unprocessed parts of `self_item` if needed
+            //  - keep track whether we need to try to take the next `self_item`
+            //  - keep track whether we need to try to take the next `other_item`
+            //
+            // We will keep looping as long as we have a `self_item`
+            
+            let mut take_next_self = false;
+            let mut take_next_other = false;
+            
+            let self_min = self_item.0;
+            let self_max = self_item.1;
+
+            match other_item {
+                None => {
+                    // we get to keep the self_item entirely
+                    res.push(T::new(self_item.0, self_item.1));
+                    take_next_self = true;
+                }
+                Some(other_item) => {
+                    let other_min = other_item.min();
+                    let other_max = other_item.max();
+    
+                    match self_min.cmp(&other_min) {
+                        Ordering::Less => {
+                            // self starts before other
+                            match self_max.cmp(&other_min) {
+                                //   |-- self --|
+                                //                |-- other
+                                //
+                                //   Includes single element items:
+                                //   | 
+                                //      |--
+                                Ordering::Less => {
+                                    // we get to keep the self_item entirely
+                                    res.push(T::new(self_item.0, self_item.1));
+                                    take_next_self = true;
+                                },
+                                //   |-- self --|
+                                //              |-- other
+                                Ordering::Equal => {
+                                    // we get to keep the self_item until other starts
+                                    let end = T::previous(other_min).unwrap();
+                                    res.push(T::new(self_item.0, end));
+                                    take_next_self = true;
+                                },
+                                //   |-- self --------|
+                                //       |- other --|-|--| (3 cases)
+                                Ordering::Greater => {
+                                    // we get to keep the self_item until other starts
+                                    let end = T::previous(other_min).unwrap();
+                                    res.push(T::new(self_item.0, end));
+                                    
+                                    match self_max.cmp(&other_max) {
+                                        //   |-- self ----|
+                                        //       |- other --|
+                                        Ordering::Less => {
+                                            take_next_self = true;
+                                            // keep other, it may overlap with the next self
+                                        }
+                                        //   |-- self ----|
+                                        //       |- other |
+                                        Ordering::Equal => {
+                                            take_next_self = true;
+                                            take_next_other = true;
+                                        }
+                                        //   |-- self  ------|
+                                        //      |-- other -|
+                                        Ordering::Greater => {
+                                            // Keep *this* self_item, but change the min to the right
+                                            // of other_max. Note that we no that there is at least one
+                                            // bigger value (self_max) so it's safe to unwrap.
+                                            self_item.0 = T::next(other_max).unwrap();
+                                            take_next_other = true;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                        },
+                        Ordering::Equal => {
+                            // self and other start at the same spot
+                            match self_max.cmp(&other_max) {
+                                //   |-- self ----|
+                                //   |- other -------|
+                                Ordering::Less => {
+                                    take_next_self = true;
+                                    // just keep other it may still overlap with the next self
+                                }
+                                //   |-- self ----|
+                                //   |- other ----|
+                                Ordering::Equal => {
+                                    take_next_self = true;
+                                    take_next_other = true;
+                                }
+                                //   |-- self ----|
+                                //   |- other -|
+                                Ordering::Greater => {
+                                    // Keep *this* self_item, but change the min to the right
+                                    // of other_max. Note that we no that there is at least one
+                                    // bigger value (self_max) so it's safe to unwrap.
+                                    self_item.0 = T::next(other_max).unwrap();
+                                    
+                                    take_next_other = true;
+                                }
+                            }
+                        },
+                        Ordering::Greater => {
+                            // self starts after other
+                            match self_min.cmp(&other_max) {
+                                //      |-- self ----|
+                                //   |- other -|-----|----|
+                                Ordering::Less => {
+                                    match self_max.cmp(&other_max) {
+                                        //      |-- self ----|
+                                        //   |- other -----------|
+                                        Ordering::Less => {
+                                            take_next_self = true;
+                                            // keep other, it may overlap with the next self
+                                        }
+                                        //      |-- self ----|
+                                        //   |- other -------|
+                                        Ordering::Equal => {
+                                            take_next_self = true;
+                                            take_next_other = true;
+                                        }
+                                        //      |-- self ----|
+                                        //   |- other -|
+                                        Ordering::Greater => {
+                                            // Keep *this* self_item, but change the min to the right
+                                            // of other_max. Note that we no that there is at least one
+                                            // bigger value (self_max) so it's safe to unwrap.
+                                            self_item.0 = T::next(other_max).unwrap();
+                                            
+                                            take_next_other = true;
+                                        }
+                                    }
+                                }
+                                Ordering::Equal => {
+                                    //             | (self of 1 element where min == max)
+                                    //   |- other -|
+                                    if self_min == self_max {
+                                        take_next_self = true;
+                                    }
+                                    //             |-- self ----|
+                                    //   |- other -|
+                                    else {
+                                        // Keep *this* self_item, but change the min to the right
+                                        // of other_max. Note that we no that there is at least one
+                                        // bigger value (self_max) so it's safe to unwrap.
+                                        self_item.0 = T::next(other_max).unwrap();
+                                    }
+                                    take_next_other = true;
+                                }
+                                //               |-- self ----|
+                                //   |- other -|
+                                Ordering::Greater => {
+                                    // nothing to do in this iteration, see if there
+                                    // is a next other to compare to self
+                                    take_next_other = true;
+                                }
+                            }
+                        }
+
+                    }
+                }               
+                    }               
+
+            if take_next_other {
+                other_item = other_iter.next();
+            }
+
+            if take_next_self {
+                // get the next self item, or break out if there is none, then we are done.
+                match self_iter.next() {
+                    Some(item) => {
+                        self_item = (item.min(), item.max());
+                    },
+                    None => break
+                }
+            }
+        }
+        unsafe { // well, not that unsafe if the code above is correct.
+            OwnedChain::from_vec_unchecked(res)
+        }
+    }
 }
 
 
@@ -596,6 +820,7 @@ mod test {
         fn min(&self) -> u8 { self.0 }
         fn max(&self) -> u8 { self.1 }
         fn next(item: u8) -> Option<u8> { item.checked_add(1) }
+        fn previous(item: u8) -> Option<u8> { item.checked_sub(1) }
     }
 
     #[test]
@@ -826,5 +1051,209 @@ mod test {
         assert_ne!(two.clone(), one.clone());
         assert_eq!(two.clone(), two.clone());
     }
+
+    #[test]
+    fn difference_other_empty() {
+        let self_chain = OwnedChain::from([(1, 2), (4, 10)].as_ref());
+        let empty = OwnedChain::<(u8,u8)>::empty();
+
+        let found = self_chain.difference(&empty);
+
+        assert_eq!(self_chain, found);
+    }
+
+    #[test]
+    fn difference_self_before() {
+        //   |-- self --|
+        //                |-- other
+        //
+        //   |-- self --|
+        let self_chain = OwnedChain::from([(1, 2), (4, 9)].as_ref());
+        let other_chain = OwnedChain::from([(11, 21)].as_ref());
+
+        let found = self_chain.difference(&other_chain);
+
+        assert_eq!(self_chain, found);
+    }
+
+    #[test]
+    fn difference_self_ends_on_other_start() {
+        //   |-- self --|
+        //              |-- other
+        //
+        //   |---------|
+        let self_chain = OwnedChain::from([(11, 15)].as_ref());
+        let other_chain = OwnedChain::from([(1,2), (15, 21), (31,34)].as_ref());
+        
+        let expected = OwnedChain::from([(11,14)].as_ref());
+        let found = self_chain.difference(&other_chain);
+
+        assert_eq!(expected, found);
+    }
+
+    #[test]
+    fn difference_self_ends_after_other_start() {
+        //   |-- self ----|
+        //       |- other --|
+        //
+        //   |--|
+        let self_chain = OwnedChain::from([(11, 16)].as_ref());
+        let other_chain = OwnedChain::from([(1,2), (15, 21), (31,34)].as_ref());
+        
+        let expected = OwnedChain::from([(11,14)].as_ref());
+        let found = self_chain.difference(&other_chain);
+
+        assert_eq!(expected, found);
+    }
+
+    #[test]
+    fn difference_self_includes_other_bits_left() {
+        //   |-- self ----|
+        //       |- other |
+        //
+        //   |--|
+        let self_chain = OwnedChain::from([(11, 20)].as_ref());
+        let other_chain = OwnedChain::from([(15, 20)].as_ref());
+        
+        let expected = OwnedChain::from([(11,14)].as_ref());
+        let found = self_chain.difference(&other_chain);
+
+        assert_eq!(expected, found);
+    }
+
+    #[test]
+    fn difference_self_includes_other_bits_left_and_right() {
+        //   |-- self  -----|
+        //      |-- other -|
+        //
+        //   |-|            |
+        let self_chain = OwnedChain::from([(11, 20)].as_ref());
+        let other_chain = OwnedChain::from([(15, 19)].as_ref());
+        
+        let expected = OwnedChain::from([(11,14), (20,20)].as_ref());
+        let found = self_chain.difference(&other_chain);
+
+        assert_eq!(expected, found);
+    }
+
+    #[test]
+    fn difference_self_included_by_other_bits_right() {
+        //   |-- self ----|     |---|
+        //   |- other -------|
+        //
+        //                      |---|
+        let self_chain = OwnedChain::from([(11, 14), (19,20)].as_ref());
+        let other_chain = OwnedChain::from([(11, 17)].as_ref());
+        
+        let expected = OwnedChain::from([(19,20)].as_ref());
+        let found = self_chain.difference(&other_chain);
+
+        assert_eq!(expected, found);
+    }
+
+    #[test]
+    fn difference_self_same_as_other() {
+        //   |-- self ----|     |---|
+        //   |- other ----|
+        //
+        //                      |---|
+        let self_chain = OwnedChain::from([(11, 14), (19,20)].as_ref());
+        let other_chain = OwnedChain::from([(11, 14)].as_ref());
+        
+        let expected = OwnedChain::from([(19,20)].as_ref());
+        let found = self_chain.difference(&other_chain);
+
+        assert_eq!(expected, found);
+    }
+
+    #[test]
+    fn difference_self_includes_other_bits_right() {
+        //   |-- self ----|     |---|
+        //   |- other -|
+        //
+        //              |-|     |---|
+        let self_chain = OwnedChain::from([(11, 16), (19,20)].as_ref());
+        let other_chain = OwnedChain::from([(11, 14)].as_ref());
+        
+        let expected = OwnedChain::from([(15,16), (19,20)].as_ref());
+        let found = self_chain.difference(&other_chain);
+
+        assert_eq!(expected, found);
+    }
+
+    #[test]
+    fn difference_self_included_by_other_bits_left_and_right() {
+        //    |-- self -|   |---|
+        //   |- other --------|
+        //
+        //                     ||
+        let self_chain = OwnedChain::from([(12, 14), (17,20)].as_ref());
+        let other_chain = OwnedChain::from([(11, 18)].as_ref());
+        
+        let expected = OwnedChain::from([(19,20)].as_ref());
+        let found = self_chain.difference(&other_chain);
+
+        assert_eq!(expected, found);
+    }
+
+    #[test]
+    fn difference_self_included_by_other_bits_left() {
+        //    |-- self -|   |---|
+        //   |- other --|
+        //
+        //                  |---|
+        let self_chain = OwnedChain::from([(12, 14), (17,20)].as_ref());
+        let other_chain = OwnedChain::from([(11, 14)].as_ref());
+        
+        let expected = OwnedChain::from([(17,20)].as_ref());
+        let found = self_chain.difference(&other_chain);
+
+        assert_eq!(expected, found);
+    }
+
+    #[test]
+    fn difference_self_starts_in_other_exceeds_right() {
+        //    |-- self --|  |---|
+        //   |- other --|
+        //
+        //               |  |---|
+        let self_chain = OwnedChain::from([(12, 15), (17,20)].as_ref());
+        let other_chain = OwnedChain::from([(11, 14)].as_ref());
+        
+        let expected = OwnedChain::from([(15,15),(17,20)].as_ref());
+        let found = self_chain.difference(&other_chain);
+
+        assert_eq!(expected, found);
+    }
+
+    #[test]
+    fn difference_self_starts_where_other_ends() {
+        //              |-- self --| 
+        //   |- other --|
+        //
+        //               |         | 
+        let self_chain = OwnedChain::from([(15,20)].as_ref());
+        let other_chain = OwnedChain::from([(11, 15)].as_ref());
+        
+        let expected = OwnedChain::from([(16,20)].as_ref());
+        let found = self_chain.difference(&other_chain);
+
+        assert_eq!(expected, found);
+    }
+
+    #[test]
+    fn difference_self_starts_after_other_ends() {
+        //               |-- self --| 
+        //   |- other --|
+        //
+        //               |          | 
+        let self_chain = OwnedChain::from([(16,20)].as_ref());
+        let other_chain = OwnedChain::from([(11, 15)].as_ref());
+        
+        let expected = OwnedChain::from([(16,20)].as_ref());
+        let found = self_chain.difference(&other_chain);
+
+        assert_eq!(expected, found);
+    }   
 }
 
