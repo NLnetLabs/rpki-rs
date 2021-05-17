@@ -58,6 +58,18 @@ Other Changes
 [#131]: https://github.com/NLnetLabs/rpki-rs/pull/131
 
 
+## 0.10.1
+
+Released 2021-05-10.
+
+New
+
+* `resources::AsBlocks::difference` and `resources::IpBlocks::difference`.
+  ([#138])
+
+[#138]: https://github.com/NLnetLabs/rpki-rs/pull/138
+
+
 ## 0.10.0
 
 Released 2020-10-07.
