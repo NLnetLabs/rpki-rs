@@ -39,7 +39,7 @@ use crate::xml::decode::{Content, Error as XmlError, Reader, Name};
 /// The complete RRDP state, including the last snapshot and a vec
 /// of deltas (which may be an empty).
 pub struct RrdpState {
-    snapshot: Snapshot
+    pub snapshot: Snapshot
 }
 
 //------------ NotificationFile ----------------------------------------------
@@ -256,11 +256,11 @@ impl TryFrom<SnapshotBuilder> for Snapshot {
     type Error = RrdpProcessError;
 
     fn try_from(builder: SnapshotBuilder) -> Result<Self, Self::Error> {
-        let session_id = builder.session_id.ok_or_else(||
+        let session_id = builder.session_id.ok_or(
             RrdpProcessError::Xml(XmlError::Malformed)
         )?;
 
-        let serial = builder.serial.ok_or_else(||
+        let serial = builder.serial.ok_or(
             RrdpProcessError::Xml(XmlError::Malformed)
         )?;
 
