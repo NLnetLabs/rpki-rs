@@ -525,6 +525,12 @@ impl Hash {
     pub fn as_slice(&self) -> &[u8] {
         self.0.as_ref()
     }
+
+    /// Returns a new Hash from the provided data
+    pub fn from_data(data: &[u8]) -> Self {
+        let digest = digest::digest(&digest::SHA256, data);
+        Self::try_from(digest.as_ref()).unwrap()
+    }
 }
 
 
@@ -877,5 +883,16 @@ mod test {
             &mut Test,
             include_bytes!("../test-data/ripe-delta.xml").as_ref()
         ).unwrap();
+    }
+
+    #[test]
+    fn hash_to_hash() {
+        use std::str::FromStr;
+
+        let string = "this is a test";
+        let sha256 = "2e99758548972a8e8822ad47fa1017ff72f06f3ff6a016851f45c398732bc50c";
+        let hash = Hash::from_str(sha256).unwrap();
+        let hash_from_data = Hash::from_data(string.as_bytes());
+        assert_eq!(hash, hash_from_data);
     }
 }
