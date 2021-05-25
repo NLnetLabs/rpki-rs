@@ -531,6 +531,12 @@ impl Hash {
         let digest = digest::digest(&digest::SHA256, data);
         Self::try_from(digest.as_ref()).unwrap()
     }
+
+    /// Returns whether this hash matches the provided data
+    pub fn matches(&self, data: &[u8]) -> bool {
+        let data_hash = Self::from_data(data);
+        *self == data_hash
+    }
 }
 
 
@@ -894,5 +900,6 @@ mod test {
         let hash = Hash::from_str(sha256).unwrap();
         let hash_from_data = Hash::from_data(string.as_bytes());
         assert_eq!(hash, hash_from_data);
+        assert!(hash.matches(string.as_bytes()));
     }
 }
