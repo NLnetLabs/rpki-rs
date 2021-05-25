@@ -23,13 +23,24 @@
 #![cfg(feature = "rrdp")]
 
 use std::{error, fmt, hash, io, str};
+use std::io::Read;
 use std::convert::TryFrom;
+use std::convert::TryInto;
+use bytes::Bytes;
 use log::info;
 use ring::digest;
 use uuid::Uuid;
 use crate::uri;
 use crate::xml::decode::{Content, Error as XmlError, Reader, Name};
 
+
+//------------ RrdpState -----------------------------------------------------
+
+/// The complete RRDP state, including the last snapshot and a vec
+/// of deltas (which may be an empty).
+pub struct RrdpState {
+    snapshot: Snapshot
+}
 
 //------------ NotificationFile ----------------------------------------------
 
@@ -173,6 +184,126 @@ impl NotificationFile {
         }
     }
 }
+
+//------------ PublishElement ------------------------------------------------
+
+/// This type defines an RRDP publish element as found in RRDP Snapshots and
+/// Deltas. See [`UpdateElement`] for the related element that replaces a
+/// previous element for the same uri.
+#[derive(Clone, Debug)]
+pub struct PublishElement {
+    uri: uri::Rsync,
+    data: Bytes,
+}
+
+
+
+//------------ Snapshot ------------------------------------------------------
+
+/// This type represents an owned RRDP Snapshot containing the RRDP session id,
+/// serial and all published elements.
+#[derive(Clone, Debug)]
+pub struct Snapshot {
+    session_id: Uuid,
+    serial: u64,
+    elements: Vec<PublishElement>,
+}
+
+impl Snapshot {
+    /// Parse 
+    pub fn parse<R: io::BufRead>(
+        reader: R
+    ) -> Result<Self, RrdpProcessError> {
+        let mut builder = SnapshotBuilder {
+            session_id: None,
+            serial: None,
+            elements: vec![]
+        };
+
+        builder.process(reader)?;
+        builder.try_into()
+    }
+}
+
+//------------ SnapshotBuilder -----------------------------------------------
+
+struct SnapshotBuilder {
+    session_id: Option<Uuid>,
+    serial: Option<u64>,
+    elements: Vec<PublishElement>,
+}
+
+impl ProcessSnapshot for SnapshotBuilder {
+    type Err = RrdpProcessError;
+
+    fn meta(&mut self, session_id: Uuid, serial: u64) -> Result<(), Self::Err> {
+        self.session_id = Some(session_id);
+        self.serial = Some(serial);
+        Ok(())
+    }
+
+    fn publish(&mut self, uri: uri::Rsync, data: &mut ObjectReader) -> Result<(), Self::Err> {
+        let mut buf = Vec::new();
+        data.read_to_end(&mut buf)?;
+        let data = Bytes::from(buf);
+        let element = PublishElement { uri, data };
+        self.elements.push(element);
+        Ok(())
+    }
+}
+
+impl TryFrom<SnapshotBuilder> for Snapshot {
+    type Error = RrdpProcessError;
+
+    fn try_from(builder: SnapshotBuilder) -> Result<Self, Self::Error> {
+        let session_id = builder.session_id.ok_or_else(||
+            RrdpProcessError::Xml(XmlError::Malformed)
+        )?;
+
+        let serial = builder.serial.ok_or_else(||
+            RrdpProcessError::Xml(XmlError::Malformed)
+        )?;
+
+        Ok(Snapshot { session_id, serial, elements: builder.elements })
+    }
+}
+
+//------------ RrdpProcessError ----------------------------------------------
+
+#[derive(Debug)]
+pub enum RrdpProcessError {
+    Xml(XmlError),
+    ProcessError(ProcessError),
+}
+
+impl From<XmlError> for RrdpProcessError {
+    fn from(err: XmlError) -> Self {
+        RrdpProcessError::Xml(err)
+    }
+}
+
+impl From<ProcessError> for RrdpProcessError {
+    fn from(err: ProcessError) -> Self {
+        RrdpProcessError::ProcessError(err)
+    }
+}
+
+impl From<io::Error> for RrdpProcessError {
+    fn from(err: io::Error) -> Self {
+        RrdpProcessError::ProcessError(ProcessError::from(err))
+    }
+}
+
+impl fmt::Display for RrdpProcessError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RrdpProcessError::Xml(ref err) => err.fmt(f),
+            RrdpProcessError::ProcessError(err) => err.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for RrdpProcessError { }
 
 
 //------------ ProcessSnapshot -----------------------------------------------
@@ -901,5 +1032,11 @@ mod test {
         let hash_from_data = Hash::from_data(string.as_bytes());
         assert_eq!(hash, hash_from_data);
         assert!(hash.matches(string.as_bytes()));
+    }
+
+    #[test]
+    fn snapshot_from_to_xml() {
+        let data = include_bytes!("../test-data/ripe-snapshot.xml");
+        let _snapshot = Snapshot::parse(data.as_ref()).unwrap();
     }
 }
