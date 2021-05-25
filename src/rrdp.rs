@@ -213,7 +213,7 @@ impl Snapshot {
     /// Parse 
     pub fn parse<R: io::BufRead>(
         reader: R
-    ) -> Result<Self, RrdpProcessError> {
+    ) -> Result<Self, ProcessError> {
         let mut builder = SnapshotBuilder {
             session_id: None,
             serial: None,
@@ -234,7 +234,7 @@ struct SnapshotBuilder {
 }
 
 impl ProcessSnapshot for SnapshotBuilder {
-    type Err = RrdpProcessError;
+    type Err = ProcessError;
 
     fn meta(&mut self, session_id: Uuid, serial: u64) -> Result<(), Self::Err> {
         self.session_id = Some(session_id);
@@ -253,58 +253,20 @@ impl ProcessSnapshot for SnapshotBuilder {
 }
 
 impl TryFrom<SnapshotBuilder> for Snapshot {
-    type Error = RrdpProcessError;
+    type Error = ProcessError;
 
     fn try_from(builder: SnapshotBuilder) -> Result<Self, Self::Error> {
         let session_id = builder.session_id.ok_or(
-            RrdpProcessError::Xml(XmlError::Malformed)
+            ProcessError::Xml(XmlError::Malformed)
         )?;
 
         let serial = builder.serial.ok_or(
-            RrdpProcessError::Xml(XmlError::Malformed)
+            ProcessError::Xml(XmlError::Malformed)
         )?;
 
         Ok(Snapshot { session_id, serial, elements: builder.elements })
     }
 }
-
-//------------ RrdpProcessError ----------------------------------------------
-
-#[derive(Debug)]
-pub enum RrdpProcessError {
-    Xml(XmlError),
-    ProcessError(ProcessError),
-}
-
-impl From<XmlError> for RrdpProcessError {
-    fn from(err: XmlError) -> Self {
-        RrdpProcessError::Xml(err)
-    }
-}
-
-impl From<ProcessError> for RrdpProcessError {
-    fn from(err: ProcessError) -> Self {
-        RrdpProcessError::ProcessError(err)
-    }
-}
-
-impl From<io::Error> for RrdpProcessError {
-    fn from(err: io::Error) -> Self {
-        RrdpProcessError::ProcessError(ProcessError::from(err))
-    }
-}
-
-impl fmt::Display for RrdpProcessError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            RrdpProcessError::Xml(ref err) => err.fmt(f),
-            RrdpProcessError::ProcessError(err) => err.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for RrdpProcessError { }
-
 
 //------------ ProcessSnapshot -----------------------------------------------
 
