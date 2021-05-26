@@ -42,6 +42,7 @@ use crate::xml::encode::{Attributes, Error as XmlEncodeError, Writer};
 /// This type represents the decoded content of the RRDP Update Notification
 /// File. It can be read from a reader via the [`parse`][Self::parse]
 /// function. All elements are accessible as attributes.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NotificationFile {
     /// The identifier of the current session of the server.
     ///
@@ -175,6 +176,43 @@ impl NotificationFile {
             }
             _ => Err(XmlError::Malformed)
         }
+    }
+
+    /// Turn into RFC 8182 XML
+    pub fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
+
+        let mut attributes = Attributes::default();
+        attributes.add("xmlns", &NS);
+        attributes.add("version", "1");
+        attributes.add("session_id", &self.session_id);
+        attributes.add("serial", self.serial);
+
+        writer.start(&NOTIFICATION, Some(attributes))?;
+
+        // add snapshot
+        {
+            let mut attributes = Attributes::default();
+            attributes.add("uri", self.snapshot.uri());
+            attributes.add("hash", self.snapshot.hash());
+            writer.start(&SNAPSHOT, Some(attributes))?;
+            writer.end(&SNAPSHOT)?;
+        }
+
+        let mut reverse_sorted_deltas = self.deltas.clone();
+        reverse_sorted_deltas.sort_by(|a, b| b.0.cmp(&a.0));
+
+        for (serial, uri_and_hash) in reverse_sorted_deltas {
+            let mut attributes = Attributes::default();
+            attributes.add("serial", serial);
+            attributes.add("uri", uri_and_hash.uri());
+            attributes.add("hash", uri_and_hash.hash());
+            writer.start(&DELTA, Some(attributes))?;
+            writer.end(&DELTA)?;
+        }
+
+        writer.end(&NOTIFICATION)?;
+
+        Ok(())
     }
 }
 
@@ -772,7 +810,7 @@ pub trait ProcessDelta {
 /// all references to RRDP files are given with a SHA-256 hash over the
 /// expected content of that file, allowing a client to verify they got the
 /// right file.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UriAndHash {
     /// The URI of the RRDP file.
     uri: uri::Https,
@@ -1216,6 +1254,25 @@ mod test {
         let hash_from_data = Hash::from_data(string.as_bytes());
         assert_eq!(hash, hash_from_data);
         assert!(hash.matches(string.as_bytes()));
+    }
+
+    #[test]
+    fn notification_from_to_xml() {
+        let notification = NotificationFile::parse(
+            include_bytes!("../test-data/ripe-notification.xml").as_ref()
+        ).unwrap();
+
+        let mut vec = vec![];
+        let mut writer = Writer::new_with_indent(&mut vec);
+        notification.to_xml(&mut writer).unwrap();
+
+        let xml = unsafe {
+            from_utf8_unchecked(vec.as_ref())
+        };
+
+        let notification_parsed = NotificationFile::parse(xml.as_bytes()).unwrap();
+
+        assert_eq!(notification, notification_parsed);
     }
 
     #[test]
