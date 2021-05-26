@@ -35,14 +35,6 @@ use crate::xml::decode::{Content, Error as XmlError, Reader, Name};
 use crate::xml::encode::{Attributes, Error as XmlEncodeError, Writer};
 
 
-//------------ RrdpState -----------------------------------------------------
-
-/// The complete RRDP state, including the last snapshot and a vec
-/// of deltas (which may be an empty).
-pub struct RrdpState {
-    pub snapshot: Snapshot
-}
-
 //------------ NotificationFile ----------------------------------------------
 
 /// The RRDP Update Notification File.
