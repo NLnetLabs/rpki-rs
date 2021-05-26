@@ -32,7 +32,7 @@ use ring::digest;
 use uuid::Uuid;
 use crate::uri;
 use crate::xml::decode::{Content, Error as XmlError, Reader, Name};
-use crate::xml::encode::{Writer, Attributes, Error as XmlEncodeError};
+use crate::xml::encode::{Attributes, Error as XmlEncodeError, Writer};
 
 
 //------------ RrdpState -----------------------------------------------------
@@ -210,7 +210,74 @@ impl PublishElement {
     }
 }
 
+//------------ UpdateElement -------------------------------------------------
 
+/// This type defines an RRDP update element as found in RRDP Snapshots and
+/// Deltas. I.e. this is like a [`PublishElement`] except that it replaces
+/// an existing object for a uri.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpdateElement {
+    uri: uri::Rsync,
+    hash: Hash,
+    data: Bytes,
+}
+
+impl UpdateElement {
+    fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
+        let mut attributes = Attributes::default();
+        attributes.add("uri", &self.uri);
+        attributes.add("hash", &self.hash);
+
+        writer.start(&PUBLISH, Some(attributes))?;
+        writer.content_bytes(self.data.as_ref())?;
+        writer.end(&PUBLISH)?;
+
+        Ok(())
+    }
+}
+
+//------------ WithdrawElement -----------------------------------------------
+
+/// This type defines an RRDP update element as found in RRDP Snapshots and
+/// Deltas. I.e. this is like a [`PublishElement`] except that it replaces
+/// an existing object for a uri.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WithdrawElement {
+    uri: uri::Rsync,
+    hash: Hash,
+}
+
+impl WithdrawElement {
+    fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
+        let mut attributes = Attributes::default();
+        attributes.add("uri", &self.uri);
+        attributes.add("hash", &self.hash);
+
+        writer.start(&WITHDRAW, Some(attributes))?;
+        writer.end(&WITHDRAW)?;
+
+        Ok(())
+    }
+}
+
+//------------ DeltaElement --------------------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum DeltaElement {
+    Publish(PublishElement),
+    Update(UpdateElement),
+    Withdraw(WithdrawElement)
+}
+
+impl DeltaElement {
+    fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
+        match self {
+            DeltaElement::Publish(p) => p.to_xml(writer),
+            DeltaElement::Update(u) => u.to_xml(writer),
+            DeltaElement::Withdraw(w) => w.to_xml(writer)
+        }
+    }
+}
 
 //------------ Snapshot ------------------------------------------------------
 
@@ -224,7 +291,7 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    /// Parse 
+    /// Parse RFC 8182 XML
     pub fn parse<R: io::BufRead>(
         reader: R
     ) -> Result<Self, ProcessError> {
@@ -244,8 +311,8 @@ impl Snapshot {
         let mut attributes = Attributes::default();
         attributes.add("xmlns", &NS);
         attributes.add("version", "1");
-        attributes.add("serial", self.serial);
         attributes.add("session_id", &self.session_id);
+        attributes.add("serial", self.serial);
 
         writer.start(&SNAPSHOT, Some(attributes))?;
 
@@ -431,6 +498,123 @@ pub trait ProcessSnapshot {
     }
 }
 
+//------------ Delta ---------------------------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Delta {
+    session_id: Uuid,
+    serial: u64,
+    elements: Vec<DeltaElement>
+}
+
+impl Delta {
+    /// Parse RFC 8182 XML
+    pub fn parse<R: io::BufRead>(
+        reader: R
+    ) -> Result<Self, ProcessError> {
+        let mut builder = DeltaBuilder {
+            session_id: None,
+            serial: None,
+            elements: vec![]
+        };
+
+        builder.process(reader)?;
+        builder.try_into()
+    }
+
+    /// Turn into RFC 8182 XML
+    pub fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
+
+        let mut attributes = Attributes::default();
+        attributes.add("xmlns", &NS);
+        attributes.add("version", "1");
+        attributes.add("session_id", &self.session_id);
+        attributes.add("serial", self.serial);
+
+        writer.start(&DELTA, Some(attributes))?;
+
+        for el in &self.elements {
+            el.to_xml(writer)?;
+        }
+
+        writer.end(&DELTA)?;
+
+        Ok(())
+    }    
+
+}
+
+
+//------------ DeltaBuilder --------------------------------------------------
+
+struct DeltaBuilder {
+    session_id: Option<Uuid>,
+    serial: Option<u64>,
+    elements: Vec<DeltaElement>
+}
+
+impl ProcessDelta for DeltaBuilder {
+    type Err = ProcessError;
+
+    fn meta(
+        &mut self,
+        session_id: Uuid,
+        serial: u64,
+    ) -> Result<(), Self::Err> {
+        self.session_id = Some(session_id);
+        self.serial = Some(serial);
+        Ok(())
+    }
+
+    fn publish(
+        &mut self,
+        uri: uri::Rsync,
+        hash_opt: Option<Hash>,
+        data: &mut ObjectReader,
+    ) -> Result<(), Self::Err> {
+        let mut buf = Vec::new();
+        data.read_to_end(&mut buf)?;
+        let data = Bytes::from(buf);
+        match hash_opt {
+            Some(hash) => {
+                let update = UpdateElement { uri, hash, data};
+                self.elements.push(DeltaElement::Update(update));
+            },
+            None => {
+                let publish = PublishElement { uri, data};
+                self.elements.push(DeltaElement::Publish(publish));
+            }
+        }
+        Ok(())
+    }
+
+    fn withdraw(
+        &mut self,
+        uri: uri::Rsync,
+        hash: Hash,
+    ) -> Result<(), Self::Err> {
+        let withdraw = WithdrawElement { uri, hash };
+        self.elements.push(DeltaElement::Withdraw(withdraw));
+        Ok(())
+    }
+}
+
+impl TryFrom<DeltaBuilder> for Delta {
+    type Error = ProcessError;
+
+    fn try_from(builder: DeltaBuilder) -> Result<Self, Self::Error> {
+        let session_id = builder.session_id.ok_or(
+            ProcessError::Xml(XmlError::Malformed)
+        )?;
+
+        let serial = builder.serial.ok_or(
+            ProcessError::Xml(XmlError::Malformed)
+        )?;
+
+        Ok(Delta { session_id, serial, elements: builder.elements })
+
+    }
+}
 
 //------------ ProcessDelta --------------------------------------------------
 
@@ -1048,9 +1232,7 @@ mod test {
         let snapshot = Snapshot::parse(data.as_ref()).unwrap();
 
         let mut vec = vec![];
-
         let mut writer = Writer::new_with_indent(&mut vec);
-        
         snapshot.to_xml(&mut writer).unwrap();
 
         let xml = unsafe {
@@ -1060,5 +1242,23 @@ mod test {
         let snapshot_parsed = Snapshot::parse(xml.as_bytes()).unwrap();
 
         assert_eq!(snapshot, snapshot_parsed);
+    }
+
+    #[test]
+    fn delta_from_to_xml() {
+        let data = include_bytes!("../test-data/ripe-delta.xml");
+        let delta = Delta::parse(data.as_ref()).unwrap();
+
+        let mut vec = vec![];
+        let mut writer = Writer::new_with_indent(&mut vec);
+        delta.to_xml(&mut writer).unwrap();
+
+        let xml = unsafe {
+            from_utf8_unchecked(vec.as_ref())
+        };
+
+        let delta_parsed = Delta::parse(xml.as_bytes()).unwrap();
+
+        assert_eq!(delta, delta_parsed);
     }
 }
