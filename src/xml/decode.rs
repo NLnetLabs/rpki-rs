@@ -276,6 +276,10 @@ impl<'n, 'l> Name<'n, 'l> {
             local
         }
     }
+
+    pub fn local(&self) -> &[u8] {
+        &self.local
+    }
 }
 
 impl<'n, 'l> fmt::Debug for Name<'n, 'l> {

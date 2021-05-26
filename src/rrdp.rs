@@ -32,6 +32,7 @@ use ring::digest;
 use uuid::Uuid;
 use crate::uri;
 use crate::xml::decode::{Content, Error as XmlError, Reader, Name};
+use crate::xml::encode::{Writer, Attributes, Error as XmlEncodeError};
 
 
 //------------ RrdpState -----------------------------------------------------
@@ -190,10 +191,23 @@ impl NotificationFile {
 /// This type defines an RRDP publish element as found in RRDP Snapshots and
 /// Deltas. See [`UpdateElement`] for the related element that replaces a
 /// previous element for the same uri.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PublishElement {
     uri: uri::Rsync,
     data: Bytes,
+}
+
+impl PublishElement {
+    fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
+        let mut attributes = Attributes::default();
+        attributes.add("uri", &self.uri);
+
+        writer.start(&PUBLISH, Some(attributes))?;
+        writer.content_bytes(self.data.as_ref())?;
+        writer.end(&PUBLISH)?;
+
+        Ok(())
+    }
 }
 
 
@@ -202,7 +216,7 @@ pub struct PublishElement {
 
 /// This type represents an owned RRDP Snapshot containing the RRDP session id,
 /// serial and all published elements.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Snapshot {
     session_id: Uuid,
     serial: u64,
@@ -222,6 +236,26 @@ impl Snapshot {
 
         builder.process(reader)?;
         builder.try_into()
+    }
+
+    /// Turn into RFC 8182 XML
+    pub fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
+
+        let mut attributes = Attributes::default();
+        attributes.add("xmlns", &NS);
+        attributes.add("version", "1");
+        attributes.add("serial", self.serial);
+        attributes.add("session_id", &self.session_id);
+
+        writer.start(&SNAPSHOT, Some(attributes))?;
+
+        for el in &self.elements {
+            el.to_xml(writer)?;
+        }
+
+        writer.end(&SNAPSHOT)?;
+
+        Ok(())
     }
 }
 
@@ -804,12 +838,12 @@ impl<'a> io::Read for ObjectReader<'a> {
 
 //------------ XML Names -----------------------------------------------------
 
-const NS: &[u8] = b"http://www.ripe.net/rpki/rrdp";
-const NOTIFICATION: Name = Name::qualified(NS, b"notification");
-const SNAPSHOT: Name = Name::qualified(NS, b"snapshot");
-const DELTA: Name = Name::qualified(NS, b"delta");
-const PUBLISH: Name = Name::qualified(NS, b"publish");
-const WITHDRAW: Name = Name::qualified(NS, b"withdraw");
+const NS: &str = "http://www.ripe.net/rpki/rrdp";
+const NOTIFICATION: Name = Name::qualified(NS.as_bytes(), b"notification");
+const SNAPSHOT: Name = Name::qualified(NS.as_bytes(), b"snapshot");
+const DELTA: Name = Name::qualified(NS.as_bytes(), b"delta");
+const PUBLISH: Name = Name::qualified(NS.as_bytes(), b"publish");
+const WITHDRAW: Name = Name::qualified(NS.as_bytes(), b"withdraw");
 
 
 //============ Errors ========================================================
@@ -862,6 +896,9 @@ pub enum ProcessError {
 
     /// The XML was not correctly formed.
     Xml(XmlError),
+
+    /// The XML could not be encoded.
+    XmlEncode(XmlEncodeError),
 }
 
 impl ProcessError {
@@ -883,11 +920,18 @@ impl From<XmlError> for ProcessError {
     }
 }
 
+impl From<XmlEncodeError> for ProcessError {
+    fn from(err: XmlEncodeError) -> Self {
+        ProcessError::XmlEncode(err)
+    }
+}
+
 impl fmt::Display for ProcessError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ProcessError::Io(ref inner) => inner.fmt(f),
-            ProcessError::Xml(ref inner) => inner.fmt(f)
+            ProcessError::Xml(ref inner) => inner.fmt(f),
+            ProcessError::XmlEncode(ref inner) => inner.fmt(f)
         }
     }
 }
@@ -899,6 +943,8 @@ impl error::Error for ProcessError { }
 
 #[cfg(test)]
 mod test {
+    use std::str::from_utf8_unchecked;
+
     use super::*;
 
     pub struct Test;
@@ -999,6 +1045,20 @@ mod test {
     #[test]
     fn snapshot_from_to_xml() {
         let data = include_bytes!("../test-data/ripe-snapshot.xml");
-        let _snapshot = Snapshot::parse(data.as_ref()).unwrap();
+        let snapshot = Snapshot::parse(data.as_ref()).unwrap();
+
+        let mut vec = vec![];
+
+        let mut writer = Writer::new_with_indent(&mut vec);
+        
+        snapshot.to_xml(&mut writer).unwrap();
+
+        let xml = unsafe {
+            from_utf8_unchecked(vec.as_ref())
+        };
+
+        let snapshot_parsed = Snapshot::parse(xml.as_bytes()).unwrap();
+
+        assert_eq!(snapshot, snapshot_parsed);
     }
 }
