@@ -32,7 +32,7 @@ use ring::digest;
 use uuid::Uuid;
 use crate::uri;
 use crate::xml::decode::{Content, Error as XmlError, Reader, Name};
-use crate::xml::encode::{Attributes, Error as XmlEncodeError, Writer};
+use crate::xml::encode::{Error as XmlEncodeError, Writer};
 
 
 //------------ NotificationFile ----------------------------------------------
@@ -180,21 +180,25 @@ impl NotificationFile {
 
     /// Turn into RFC 8182 XML
     pub fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
-
-        let mut attributes = Attributes::default();
-        attributes.add("xmlns", &NS);
-        attributes.add("version", "1");
-        attributes.add("session_id", &self.session_id);
-        attributes.add("serial", self.serial);
-
-        writer.start(&NOTIFICATION, Some(attributes))?;
+        writer.start_with_attributes(
+            &NOTIFICATION,
+            &[
+                (b"xmlns", &NS),
+                (b"version", b"1"),
+                (b"session_id", self.session_id.to_string().as_bytes()),
+                (b"serial", self.serial.to_string().as_bytes()),
+            ]
+        )?;
 
         // add snapshot
         {
-            let mut attributes = Attributes::default();
-            attributes.add("uri", self.snapshot.uri());
-            attributes.add("hash", self.snapshot.hash());
-            writer.start(&SNAPSHOT, Some(attributes))?;
+            writer.start_with_attributes(
+                &SNAPSHOT, 
+                &[
+                    (b"uri", self.snapshot.uri().to_string().as_bytes()),
+                    (b"hash", self.snapshot.hash.to_string().as_bytes())
+                ]
+            )?;
             writer.end(&SNAPSHOT)?;
         }
 
@@ -202,11 +206,14 @@ impl NotificationFile {
         reverse_sorted_deltas.sort_by(|a, b| b.0.cmp(&a.0));
 
         for (serial, uri_and_hash) in reverse_sorted_deltas {
-            let mut attributes = Attributes::default();
-            attributes.add("serial", serial);
-            attributes.add("uri", uri_and_hash.uri());
-            attributes.add("hash", uri_and_hash.hash());
-            writer.start(&DELTA, Some(attributes))?;
+            writer.start_with_attributes(
+                &DELTA, 
+                &[
+                    (b"serial", serial.to_string().as_bytes()),
+                    (b"uri", uri_and_hash.uri().to_string().as_bytes()),
+                    (b"hash", uri_and_hash.hash.to_string().as_bytes())
+                ]
+            )?;
             writer.end(&DELTA)?;
         }
 
@@ -229,10 +236,12 @@ pub struct PublishElement {
 
 impl PublishElement {
     fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
-        let mut attributes = Attributes::default();
-        attributes.add("uri", &self.uri);
-
-        writer.start(&PUBLISH, Some(attributes))?;
+        writer.start_with_attributes(
+            &PUBLISH, 
+            &[
+                (b"uri", self.uri.to_string().as_bytes())
+            ]
+        )?;
         writer.content_bytes(self.data.as_ref())?;
         writer.end(&PUBLISH)?;
 
@@ -254,11 +263,14 @@ pub struct UpdateElement {
 
 impl UpdateElement {
     fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
-        let mut attributes = Attributes::default();
-        attributes.add("uri", &self.uri);
-        attributes.add("hash", &self.hash);
 
-        writer.start(&PUBLISH, Some(attributes))?;
+        writer.start_with_attributes(
+            &PUBLISH,
+            &[
+                (b"uri", self.uri.to_string().as_bytes()),
+                (b"hash", self.hash.to_string().as_bytes())
+            ]
+        )?;
         writer.content_bytes(self.data.as_ref())?;
         writer.end(&PUBLISH)?;
 
@@ -279,11 +291,13 @@ pub struct WithdrawElement {
 
 impl WithdrawElement {
     fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
-        let mut attributes = Attributes::default();
-        attributes.add("uri", &self.uri);
-        attributes.add("hash", &self.hash);
-
-        writer.start(&WITHDRAW, Some(attributes))?;
+        writer.start_with_attributes(
+            &WITHDRAW, 
+            &[
+                (b"uri", self.uri.to_string().as_bytes()),
+                (b"hash", self.hash.to_string().as_bytes())
+            ]
+        )?;
         writer.end(&WITHDRAW)?;
 
         Ok(())
@@ -338,13 +352,15 @@ impl Snapshot {
     /// Turn into RFC 8182 XML
     pub fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
 
-        let mut attributes = Attributes::default();
-        attributes.add("xmlns", &NS);
-        attributes.add("version", "1");
-        attributes.add("session_id", &self.session_id);
-        attributes.add("serial", self.serial);
-
-        writer.start(&SNAPSHOT, Some(attributes))?;
+        writer.start_with_attributes(
+            &SNAPSHOT,
+            &[
+                (b"xmlns", &NS),
+                (b"version", b"1"),
+                (b"session_id", self.session_id.to_string().as_bytes()),
+                (b"serial", self.serial.to_string().as_bytes()),
+            ]
+        )?;
 
         for el in &self.elements {
             el.to_xml(writer)?;
@@ -554,14 +570,15 @@ impl Delta {
 
     /// Turn into RFC 8182 XML
     pub fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
-
-        let mut attributes = Attributes::default();
-        attributes.add("xmlns", &NS);
-        attributes.add("version", "1");
-        attributes.add("session_id", &self.session_id);
-        attributes.add("serial", self.serial);
-
-        writer.start(&DELTA, Some(attributes))?;
+        writer.start_with_attributes(
+            &DELTA, 
+            &[
+                (b"xmlns", &NS),
+                (b"version", b"1"),
+                (b"session_id", self.session_id.to_string().as_bytes()),
+                (b"serial", self.serial.to_string().as_bytes())
+            ]
+        )?;
 
         for el in &self.elements {
             el.to_xml(writer)?;
@@ -1052,12 +1069,12 @@ impl<'a> io::Read for ObjectReader<'a> {
 
 //------------ XML Names -----------------------------------------------------
 
-const NS: &str = "http://www.ripe.net/rpki/rrdp";
-const NOTIFICATION: Name = Name::qualified(NS.as_bytes(), b"notification");
-const SNAPSHOT: Name = Name::qualified(NS.as_bytes(), b"snapshot");
-const DELTA: Name = Name::qualified(NS.as_bytes(), b"delta");
-const PUBLISH: Name = Name::qualified(NS.as_bytes(), b"publish");
-const WITHDRAW: Name = Name::qualified(NS.as_bytes(), b"withdraw");
+const NS: &[u8] = b"http://www.ripe.net/rpki/rrdp";
+const NOTIFICATION: Name = Name::qualified(NS, b"notification");
+const SNAPSHOT: Name = Name::qualified(NS, b"snapshot");
+const DELTA: Name = Name::qualified(NS, b"delta");
+const PUBLISH: Name = Name::qualified(NS, b"publish");
+const WITHDRAW: Name = Name::qualified(NS, b"withdraw");
 
 
 //============ Errors ========================================================

@@ -34,11 +34,11 @@ impl<W: io::Write> Writer<W> {
     }
 
     /// Start a new tag
-    pub fn start(&mut self, name: &Name, attributes: Option<Attributes>) -> Result<(), Error> {
+    pub fn start_with_attributes(&mut self, name: &Name, attributes: &[(&[u8], &[u8])]) -> Result<(), Error> {
         let mut start = BytesStart::borrowed(name.local(), name.local().len());
 
-        if let Some(attributes) = attributes {
-            attributes.write(&mut start);
+        for attr in attributes {
+            start.push_attribute(*attr)
         }
 
         self.writer.write_event(Event::Start(start))?;
@@ -63,32 +63,6 @@ impl<W: io::Write> Writer<W> {
         Ok(())
     }
 }
-
-//------------ Attributes ----------------------------------------------------
-
-pub struct Attributes {
-    inner: Vec<(String, String)>
-}
-
-impl Attributes {
-    pub fn add(&mut self, key: impl fmt::Display, val: impl fmt::Display) {
-        self.inner.push((key.to_string(), val.to_string()))
-    }
-
-    fn write(&self, start: &mut BytesStart) {
-        for (k, v) in &self.inner {
-            start.push_attribute((k.as_bytes(), v.as_bytes()))
-        }
-
-    }
-}
-
-impl Default for Attributes {
-    fn default() -> Self {
-        Attributes { inner: vec![] }
-    }
-}
-
 
 //------------ Error ---------------------------------------------------------
 
