@@ -26,6 +26,7 @@ use std::{error, fmt, hash, io, str};
 use std::io::Read;
 use std::convert::TryFrom;
 use std::convert::TryInto;
+use std::ops::Deref;
 use bytes::Bytes;
 use log::info;
 use ring::digest;
@@ -48,31 +49,89 @@ pub struct NotificationFile {
     ///
     /// Delta updates can only be used if the session ID of the last processed
     /// update matches this value.
-    pub session_id: Uuid,
-
+    session_id: Uuid,
+    
     /// The serial number of the most recent update provided by the server.
     ///
     /// Serial numbers increase by one between each update.
-    pub serial: u64,
-
+    serial: u64,
+    
     /// The URI and hash value of the most recent snapshot.
     ///
     /// The snapshot contains a complete set of all data published via the
     /// repository. It can be processed using the [`ProcessSnapshot`] trait.
-    pub snapshot: UriAndHash,
-
+    snapshot: SnapshotInfo,
+    
     /// The list of available delta updates.
     ///
-    /// The first element of the vec’s items is the serial number of the
-    /// delta and the second element is the URI of the location of the delta
-    /// and its hash. Deltas can be processed using the [`ProcessDelta`]
-    /// trait.
+    /// Deltas can be processed using the [`ProcessDelta`] trait.
     ///
-    /// Note that after parsing, the list will be in the order as received
-    /// from the server. That is, it may not be ordered by serial numbers.
-    pub deltas: Vec<(u64, UriAndHash)>,
+    /// Note that after parsing, the list will be in reverse serial order,
+    /// i.e. the highest serial will appear first, and it is ensured that
+    /// there are no gaps in the sequence. Notification files which contain
+    /// gaps will be rejected by the parser as 'Malformed'.
+    deltas: Vec<DeltaInfo>,
 }
 
+// Data Access
+//
+impl NotificationFile {
+    pub fn new(
+        session_id: Uuid,
+        serial: u64,
+        snapshot: UriAndHash,
+        deltas: Vec<DeltaInfo>,
+    ) -> Self {
+        NotificationFile { session_id, serial, snapshot, deltas }
+    }
+
+    pub fn session_id(&self) -> Uuid {
+        self.session_id
+    }
+
+    pub fn serial(&self) -> u64 {
+        self.serial
+    }
+
+    pub fn snapshot(&self) -> &SnapshotInfo {
+        &self.snapshot
+    }
+
+    pub fn deltas(&self) -> &Vec<DeltaInfo> {
+        &self.deltas
+    }
+
+    pub fn sort_deltas(&mut self) {
+        self.deltas.sort_by_key(|delta| delta.serial());
+    }
+
+    pub fn reverse_sort_deltas(&mut self) {
+        self.deltas.sort_by(|a,b| b.serial.cmp(&a.serial));
+    }
+
+    /// Returns true if the deltas contain no gap, false if
+    /// there are any missing deltas
+    pub fn sort_and_verify_deltas(&mut self) -> bool {
+        self.sort_deltas();
+
+        if self.deltas.len() > 1 {
+            let mut last_seen = self.deltas[0].serial();
+            for delta in &self.deltas[1..] {
+                if last_seen + 1 != delta.serial() {
+                    return false;
+                } else {
+                    last_seen = delta.serial()
+                }
+            }
+        }
+
+        true
+    }
+
+}
+
+// # XML support
+//
 impl NotificationFile {
     /// Parses the notification file from its XML representation.
     pub fn parse<R: io::BufRead>(reader: R) -> Result<Self, XmlError> {
@@ -105,7 +164,9 @@ impl NotificationFile {
         })?;
 
         let mut snapshot = None;
-        let mut deltas = Vec::new();
+
+        let mut deltas = vec![];
+
         while let Some(mut content) = outer.take_opt_element(&mut reader,
                                                              |element| {
             match element.name() {
@@ -155,7 +216,7 @@ impl NotificationFile {
                     })?;
                     match (serial, uri, hash) {
                         (Some(serial), Some(uri), Some(hash)) => {
-                            deltas.push((serial, UriAndHash::new(uri, hash)));
+                            deltas.push(DeltaInfo::new(serial, uri, hash));
                             Ok(())
                         }
                         _ => Err(XmlError::Malformed)
@@ -202,16 +263,13 @@ impl NotificationFile {
             writer.end(&SNAPSHOT)?;
         }
 
-        let mut reverse_sorted_deltas = self.deltas.clone();
-        reverse_sorted_deltas.sort_by(|a, b| b.0.cmp(&a.0));
-
-        for (serial, uri_and_hash) in reverse_sorted_deltas {
+        for delta in self.deltas() {
             writer.start_with_attributes(
                 &DELTA, 
                 &[
-                    (b"serial", serial.to_string().as_bytes()),
-                    (b"uri", uri_and_hash.uri().to_string().as_bytes()),
-                    (b"hash", uri_and_hash.hash.to_string().as_bytes())
+                    (b"serial", delta.serial().to_string().as_bytes()),
+                    (b"uri", delta.uri().to_string().as_bytes()),
+                    (b"hash", delta.hash().to_string().as_bytes())
                 ]
             )?;
             writer.end(&DELTA)?;
@@ -307,7 +365,7 @@ impl WithdrawElement {
 //------------ DeltaElement --------------------------------------------------
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum DeltaElement {
+pub enum DeltaElement {
     Publish(PublishElement),
     Update(UpdateElement),
     Withdraw(WithdrawElement)
@@ -553,6 +611,24 @@ pub struct Delta {
     elements: Vec<DeltaElement>
 }
 
+// # Data
+//
+impl Delta {
+    pub fn new(
+        session_id: Uuid,
+        serial: u64,
+        elements: Vec<DeltaElement>
+    ) -> Self {
+        Delta { session_id, serial, elements }
+    }
+
+    pub fn serial(&self) -> u64 {
+        self.serial
+    }
+}
+
+// # XML
+//
 impl Delta {
     /// Parse RFC 8182 XML
     pub fn parse<R: io::BufRead>(
@@ -818,6 +894,43 @@ pub trait ProcessDelta {
 
 }
 
+
+//------------ SnapshotInfo --------------------------------------------------
+
+/// Contains the URI and HASH of the current snapshot for an RRDP
+/// [`NotificationFile`].
+pub type SnapshotInfo = UriAndHash;
+
+//------------ DeltaInfo -----------------------------------------------------
+
+/// Contains the serial, URI and HASH of a delta included in an RRDP
+/// [`NotificationFile`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeltaInfo {
+    serial: u64,
+    uri_and_hash: UriAndHash
+}
+
+impl DeltaInfo {
+    pub fn new(serial: u64, uri: uri::Https, hash: Hash) -> Self {
+        DeltaInfo {
+            serial,
+            uri_and_hash: UriAndHash::new(uri, hash)
+        }
+    }
+
+    pub fn serial(&self) -> u64 {
+        self.serial
+    }
+}
+
+impl Deref for DeltaInfo {
+    type Target = UriAndHash;
+
+    fn deref(&self) -> &Self::Target {
+        &self.uri_and_hash
+    }
+}
 
 //------------ UriAndHash ----------------------------------------------------
 
@@ -1243,6 +1356,40 @@ mod test {
                 include_bytes!("../test-data/lolz-notification.xml").as_ref()
             ).is_err()
         );
+    }
+
+    #[test]
+    fn gaps_notification() {
+        let mut notification_without_gaps =  NotificationFile::parse(
+            include_bytes!("../test-data/ripe-notification.xml").as_ref()
+        ).unwrap();
+        assert!(notification_without_gaps.sort_and_verify_deltas());
+
+        let mut notification_with_gaps =  NotificationFile::parse(
+            include_bytes!("../test-data/ripe-notification-with-gaps.xml").as_ref()
+        ).unwrap();
+        assert!(!notification_with_gaps.sort_and_verify_deltas());
+    }
+    #[test]
+    fn unsorted_notification() {
+        let mut from_sorted = NotificationFile::parse(
+            include_bytes!("../test-data/ripe-notification.xml").as_ref()
+        ).unwrap();
+
+        let mut from_unsorted = NotificationFile::parse(
+            include_bytes!("../test-data/ripe-notification-unsorted.xml").as_ref()
+        ).unwrap();
+        
+        assert_ne!(from_sorted, from_unsorted);
+
+        from_unsorted.reverse_sort_deltas();
+        assert_eq!(from_sorted, from_unsorted);
+        
+        from_unsorted.sort_deltas();
+        assert_ne!(from_sorted, from_unsorted);
+                
+        from_sorted.sort_deltas();
+        assert_eq!(from_sorted, from_unsorted);
     }
 
     #[test]
