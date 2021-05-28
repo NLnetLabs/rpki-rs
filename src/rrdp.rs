@@ -293,6 +293,14 @@ pub struct PublishElement {
 }
 
 impl PublishElement {
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+
+    pub fn data(&self) -> &Bytes {
+        &self.data
+    }
+
     fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
         writer.start_with_attributes(
             &PUBLISH, 
@@ -392,6 +400,22 @@ pub struct Snapshot {
     elements: Vec<PublishElement>,
 }
 
+impl Snapshot {
+    pub fn session_id(&self) -> Uuid {
+        self.session_id
+    }
+
+    pub fn serial(&self) -> u64 {
+        self.serial
+    }
+
+    pub fn elements(&self) -> &Vec<PublishElement> {
+        &self.elements
+    }
+}
+
+// # XML Support
+//
 impl Snapshot {
     /// Parse RFC 8182 XML
     pub fn parse<R: io::BufRead>(
