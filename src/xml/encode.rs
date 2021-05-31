@@ -29,21 +29,56 @@ impl<W: io::Write> Writer<W> {
     /// Creates a new writer from an underlying io::Write which will use
     /// new lines and indentation for each XML element.
     pub fn new_with_indent(writer: W) -> Self {
-        let writer = quick_xml::Writer::new_with_indent(writer, b' ', INDENT_SIZE);
+        let writer = quick_xml::Writer::new_with_indent(
+            writer, 
+            b' ',
+            INDENT_SIZE
+        );
         Writer { writer }
     }
 
     /// Start a new tag
-    pub fn start_with_attributes(&mut self, name: &Name, attributes: &[(&[u8], &[u8])]) -> Result<(), Error> {
-        let mut start = BytesStart::borrowed(name.local(), name.local().len());
-
-        for attr in attributes {
-            start.push_attribute(*attr)
-        }
+    pub fn start_with_attributes(
+        &mut self,
+        name: &Name,
+        attributes: &[(&[u8], &[u8])]
+    ) -> Result<(), Error> {
+        let start = self.make_start_element(name, attributes);
 
         self.writer.write_event(Event::Start(start))?;
 
         Ok(())
+    }
+
+    /// Create an empty element, i.e. an element that is closed
+    /// without content. For example: <element foo="bar" />
+    pub fn empty_element_with_attributes(
+        &mut self,
+        name: &Name,
+        attributes: &[(&[u8], &[u8])]
+    ) -> Result<(), Error> {
+        let start = self.make_start_element(name, attributes);
+        
+        self.writer.write_event(Event::Empty(start))?;
+
+        Ok(())
+    }
+
+    fn make_start_element<'a>(
+        &mut self,
+        name: &'a Name,
+        attributes: &'a [(&[u8], &[u8])]
+    ) -> BytesStart<'a> {
+      let mut start = BytesStart::borrowed(
+            name.local(), 
+            name.local().len()
+        );
+
+        for attr in attributes {
+            start.push_attribute(*attr)
+        } 
+
+        start
     }
 
     /// End a tag
@@ -53,6 +88,9 @@ impl<W: io::Write> Writer<W> {
 
         Ok(())
     }
+
+
+    
 
     /// Write bytes as base64 encoded content
     pub fn content_bytes(&mut self, data: &[u8]) -> Result<(), Error> {

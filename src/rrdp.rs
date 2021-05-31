@@ -253,18 +253,17 @@ impl NotificationFile {
 
         // add snapshot
         {
-            writer.start_with_attributes(
+            writer.empty_element_with_attributes(
                 &SNAPSHOT, 
                 &[
                     (b"uri", self.snapshot.uri().to_string().as_bytes()),
                     (b"hash", self.snapshot.hash.to_string().as_bytes())
                 ]
             )?;
-            writer.end(&SNAPSHOT)?;
         }
 
         for delta in self.deltas() {
-            writer.start_with_attributes(
+            writer.empty_element_with_attributes(
                 &DELTA, 
                 &[
                     (b"serial", delta.serial().to_string().as_bytes()),
@@ -272,7 +271,6 @@ impl NotificationFile {
                     (b"hash", delta.hash().to_string().as_bytes())
                 ]
             )?;
-            writer.end(&DELTA)?;
         }
 
         writer.end(&NOTIFICATION)?;
@@ -411,6 +409,10 @@ impl Snapshot {
 
     pub fn elements(&self) -> &Vec<PublishElement> {
         &self.elements
+    }
+
+    pub fn into_elements(self) -> Vec<PublishElement> {
+        self.elements
     }
 }
 
@@ -646,8 +648,16 @@ impl Delta {
         Delta { session_id, serial, elements }
     }
 
+    pub fn session_id(&self) -> Uuid {
+        self.session_id
+    }
+
     pub fn serial(&self) -> u64 {
         self.serial
+    }
+
+    pub fn elements(&self) -> &Vec<DeltaElement> {
+        &self.elements
     }
 }
 
