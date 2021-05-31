@@ -36,7 +36,6 @@ use crate::xml::decode::{Content, Error as XmlError, Reader, Name};
 use crate::xml::encode::{Error as XmlEncodeError, Writer};
 
 #[cfg(feature = "serde")] use std::str::FromStr;
-#[cfg(feature = "serde")] use serde::de;
 #[cfg(feature = "serde")] use serde::{
     Deserialize, Deserializer, Serialize, Serializer
 };
