@@ -35,6 +35,11 @@ use crate::uri;
 use crate::xml::decode::{Content, Error as XmlError, Reader, Name};
 use crate::xml::encode::{Error as XmlEncodeError, Writer};
 
+#[cfg(feature = "serde")] use std::str::FromStr;
+#[cfg(feature = "serde")] use serde::de;
+#[cfg(feature = "serde")] use serde::{
+    Deserialize, Deserializer, Serialize, Serializer
+};
 
 //------------ NotificationFile ----------------------------------------------
 
@@ -297,6 +302,10 @@ impl PublishElement {
 
     pub fn data(&self) -> &Bytes {
         &self.data
+    }
+
+    pub fn unpack(self) -> (uri::Rsync, Bytes) {
+        (self.uri, self.data)
     }
 
     fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
@@ -1144,6 +1153,25 @@ impl fmt::Display for Hash {
 impl fmt::Debug for Hash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Hash({})", self)
+    }
+}
+
+//--- Serialize and Deserialize
+
+#[cfg(feature = "serde")]
+impl Serialize for Hash {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        self.to_string().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for Hash {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        let hex_str = String::deserialize(deserializer)?;
+        Hash::from_str(&hex_str).map_err(serde::de::Error::custom)
     }
 }
 
