@@ -295,6 +295,13 @@ pub struct PublishElement {
 }
 
 impl PublishElement {
+    pub fn new(
+        uri: uri::Rsync,
+        data: Bytes,
+    ) -> Self {
+        PublishElement { uri, data }
+    }
+    
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
@@ -334,6 +341,12 @@ pub struct UpdateElement {
 }
 
 impl UpdateElement {
+    pub fn unpack(self) -> (uri::Rsync, Hash, Bytes) {
+        (self.uri, self.hash, self.data)
+    }
+}
+
+impl UpdateElement {
     fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
 
         writer.start_with_attributes(
@@ -359,6 +372,12 @@ impl UpdateElement {
 pub struct WithdrawElement {
     uri: uri::Rsync,
     hash: Hash,
+}
+
+impl WithdrawElement {
+    pub fn unpack(self) -> (uri::Rsync, Hash) {
+        (self.uri, self.hash)
+    }
 }
 
 impl WithdrawElement {
@@ -407,6 +426,14 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
+    pub fn new(
+        session_id: Uuid,
+        serial: u64,
+        elements: Vec<PublishElement>,
+    ) -> Self {
+        Snapshot { session_id, serial, elements }
+    }
+
     pub fn session_id(&self) -> Uuid {
         self.session_id
     }
@@ -666,6 +693,10 @@ impl Delta {
 
     pub fn elements(&self) -> &Vec<DeltaElement> {
         &self.elements
+    }
+
+    pub fn into_elements(self) -> Vec<DeltaElement> {
+        self.elements
     }
 }
 
