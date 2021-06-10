@@ -31,9 +31,8 @@ use bytes::Bytes;
 use log::info;
 use ring::digest;
 use uuid::Uuid;
-use crate::uri;
+use crate::{uri, xml};
 use crate::xml::decode::{Content, Error as XmlError, Reader, Name};
-use crate::xml::encode::{Error as XmlEncodeError, Writer};
 
 #[cfg(feature = "serde")] use std::str::FromStr;
 #[cfg(feature = "serde")] use serde::{
@@ -244,42 +243,34 @@ impl NotificationFile {
     }
 
     /// Turn into RFC 8182 XML
-    pub fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
-        writer.start_with_attributes(
-            &NOTIFICATION,
-            &[
-                (b"xmlns", &NS),
-                (b"version", b"1"),
-                (b"session_id", self.session_id.to_string().as_bytes()),
-                (b"serial", self.serial.to_string().as_bytes()),
-            ]
-        )?;
+    pub fn write_xml(
+        &self, writer: &mut impl io::Write
+    ) -> Result<(), io::Error> {
+        let mut writer = xml::encode::Writer::new(writer);
+        writer.element(NOTIFICATION.into_unqualified())?
+            .attr("xmlns", NS)?
+            .attr("version", "1")?
+            .attr("session_id", &self.session_id)?
+            .attr("serial", &self.serial)?
+            .content(|content| {
+                // add snapshot
+                content.element(SNAPSHOT.into_unqualified())?
+                    .attr("uri", self.snapshot.uri())?
+                    .attr("hash", &self.snapshot.hash())?
+                ;
 
-        // add snapshot
-        {
-            writer.empty_element_with_attributes(
-                &SNAPSHOT, 
-                &[
-                    (b"uri", self.snapshot.uri().to_string().as_bytes()),
-                    (b"hash", self.snapshot.hash.to_string().as_bytes())
-                ]
-            )?;
-        }
+                // add deltas
+                for delta in self.deltas() {
+                    content.element(DELTA.into_unqualified())?
+                        .attr("serial", &delta.serial())?
+                        .attr("uri", delta.uri())?
+                        .attr("hash", &delta.hash())?
+                    ;
+                }
 
-        for delta in self.deltas() {
-            writer.empty_element_with_attributes(
-                &DELTA, 
-                &[
-                    (b"serial", delta.serial().to_string().as_bytes()),
-                    (b"uri", delta.uri().to_string().as_bytes()),
-                    (b"hash", delta.hash().to_string().as_bytes())
-                ]
-            )?;
-        }
-
-        writer.end(&NOTIFICATION)?;
-
-        Ok(())
+                Ok(())
+            })?;
+        writer.done()
     }
 }
 
@@ -314,16 +305,15 @@ impl PublishElement {
         (self.uri, self.data)
     }
 
-    fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
-        writer.start_with_attributes(
-            &PUBLISH, 
-            &[
-                (b"uri", self.uri.to_string().as_bytes())
-            ]
-        )?;
-        writer.content_bytes(self.data.as_ref())?;
-        writer.end(&PUBLISH)?;
-
+    fn write_xml(
+        &self,
+        content: &mut xml::encode::Content<impl io::Write>
+    ) -> Result<(), io::Error> {
+        content.element(PUBLISH.into_unqualified())?
+            .attr("uri", &self.uri)?
+            .content(|content| {
+                content.base64(self.data.as_ref())
+            })?;
         Ok(())
     }
 }
@@ -347,18 +337,16 @@ impl UpdateElement {
 }
 
 impl UpdateElement {
-    fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
-
-        writer.start_with_attributes(
-            &PUBLISH,
-            &[
-                (b"uri", self.uri.to_string().as_bytes()),
-                (b"hash", self.hash.to_string().as_bytes())
-            ]
-        )?;
-        writer.content_bytes(self.data.as_ref())?;
-        writer.end(&PUBLISH)?;
-
+    fn write_xml(
+        &self,
+        content: &mut xml::encode::Content<impl io::Write>
+    ) -> Result<(), io::Error> {
+        content.element(PUBLISH.into_unqualified())?
+            .attr("uri", &self.uri)?
+            .attr("hash", &self.hash)?
+            .content(|content| {
+                content.base64(self.data.as_ref())
+            })?;
         Ok(())
     }
 }
@@ -381,16 +369,13 @@ impl WithdrawElement {
 }
 
 impl WithdrawElement {
-    fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
-        writer.start_with_attributes(
-            &WITHDRAW, 
-            &[
-                (b"uri", self.uri.to_string().as_bytes()),
-                (b"hash", self.hash.to_string().as_bytes())
-            ]
-        )?;
-        writer.end(&WITHDRAW)?;
-
+    fn write_xml(
+        &self,
+        content: &mut xml::encode::Content<impl io::Write>
+    ) -> Result<(), io::Error> {
+        content.element(WITHDRAW.into_unqualified())?
+            .attr("uri", &self.uri)?
+            .attr("hash", &self.hash)?;
         Ok(())
     }
 }
@@ -405,11 +390,14 @@ pub enum DeltaElement {
 }
 
 impl DeltaElement {
-    fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
+    fn write_xml(
+        &self,
+        content: &mut xml::encode::Content<impl io::Write>
+    ) -> Result<(), io::Error> {
         match self {
-            DeltaElement::Publish(p) => p.to_xml(writer),
-            DeltaElement::Update(u) => u.to_xml(writer),
-            DeltaElement::Withdraw(w) => w.to_xml(writer)
+            DeltaElement::Publish(p) => p.write_xml(content),
+            DeltaElement::Update(u) => u.write_xml(content),
+            DeltaElement::Withdraw(w) => w.write_xml(content)
         }
     }
 }
@@ -468,26 +456,23 @@ impl Snapshot {
         builder.try_into()
     }
 
-    /// Turn into RFC 8182 XML
-    pub fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
-
-        writer.start_with_attributes(
-            &SNAPSHOT,
-            &[
-                (b"xmlns", &NS),
-                (b"version", b"1"),
-                (b"session_id", self.session_id.to_string().as_bytes()),
-                (b"serial", self.serial.to_string().as_bytes()),
-            ]
-        )?;
-
-        for el in &self.elements {
-            el.to_xml(writer)?;
-        }
-
-        writer.end(&SNAPSHOT)?;
-
-        Ok(())
+    /// Write as RFC 8182 XML
+    pub fn write_xml(
+        &self, writer: &mut impl io::Write
+    ) -> Result<(), io::Error> {
+        let mut writer = xml::encode::Writer::new(writer);
+        writer.element(SNAPSHOT.into_unqualified())?
+            .attr("xmlns", NS)?
+            .attr("version", "1")?
+            .attr("session_id", &self.session_id)?
+            .attr("serial", &self.serial)?
+            .content(|content| {
+                for el in &self.elements {
+                    el.write_xml(content)?;
+                }
+                Ok(())
+            })?;
+        writer.done()
     }
 }
 
@@ -717,27 +702,24 @@ impl Delta {
         builder.try_into()
     }
 
-    /// Turn into RFC 8182 XML
-    pub fn to_xml<W: io::Write>(&self, writer: &mut Writer<W>) -> Result<(), ProcessError> {
-        writer.start_with_attributes(
-            &DELTA, 
-            &[
-                (b"xmlns", &NS),
-                (b"version", b"1"),
-                (b"session_id", self.session_id.to_string().as_bytes()),
-                (b"serial", self.serial.to_string().as_bytes())
-            ]
-        )?;
-
-        for el in &self.elements {
-            el.to_xml(writer)?;
-        }
-
-        writer.end(&DELTA)?;
-
-        Ok(())
-    }    
-
+    /// Write as RFC 8182 XML
+    pub fn write_xml(
+        &self, writer: &mut impl io::Write
+    ) -> Result<(), io::Error> {
+        let mut writer = xml::encode::Writer::new(writer);
+        writer.element(DELTA.into_unqualified())?
+            .attr("xmlns", NS)?
+            .attr("version", "1")?
+            .attr("session_id", &self.session_id)?
+            .attr("serial", &self.serial)?
+            .content(|content| {
+                for el in &self.elements {
+                    el.write_xml(content)?;
+                }
+                Ok(())
+            })?;
+        writer.done()
+    }
 }
 
 
@@ -973,6 +955,7 @@ pub trait ProcessDelta {
 /// Contains the URI and HASH of the current snapshot for an RRDP
 /// [`NotificationFile`].
 pub type SnapshotInfo = UriAndHash;
+
 
 //------------ DeltaInfo -----------------------------------------------------
 
@@ -1332,9 +1315,6 @@ pub enum ProcessError {
 
     /// The XML was not correctly formed.
     Xml(XmlError),
-
-    /// The XML could not be encoded.
-    XmlEncode(XmlEncodeError),
 }
 
 impl ProcessError {
@@ -1356,18 +1336,11 @@ impl From<XmlError> for ProcessError {
     }
 }
 
-impl From<XmlEncodeError> for ProcessError {
-    fn from(err: XmlEncodeError) -> Self {
-        ProcessError::XmlEncode(err)
-    }
-}
-
 impl fmt::Display for ProcessError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ProcessError::Io(ref inner) => inner.fmt(f),
             ProcessError::Xml(ref inner) => inner.fmt(f),
-            ProcessError::XmlEncode(ref inner) => inner.fmt(f)
         }
     }
 }
@@ -1519,8 +1492,7 @@ mod test {
         ).unwrap();
 
         let mut vec = vec![];
-        let mut writer = Writer::new_with_indent(&mut vec);
-        notification.to_xml(&mut writer).unwrap();
+        notification.write_xml(&mut vec).unwrap();
 
         let xml = unsafe {
             from_utf8_unchecked(vec.as_ref())
@@ -1537,8 +1509,7 @@ mod test {
         let snapshot = Snapshot::parse(data.as_ref()).unwrap();
 
         let mut vec = vec![];
-        let mut writer = Writer::new_with_indent(&mut vec);
-        snapshot.to_xml(&mut writer).unwrap();
+        snapshot.write_xml(&mut vec).unwrap();
 
         let xml = unsafe {
             from_utf8_unchecked(vec.as_ref())
@@ -1555,8 +1526,7 @@ mod test {
         let delta = Delta::parse(data.as_ref()).unwrap();
 
         let mut vec = vec![];
-        let mut writer = Writer::new_with_indent(&mut vec);
-        delta.to_xml(&mut writer).unwrap();
+        delta.write_xml(&mut vec).unwrap();
 
         let xml = unsafe {
             from_utf8_unchecked(vec.as_ref())

@@ -277,8 +277,16 @@ impl<'n, 'l> Name<'n, 'l> {
         }
     }
 
+    pub fn namespace(&self) -> Option<&[u8]> {
+        self.namespace
+    }
+
     pub fn local(&self) -> &[u8] {
-        &self.local
+        self.local
+    }
+
+    pub const fn into_unqualified(self) -> Name<'static, 'l> {
+        Name::unqualified(self.local)
     }
 }
 
