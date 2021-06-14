@@ -106,7 +106,7 @@ impl<W: io::Write> Writer<W> {
     ///
     /// This does not add a line break.
     fn write_indent(&mut self) -> Result<(), io::Error> {
-        if self.indent_level == 0 || self.indent == "" {
+        if self.indent_level == 0 || self.indent.is_empty() {
             return Ok(())
         }
 
