@@ -114,11 +114,19 @@ impl NotificationFile {
     }
 
     /// Returns true if the deltas contain no gap, false if
-    /// there are any missing deltas
-    pub fn sort_and_verify_deltas(&mut self) -> bool {
-        self.sort_deltas();
+    /// there are any missing deltas. Optionally limits the
+    /// amount of deltas.
+    pub fn sort_and_verify_deltas(&mut self, limit: Option<usize>) -> bool {
+        if !self.deltas.is_empty() {
+            self.sort_deltas();
 
-        if self.deltas.len() > 1 {
+            if let Some(limit) = limit {
+                if limit < self.deltas.len() {
+                    let offset = self.deltas.len() - limit;
+                    self.deltas.drain(..offset);
+                }
+            }
+
             let mut last_seen = self.deltas[0].serial();
             for delta in &self.deltas[1..] {
                 if last_seen + 1 != delta.serial() {
@@ -1455,13 +1463,27 @@ mod test {
         let mut notification_without_gaps =  NotificationFile::parse(
             include_bytes!("../test-data/ripe-notification.xml").as_ref()
         ).unwrap();
-        assert!(notification_without_gaps.sort_and_verify_deltas());
+        assert!(notification_without_gaps.sort_and_verify_deltas(None));
 
         let mut notification_with_gaps =  NotificationFile::parse(
             include_bytes!("../test-data/ripe-notification-with-gaps.xml").as_ref()
         ).unwrap();
-        assert!(!notification_with_gaps.sort_and_verify_deltas());
+        assert!(!notification_with_gaps.sort_and_verify_deltas(None));
     }
+
+    #[test]
+    fn limit_notification_deltas() {
+        let mut notification_without_gaps =  NotificationFile::parse(
+            include_bytes!("../test-data/ripe-notification.xml").as_ref()
+        ).unwrap();
+        assert!(notification_without_gaps.sort_and_verify_deltas(Some(2)));
+
+        assert_eq!(2, notification_without_gaps.deltas().len());
+        assert_eq!(notification_without_gaps.deltas().first().unwrap().serial(), notification_without_gaps.serial() - 1);
+        assert_eq!(notification_without_gaps.deltas().last().unwrap().serial(), notification_without_gaps.serial());
+    }
+
+
     #[test]
     fn unsorted_notification() {
         let mut from_sorted = NotificationFile::parse(
