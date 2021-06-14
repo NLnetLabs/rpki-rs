@@ -4,151 +4,76 @@ use std::io::Write as _;
 use std::fmt::Write as _;
 use super::decode::Name;
 
-/*
-use quick_xml::events::BytesEnd;
-use quick_xml::events::BytesStart;
-use quick_xml::events::BytesText;
-use quick_xml::events::Event;
-
-use super::decode::Name;
-
-const INDENT_SIZE: usize = 2;
 
 //------------ Writer --------------------------------------------------------
 
-/// An XML writer
-///
-/// This struct holds all state necessary for parsing an XML document.
-pub struct Writer<W: io::Write> {
-    writer: quick_xml::Writer<W>,
-}
-
-impl<W: io::Write> Writer<W> {
-    /// Creates a new writer from an underlying io::Write.
-    pub fn new(writer: W) -> Self {
-        let writer = quick_xml::Writer::new(writer);
-        Writer { writer }
-    }
-
-    /// Creates a new writer from an underlying io::Write which will use
-    /// new lines and indentation for each XML element.
-    pub fn new_with_indent(writer: W) -> Self {
-        let writer = quick_xml::Writer::new_with_indent(
-            writer, 
-            b' ',
-            INDENT_SIZE
-        );
-        Writer { writer }
-    }
-
-    /// Start a new tag
-    pub fn start_with_attributes(
-        &mut self,
-        name: &Name,
-        attributes: &[(&[u8], &[u8])]
-    ) -> Result<(), Error> {
-        let start = self.make_start_element(name, attributes);
-
-        self.writer.write_event(Event::Start(start))?;
-
-        Ok(())
-    }
-
-    /// Create an empty element, i.e. an element that is closed
-    /// without content. For example: <element foo="bar" />
-    pub fn empty_element_with_attributes(
-        &mut self,
-        name: &Name,
-        attributes: &[(&[u8], &[u8])]
-    ) -> Result<(), Error> {
-        let start = self.make_start_element(name, attributes);
-        
-        self.writer.write_event(Event::Empty(start))?;
-
-        Ok(())
-    }
-
-    fn make_start_element<'a>(
-        &mut self,
-        name: &'a Name,
-        attributes: &'a [(&[u8], &[u8])]
-    ) -> BytesStart<'a> {
-      let mut start = BytesStart::borrowed(
-            name.local(), 
-            name.local().len()
-        );
-
-        for attr in attributes {
-            start.push_attribute(*attr)
-        } 
-
-        start
-    }
-
-    /// End a tag
-    pub fn end(&mut self, name: &Name) -> Result<(), Error> {
-        let end = BytesEnd::borrowed(name.local());
-        self.writer.write_event(Event::End(end))?;
-
-        Ok(())
-    }
-
-    /// Write bytes as base64 encoded content
-    pub fn content_bytes(&mut self, data: &[u8]) -> Result<(), Error> {
-        let base64 = base64::encode(data);
-        let text = BytesText::from_plain(base64.as_bytes());
-        self.writer.write_event(Event::Text(text))?;
-
-        Ok(())
-    }
-}
-
-
-//------------ Error ---------------------------------------------------------
-
-#[derive(Debug)]
-pub enum Error {
-    Xml(quick_xml::Error),
-}
-
-impl From<quick_xml::Error> for Error {
-    fn from(err: quick_xml::Error) -> Self {
-        Error::Xml(err)
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Error::Xml(ref err) => err.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for Error { }
-*/
-
-
-//------------ Writer --------------------------------------------------------
-
+/// Wraps a writer for producing XML.
 #[derive(Debug)]
 pub struct Writer<W> {
+    /// The wrapped writer.
     wrapped: W,
 
+    /// A place to store an error for delayer error handling.
+    ///
+    /// This is necessary so we can use `Drop` for elements which doesn’t
+    /// allow us to return an error.
     error: Option<io::Error>,
+
+    /// The string to add for each level of indentation.
+    indent: &'static str,
+
+    /// The current indentation level.
+    ///
+    /// This is the number of times we should repeat `self.indent` at the
+    /// beginning of a line.
+    indent_level: usize,
 }
 
 impl<W: io::Write> Writer<W> {
+    /// Create a new XML writer by wrapping an IO writer.
+    ///
+    /// The writer will use an indent string of two spaces.
     pub fn new(wrapped: W) -> Self {
-        Writer { wrapped, error: None }
+        Writer {
+            wrapped,
+            error: None,
+            indent: "  ",
+            indent_level: 0,
+        }
     }
 
+    /// Change the indent string.
+    ///
+    /// After calling this method, each line will be started with the provided
+    /// string repeated for each indent level.
+    pub fn set_indent(&mut self, s: &'static str) {
+        self.indent = s
+    }
+
+    /// Start an XML element.
+    ///
+    /// This will write the beginning of the tag to the writer and therefore
+    /// may error. Upon success, it returns an [`Element`] which can be used
+    /// to add attributes and content. The element is finished when this
+    /// element is dropped – which is necessary to regain access to `self` as
+    /// well.
     pub fn element<'s>(
         &'s mut self, tag: Name<'static, 'static>,
     ) -> Result<Element<'s, W>, io::Error> {
-        Element::start(self, tag)
+        Element::start(self, tag, false)
     }
 
+    /// Concludes writing and returns the writer.
+    pub fn into_wrapped(mut self) -> Result<W, io::Error> {
+        if let Some(err) = self.error.take() {
+            Err(err)
+        }
+        else {
+            Ok(self.wrapped)
+        }
+    }
+
+    /// Concludes writing and drops the writer.
     pub fn done(mut self) -> Result<(), io::Error> {
         if let Some(err) = self.error.take() {
             Err(err)
@@ -156,6 +81,39 @@ impl<W: io::Write> Writer<W> {
         else {
             Ok(())
         }
+    }
+}
+
+/// # Internal Interface
+///
+impl<W: io::Write> Writer<W> {
+    /// Stores an error for delayed error handling.
+    fn store_error(&mut self, error: io::Error) {
+        self.error = Some(error)
+    }
+
+    /// Increases indent by one level.
+    fn indent(&mut self) {
+        self.indent_level = self.indent_level.saturating_add(1);
+    }
+
+    /// Decreases indent by one level.
+    fn dedent(&mut self) {
+        self.indent_level = self.indent_level.saturating_sub(1);
+    }
+
+    /// Writes the indent.
+    ///
+    /// This does not add a line break.
+    fn write_indent(&mut self) -> Result<(), io::Error> {
+        if self.indent_level == 0 || self.indent == "" {
+            return Ok(())
+        }
+
+        for _ in 0..self.indent_level {
+            self.write_all(self.indent.as_bytes())?
+        }
+        Ok(())
     }
 }
 
@@ -178,26 +136,50 @@ impl<W: io::Write> io::Write for Writer<W> {
 
 //------------ Element -------------------------------------------------------
 
+/// An XML element in the process of being written.
 #[derive(Debug)]
 pub struct Element<'a, W: io::Write> {
+    /// The writer to write to.
     writer: &'a mut Writer<W>,
+
+    /// The tag.
     tag: Name<'static, 'static>,
+
+    /// Is this an inline element?
+    ///
+    /// Inline elements keep all there content on the same line.
+    inline: bool,
+
+    /// Is the element still empty?
+    ///
+    /// We have to keep this because of the different way empty elements are
+    /// closed.
     empty: bool,
 }
 
 impl<'a, W: io::Write> Element<'a, W> {
+    /// Start a new element using the given writer and tag.
+    ///
+    /// Writes the start as far as that’s possible and then returns the
+    /// element.
     fn start(
         writer: &'a mut Writer<W>, tag: Name<'static, 'static>,
+        inline: bool,
     ) -> Result<Self, io::Error> {
+        if !inline {
+            writer.write_all(b"\n")?;
+            writer.write_indent()?;
+        }
         writer.write_all(b"<")?;
         if let Some(ns) = tag.namespace() {
             writer.write_all(ns)?;
             writer.write_all(b":")?;
         }
         writer.write_all(tag.local())?;
-        Ok(Element { writer, tag, empty: true })
+        Ok(Element { writer, tag, inline, empty: true })
     }
 
+    /// Write an attribute.
     pub fn attr(
         mut self, name: &str, value: &(impl Text + ?Sized),
     ) -> Result<Self, io::Error> {
@@ -209,35 +191,46 @@ impl<'a, W: io::Write> Element<'a, W> {
         Ok(self)
     }
 
+    /// Write the content of the element.
+    ///
+    /// The actual content is written by the closure passed in.
     pub fn content(
         mut self, op: impl FnOnce(&mut Content<W>) -> Result<(), io::Error>
     ) -> Result<Self, io::Error> {
         self.empty = false;
         self.writer.write_all(b">")?;
-        op(&mut Content { writer: self.writer })?;
+        self.writer.indent();
+        op(&mut Content { writer: self.writer, inline: self.inline})?;
+        self.writer.dedent();
         Ok(self)
     }
 
+    /// Writes the end of the element.
     fn end(&mut self) -> Result<(), io::Error> {
         if self.empty {
-            self.writer.write_all(b"/>")
+            self.writer.write_all(b"/>")?;
         }
         else {
+            if !self.inline {
+                self.writer.write_all(b"\n")?;
+                self.writer.write_indent()?;
+            }
             self.writer.write_all(b"</")?;
             if let Some(ns) = self.tag.namespace() {
                 self.writer.write_all(ns)?;
                 self.writer.write_all(b":")?;
             }
             self.writer.write_all(self.tag.local())?;
-            self.writer.write_all(b">")
+            self.writer.write_all(b">")?;
         }
+        Ok(())
     }
 }
 
 impl<'a, W: io::Write> Drop for Element<'a, W> {
     fn drop(&mut self) {
         if let Err(err) = self.end() {
-            self.writer.error = Some(err)
+            self.writer.store_error(err)
         }
     }
 }
@@ -245,33 +238,67 @@ impl<'a, W: io::Write> Drop for Element<'a, W> {
 
 //------------ Content -------------------------------------------------------
 
+/// The content of an element.
+///
+/// This is passed to the closure for [`Element::content`] to use for actually
+/// producing content.
 #[derive(Debug)]
 pub struct Content<'a, W> {
+    /// The wrapped writer.
     writer: &'a mut Writer<W>,
+
+    /// Is this content of an inline element?
+    inline: bool,
 }
 
 impl<'a, W: io::Write> Content<'a, W> {
+    /// Add an element with the given tag.
+    ///
+    /// This will write the beginning of the tag to the writer and therefore
+    /// may error. Upon success, it returns an [`Element`] which can be used
+    /// to add attributes and content. The element is finished when this
+    /// element is dropped – which is necessary to regain access to `self` as
+    /// well.
     pub fn element<'s>(
         &'s mut self, tag: Name<'static, 'static>
     ) -> Result<Element<'s, W>, io::Error> {
-        Element::start(self.writer, tag)
+        Element::start(self.writer, tag, self.inline)
     }
 
+    /// Write some PCDATA text.
+    ///
+    /// The text will be correctly escaped while it is being written.
     pub fn pcdata(
         &mut self, text: &(impl Text + ?Sized)
     ) -> Result<(), io::Error> {
+        if !self.inline {
+            self.writer.write_all(b"\n")?;
+            self.writer.write_indent()?;
+        }
         text.write_escaped(TextEscape::Pcdata, &mut self.writer)
     }
 
+    /// Write raw text.
+    ///
+    /// The text will not be escaped at all. This may lead to invalid XML.
     pub fn raw(
         &mut self, text: &(impl Text + ?Sized)
     ) -> Result<(), io::Error> {
+        if !self.inline {
+            self.writer.write_all(b"\n")?;
+            self.writer.write_indent()?;
+        }
         text.write_raw(&mut self.writer)
     }
 
+    /// Write data encoded in BASE64.
     pub fn base64(
         &mut self, data: &(impl Text + ?Sized)
     ) -> Result<(), io::Error> {
+        if !self.inline {
+            self.writer.write_all(b"\n")?;
+            self.writer.write_indent()?;
+        }
         data.write_base64(&mut self.writer)
     }
 }
@@ -279,15 +306,22 @@ impl<'a, W: io::Write> Content<'a, W> {
 
 //------------ Text ----------------------------------------------------------
 
+/// Text to be written in XML.
+///
+/// This is a helper trait to allow passing different things to the various
+/// text writing methods and still retain reasonable performance.
 pub trait Text {
+    /// Write text escaped for the given mode to `target`.
     fn write_escaped(
         &self, mode: TextEscape, target: &mut impl io::Write
     ) -> Result<(), io::Error>;
 
+    /// Write text as is to `target`.
     fn write_raw(
         &self, target: &mut impl io::Write
     ) -> Result<(), io::Error>;
 
+    /// Write text encoded in BASE64 to `target`.
     fn write_base64(
         &self, target: &mut impl io::Write
     ) -> Result<(), io::Error> {
@@ -350,36 +384,10 @@ impl<T: fmt::Display> Text for T {
     }
 }
 
-/*
-impl<'a> Text for fmt::Arguments<'a> {
-    fn write_escaped(
-        &self, mode: TextEscape, target: &mut impl io::Write
-    ) -> Result<(), io::Error> {
-        let mut adaptor = DisplayText::new(target, mode);
-        match adaptor.write_fmt(self) {
-            Ok(()) => Ok(()),
-            Err(_) => match adaptor.into_result() {
-                Ok(()) => {
-                    Err(io::Error::new(
-                        io::ErrorKind::Other, "formatter error"
-                    ))
-                }
-                Err(err) => Err(err)
-            }
-        }
-    }
-
-    fn write_raw(
-        &self, target: &mut impl io::Write
-    ) -> Result<(), io::Error> {
-        target.write_fmt(self)
-    }
-}
-*/
-
 
 //------------ DisplayText ---------------------------------------------------
 
+/// A helper struct to transparently escape text via `fmt::Write`.
 struct DisplayText<'a, W> {
     inner: &'a mut W,
     escape: TextEscape,
@@ -387,6 +395,7 @@ struct DisplayText<'a, W> {
 }
 
 impl<'a, W: io::Write> DisplayText<'a, W> {
+    /// Creates a new instance atop the given writer for the given mode.
     fn new(inner: &'a mut W, escape: TextEscape) -> Self {
         DisplayText {
             inner, escape,
@@ -394,6 +403,10 @@ impl<'a, W: io::Write> DisplayText<'a, W> {
         }
     }
 
+    /// Unwraps the struct into the final result.
+    ///
+    /// Because `fmt::Write` doesn’t handle IO errors, we have to keep any
+    /// around and you need to use this function to get the error in the end.
     fn into_result(self) -> Result<(), io::Error> {
         self.error
     }
@@ -414,13 +427,18 @@ impl<'a, W: io::Write> fmt::Write for DisplayText<'a, W> {
 
 //------------ TextEscape ----------------------------------------------------
 
+/// The escape mode for writing text.
 #[derive(Clone, Copy, Debug)]
 pub enum TextEscape {
+    /// The text appears as an attribute value.
     Attr,
+
+    /// The text appears as PCDATA.
     Pcdata,
 }
 
 impl TextEscape {
+    /// Return the text for replacing the given character if necessary.
     fn replace_char(self, ch: u8) -> Option<&'static str> {
         match self {
             TextEscape::Attr => {
@@ -443,6 +461,7 @@ impl TextEscape {
         }
     }
 
+    /// Write an octet sequence escaping all necessary characters.
     fn write_escaped(
         self, mut s: &[u8], target: &mut impl io::Write
     ) -> Result<(), io::Error> {
