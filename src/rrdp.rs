@@ -76,8 +76,8 @@ pub struct NotificationFile {
     deltas: Vec<DeltaInfo>,
 }
 
-// Data Access
-//
+/// # Data Access
+///
 impl NotificationFile {
     pub fn new(
         session_id: Uuid,
