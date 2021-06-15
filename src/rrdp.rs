@@ -100,7 +100,7 @@ impl NotificationFile {
         &self.snapshot
     }
 
-    pub fn deltas(&self) -> &Vec<DeltaInfo> {
+    pub fn deltas(&self) -> &[DeltaInfo] {
         &self.deltas
     }
 
