@@ -53,18 +53,18 @@ pub struct NotificationFile {
     /// Delta updates can only be used if the session ID of the last processed
     /// update matches this value.
     session_id: Uuid,
-    
+
     /// The serial number of the most recent update provided by the server.
     ///
     /// Serial numbers increase by one between each update.
     serial: u64,
-    
+
     /// The URI and hash value of the most recent snapshot.
     ///
     /// The snapshot contains a complete set of all data published via the
     /// repository. It can be processed using the [`ProcessSnapshot`] trait.
     snapshot: SnapshotInfo,
-    
+
     /// The list of available delta updates.
     ///
     /// Deltas can be processed using the [`ProcessDelta`] trait.
