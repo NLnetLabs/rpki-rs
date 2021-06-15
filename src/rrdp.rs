@@ -18,7 +18,6 @@
 //! files, which we will refer to as ‘objects.’
 //!
 //! [RFC 8182]: https://tools.ietf.org/html/rfc8182
-//!
 
 #![cfg(feature = "rrdp")]
 
@@ -39,6 +38,7 @@ use crate::xml::decode::{Content, Error as XmlError, Reader, Name};
     Deserialize, Deserializer, Serialize, Serializer
 };
 
+
 //------------ NotificationFile ----------------------------------------------
 
 /// The RRDP Update Notification File.
@@ -49,36 +49,22 @@ use crate::xml::decode::{Content, Error as XmlError, Reader, Name};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NotificationFile {
     /// The identifier of the current session of the server.
-    ///
-    /// Delta updates can only be used if the session ID of the last processed
-    /// update matches this value.
     session_id: Uuid,
 
-    /// The serial number of the most recent update provided by the server.
-    ///
-    /// Serial numbers increase by one between each update.
+    /// The serial number of the most recent update.
     serial: u64,
 
-    /// The URI and hash value of the most recent snapshot.
-    ///
-    /// The snapshot contains a complete set of all data published via the
-    /// repository. It can be processed using the [`ProcessSnapshot`] trait.
+    /// Information about the most recent snapshot.
     snapshot: SnapshotInfo,
 
     /// The list of available delta updates.
-    ///
-    /// Deltas can be processed using the [`ProcessDelta`] trait.
-    ///
-    /// Note that after parsing, the list will be in reverse serial order,
-    /// i.e. the highest serial will appear first, and it is ensured that
-    /// there are no gaps in the sequence. Notification files which contain
-    /// gaps will be rejected by the parser as 'Malformed'.
     deltas: Vec<DeltaInfo>,
 }
 
 /// # Data Access
 ///
 impl NotificationFile {
+    /// Creates a new notification file from the given components.
     pub fn new(
         session_id: Uuid,
         serial: u64,
@@ -88,18 +74,32 @@ impl NotificationFile {
         NotificationFile { session_id, serial, snapshot, deltas }
     }
 
+    /// Returns the identifier of the current session of the server.
+    ///
+    /// Delta updates can only be used if the session ID of the last processed
+    /// update matches this value.
     pub fn session_id(&self) -> Uuid {
         self.session_id
     }
 
+    /// Returns the serial number of the most recent update.
+    ///
+    /// Serial numbers increase by one between each update.
     pub fn serial(&self) -> u64 {
         self.serial
     }
 
+    /// Returns information about the most recent snapshot.
+    ///
+    /// The snapshot contains a complete set of all data published via the
+    /// repository. It can be processed using the [`ProcessSnapshot`] trait.
     pub fn snapshot(&self) -> &SnapshotInfo {
         &self.snapshot
     }
 
+    /// Returns the list of available delta updates.
+    ///
+    /// Deltas can be processed using the [`ProcessDelta`] trait.
     pub fn deltas(&self) -> &[DeltaInfo] {
         &self.deltas
     }
@@ -152,8 +152,8 @@ impl NotificationFile {
 
 }
 
-// # XML support
-//
+/// # XML support
+///
 impl NotificationFile {
     /// Parses the notification file from its XML representation.
     pub fn parse<R: io::BufRead>(reader: R) -> Result<Self, XmlError> {
@@ -261,7 +261,7 @@ impl NotificationFile {
         }
     }
 
-    /// Turn into RFC 8182 XML
+    /// Writes the notification file as RFC 8182 XML.
     pub fn write_xml(
         &self, writer: &mut impl io::Write
     ) -> Result<(), io::Error> {
@@ -293,18 +293,30 @@ impl NotificationFile {
     }
 }
 
+
 //------------ PublishElement ------------------------------------------------
 
+/// Am RPKI object to be published for the first time.
+///
 /// This type defines an RRDP publish element as found in RRDP Snapshots and
 /// Deltas. See [`UpdateElement`] for the related element that replaces a
 /// previous element for the same uri.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PublishElement {
+    /// The URI of the object to be published.
     uri: uri::Rsync,
+
+    /// The content of the object to be published.
+    ///
+    /// This is the raw content. It is _not_ Base64 encoded.
     data: Bytes,
 }
 
 impl PublishElement {
+    /// Creates a new publish element from the object URI and content.
+    ///
+    /// The content provided via `data` is the raw content and must not yet
+    /// be Base64 encoded.
     pub fn new(
         uri: uri::Rsync,
         data: Bytes,
@@ -312,18 +324,22 @@ impl PublishElement {
         PublishElement { uri, data }
     }
     
+    /// Returns the published object’s URI.
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
 
+    /// Returns the published object’s content.
     pub fn data(&self) -> &Bytes {
         &self.data
     }
 
+    /// Converts `self` into the object’s URI and content.
     pub fn unpack(self) -> (uri::Rsync, Bytes) {
         (self.uri, self.data)
     }
 
+    /// Writes the publish element’s XML.
     fn write_xml(
         &self,
         content: &mut xml::encode::Content<impl io::Write>
@@ -337,25 +353,57 @@ impl PublishElement {
     }
 }
 
+
 //------------ UpdateElement -------------------------------------------------
 
-/// This type defines an RRDP update element as found in RRDP Snapshots and
-/// Deltas. I.e. this is like a [`PublishElement`] except that it replaces
-/// an existing object for a uri.
+/// An RPKI object to be updated with new content.
+///
+/// This type defines an RRDP update element as found in RRDP deltas. It is
+/// like a [`PublishElement`] except that it replaces an existing object for
+/// a URI.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UpdateElement {
+    /// The URI of the object to be updated.
     uri: uri::Rsync,
+
+    /// The SHA-256 hash of the previous content of the object.
     hash: Hash,
+
+    /// The new content of the object.
+    ///
+    /// This is the raw content. It is _not_ Base64 encoded.
     data: Bytes,
 }
 
 impl UpdateElement {
+    /// Creates a new update element from its components.
+    pub fn new(uri: uri::Rsync, hash: Hash, data: Bytes) -> Self {
+        UpdateElement { uri, hash, data }
+    }
+
+    /// Returns the URI of the object to update.
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+
+    /// Returns the hash of the previous content.
+    pub fn hash(&self) -> &Hash {
+        &self.hash
+    }
+
+    /// Returns the new content of the object.
+    pub fn data(&self) -> &Bytes {
+        &self.data
+    }
+
+    /// Unpacks the update element into its components.
     pub fn unpack(self) -> (uri::Rsync, Hash, Bytes) {
         (self.uri, self.hash, self.data)
     }
 }
 
 impl UpdateElement {
+    /// Writes the update element’s XML.
     fn write_xml(
         &self,
         content: &mut xml::encode::Content<impl io::Write>
@@ -370,24 +418,46 @@ impl UpdateElement {
     }
 }
 
+
 //------------ WithdrawElement -----------------------------------------------
 
-/// This type defines an RRDP update element as found in RRDP Snapshots and
-/// Deltas. I.e. this is like a [`PublishElement`] except that it replaces
-/// an existing object for a uri.
+/// An RPKI object is to be delete.
+///
+/// This type defines an RRDP update element as found in RRDP deltas.  It is
+/// like a [`PublishElement`] except that it removes an existing object.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WithdrawElement {
+    /// The URI of the object to be deleted.
     uri: uri::Rsync,
+
+    /// The SHA-256 hash of the content of the object to be deleted.
     hash: Hash,
 }
 
 impl WithdrawElement {
+    /// Creates a new withdraw element from a URI and content hash.
+    pub fn new(uri: uri::Rsync, hash: Hash) -> Self {
+        WithdrawElement { uri, hash }
+    }
+
+    /// Returns the URI of the object to be deleted.
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+    
+    /// Returns the hash over the content of the object to be deleted.
+    pub fn hash(&self) -> &Hash {
+        &self.hash
+    }
+
+    /// Converts the withdraw element into its URI and hash.
     pub fn unpack(self) -> (uri::Rsync, Hash) {
         (self.uri, self.hash)
     }
 }
 
 impl WithdrawElement {
+    /// Writes the withdraw element’s XML.
     fn write_xml(
         &self,
         content: &mut xml::encode::Content<impl io::Write>
@@ -399,16 +469,24 @@ impl WithdrawElement {
     }
 }
 
+
 //------------ DeltaElement --------------------------------------------------
 
+/// A single element of a RRDP delta.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DeltaElement {
+    /// The element publishes a new object.
     Publish(PublishElement),
+
+    /// The element updates an existing object.
     Update(UpdateElement),
+
+    /// The element deletes an existing object.
     Withdraw(WithdrawElement)
 }
 
 impl DeltaElement {
+    /// Writes the elmement’s XML.
     fn write_xml(
         &self,
         content: &mut xml::encode::Content<impl io::Write>
@@ -421,18 +499,47 @@ impl DeltaElement {
     }
 }
 
+///--- From
+
+impl From<PublishElement> for DeltaElement {
+    fn from(src: PublishElement) -> Self {
+        DeltaElement::Publish(src)
+    }
+}
+
+impl From<UpdateElement> for DeltaElement {
+    fn from(src: UpdateElement) -> Self {
+        DeltaElement::Update(src)
+    }
+}
+
+impl From<WithdrawElement> for DeltaElement {
+    fn from(src: WithdrawElement) -> Self {
+        DeltaElement::Withdraw(src)
+    }
+}
+
+
 //------------ Snapshot ------------------------------------------------------
 
-/// This type represents an owned RRDP Snapshot containing the RRDP session id,
-/// serial and all published elements.
+/// An RRDP snapshot.
+///
+/// This type represents an owned RRDP snapshot containing the RRDP session
+/// ID, serial number and all published elements.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Snapshot {
+    /// The RRDP session of this snapshot.
     session_id: Uuid,
+
+    /// The serial number of the update of this snapshot.
     serial: u64,
+
+    /// The objects published through this snapshot.
     elements: Vec<PublishElement>,
 }
 
 impl Snapshot {
+    /// Creates a new snapshot from its components.
     pub fn new(
         session_id: Uuid,
         serial: u64,
@@ -441,27 +548,31 @@ impl Snapshot {
         Snapshot { session_id, serial, elements }
     }
 
+    /// Returns the session ID of this snapshot.
     pub fn session_id(&self) -> Uuid {
         self.session_id
     }
 
+    /// Returns the serial number of the update represented by this snapshot.
     pub fn serial(&self) -> u64 {
         self.serial
     }
 
+    /// Returns the list of objects published by the snapshot.
     pub fn elements(&self) -> &Vec<PublishElement> {
         &self.elements
     }
 
+    /// Converts the snapshots into its elements.
     pub fn into_elements(self) -> Vec<PublishElement> {
         self.elements
     }
 }
 
-// # XML Support
-//
+/// # XML Support
+///
 impl Snapshot {
-    /// Parse RFC 8182 XML
+    /// Parses the snapshot from its XML representation.
     pub fn parse<R: io::BufRead>(
         reader: R
     ) -> Result<Self, ProcessError> {
@@ -475,7 +586,7 @@ impl Snapshot {
         builder.try_into()
     }
 
-    /// Write as RFC 8182 XML
+    /// Writes the snapshot’s XML representation.
     pub fn write_xml(
         &self, writer: &mut impl io::Write
     ) -> Result<(), io::Error> {
@@ -494,6 +605,7 @@ impl Snapshot {
         writer.done()
     }
 }
+
 
 //------------ SnapshotBuilder -----------------------------------------------
 
@@ -537,6 +649,7 @@ impl TryFrom<SnapshotBuilder> for Snapshot {
         Ok(Snapshot { session_id, serial, elements: builder.elements })
     }
 }
+
 
 //------------ ProcessSnapshot -----------------------------------------------
 
@@ -667,18 +780,29 @@ pub trait ProcessSnapshot {
     }
 }
 
+
 //------------ Delta ---------------------------------------------------------
 
+/// An RRDP delta.
+///
+/// This type represents an owned RRDP snapshot containing the RRDP session
+/// ID, serial number and all its elements.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Delta {
+    /// The RRDP session ID of the delta.
     session_id: Uuid,
+
+    /// The serial number of this delta.
     serial: u64,
+
+    /// The objects changed by this delta.
     elements: Vec<DeltaElement>
 }
 
-// # Data
-//
+/// # Data Access
+///
 impl Delta {
+    /// Creates a new delta from session ID, serial number, and elements.
     pub fn new(
         session_id: Uuid,
         serial: u64,
@@ -687,27 +811,34 @@ impl Delta {
         Delta { session_id, serial, elements }
     }
 
+    /// Returns the session ID of the RRDP session this delta is part of.
     pub fn session_id(&self) -> Uuid {
         self.session_id
     }
 
+    /// Returns the serial number of this delta.
+    ///
+    /// The serial number is identical to that of the snapshot this delta
+    /// updates _to._
     pub fn serial(&self) -> u64 {
         self.serial
     }
 
+    /// The list of objects changed by this delta.
     pub fn elements(&self) -> &Vec<DeltaElement> {
         &self.elements
     }
 
+    /// Converts the delta into its elements.
     pub fn into_elements(self) -> Vec<DeltaElement> {
         self.elements
     }
 }
 
-// # XML
-//
+/// # Decoding and Encoding XML
+///
 impl Delta {
-    /// Parse RFC 8182 XML
+    /// Parses the delta from its XML representation.
     pub fn parse<R: io::BufRead>(
         reader: R
     ) -> Result<Self, ProcessError> {
@@ -721,7 +852,7 @@ impl Delta {
         builder.try_into()
     }
 
-    /// Write as RFC 8182 XML
+    /// Write the delta’s XML representation.
     pub fn write_xml(
         &self, writer: &mut impl io::Write
     ) -> Result<(), io::Error> {
@@ -971,15 +1102,13 @@ pub trait ProcessDelta {
 
 //------------ SnapshotInfo --------------------------------------------------
 
-/// Contains the URI and HASH of the current snapshot for an RRDP
-/// [`NotificationFile`].
+/// The URI and HASH of the current snapshot for a [`NotificationFile`].
 pub type SnapshotInfo = UriAndHash;
 
 
 //------------ DeltaInfo -----------------------------------------------------
 
-/// Contains the serial, URI and HASH of a delta included in an RRDP
-/// [`NotificationFile`].
+/// The serial, URI and HASH of a delta in a [`NotificationFile`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeltaInfo {
     serial: u64,
@@ -987,6 +1116,7 @@ pub struct DeltaInfo {
 }
 
 impl DeltaInfo {
+    /// Creates a new info from its compontents.
     pub fn new(serial: u64, uri: uri::Https, hash: Hash) -> Self {
         DeltaInfo {
             serial,
@@ -994,6 +1124,7 @@ impl DeltaInfo {
         }
     }
 
+    /// Returns the serial number of this delta.
     pub fn serial(&self) -> u64 {
         self.serial
     }
