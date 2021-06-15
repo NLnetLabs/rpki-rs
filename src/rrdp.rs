@@ -559,7 +559,7 @@ impl Snapshot {
     }
 
     /// Returns the list of objects published by the snapshot.
-    pub fn elements(&self) -> &Vec<PublishElement> {
+    pub fn elements(&self) -> &[PublishElement] {
         &self.elements
     }
 
@@ -825,7 +825,7 @@ impl Delta {
     }
 
     /// The list of objects changed by this delta.
-    pub fn elements(&self) -> &Vec<DeltaElement> {
+    pub fn elements(&self) -> &[DeltaElement] {
         &self.elements
     }
 
