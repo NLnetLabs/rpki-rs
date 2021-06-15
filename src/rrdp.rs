@@ -105,17 +105,28 @@ impl NotificationFile {
         &self.deltas
     }
 
+    /// Sorts the deltas by increasing serial numbers.
+    ///
+    /// In other words, the delta with the smallest serial number will
+    /// appear at the beginning of the sequence.
     pub fn sort_deltas(&mut self) {
         self.deltas.sort_by_key(|delta| delta.serial());
     }
 
+    /// Sorts the deltas by decreasing serial numbers.
+    ///
+    /// In other words, the delta with the largest serial number will
+    /// appear at the beginning of the sequence.
     pub fn reverse_sort_deltas(&mut self) {
         self.deltas.sort_by(|a,b| b.serial.cmp(&a.serial));
     }
 
-    /// Returns true if the deltas contain no gap, false if
-    /// there are any missing deltas. Optionally limits the
-    /// amount of deltas.
+    /// Sorts, verifies, and optionally limits the list of deltas.
+    ///
+    /// Sorts the deltas by increasing serial number. If `limit` is given,
+    /// it then retains at most that many of the newest deltas.
+    ///
+    /// Returns whether there are no gaps in the retained deltas.
     pub fn sort_and_verify_deltas(&mut self, limit: Option<usize>) -> bool {
         if !self.deltas.is_empty() {
             self.sort_deltas();
