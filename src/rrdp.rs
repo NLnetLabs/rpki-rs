@@ -18,17 +18,25 @@
 //! files, which we will refer to as ‘objects.’
 //!
 //! [RFC 8182]: https://tools.ietf.org/html/rfc8182
-//!
 
 #![cfg(feature = "rrdp")]
 
 use std::{error, fmt, hash, io, str};
+use std::io::Read;
 use std::convert::TryFrom;
+use std::convert::TryInto;
+use std::ops::Deref;
+use bytes::Bytes;
 use log::info;
 use ring::digest;
 use uuid::Uuid;
-use crate::uri;
+use crate::{uri, xml};
 use crate::xml::decode::{Content, Error as XmlError, Reader, Name};
+
+#[cfg(feature = "serde")] use std::str::FromStr;
+#[cfg(feature = "serde")] use serde::{
+    Deserialize, Deserializer, Serialize, Serializer
+};
 
 
 //------------ NotificationFile ----------------------------------------------
@@ -38,36 +46,114 @@ use crate::xml::decode::{Content, Error as XmlError, Reader, Name};
 /// This type represents the decoded content of the RRDP Update Notification
 /// File. It can be read from a reader via the [`parse`][Self::parse]
 /// function. All elements are accessible as attributes.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NotificationFile {
     /// The identifier of the current session of the server.
+    session_id: Uuid,
+
+    /// The serial number of the most recent update.
+    serial: u64,
+
+    /// Information about the most recent snapshot.
+    snapshot: SnapshotInfo,
+
+    /// The list of available delta updates.
+    deltas: Vec<DeltaInfo>,
+}
+
+/// # Data Access
+///
+impl NotificationFile {
+    /// Creates a new notification file from the given components.
+    pub fn new(
+        session_id: Uuid,
+        serial: u64,
+        snapshot: UriAndHash,
+        deltas: Vec<DeltaInfo>,
+    ) -> Self {
+        NotificationFile { session_id, serial, snapshot, deltas }
+    }
+
+    /// Returns the identifier of the current session of the server.
     ///
     /// Delta updates can only be used if the session ID of the last processed
     /// update matches this value.
-    pub session_id: Uuid,
+    pub fn session_id(&self) -> Uuid {
+        self.session_id
+    }
 
-    /// The serial number of the most recent update provided by the server.
+    /// Returns the serial number of the most recent update.
     ///
     /// Serial numbers increase by one between each update.
-    pub serial: u64,
+    pub fn serial(&self) -> u64 {
+        self.serial
+    }
 
-    /// The URI and hash value of the most recent snapshot.
+    /// Returns information about the most recent snapshot.
     ///
     /// The snapshot contains a complete set of all data published via the
     /// repository. It can be processed using the [`ProcessSnapshot`] trait.
-    pub snapshot: UriAndHash,
+    pub fn snapshot(&self) -> &SnapshotInfo {
+        &self.snapshot
+    }
 
-    /// The list of available delta updates.
+    /// Returns the list of available delta updates.
     ///
-    /// The first element of the vec’s items is the serial number of the
-    /// delta and the second element is the URI of the location of the delta
-    /// and its hash. Deltas can be processed using the [`ProcessDelta`]
-    /// trait.
+    /// Deltas can be processed using the [`ProcessDelta`] trait.
+    pub fn deltas(&self) -> &[DeltaInfo] {
+        &self.deltas
+    }
+
+    /// Sorts the deltas by increasing serial numbers.
     ///
-    /// Note that after parsing, the list will be in the order as received
-    /// from the server. That is, it may not be ordered by serial numbers.
-    pub deltas: Vec<(u64, UriAndHash)>,
+    /// In other words, the delta with the smallest serial number will
+    /// appear at the beginning of the sequence.
+    pub fn sort_deltas(&mut self) {
+        self.deltas.sort_by_key(|delta| delta.serial());
+    }
+
+    /// Sorts the deltas by decreasing serial numbers.
+    ///
+    /// In other words, the delta with the largest serial number will
+    /// appear at the beginning of the sequence.
+    pub fn reverse_sort_deltas(&mut self) {
+        self.deltas.sort_by(|a,b| b.serial.cmp(&a.serial));
+    }
+
+    /// Sorts, verifies, and optionally limits the list of deltas.
+    ///
+    /// Sorts the deltas by increasing serial number. If `limit` is given,
+    /// it then retains at most that many of the newest deltas.
+    ///
+    /// Returns whether there are no gaps in the retained deltas.
+    pub fn sort_and_verify_deltas(&mut self, limit: Option<usize>) -> bool {
+        if !self.deltas.is_empty() {
+            self.sort_deltas();
+
+            if let Some(limit) = limit {
+                if limit < self.deltas.len() {
+                    let offset = self.deltas.len() - limit;
+                    self.deltas.drain(..offset);
+                }
+            }
+
+            let mut last_seen = self.deltas[0].serial();
+            for delta in &self.deltas[1..] {
+                if last_seen + 1 != delta.serial() {
+                    return false;
+                } else {
+                    last_seen = delta.serial()
+                }
+            }
+        }
+
+        true
+    }
+
 }
 
+/// # XML support
+///
 impl NotificationFile {
     /// Parses the notification file from its XML representation.
     pub fn parse<R: io::BufRead>(reader: R) -> Result<Self, XmlError> {
@@ -100,7 +186,9 @@ impl NotificationFile {
         })?;
 
         let mut snapshot = None;
-        let mut deltas = Vec::new();
+
+        let mut deltas = vec![];
+
         while let Some(mut content) = outer.take_opt_element(&mut reader,
                                                              |element| {
             match element.name() {
@@ -150,7 +238,7 @@ impl NotificationFile {
                     })?;
                     match (serial, uri, hash) {
                         (Some(serial), Some(uri), Some(hash)) => {
-                            deltas.push((serial, UriAndHash::new(uri, hash)));
+                            deltas.push(DeltaInfo::new(serial, uri, hash));
                             Ok(())
                         }
                         _ => Err(XmlError::Malformed)
@@ -171,6 +259,394 @@ impl NotificationFile {
             }
             _ => Err(XmlError::Malformed)
         }
+    }
+
+    /// Writes the notification file as RFC 8182 XML.
+    pub fn write_xml(
+        &self, writer: &mut impl io::Write
+    ) -> Result<(), io::Error> {
+        let mut writer = xml::encode::Writer::new(writer);
+        writer.element(NOTIFICATION.into_unqualified())?
+            .attr("xmlns", NS)?
+            .attr("version", "1")?
+            .attr("session_id", &self.session_id)?
+            .attr("serial", &self.serial)?
+            .content(|content| {
+                // add snapshot
+                content.element(SNAPSHOT.into_unqualified())?
+                    .attr("uri", self.snapshot.uri())?
+                    .attr("hash", &self.snapshot.hash())?
+                ;
+
+                // add deltas
+                for delta in self.deltas() {
+                    content.element(DELTA.into_unqualified())?
+                        .attr("serial", &delta.serial())?
+                        .attr("uri", delta.uri())?
+                        .attr("hash", &delta.hash())?
+                    ;
+                }
+
+                Ok(())
+            })?;
+        writer.done()
+    }
+}
+
+
+//------------ PublishElement ------------------------------------------------
+
+/// Am RPKI object to be published for the first time.
+///
+/// This type defines an RRDP publish element as found in RRDP Snapshots and
+/// Deltas. See [`UpdateElement`] for the related element that replaces a
+/// previous element for the same uri.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PublishElement {
+    /// The URI of the object to be published.
+    uri: uri::Rsync,
+
+    /// The content of the object to be published.
+    ///
+    /// This is the raw content. It is _not_ Base64 encoded.
+    data: Bytes,
+}
+
+impl PublishElement {
+    /// Creates a new publish element from the object URI and content.
+    ///
+    /// The content provided via `data` is the raw content and must not yet
+    /// be Base64 encoded.
+    pub fn new(
+        uri: uri::Rsync,
+        data: Bytes,
+    ) -> Self {
+        PublishElement { uri, data }
+    }
+    
+    /// Returns the published object’s URI.
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+
+    /// Returns the published object’s content.
+    pub fn data(&self) -> &Bytes {
+        &self.data
+    }
+
+    /// Converts `self` into the object’s URI and content.
+    pub fn unpack(self) -> (uri::Rsync, Bytes) {
+        (self.uri, self.data)
+    }
+
+    /// Writes the publish element’s XML.
+    fn write_xml(
+        &self,
+        content: &mut xml::encode::Content<impl io::Write>
+    ) -> Result<(), io::Error> {
+        content.element(PUBLISH.into_unqualified())?
+            .attr("uri", &self.uri)?
+            .content(|content| {
+                content.base64(self.data.as_ref())
+            })?;
+        Ok(())
+    }
+}
+
+
+//------------ UpdateElement -------------------------------------------------
+
+/// An RPKI object to be updated with new content.
+///
+/// This type defines an RRDP update element as found in RRDP deltas. It is
+/// like a [`PublishElement`] except that it replaces an existing object for
+/// a URI.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpdateElement {
+    /// The URI of the object to be updated.
+    uri: uri::Rsync,
+
+    /// The SHA-256 hash of the previous content of the object.
+    hash: Hash,
+
+    /// The new content of the object.
+    ///
+    /// This is the raw content. It is _not_ Base64 encoded.
+    data: Bytes,
+}
+
+impl UpdateElement {
+    /// Creates a new update element from its components.
+    pub fn new(uri: uri::Rsync, hash: Hash, data: Bytes) -> Self {
+        UpdateElement { uri, hash, data }
+    }
+
+    /// Returns the URI of the object to update.
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+
+    /// Returns the hash of the previous content.
+    pub fn hash(&self) -> &Hash {
+        &self.hash
+    }
+
+    /// Returns the new content of the object.
+    pub fn data(&self) -> &Bytes {
+        &self.data
+    }
+
+    /// Unpacks the update element into its components.
+    pub fn unpack(self) -> (uri::Rsync, Hash, Bytes) {
+        (self.uri, self.hash, self.data)
+    }
+}
+
+impl UpdateElement {
+    /// Writes the update element’s XML.
+    fn write_xml(
+        &self,
+        content: &mut xml::encode::Content<impl io::Write>
+    ) -> Result<(), io::Error> {
+        content.element(PUBLISH.into_unqualified())?
+            .attr("uri", &self.uri)?
+            .attr("hash", &self.hash)?
+            .content(|content| {
+                content.base64(self.data.as_ref())
+            })?;
+        Ok(())
+    }
+}
+
+
+//------------ WithdrawElement -----------------------------------------------
+
+/// An RPKI object is to be delete.
+///
+/// This type defines an RRDP update element as found in RRDP deltas.  It is
+/// like a [`PublishElement`] except that it removes an existing object.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WithdrawElement {
+    /// The URI of the object to be deleted.
+    uri: uri::Rsync,
+
+    /// The SHA-256 hash of the content of the object to be deleted.
+    hash: Hash,
+}
+
+impl WithdrawElement {
+    /// Creates a new withdraw element from a URI and content hash.
+    pub fn new(uri: uri::Rsync, hash: Hash) -> Self {
+        WithdrawElement { uri, hash }
+    }
+
+    /// Returns the URI of the object to be deleted.
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+    
+    /// Returns the hash over the content of the object to be deleted.
+    pub fn hash(&self) -> &Hash {
+        &self.hash
+    }
+
+    /// Converts the withdraw element into its URI and hash.
+    pub fn unpack(self) -> (uri::Rsync, Hash) {
+        (self.uri, self.hash)
+    }
+}
+
+impl WithdrawElement {
+    /// Writes the withdraw element’s XML.
+    fn write_xml(
+        &self,
+        content: &mut xml::encode::Content<impl io::Write>
+    ) -> Result<(), io::Error> {
+        content.element(WITHDRAW.into_unqualified())?
+            .attr("uri", &self.uri)?
+            .attr("hash", &self.hash)?;
+        Ok(())
+    }
+}
+
+
+//------------ DeltaElement --------------------------------------------------
+
+/// A single element of a RRDP delta.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DeltaElement {
+    /// The element publishes a new object.
+    Publish(PublishElement),
+
+    /// The element updates an existing object.
+    Update(UpdateElement),
+
+    /// The element deletes an existing object.
+    Withdraw(WithdrawElement)
+}
+
+impl DeltaElement {
+    /// Writes the elmement’s XML.
+    fn write_xml(
+        &self,
+        content: &mut xml::encode::Content<impl io::Write>
+    ) -> Result<(), io::Error> {
+        match self {
+            DeltaElement::Publish(p) => p.write_xml(content),
+            DeltaElement::Update(u) => u.write_xml(content),
+            DeltaElement::Withdraw(w) => w.write_xml(content)
+        }
+    }
+}
+
+///--- From
+
+impl From<PublishElement> for DeltaElement {
+    fn from(src: PublishElement) -> Self {
+        DeltaElement::Publish(src)
+    }
+}
+
+impl From<UpdateElement> for DeltaElement {
+    fn from(src: UpdateElement) -> Self {
+        DeltaElement::Update(src)
+    }
+}
+
+impl From<WithdrawElement> for DeltaElement {
+    fn from(src: WithdrawElement) -> Self {
+        DeltaElement::Withdraw(src)
+    }
+}
+
+
+//------------ Snapshot ------------------------------------------------------
+
+/// An RRDP snapshot.
+///
+/// This type represents an owned RRDP snapshot containing the RRDP session
+/// ID, serial number and all published elements.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Snapshot {
+    /// The RRDP session of this snapshot.
+    session_id: Uuid,
+
+    /// The serial number of the update of this snapshot.
+    serial: u64,
+
+    /// The objects published through this snapshot.
+    elements: Vec<PublishElement>,
+}
+
+impl Snapshot {
+    /// Creates a new snapshot from its components.
+    pub fn new(
+        session_id: Uuid,
+        serial: u64,
+        elements: Vec<PublishElement>,
+    ) -> Self {
+        Snapshot { session_id, serial, elements }
+    }
+
+    /// Returns the session ID of this snapshot.
+    pub fn session_id(&self) -> Uuid {
+        self.session_id
+    }
+
+    /// Returns the serial number of the update represented by this snapshot.
+    pub fn serial(&self) -> u64 {
+        self.serial
+    }
+
+    /// Returns the list of objects published by the snapshot.
+    pub fn elements(&self) -> &[PublishElement] {
+        &self.elements
+    }
+
+    /// Converts the snapshots into its elements.
+    pub fn into_elements(self) -> Vec<PublishElement> {
+        self.elements
+    }
+}
+
+/// # XML Support
+///
+impl Snapshot {
+    /// Parses the snapshot from its XML representation.
+    pub fn parse<R: io::BufRead>(
+        reader: R
+    ) -> Result<Self, ProcessError> {
+        let mut builder = SnapshotBuilder {
+            session_id: None,
+            serial: None,
+            elements: vec![]
+        };
+
+        builder.process(reader)?;
+        builder.try_into()
+    }
+
+    /// Writes the snapshot’s XML representation.
+    pub fn write_xml(
+        &self, writer: &mut impl io::Write
+    ) -> Result<(), io::Error> {
+        let mut writer = xml::encode::Writer::new(writer);
+        writer.element(SNAPSHOT.into_unqualified())?
+            .attr("xmlns", NS)?
+            .attr("version", "1")?
+            .attr("session_id", &self.session_id)?
+            .attr("serial", &self.serial)?
+            .content(|content| {
+                for el in &self.elements {
+                    el.write_xml(content)?;
+                }
+                Ok(())
+            })?;
+        writer.done()
+    }
+}
+
+
+//------------ SnapshotBuilder -----------------------------------------------
+
+struct SnapshotBuilder {
+    session_id: Option<Uuid>,
+    serial: Option<u64>,
+    elements: Vec<PublishElement>,
+}
+
+impl ProcessSnapshot for SnapshotBuilder {
+    type Err = ProcessError;
+
+    fn meta(&mut self, session_id: Uuid, serial: u64) -> Result<(), Self::Err> {
+        self.session_id = Some(session_id);
+        self.serial = Some(serial);
+        Ok(())
+    }
+
+    fn publish(&mut self, uri: uri::Rsync, data: &mut ObjectReader) -> Result<(), Self::Err> {
+        let mut buf = Vec::new();
+        data.read_to_end(&mut buf)?;
+        let data = Bytes::from(buf);
+        let element = PublishElement { uri, data };
+        self.elements.push(element);
+        Ok(())
+    }
+}
+
+impl TryFrom<SnapshotBuilder> for Snapshot {
+    type Error = ProcessError;
+
+    fn try_from(builder: SnapshotBuilder) -> Result<Self, Self::Error> {
+        let session_id = builder.session_id.ok_or(
+            ProcessError::Xml(XmlError::Malformed)
+        )?;
+
+        let serial = builder.serial.ok_or(
+            ProcessError::Xml(XmlError::Malformed)
+        )?;
+
+        Ok(Snapshot { session_id, serial, elements: builder.elements })
     }
 }
 
@@ -304,6 +780,169 @@ pub trait ProcessSnapshot {
     }
 }
 
+
+//------------ Delta ---------------------------------------------------------
+
+/// An RRDP delta.
+///
+/// This type represents an owned RRDP snapshot containing the RRDP session
+/// ID, serial number and all its elements.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Delta {
+    /// The RRDP session ID of the delta.
+    session_id: Uuid,
+
+    /// The serial number of this delta.
+    serial: u64,
+
+    /// The objects changed by this delta.
+    elements: Vec<DeltaElement>
+}
+
+/// # Data Access
+///
+impl Delta {
+    /// Creates a new delta from session ID, serial number, and elements.
+    pub fn new(
+        session_id: Uuid,
+        serial: u64,
+        elements: Vec<DeltaElement>
+    ) -> Self {
+        Delta { session_id, serial, elements }
+    }
+
+    /// Returns the session ID of the RRDP session this delta is part of.
+    pub fn session_id(&self) -> Uuid {
+        self.session_id
+    }
+
+    /// Returns the serial number of this delta.
+    ///
+    /// The serial number is identical to that of the snapshot this delta
+    /// updates _to._
+    pub fn serial(&self) -> u64 {
+        self.serial
+    }
+
+    /// The list of objects changed by this delta.
+    pub fn elements(&self) -> &[DeltaElement] {
+        &self.elements
+    }
+
+    /// Converts the delta into its elements.
+    pub fn into_elements(self) -> Vec<DeltaElement> {
+        self.elements
+    }
+}
+
+/// # Decoding and Encoding XML
+///
+impl Delta {
+    /// Parses the delta from its XML representation.
+    pub fn parse<R: io::BufRead>(
+        reader: R
+    ) -> Result<Self, ProcessError> {
+        let mut builder = DeltaBuilder {
+            session_id: None,
+            serial: None,
+            elements: vec![]
+        };
+
+        builder.process(reader)?;
+        builder.try_into()
+    }
+
+    /// Write the delta’s XML representation.
+    pub fn write_xml(
+        &self, writer: &mut impl io::Write
+    ) -> Result<(), io::Error> {
+        let mut writer = xml::encode::Writer::new(writer);
+        writer.element(DELTA.into_unqualified())?
+            .attr("xmlns", NS)?
+            .attr("version", "1")?
+            .attr("session_id", &self.session_id)?
+            .attr("serial", &self.serial)?
+            .content(|content| {
+                for el in &self.elements {
+                    el.write_xml(content)?;
+                }
+                Ok(())
+            })?;
+        writer.done()
+    }
+}
+
+
+//------------ DeltaBuilder --------------------------------------------------
+
+struct DeltaBuilder {
+    session_id: Option<Uuid>,
+    serial: Option<u64>,
+    elements: Vec<DeltaElement>
+}
+
+impl ProcessDelta for DeltaBuilder {
+    type Err = ProcessError;
+
+    fn meta(
+        &mut self,
+        session_id: Uuid,
+        serial: u64,
+    ) -> Result<(), Self::Err> {
+        self.session_id = Some(session_id);
+        self.serial = Some(serial);
+        Ok(())
+    }
+
+    fn publish(
+        &mut self,
+        uri: uri::Rsync,
+        hash_opt: Option<Hash>,
+        data: &mut ObjectReader,
+    ) -> Result<(), Self::Err> {
+        let mut buf = Vec::new();
+        data.read_to_end(&mut buf)?;
+        let data = Bytes::from(buf);
+        match hash_opt {
+            Some(hash) => {
+                let update = UpdateElement { uri, hash, data};
+                self.elements.push(DeltaElement::Update(update));
+            },
+            None => {
+                let publish = PublishElement { uri, data};
+                self.elements.push(DeltaElement::Publish(publish));
+            }
+        }
+        Ok(())
+    }
+
+    fn withdraw(
+        &mut self,
+        uri: uri::Rsync,
+        hash: Hash,
+    ) -> Result<(), Self::Err> {
+        let withdraw = WithdrawElement { uri, hash };
+        self.elements.push(DeltaElement::Withdraw(withdraw));
+        Ok(())
+    }
+}
+
+impl TryFrom<DeltaBuilder> for Delta {
+    type Error = ProcessError;
+
+    fn try_from(builder: DeltaBuilder) -> Result<Self, Self::Error> {
+        let session_id = builder.session_id.ok_or(
+            ProcessError::Xml(XmlError::Malformed)
+        )?;
+
+        let serial = builder.serial.ok_or(
+            ProcessError::Xml(XmlError::Malformed)
+        )?;
+
+        Ok(Delta { session_id, serial, elements: builder.elements })
+
+    }
+}
 
 //------------ ProcessDelta --------------------------------------------------
 
@@ -461,6 +1100,44 @@ pub trait ProcessDelta {
 }
 
 
+//------------ SnapshotInfo --------------------------------------------------
+
+/// The URI and HASH of the current snapshot for a [`NotificationFile`].
+pub type SnapshotInfo = UriAndHash;
+
+
+//------------ DeltaInfo -----------------------------------------------------
+
+/// The serial, URI and HASH of a delta in a [`NotificationFile`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeltaInfo {
+    serial: u64,
+    uri_and_hash: UriAndHash
+}
+
+impl DeltaInfo {
+    /// Creates a new info from its compontents.
+    pub fn new(serial: u64, uri: uri::Https, hash: Hash) -> Self {
+        DeltaInfo {
+            serial,
+            uri_and_hash: UriAndHash::new(uri, hash)
+        }
+    }
+
+    /// Returns the serial number of this delta.
+    pub fn serial(&self) -> u64 {
+        self.serial
+    }
+}
+
+impl Deref for DeltaInfo {
+    type Target = UriAndHash;
+
+    fn deref(&self) -> &Self::Target {
+        &self.uri_and_hash
+    }
+}
+
 //------------ UriAndHash ----------------------------------------------------
 
 /// The URI of an RRDP file and a SHA-256 hash over its content.
@@ -469,7 +1146,7 @@ pub trait ProcessDelta {
 /// all references to RRDP files are given with a SHA-256 hash over the
 /// expected content of that file, allowing a client to verify they got the
 /// right file.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UriAndHash {
     /// The URI of the RRDP file.
     uri: uri::Https,
@@ -524,6 +1201,18 @@ impl Hash {
     /// Returns a reference to the octets as a slice.
     pub fn as_slice(&self) -> &[u8] {
         self.0.as_ref()
+    }
+
+    /// Returns a new Hash from the provided data
+    pub fn from_data(data: &[u8]) -> Self {
+        let digest = digest::digest(&digest::SHA256, data);
+        Self::try_from(digest.as_ref()).unwrap()
+    }
+
+    /// Returns whether this hash matches the provided data
+    pub fn matches(&self, data: &[u8]) -> bool {
+        let data_hash = Self::from_data(data);
+        *self == data_hash
     }
 }
 
@@ -627,6 +1316,25 @@ impl fmt::Display for Hash {
 impl fmt::Debug for Hash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Hash({})", self)
+    }
+}
+
+//--- Serialize and Deserialize
+
+#[cfg(feature = "serde")]
+impl Serialize for Hash {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        self.to_string().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for Hash {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        let hex_str = String::deserialize(deserializer)?;
+        Hash::from_str(&hex_str).map_err(serde::de::Error::custom)
     }
 }
 
@@ -782,7 +1490,7 @@ impl fmt::Display for ProcessError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ProcessError::Io(ref inner) => inner.fmt(f),
-            ProcessError::Xml(ref inner) => inner.fmt(f)
+            ProcessError::Xml(ref inner) => inner.fmt(f),
         }
     }
 }
@@ -794,6 +1502,8 @@ impl error::Error for ProcessError { }
 
 #[cfg(test)]
 mod test {
+    use std::str::from_utf8_unchecked;
+
     use super::*;
 
     pub struct Test;
@@ -864,6 +1574,54 @@ mod test {
     }
 
     #[test]
+    fn gaps_notification() {
+        let mut notification_without_gaps =  NotificationFile::parse(
+            include_bytes!("../test-data/ripe-notification.xml").as_ref()
+        ).unwrap();
+        assert!(notification_without_gaps.sort_and_verify_deltas(None));
+
+        let mut notification_with_gaps =  NotificationFile::parse(
+            include_bytes!("../test-data/ripe-notification-with-gaps.xml").as_ref()
+        ).unwrap();
+        assert!(!notification_with_gaps.sort_and_verify_deltas(None));
+    }
+
+    #[test]
+    fn limit_notification_deltas() {
+        let mut notification_without_gaps =  NotificationFile::parse(
+            include_bytes!("../test-data/ripe-notification.xml").as_ref()
+        ).unwrap();
+        assert!(notification_without_gaps.sort_and_verify_deltas(Some(2)));
+
+        assert_eq!(2, notification_without_gaps.deltas().len());
+        assert_eq!(notification_without_gaps.deltas().first().unwrap().serial(), notification_without_gaps.serial() - 1);
+        assert_eq!(notification_without_gaps.deltas().last().unwrap().serial(), notification_without_gaps.serial());
+    }
+
+
+    #[test]
+    fn unsorted_notification() {
+        let mut from_sorted = NotificationFile::parse(
+            include_bytes!("../test-data/ripe-notification.xml").as_ref()
+        ).unwrap();
+
+        let mut from_unsorted = NotificationFile::parse(
+            include_bytes!("../test-data/ripe-notification-unsorted.xml").as_ref()
+        ).unwrap();
+        
+        assert_ne!(from_sorted, from_unsorted);
+
+        from_unsorted.reverse_sort_deltas();
+        assert_eq!(from_sorted, from_unsorted);
+        
+        from_unsorted.sort_deltas();
+        assert_ne!(from_sorted, from_unsorted);
+                
+        from_sorted.sort_deltas();
+        assert_eq!(from_sorted, from_unsorted);
+    }
+
+    #[test]
     fn ripe_snapshot() {
         <Test as ProcessSnapshot>::process(
             &mut Test,
@@ -877,5 +1635,69 @@ mod test {
             &mut Test,
             include_bytes!("../test-data/ripe-delta.xml").as_ref()
         ).unwrap();
+    }
+
+    #[test]
+    fn hash_to_hash() {
+        use std::str::FromStr;
+
+        let string = "this is a test";
+        let sha256 = "2e99758548972a8e8822ad47fa1017ff72f06f3ff6a016851f45c398732bc50c";
+        let hash = Hash::from_str(sha256).unwrap();
+        let hash_from_data = Hash::from_data(string.as_bytes());
+        assert_eq!(hash, hash_from_data);
+        assert!(hash.matches(string.as_bytes()));
+    }
+
+    #[test]
+    fn notification_from_to_xml() {
+        let notification = NotificationFile::parse(
+            include_bytes!("../test-data/ripe-notification.xml").as_ref()
+        ).unwrap();
+
+        let mut vec = vec![];
+        notification.write_xml(&mut vec).unwrap();
+
+        let xml = unsafe {
+            from_utf8_unchecked(vec.as_ref())
+        };
+
+        let notification_parsed = NotificationFile::parse(xml.as_bytes()).unwrap();
+
+        assert_eq!(notification, notification_parsed);
+    }
+
+    #[test]
+    fn snapshot_from_to_xml() {
+        let data = include_bytes!("../test-data/ripe-snapshot.xml");
+        let snapshot = Snapshot::parse(data.as_ref()).unwrap();
+
+        let mut vec = vec![];
+        snapshot.write_xml(&mut vec).unwrap();
+
+        let xml = unsafe {
+            from_utf8_unchecked(vec.as_ref())
+        };
+
+        let snapshot_parsed = Snapshot::parse(xml.as_bytes()).unwrap();
+
+        assert_eq!(snapshot, snapshot_parsed);
+    }
+
+    #[test]
+    fn delta_from_to_xml() {
+        let data = include_bytes!("../test-data/ripe-delta.xml");
+        let delta = Delta::parse(data.as_ref()).unwrap();
+
+        let mut vec = vec![];
+        delta.write_xml(&mut vec).unwrap();
+
+        let xml = unsafe {
+            from_utf8_unchecked(vec.as_ref())
+        };
+
+        let delta_parsed = Delta::parse(xml.as_bytes()).unwrap();
+
+        assert_eq!(delta, delta_parsed);
     }
 }

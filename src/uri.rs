@@ -508,7 +508,7 @@ pub struct Https {
     ///
     /// We need this for comparison: the host part needs to be compared
     /// case insensitive while all the rest is case sensitive. This attribute
-    /// then marks where case sensitive comparision starts.
+    /// then marks where case sensitive comparison starts.
     ///
     /// In a correctly encoded HTTPS URI, this is the third slash or the end
     /// of the bytes if there isn’t one.
@@ -607,6 +607,42 @@ impl Https {
             uri: res.freeze(),
             path_idx: self.path_idx
         })
+    }
+
+    /// Returns the parent URI.
+    ///
+    /// The parent URI is the URI with the last path segment removed. If a
+    /// URI has no path segment, the method returns `None`. If a URI is
+    /// returned, it’s path will have a trailing slash to indicate that it
+    /// is a directory.
+    ///
+    /// Keep in mind that a URI with an empty path will still have the module
+    /// name after the authority part. The method will never return a URI
+    /// with an empty module name.
+    #[allow(clippy::manual_strip)] // str::strip_suffix not in 1.44
+    pub fn parent(&self) -> Option<Self> {
+        let path = unsafe {
+            str::from_utf8_unchecked(self.path())
+        };
+
+        let path = if path.ends_with('/') {
+            &path[..path.len() - 1]
+        }
+        else {
+            path
+        };
+        if path.is_empty() {
+            None
+        }
+        else {
+            let len = match path.rfind('/') {
+                Some(idx) => self.path_idx + idx + 1, // Trailing slash
+                None => self.path_idx
+            };
+            let mut res = self.clone();
+            res.uri.truncate(len);
+            Some(res)
+        }
     }
 }
 
@@ -863,7 +899,7 @@ impl fmt::Display for Error {
             Error::BadUri => "bad URI",
             Error::BadScheme => "bad URI scheme",
             Error::DotSegments => "URI with dot path segments",
-            Error::EmptySegments => "URI with emtpy path segments",
+            Error::EmptySegments => "URI with empty path segments",
         })
     }
 }
@@ -1487,5 +1523,36 @@ mod tests {
 
         assert_eq!(base_uri_no_trailing_slash.join(sub).unwrap(), expected);
         assert_eq!(base_uri_trailing_slash.join(sub).unwrap(), expected);
+    }
+
+    #[test]
+    fn https_parent() {
+        let base_uri = Https::from_str(
+            "https://example.com/"
+        ).unwrap();
+
+        assert!(base_uri.parent().is_none());
+
+        let uri_one_level = Https::from_str(
+            "https://example.com/1/"
+        ).unwrap();
+
+        let uri_base_no_trail = Https::from_str(
+            "https://example.com/foo"
+        ).unwrap();
+
+        assert_eq!(uri_one_level.parent().unwrap(), base_uri);
+        assert_eq!(uri_base_no_trail.parent().unwrap(), base_uri);
+
+        let uri_one_level_no_trail = Https::from_str(
+            "https://example.com/1/foo"
+        ).unwrap();
+
+        let uri_two_level = Https::from_str(
+            "https://example.com/1/2/"
+        ).unwrap();
+
+        assert_eq!(uri_one_level_no_trail.parent().unwrap(), uri_one_level);
+        assert_eq!(uri_two_level.parent().unwrap(), uri_one_level);
     }
 }
