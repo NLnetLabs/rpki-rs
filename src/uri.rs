@@ -621,10 +621,7 @@ impl Https {
     /// with an empty module name.
     #[allow(clippy::manual_strip)] // str::strip_suffix not in 1.44
     pub fn parent(&self) -> Option<Self> {
-        let path = unsafe {
-            str::from_utf8_unchecked(self.path())
-        };
-
+        let path = self.path();
         let path = if path.ends_with('/') {
             &path[..path.len() - 1]
         }
