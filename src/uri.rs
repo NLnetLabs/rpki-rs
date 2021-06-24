@@ -550,8 +550,24 @@ impl Https {
         Scheme::Https
     }
 
+    /// Returns the URI’s authority part as a string slice.
     pub fn authority(&self) -> &str {
         &self.as_str()[self.scheme().as_str().len() + 3..self.path_idx]
+    }
+
+    /// Returns a canonical version of authority part.
+    ///
+    /// Since host names are case-insensitive, the authority part can be
+    /// provided in different ways. This returns a version of the authority
+    /// with all ASCII letters in lowercase.
+    pub fn canonical_authority(&self) -> Cow<str> {
+        let authority = self.authority();
+        if authority.as_bytes().iter().any(u8::is_ascii_uppercase) {
+            Cow::Owned(authority.to_ascii_lowercase())
+        }
+        else {
+            Cow::Borrowed(authority)
+        }
     }
 
     pub fn as_str(&self) -> &str {
@@ -564,8 +580,12 @@ impl Https {
         self.encode_as(Tag::CTX_6)
     }
 
-    fn path(&self) -> &[u8] {
-        &self.uri[self.path_idx..]
+    /// Returns the URI’s path as a string slice.
+    ///
+    /// The path does _not_ start with a slash. As a consequence, an empty
+    /// path results in an empty string.
+    pub fn path(&self) -> &str {
+        &self.as_str()[self.path_idx..]
     }
 
     /// This function will join this URI and the given path. If the current
@@ -577,7 +597,7 @@ impl Https {
         );
         res.put_slice(self.uri.as_ref());
 
-        if !self.path().is_empty() && !self.path().ends_with(b"/") {
+        if !self.path().is_empty() && !self.path().ends_with('/') {
             res.put_slice(b"/");
         }
 
