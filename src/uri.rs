@@ -546,6 +546,17 @@ impl Https {
         self.uri = Bytes::copy_from_slice(self.uri.as_ref());
     }
 
+    /// Returns a octets slice reference of the URI.
+    pub fn as_slice(&self) -> &[u8] {
+        self.uri.as_ref()
+    }
+
+    /// Returns a string reference of the URI.
+    pub fn as_str(&self) -> &str {
+        // self.uri is always a valid `str`.
+        unsafe { str::from_utf8_unchecked(self.uri.as_ref()) }
+    }
+
     pub fn scheme(&self) -> Scheme {
         Scheme::Https
     }
@@ -568,11 +579,6 @@ impl Https {
         else {
             Cow::Borrowed(authority)
         }
-    }
-
-    pub fn as_str(&self) -> &str {
-        // self.uri is always a valid `str`.
-        unsafe { str::from_utf8_unchecked(self.uri.as_ref()) }
     }
 
     #[cfg(feature = "repository")]
