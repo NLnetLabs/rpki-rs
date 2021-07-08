@@ -242,7 +242,7 @@ impl PublicKey {
             encode::set(
                 encode::sequence((
                     oid::AT_COMMON_NAME.encode(),
-                    PublicKeyCn(&self).encode(),
+                    PublicKeyCn(self).encode(),
                 ))
             )
         )

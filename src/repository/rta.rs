@@ -777,7 +777,7 @@ impl<'a> Chain<'a> {
                 continue
             }
             found = true;
-            if self.cert.verify_signature(&ca.cert, strict).is_err() {
+            if self.cert.verify_signature(ca.cert, strict).is_err() {
                 continue
             }
             return Ok(Some(ca))

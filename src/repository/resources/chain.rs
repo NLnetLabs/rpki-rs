@@ -131,7 +131,7 @@ impl<T: Block> Chain<T> {
             }
             // The first other block ends after our start, so it must
             // encompass us.
-            if !block.is_encompassed(&other.first().unwrap()) {
+            if !block.is_encompassed(other.first().unwrap()) {
                 return false
             }
         }

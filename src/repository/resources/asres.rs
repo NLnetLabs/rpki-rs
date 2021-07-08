@@ -477,7 +477,7 @@ impl FromStr for AsBlocks {
         for el in s.split(',') {
             let el = el.trim();
             if !el.is_empty() {
-                let block = AsBlock::from_str(&el)?;
+                let block = AsBlock::from_str(el)?;
                 builder.push(block);
             }
         }
@@ -1028,6 +1028,7 @@ impl fmt::Display for AsId {
 //------------ FromStrError --------------------------------------------------
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::enum_variant_names)]
 pub enum FromStrError {
     BadAsn,
     BadRange,
