@@ -243,6 +243,41 @@ impl Content {
             }
         }
     }
+
+    pub fn take_opt_final_text<R, F, T, E>(
+        &mut self,
+        reader: &mut Reader<R>,
+        op: F
+    ) -> Result<Option<T>, E>
+    where
+        R: io::BufRead,
+        F: FnOnce(Text) -> Result<T, E>,
+        E: From<Error>
+    {
+        if self.empty {
+            return Ok(None)
+        }
+
+        loop {
+            reader.buf.clear();
+            let event = reader.reader.read_event(
+                &mut reader.buf
+            ).map_err(Into::into)?;
+            match event {
+                Event::Text(text) => {
+                    let res = op(Text(text))?;
+                    self.take_end(reader)?;
+                    return Ok(Some(res))
+                }
+                Event::End(_) => {
+                    self.empty = true;
+                    return Ok(None)
+                }
+                Event::Comment(_) => { }
+                _ => return Err(Error::Malformed.into())
+            }
+        }
+    }
 }
 
 

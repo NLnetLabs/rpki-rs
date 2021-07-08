@@ -768,10 +768,9 @@ pub trait ProcessSnapshot {
                 Some(uri) => uri,
                 None => return Err(ProcessError::malformed().into())
             };
-            ObjectReader::process_text(&mut inner, &mut reader, |reader| {
+            ObjectReader::process(&mut inner, &mut reader, |reader| {
                 self.publish(uri, reader)
             })?;
-            inner.take_end(&mut reader).map_err(Into::into)?;
         }
 
         outer.take_end(&mut reader).map_err(Into::into)?;
@@ -1077,7 +1076,7 @@ pub trait ProcessDelta {
             };
             match action.unwrap() { // Or we'd have exited already.
                 Action::Publish => {
-                    ObjectReader::process_text(
+                    ObjectReader::process(
                         &mut inner, &mut reader,
                         |reader| self.publish(uri, hash, reader)
                     )?;
@@ -1088,9 +1087,9 @@ pub trait ProcessDelta {
                         None => return Err(ProcessError::malformed().into())
                     };
                     self.withdraw(uri, hash)?;
+                    inner.take_end(&mut reader).map_err(Into::into)?;
                 }
             }
-            inner.take_end(&mut reader).map_err(Into::into)?;
         }
         outer.take_end(&mut reader).map_err(Into::into)?;
         reader.end().map_err(Into::into)?;
@@ -1366,11 +1365,14 @@ pub struct ObjectReader<'a>(
 );
 
 impl<'a> ObjectReader<'a> {
-    /// Processes XML PCDATA as object content.
+    /// Processes an element with optional XML PCDATA as object content.
     ///
     /// An object reader is created and passed to the closure `op` for
     /// actual processing.
-    fn process_text<R, T, E, F> (
+    ///
+    /// This method expects the next XML event to either be text or the end
+    /// of an element. It will process both.
+    fn process<R, T, E, F> (
         content: &mut Content,
         reader: &mut Reader<R>,
         op: F
@@ -1381,14 +1383,14 @@ impl<'a> ObjectReader<'a> {
         F: FnOnce(&mut ObjectReader) -> Result<T, E>
     {
         // XXX This could probably do with a bit of optimization.
-        let data_b64: Vec<_> = content.take_text(reader,  |text| {
+        let data_b64 = content.take_opt_final_text(reader, |text| {
             // The text is supposed to be xsd:base64Binary which only allows
             // the base64 characters plus whitespace.
             Ok(text.to_ascii()?.as_bytes().iter().filter_map(|b| {
                     if b.is_ascii_whitespace() { None }
                     else { Some(*b) }
-            }).collect())
-        })?;
+            }).collect::<Vec<_>>())
+        })?.unwrap_or_else(Vec::new);
         let mut data_b64 = data_b64.as_slice();
         op(
             &mut ObjectReader(base64::read::DecoderReader::new(
@@ -1699,5 +1701,53 @@ mod test {
         let delta_parsed = Delta::parse(xml.as_bytes()).unwrap();
 
         assert_eq!(delta, delta_parsed);
+    }
+
+    #[test]
+    fn snapshot_content() {
+        const CONTENT: &'static [u8] = b"foo bar\n";
+        let snapshot = br#"
+            <snapshot version="1"
+                session_id="a2d845c4-5b91-4015-a2b7-988c03ce232a"
+                serial="1742"
+                xmlns="http://www.ripe.net/rpki/rrdp"
+            >
+                <publish
+                    uri="rsync://example.com/some/path"
+                >
+                    Zm9vIGJhcgo=
+                </publish>
+                <publish
+                    uri="rsync://example.com/some/other"
+                />
+                <publish
+                    uri="rsync://example.com/some/third"
+                ></publish>
+            </snapshot>
+        "#;
+
+        let snapshot = Snapshot::parse(&mut snapshot.as_ref()).unwrap();
+        assert_eq!(snapshot.elements.len(), 3);
+        assert_eq!(
+            snapshot.elements[0],
+            PublishElement::new(
+                uri::Rsync::from_str("rsync://example.com/some/path").unwrap(),
+                Bytes::copy_from_slice(CONTENT)
+            )
+        );
+        assert_eq!(
+            snapshot.elements[1],
+            PublishElement::new(
+                uri::Rsync::from_str("rsync://example.com/some/other").unwrap(),
+                Bytes::new()
+            )
+        );
+        assert_eq!(
+            snapshot.elements[2],
+            PublishElement::new(
+                uri::Rsync::from_str("rsync://example.com/some/third").unwrap(),
+                Bytes::new()
+            )
+        );
     }
 }
