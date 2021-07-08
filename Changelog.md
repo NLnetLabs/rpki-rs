@@ -8,12 +8,14 @@ New
 
 * Added a simple XML writer. ([#144])
 * Added the ability to create and write the various RRDP files. ([#144]) 
+* Add `uri::Https::{path, canonical_authority, as_slice}`. ([#147])
 
 Bug Fixes
 
 Other Changes
 
 [#144]: https://github.com/NLnetLabs/rpki-rs/pull/144
+[#147]: https://github.com/NLnetLabs/rpki-rs/pull/147
 
 
 ## 0.11.0
