@@ -12,10 +12,16 @@ New
 
 Bug Fixes
 
+* Accept empty `<publish>` elements in RRDP snapshot and delta files.
+  While publishing empty files doesn’t make all that much sense, the
+  standard formally allows it, so we shouldn’t reject updates because of
+  it. ([#148)]
+
 Other Changes
 
 [#144]: https://github.com/NLnetLabs/rpki-rs/pull/144
 [#147]: https://github.com/NLnetLabs/rpki-rs/pull/147
+[#148]: https://github.com/NLnetLabs/rpki-rs/pull/148
 
 
 ## 0.11.0
