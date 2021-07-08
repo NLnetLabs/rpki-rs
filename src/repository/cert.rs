@@ -1906,8 +1906,8 @@ impl TbsCert {
                 // IP Resources
                 IpResources::encode_extension(
                     self.overclaim(),
-                    &self.v4_resources(),
-                    &self.v6_resources()
+                    self.v4_resources(),
+                    self.v6_resources()
                 ),
 
                 // AS Resources

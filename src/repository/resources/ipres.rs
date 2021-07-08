@@ -335,7 +335,7 @@ impl IpBlocks {
                         }
                     }
                     Overclaim::Trim => {
-                        Ok(blocks.intersection(&self))
+                        Ok(blocks.intersection(self))
                     }
                 }
             },
@@ -501,13 +501,13 @@ impl IpBlocks {
     /// Returns an IpBlocksForFamily for IPv4 for this,
     /// to help formatting.
     pub fn as_v4(&self) -> IpBlocksForFamily {
-        IpBlocksForFamily::v4(&self)
+        IpBlocksForFamily::v4(self)
     }
 
     /// Returns an IpBlocksForFamily for IPv4 for this,
     /// to help formatting.
     pub fn as_v6(&self) -> IpBlocksForFamily {
-        IpBlocksForFamily::v6(&self)
+        IpBlocksForFamily::v6(self)
     }
 }
 
@@ -540,14 +540,14 @@ impl FromStr for IpBlocks {
             }
             match family {
                 AddressFamily::Ipv4 => {
-                    if let Ok(block) = IpBlock::from_v4_str(&s) {
+                    if let Ok(block) = IpBlock::from_v4_str(s) {
                         builder.push(block)
                     } else {
                         return Err(FromStrError::FamilyMismatch)
                     }
                 },
                 AddressFamily::Ipv6 => {
-                    if let Ok(block) = IpBlock::from_v6_str(&s) {
+                    if let Ok(block) = IpBlock::from_v6_str(s) {
                         builder.push(block)
                     } else {
                         return Err(FromStrError::FamilyMismatch)
