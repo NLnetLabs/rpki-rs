@@ -1,24 +1,18 @@
 # Changelog
 
-## Unreleased next version
+## 0.12.0
 
-Breaking Changes
+Released 2021-07-18.
 
-New
+Breaking
 
-Bug Fixes
-
-Other Changes
-
-
-## 0.11.1
-
-Released 2021-07-08.
+* Added the ability to create and write the various RRDP files. This
+  results in various changes to the types for handling RRDP files.
+  ([#144]) 
 
 New
 
 * Added a simple XML writer. ([#144])
-* Added the ability to create and write the various RRDP files. ([#144]) 
 * Add `uri::Https::{path, canonical_authority, as_slice}`. ([#147])
 
 Bug Fixes
@@ -31,6 +25,14 @@ Bug Fixes
 [#144]: https://github.com/NLnetLabs/rpki-rs/pull/144
 [#147]: https://github.com/NLnetLabs/rpki-rs/pull/147
 [#148]: https://github.com/NLnetLabs/rpki-rs/pull/148
+
+
+## 0.11.1
+
+Released 2021-07-08.
+
+This version was yanked 2021-07-18 and re-published as 0.12.0 because it
+contained breaking changes.
 
 
 ## 0.11.0
