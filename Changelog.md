@@ -1,17 +1,13 @@
 # Changelog
 
-## Unreleased next version
+## 0.12.1
 
-Breaking
-
-New
+Released 2021-07-26.
 
 Bug Fixes
 
 * `rtr`: Corrected the PDU type of the Cache Reset PDU from 7 to 8.
   ([#151])
-
-Other Changes
 
 [#151]: https://github.com/NLnetLabs/rpki-rs/pull/151
 
