@@ -12,20 +12,6 @@ The crate is work in progress and will grow over time to be more and more
 complete.
 
 
-## Usage
-
-Add the following dependency to your `Cargo.toml`:
-
-```
-[dependencies]
-rpki = "^0.1"
-```
-
-Sadly, at this time, we don’t have a usage guide or detailed documentation
-for the crate. We are planning to rectify this oversight in the near
-future.
-
-
 ## Contributing
 
 If you have comments, proposed changes, or would like to contribute,
