@@ -8,7 +8,12 @@ New
 
 Bug Fixes
 
+* `rtr`: Corrected the PDU type of the Cache Reset PDU from 7 to 8.
+  ([#151])
+
 Other Changes
+
+[#151]: https://github.com/NLnetLabs/rpki-rs/pull/151
 
 
 ## 0.12.0
