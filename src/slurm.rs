@@ -53,6 +53,7 @@ impl SlurmFile {
     }
 
     /// Returns a string with the compact JSON representation.
+    #[allow(clippy::inherent_to_string)]
     pub fn to_string(&self) -> String {
         serde_json::to_string(self).expect("serialization failed")
     }
@@ -356,7 +357,7 @@ impl<'de> Deserialize<'de> for PrefixAssertion {
             }
         }
 
-        const FIELDS: &'static [&'static str] = &[
+        const FIELDS: &[&str] = &[
             "prefix", "asn", "maxPrefixLen", "comment"
         ];
         deserializer.deserialize_struct(
@@ -387,7 +388,7 @@ impl Serialize for PrefixAssertion {
         )?;
         if let Some(max_len) = self.prefix.max_len() {
             serializer.serialize_field(
-                "maxPrefixLength", &self.prefix.max_len()
+                "maxPrefixLength", &max_len
             )?;
         }
         if let Some(comment) = self.comment.as_ref() {

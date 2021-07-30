@@ -236,6 +236,7 @@ impl Prefix {
     }
 
     /// Returns the length part of a prefix.
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(self) -> u8 {
         self.family_and_len & 0x7F
     }
@@ -278,10 +279,8 @@ impl Prefix {
                 return self == other
             }
         }
-        else {
-            if self.len() == 128 && other.len() == 128 {
-                return self == other
-            }
+        else if self.len() == 128 && other.len() == 128 {
+            return self == other
         }
 
         // other now needs to start with the same bits as self.
