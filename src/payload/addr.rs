@@ -3,7 +3,9 @@ use std::{error, fmt};
 use std::net::{AddrParseError, IpAddr, Ipv4Addr, Ipv6Addr};
 use std::num::ParseIntError;
 use std::str::FromStr;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+#[cfg(feature = "serde")] use serde::{
+    Deserialize, Deserializer, Serialize, Serializer
+};
 
 
 //------------ Bits ----------------------------------------------------------
@@ -314,6 +316,7 @@ impl From<Prefix> for crate::repository::resources::IpBlock {
 
 //--- Deserialize and Serialize
 
+#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for Prefix {
     fn deserialize<D: Deserializer<'de>>(
         deserializer: D
@@ -340,6 +343,7 @@ impl<'de> Deserialize<'de> for Prefix {
     }
 }
 
+#[cfg(feature = "serde")]
 impl Serialize for Prefix {
     fn serialize<S: Serializer>(
         &self, serializer: S

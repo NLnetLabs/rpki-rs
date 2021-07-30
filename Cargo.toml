@@ -41,7 +41,7 @@ default = []
 repository = [ "base64", "bcder", "ring", "untrusted" ]
 rrdp       = [ "xml", "base64", "ring" ]
 rtr        = [ "futures-util", "tokio", "tokio-stream" ]
-slurm      = [ "serde_json" ]
+slurm      = [ "base64", "serde", "serde_json" ]
 
 # Dependent components of the crate.
 xml = [ "quick-xml" ]
