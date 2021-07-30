@@ -10,9 +10,11 @@
 #![allow(renamed_and_removed_lints)]
 #![allow(clippy::unknown_clippy_lints)]
 
+pub mod payload;
 pub mod repository;
 pub mod rrdp;
 pub mod rtr;
+pub mod slurm;
 pub mod uri;
 pub mod xml;
 

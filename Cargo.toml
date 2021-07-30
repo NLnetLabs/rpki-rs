@@ -22,6 +22,7 @@ openssl         = { version = "0.10.23", optional = true }
 quick-xml       = { version = "0.22.0", optional = true }
 ring            = { version = "0.16.11", optional = true }
 serde           = { version = "1.0.95", optional = true, features = [ "derive" ] }
+serde_json      = { version = "1.0.40", optional = true }
 slab            = { version = "0.4.1", optional = true }
 tokio           = { version = "1.0", optional = true, features = ["io-util",  "net", "rt", "sync", "time"] }
 tokio-stream    = { version = "0.1", optional = true }
@@ -40,6 +41,7 @@ default = []
 repository = [ "base64", "bcder", "ring", "untrusted" ]
 rrdp       = [ "xml", "base64", "ring" ]
 rtr        = [ "futures-util", "tokio", "tokio-stream" ]
+slurm      = [ "serde_json" ]
 
 # Dependent components of the crate.
 xml = [ "quick-xml" ]
