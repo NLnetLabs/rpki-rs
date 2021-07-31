@@ -1512,6 +1512,14 @@ impl AddressFamily {
             }
         )
     }
+
+    /// Returns the maximum prefix length for this family.
+    pub fn max_addr_len(self) -> u8 {
+        match self {
+            AddressFamily::Ipv4 => 32,
+            AddressFamily::Ipv6 => 128
+        }
+    }
 }
 
 
