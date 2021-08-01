@@ -183,13 +183,17 @@ impl ResourceTaggedAttestation {
                                 if v4.is_some() {
                                     xerr!(return Err(decode::Malformed.into()));
                                 }
-                                v4 = Some(IpBlocks::take_from(cons)?);
+                                v4 = Some(IpBlocks::take_from_with_family(
+                                    cons, AddressFamily::Ipv4
+                                )?);
                             }
                             AddressFamily::Ipv6 => {
                                 if v6.is_some() {
                                     xerr!(return Err(decode::Malformed.into()));
                                 }
-                                v6 = Some(IpBlocks::take_from(cons)?);
+                                v6 = Some(IpBlocks::take_from_with_family(
+                                    cons, AddressFamily::Ipv6
+                                )?);
                             }
                         }
                         Ok(())
