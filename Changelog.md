@@ -1,18 +1,14 @@
 # Changelog
 
-## Unreleased next version
+## 0.12.2
 
-Breaking Changes
+Released 2021-08-02.
 
 New
 
 * Strict checking for address and prefix lengths in certificates, and for
   prefix and max-length in ROAs. ([#154], based on an error report by
   [@job])
-
-Bug Fixes
-
-Other Changes
 
 [#154]: https://github.com/NLnetLabs/rpki-rs/pull/154
 [@job]: https://github.com/job
