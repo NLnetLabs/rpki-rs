@@ -34,8 +34,10 @@ pub use self::payload::{Action, Payload, Timing};
 pub use self::server::Server;
 pub use self::state::{State, Serial};
 
+/// Re-export `payload::rtr` for compatibility reasons.
+pub use crate::payload::rtr as payload;
+
 pub mod client;
-pub mod payload;
 pub mod state;
 pub mod server;
 

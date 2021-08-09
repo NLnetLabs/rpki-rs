@@ -217,6 +217,20 @@ impl Prefix {
         Ok(Self::new_unchecked(bits, len | 0x80))
     }
 
+    /// Creates a new prefix from an IPv4 address and length without checks.
+    ///
+    /// This is a transitory function and will be removed.
+    pub(crate) fn new_v4_unchecked(addr: Ipv4Addr, len: u8) -> Self {
+        Self::new_unchecked(Bits::from_v4(addr), len)
+    }
+
+    /// Creates a new prefix from an IPv6 address and length without checks.
+    ///
+    /// This is a transitory function and will be removed.
+    pub(crate) fn new_v6_unchecked(addr: Ipv6Addr, len: u8) -> Self {
+        Self::new_unchecked(Bits::from_v6(addr), len)
+    }
+
     /// Returns whether the prefix is for an IPv4 address.
     pub fn is_v4(self) -> bool {
         self.family_and_len & 0x80 == 0

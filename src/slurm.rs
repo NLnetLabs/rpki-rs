@@ -13,6 +13,7 @@ use std::convert::TryFrom;
 use std::str::FromStr;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
+use crate::payload::rtr;
 use crate::payload::addr::{MaxLenPrefix, Prefix};
 use crate::payload::asn::AsId;
 
@@ -73,6 +74,11 @@ impl SlurmFile {
         &self, writer: impl io::Write
     ) -> Result<(), io::Error> {
         serde_json::to_writer_pretty(writer, self).map_err(Into::into)
+    }
+
+    /// Returns whether the given payload item should be dropped.
+    pub fn drop_payload(&self, payload: rtr::Payload) -> bool {
+        self.filters.drop_payload(payload)
     }
 }
 
@@ -149,6 +155,16 @@ impl ValidationOutputFilters {
             bgpsec: bgpsec.into(),
         }
     }
+
+    /// Returns whether the given payload item should be dropped.
+    pub fn drop_payload(&self, payload: rtr::Payload) -> bool {
+        for prefix in &self.prefix {
+            if prefix.drop_payload(payload) {
+                return true
+            }
+        }
+        false
+    }
 }
 
 
@@ -180,6 +196,27 @@ impl PrefixFilter {
         prefix: Option<Prefix>, asn: Option<AsId>, comment: Option<String>
     ) -> Self {
         PrefixFilter { prefix, asn, comment }
+    }
+
+    /// Returns whether the given payload item should be dropped.
+    pub fn drop_payload(&self, payload: rtr::Payload) -> bool {
+        let drop_prefix = self.prefix.and_then(|self_prefix| {
+            payload.prefix().map(|payload_prefix| {
+                self_prefix.covers(payload_prefix)
+            })
+        });
+        let drop_asn = self.asn.and_then(|self_asn| {
+            payload.asn().map(|payload_asn| {
+                self_asn == payload_asn.into()
+            })
+        });
+
+        match (drop_prefix, drop_asn) {
+            (Some(prefix), Some(asn)) => prefix && asn,
+            (Some(prefix), None) => prefix,
+            (None, Some(asn)) => asn,
+            (None, None) => false
+        }
     }
 }
 
@@ -225,11 +262,11 @@ impl BgpsecFilter {
 pub struct LocallyAddedAssertions {
     /// The list of route origin authorizations added.
     #[serde(rename = "prefixAssertions")]
-    prefix: Vec<PrefixAssertion>,
+    pub prefix: Vec<PrefixAssertion>,
 
     /// The list of BGPsec router keys added.
     #[serde(rename = "bgpsecAssertions")]
-    bgpsec: Vec<BgpsecAssertion>,
+    pub bgpsec: Vec<BgpsecAssertion>,
 }
 
 impl LocallyAddedAssertions {

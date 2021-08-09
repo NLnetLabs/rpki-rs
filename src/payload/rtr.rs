@@ -9,6 +9,7 @@
 
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
+use crate::payload::addr::Prefix;
 
 
 //------------ IPv4Prefix ----------------------------------------------------
@@ -82,6 +83,28 @@ pub enum Payload {
 
     /// An IPv6 route origin authorisation.
     V6(Ipv6Prefix)
+}
+
+impl Payload {
+    /// Returns the prefix if the payload is an IPv4 or IPv6 prefix.
+    pub fn prefix(self) -> Option<Prefix> {
+        match self {
+            Payload::V4(v4) => {
+                Some(Prefix::new_v4_unchecked(v4.prefix, v4.prefix_len))
+            }
+            Payload::V6(v6) => {
+                Some(Prefix::new_v6_unchecked(v6.prefix, v6.prefix_len))
+            }
+        }
+    }
+
+    /// Returns the ASM if payload is an IPv4 or IPv6 prefix.
+    pub fn asn(self) -> Option<u32> {
+        match self {
+            Payload::V4(payload) => Some(payload.asn),
+            Payload::V6(payload) => Some(payload.asn),
+        }
+    }
 }
 
 
