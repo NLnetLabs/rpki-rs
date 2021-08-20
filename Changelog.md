@@ -4,11 +4,15 @@
 
 Breaking Changes
 
+* The minimal supported Rust version is now 1.47. ([#158])
+
 New
 
 Bug Fixes
 
 Other Changes
+
+[#158]: https://github.com/NLnetLabs/rpki-rs/pull/158
 
 
 ## 0.12.2
