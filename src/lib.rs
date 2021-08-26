@@ -18,3 +18,5 @@ pub mod slurm;
 pub mod uri;
 pub mod xml;
 
+mod util;
+

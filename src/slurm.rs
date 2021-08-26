@@ -77,7 +77,7 @@ impl SlurmFile {
     }
 
     /// Returns whether the given payload item should be dropped.
-    pub fn drop_payload(&self, payload: rtr::Payload) -> bool {
+    pub fn drop_payload(&self, payload: &rtr::Payload) -> bool {
         self.filters.drop_payload(payload)
     }
 }
@@ -157,7 +157,7 @@ impl ValidationOutputFilters {
     }
 
     /// Returns whether the given payload item should be dropped.
-    pub fn drop_payload(&self, payload: rtr::Payload) -> bool {
+    pub fn drop_payload(&self, payload: &rtr::Payload) -> bool {
         for prefix in &self.prefix {
             if prefix.drop_payload(payload) {
                 return true
@@ -199,15 +199,15 @@ impl PrefixFilter {
     }
 
     /// Returns whether the given payload item should be dropped.
-    pub fn drop_payload(&self, payload: rtr::Payload) -> bool {
+    pub fn drop_payload(&self, payload: &rtr::Payload) -> bool {
         let drop_prefix = self.prefix.and_then(|self_prefix| {
-            payload.prefix().map(|payload_prefix| {
-                self_prefix.covers(payload_prefix)
+            payload.to_origin().map(|origin| {
+                self_prefix.covers(origin.prefix.prefix())
             })
         });
         let drop_asn = self.asn.and_then(|self_asn| {
-            payload.asn().map(|payload_asn| {
-                self_asn == payload_asn.into()
+            payload.to_origin().map(|origin| {
+                self_asn == origin.asn
             })
         });
 

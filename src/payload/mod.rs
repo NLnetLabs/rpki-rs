@@ -6,5 +6,6 @@
 
 pub mod asn;
 pub mod addr;
+pub mod bgpsec;
 pub mod rtr;
 

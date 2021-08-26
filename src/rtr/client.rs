@@ -2,16 +2,12 @@
 //!
 //! This module implements a generic RTR client through [`Client`]. In order
 //! to use the client, you will need to provide a type that implements
-//! [`VrpTarget`] as well as one that implements [`VrpUpdate`]. The former
-//! represents the place where all the information received via the RTR client
-//! is stored, while the latter receives a set of updates and applies it to
-//! the target.
+//! [`PayloadTarget`] as well as one that implements [`PayloadUpdate`].
+//! The former represents the place where all the information received via the
+//! RTR client is stored, while the latter receives a set of updates and
+//! applies it to the target.
 //!
 //! For more information on how to use the client, see the [`Client`] type.
-//!
-//! [`Client`]: struct.Client.html
-//! [`VrpTarget`]: trait VrpTarget.html
-//! [`VrpUpdate`]: trait.VrpUpdate.html
 use std::io;
 use std::future::Future;
 use std::marker::Unpin;
@@ -27,7 +23,7 @@ use super::state::State;
 const IO_TIMEOUT: Duration = Duration::from_secs(1);
 
 
-//------------ VrpTarget -----------------------------------------------------
+//------------ PayloadTarget -------------------------------------------------
 
 /// A type that keeps data received via RTR.
 ///
@@ -37,12 +33,10 @@ const IO_TIMEOUT: Duration = Duration::from_secs(1);
 ///
 /// This trait provides a method to start and apply updates which are
 /// collected into a different type that implements the companion
-/// [`VrpUpdate`] trait.
-///
-/// [`VrpUpdate`]: trait.VrpUpdate.html
-pub trait VrpTarget {
+/// [`PayloadUpdate`] trait.
+pub trait PayloadTarget {
     /// The type of a single update.
-    type Update: VrpUpdate;
+    type Update: PayloadUpdate;
 
     /// Starts a new update.
     ///
@@ -61,42 +55,42 @@ pub trait VrpTarget {
     /// server.
     fn apply(
         &mut self, update: Self::Update, reset: bool, timing: Timing
-    ) -> Result<(), VrpError>;
+    ) -> Result<(), PayloadError>;
 }
 
 
-//------------ VrpUpdate -----------------------------------------------------
+//------------ PayloadUpdate -------------------------------------------------
 
-/// A type that can receive a VRP data update.
+/// A type that can receive a data update.
 ///
-/// The update happens by repeatedly calling the [`push_vrp`] method with a
-/// single update as received by the client. The data is not filtered. It
-/// may contain duplicates and it may conflict with the current data set.
-/// It is the task of the implementor to deal with such situations.
+/// The update happens by repeatedly calling the
+/// [`push_update`][Self::push_update] method with a single update as received
+/// by the client. The data is not filtered. It may contain duplicates and it
+/// may conflict with the current data set. It is the task of the implementor
+/// to deal with such situations.
 ///
-/// A value of this type is created via `VrpTarget::start` when the client
-/// starts processing an update. If the update succeeds, the value is applied
-/// to the target by giving it to `VrpTarget::apply`. If the update fails at
-/// any point, the valus is simply dropped.
-///
-/// [`push_vrp`]: #method.push_vrp
-/// [`VrpTarget::start`]: trait.VrpTarget.html#method.start
-/// [`VrpTarget::apply`]: trait.VrpTarget.html#method.apply
-pub trait VrpUpdate {
-    /// Updates one single VRP.
+/// A value of this type is created via [`PayloadTarget::start`] when the
+/// client starts processing an update. If the update succeeds, the value is
+/// applied to the target by giving it to [`PayloadTarget::apply`]. If the
+/// update fails at any point, the valus is simply dropped.
+pub trait PayloadUpdate {
+    /// Applies a single updated payload element.
     ///
-    /// The `action` argument describes whether the VRP is to be announced,
-    /// i.e., added to the data set, or withdrawn, i.e., removed. The VRP
-    /// itself is given via `payload`.
-    fn push_vrp(
+    /// The `action` argument describes whether the element is to be
+    /// announced, i.e., added to the data set, or withdrawn, i.e., removed.
+    /// The element itself is given via `payload`.
+    ///
+    /// If the update is found to be illegal for some reason, the method
+    /// returns an error with the appropriate reason.
+    fn push_update(
         &mut self, action: Action, payload: Payload
-    ) -> Result<(), VrpError>;
+    ) -> Result<(), PayloadError>;
 }
 
-impl VrpUpdate for Vec<(Action, Payload)> {
-    fn push_vrp(
+impl PayloadUpdate for Vec<(Action, Payload)> {
+    fn push_update(
         &mut self, action: Action, payload: Payload
-    ) -> Result<(), VrpError> {
+    ) -> Result<(), PayloadError> {
         self.push((action, payload));
         Ok(())
     }
@@ -109,11 +103,11 @@ impl VrpUpdate for Vec<(Action, Payload)> {
 ///
 /// The client wraps a socket – represented by the type argument `Sock` which
 /// needs to support Tokio’s asynchronous writing and reading – and runs an
-/// RTR client over it. All data received will be passed on a [`VrpTarget`]
-/// of type `Target`.
+/// RTR client over it. All data received will be passed on to a
+/// [`PayloadTarget`] of type `Target`.
 ///
 /// The client keeps the socket open until either the server closes the
-/// connection, an error happens, or the client  is dropped. It will
+/// connection, an error happens, or the client is dropped. It will
 /// periodically push a new dataset to the target.
 pub struct Client<Sock, Target> {
     /// The socket to communicate over.
@@ -207,7 +201,7 @@ impl<Sock, Target> Client<Sock, Target> {
 impl<Sock, Target> Client<Sock, Target>
 where
     Sock: AsyncRead + AsyncWrite + Unpin,
-    Target: VrpTarget
+    Target: PayloadTarget
 {
     /// Runs the client.
     ///
@@ -319,8 +313,16 @@ where
             match pdu::Payload::read(&mut self.sock).await? {
                 Ok(Some(pdu)) => {
                     self.check_version(pdu.version())?;
-                    let (action, payload) = pdu.to_payload();
-                    if let Err(err) = target.push_vrp(action, payload) {
+                    let (action, payload) = match pdu.to_payload() {
+                        Ok(some) => some,
+                        Err(err) => {
+                            err.write(&mut self.sock).await?;
+                            return Err(io::Error::new(
+                                io::ErrorKind::Other, "")
+                            );
+                        }
+                    };
+                    if let Err(err) = target.push_update(action, payload) {
                         err.send(
                             self.version(), Some(pdu), &mut self.sock
                         ).await?;
@@ -357,8 +359,16 @@ where
             match pdu::Payload::read(&mut self.sock).await? {
                 Ok(Some(pdu)) => {
                     self.check_version(pdu.version())?;
-                    let (action, payload) = pdu.to_payload();
-                    if let Err(err) = target.push_vrp(action, payload) {
+                    let (action, payload) = match pdu.to_payload() {
+                        Ok(some) => some,
+                        Err(err) => {
+                            err.write(&mut self.sock).await?;
+                            return Err(io::Error::new(
+                                io::ErrorKind::Other, "")
+                            );
+                        }
+                    };
+                    if let Err(err) = target.push_update(action, payload) {
                         err.send(
                             self.version(), Some(pdu), &mut self.sock
                         ).await?;
@@ -489,11 +499,11 @@ impl FirstReply {
 }
 
 
-//------------ VrpError ------------------------------------------------------
+//------------ PayloadError --------------------------------------------------
 
-/// A received VRP was not acceptable.
+/// A received payload update was not acceptable.
 #[derive(Clone, Copy, Debug)]
-pub enum VrpError {
+pub enum PayloadError {
     /// A nonexisting record was withdrawn.
     UnknownWithdraw,
 
@@ -507,29 +517,26 @@ pub enum VrpError {
     Internal,
 }
 
-impl VrpError {
+impl PayloadError {
+    /// Returns the RTR error code corresponding to the error reason.
     fn error_code(self) -> u16 {
         match self {
-            VrpError::UnknownWithdraw => 6,
-            VrpError::DuplicateAnnounce => 7,
-            VrpError::Corrupt => 0,
-            VrpError::Internal => 1
+            PayloadError::UnknownWithdraw => 6,
+            PayloadError::DuplicateAnnounce => 7,
+            PayloadError::Corrupt => 0,
+            PayloadError::Internal => 1
         }
     }
 
+    /// Sends the error as a RTR error PDU.
     async fn send(
         self, version: u8, pdu: Option<pdu::Payload>,
         sock: &mut (impl AsyncWrite + Unpin)
     ) -> Result<(), io::Error> {
         match pdu {
-            Some(pdu::Payload::V4(pdu)) => {
+            Some(pdu) => {
                 pdu::Error::new(
-                    version, self.error_code(), pdu, ""
-                ).write(sock).await
-            }
-            Some(pdu::Payload::V6(pdu)) => {
-                pdu::Error::new(
-                    version, self.error_code(), pdu, ""
+                    version, self.error_code(), pdu.as_partial_slice(), ""
                 ).write(sock).await
             }
             None => {

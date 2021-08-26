@@ -1,7 +1,7 @@
 //! The RTR server.
 //!
 //! This module implements a generic RTR server through [`Server`]. The server
-//! receives its data from a type implementing [`VrpSource`].
+//! receives its data from a type implementing [`PayloadSource`].
 //!
 //! [`Server`]: struct.Server.html
 //! [`VrpSource`]: trait.VrpSource.html
@@ -22,15 +22,16 @@ use super::state::State;
 
 //============ Traits ========================================================
 
-//------------ VrpSource -----------------------------------------------------
+//------------ PayloadSource et al. ------------------------------------------
 
-/// A source of VRPs for an RTR server.
+/// A source of payload for an RTR server.
 ///
 /// A type implementing this trait can be used by the [`Server`] as a source
-/// for VRPs. The server needs four things from such a source:
+/// for the payload to provide to clients. The server needs four things from
+/// such a source:
 ///
 /// *  the current state of the source through the [`notify`] method,
-/// *  an iterator over the full set of VRPs via the [`full`] method,
+/// *  an iterator over the full set of payload via the [`full`] method,
 /// *  an iterator over the difference of the data between the given state
 ///    and the current state via the [`diff`] method, and
 /// *  the current timing values via the [`timing`] method.
@@ -44,12 +45,12 @@ use super::state::State;
 /// [`full`]: #method.full
 /// [`diff`]: #method.diff
 /// [`timing`]: #method.timing
-pub trait VrpSource: Clone + Sync + Send + 'static {
+pub trait PayloadSource: Clone + Sync + Send + 'static {
     /// An iterator over the complete set of VRPs.
-    type FullIter: Iterator<Item = Payload> + Sync + Send + 'static;
+    type Set: PayloadSet;
 
     /// An iterator over a difference between two sets of VRPs.
-    type DiffIter: Iterator<Item = (Action, Payload)>  + Sync + Send + 'static;
+    type Diff: PayloadDiff;
 
     /// Returns whether the source is ready to serve data.
     fn ready(&self) -> bool;
@@ -60,17 +61,29 @@ pub trait VrpSource: Clone + Sync + Send + 'static {
     fn notify(&self) -> State;
 
     /// Returns the current state and an iterator over the full set of VRPs.
-    fn full(&self) -> (State, Self::FullIter);
+    fn full(&self) -> (State, Self::Set);
 
     /// Returns the current state and an interator over differences in VPRs.
     ///
     /// The difference is between the state given in `state` and the current
     /// state. If the source cannot provide this difference, for instance
     /// because the serial is too old, it returns `None` instead.
-    fn diff(&self, state: State) -> Option<(State, Self::DiffIter)>;
+    fn diff(&self, state: State) -> Option<(State, Self::Diff)>;
 
     /// Returns the timing information for the current state.
     fn timing(&self) -> Timing;
+}
+
+/// A type providing access to a complete payload set.
+pub trait PayloadSet: Sync + Send + 'static {
+    /// Returns the next element in the payload set.
+    fn next(&mut self) -> Option<&Payload>;
+}
+
+/// A type providing access to a diff between payload sets.
+pub trait PayloadDiff: Sync + Send + 'static {
+    /// Returns the next element in the diff.
+    fn next(&mut self) -> Option<(&Payload, Action)>;
 }
 
 
@@ -134,7 +147,7 @@ impl<Listener, Source> Server<Listener, Source> {
     where
         Listener: Stream<Item = Result<Sock, io::Error>> + Unpin,
         Sock: Socket,
-        Source: VrpSource,
+        Source: PayloadSource,
     {
         while let Some(sock) = self.listener.next().await {
             let _ = spawn(
@@ -188,7 +201,7 @@ impl<Sock, Source> Connection<Sock, Source> {
 
 /// # High-level operation
 ///
-impl<Sock: Socket, Source: VrpSource> Connection<Sock, Source> {
+impl<Sock: Socket, Source: PayloadSource> Connection<Sock, Source> {
     /// Runs the connection until it is done.
     ///
     /// Returns successfully if the connection was closed cleanly. Returns an
@@ -360,7 +373,7 @@ where Sock: AsyncRead + Unpin {
 
 /// # Sending
 ///
-impl<Sock: Socket, Source: VrpSource> Connection<Sock, Source> {
+impl<Sock: Socket, Source: PayloadSource> Connection<Sock, Source> {
     /// Sends out a response to a serial query.
     ///
     /// The client’s current state is in `state`. Responds accordingly on
@@ -374,12 +387,12 @@ impl<Sock: Socket, Source: VrpSource> Connection<Sock, Source> {
             ).write(&mut self.sock).await;
         }
         match self.source.diff(state) {
-            Some((state, diff)) => {
+            Some((state, mut diff)) => {
                 debug!("RTR server: source has a diff");
                 pdu::CacheResponse::new(
                     self.version(), state,
                 ).write(&mut self.sock).await?;
-                for (action, payload) in diff {
+                while let Some((payload, action)) = diff.next() {
                     pdu::Payload::new(
                         self.version(), action.into_flags(), payload
                     ).write(&mut self.sock).await?;
@@ -410,11 +423,11 @@ impl<Sock: Socket, Source: VrpSource> Connection<Sock, Source> {
                 self.version(), 2, "", b"Running initial validation"
             ).write(&mut self.sock).await;
         }
-        let (state, iter) = self.source.full();
+        let (state, mut iter) = self.source.full();
         pdu::CacheResponse::new(
             self.version(), state
         ).write(&mut self.sock).await?;
-        for payload in iter {
+        while let Some(payload) = iter.next() {
             pdu::Payload::new(
                 self.version(), Action::Announce.into_flags(), payload
             ).write(&mut self.sock).await?;

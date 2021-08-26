@@ -7,66 +7,59 @@
 //! The types are currently not very rich. They will receive more methods as
 //! they become necessary. So don’t hesitate to ask for them!
 
-use std::net::{Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
-use crate::payload::addr::Prefix;
+use bytes::Bytes;
+use crate::payload::addr::MaxLenPrefix;
+use crate::payload::asn::AsId;
+use crate::payload::bgpsec::KeyIdentifier;
 
 
-//------------ IPv4Prefix ----------------------------------------------------
+//------------ PrefixOrigin --------------------------------------------------
 
-/// An IPv4 route origin authorisation.
+/// A route origin authorization.
 ///
-/// Values of this type authorise the autonomous system given in `asn` to
-/// announce routes for the prefixes covered via the three other fields.
+/// Values of this type authorize the autonomous system given in the `asn`
+/// field to routes for the IP address prefixes given in the `prefix` field.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Ipv4Prefix {
-    /// The IPv4 address of the prefix.
-    ///
-    /// Only the most significant `prefix_len` bits are used. All other bits
-    /// should be zero.
-    pub prefix: Ipv4Addr,
-
-    /// The prefix length.
-    ///
-    /// The number of bits in `prefix` that are used. Obviously, this cannot
-    /// be larger than 32.
-    pub prefix_len: u8,
-
-    /// The maximum length of an more specific prefix covered.
-    ///
-    /// The value will cover all prefixes that are covered by
-    /// `prefix`/`prefix_len` and have a prefix length of up to this value.
-    pub max_len: u8,
+pub struct PrefixOrigin {
+    /// The IP address prefix to authorize.
+    pub prefix: MaxLenPrefix,
 
     /// The autonomous system allowed to announce the prefixes.
-    pub asn: u32
+    pub asn: AsId, 
+}
+
+impl PrefixOrigin {
+    /// Creates a new value from a prefix and an ASN.
+    pub fn new(prefix: MaxLenPrefix, asn: AsId) -> Self {
+        PrefixOrigin { prefix, asn }
+    }
 }
 
 
-//------------ IPv6Prefix ----------------------------------------------------
+//------------ RouterKey -----------------------------------------------------
 
-/// An IPv6 route origin authorisation.
+/// A BGPsec router key.
 ///
-/// Values of this type authorise the autonomous system given in `asn` to
-/// announce routes for the prefixes covered via the three other fields.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Ipv6Prefix {
-    /// The IPv4 address of the prefix.
-    ///
-    /// Only the most significant `prefix_len` bits are used. All other bits
-    /// should be zero.
-    pub prefix: Ipv6Addr,
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RouterKey {
+    /// The subject key identifier of the router key.
+    pub key_identifier: KeyIdentifier,
 
-    pub prefix_len: u8,
+    /// The autonomous system authorized to use the key.
+    pub asn: AsId,
 
-    /// The maximum length of an more specific prefix covered.
-    ///
-    /// The value will cover all prefixes that are covered by
-    /// `prefix`/`prefix_len` and have a prefix length of up to this value.
-    pub max_len: u8,
+    /// The actual key.
+    pub key_info: Bytes,
+}
 
-    /// The autonomous system allowed to announce the prefixes.
-    pub asn: u32
+impl RouterKey {
+    /// Creates a new value from the various components.
+    pub fn new(
+        key_identifier: KeyIdentifier, asn: AsId, key_info: Bytes
+    ) -> Self {
+        RouterKey { key_identifier, asn, key_info }
+    }
 }
 
 
@@ -76,33 +69,42 @@ pub struct Ipv6Prefix {
 ///
 /// There is at least one more payload type – BGPSEC router keys – that is not
 /// currently supported by the crate.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
 pub enum Payload {
-    /// An IPv4 route origin authorisation.
-    V4(Ipv4Prefix),
+    /// A route origin authorisation.
+    Origin(PrefixOrigin),
 
-    /// An IPv6 route origin authorisation.
-    V6(Ipv6Prefix)
+    /// A BGPsec router key.
+    RouterKey(RouterKey),
 }
 
 impl Payload {
-    /// Returns the prefix if the payload is an IPv4 or IPv6 prefix.
-    pub fn prefix(self) -> Option<Prefix> {
-        match self {
-            Payload::V4(v4) => {
-                Some(Prefix::new_v4_unchecked(v4.prefix, v4.prefix_len))
-            }
-            Payload::V6(v6) => {
-                Some(Prefix::new_v6_unchecked(v6.prefix, v6.prefix_len))
-            }
+    /// Creates a new prefix origin payload.
+    pub fn origin(prefix: MaxLenPrefix, asn: AsId) -> Self {
+        Payload::Origin(PrefixOrigin::new(prefix, asn))
+    }
+
+    /// Creates a new router key payload.
+    pub fn router_key(
+        key_identifier: KeyIdentifier, asn: AsId, key_info: Bytes
+    ) -> Self {
+        Payload::RouterKey(RouterKey::new(key_identifier, asn, key_info))
+    }
+
+    /// Returns the origin prefix if the value is of the origin variant.
+    pub fn to_origin(&self) -> Option<PrefixOrigin> {
+        match *self {
+            Payload::Origin(origin) => Some(origin),
+            _ => None
         }
     }
 
-    /// Returns the ASM if payload is an IPv4 or IPv6 prefix.
-    pub fn asn(self) -> Option<u32> {
-        match self {
-            Payload::V4(payload) => Some(payload.asn),
-            Payload::V6(payload) => Some(payload.asn),
+    /// Returns the router key if the value is of the router key variant.
+    pub fn as_router_key(&self) -> Option<&RouterKey> {
+        match *self {
+            Payload::RouterKey(ref key) => Some(key),
+            _ => None
         }
     }
 }

@@ -31,5 +31,3 @@ pub mod sigobj;
 pub mod tal;
 pub mod x509;
 
-mod util;
-

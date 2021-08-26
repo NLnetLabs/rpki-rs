@@ -1,3 +1,4 @@
+//! IP address resources.
 
 use std::{error, fmt};
 use std::net::{AddrParseError, IpAddr, Ipv4Addr, Ipv6Addr};
@@ -60,6 +61,11 @@ impl Bits {
     /// Checks whether the host portion of the bits used in a prefix is zero.
     fn is_host_zero(self, len: u8) -> bool {
         self.into_int().trailing_zeros() >= 128u32.saturating_sub(len.into())
+    }
+
+    /// Clears the bits in the host portion of a prefix.
+    fn clear_host(self, len: u8) -> Self {
+        Bits(self.0 & (u128::MAX << (128u8.saturating_sub(len))))
     }
 
     /// Returns a value ith all but the first `prefix_len` bits set.
@@ -217,18 +223,34 @@ impl Prefix {
         Ok(Self::new_unchecked(bits, len | 0x80))
     }
 
-    /// Creates a new prefix from an IPv4 address and length without checks.
-    ///
-    /// This is a transitory function and will be removed.
-    pub(crate) fn new_v4_unchecked(addr: Ipv4Addr, len: u8) -> Self {
-        Self::new_unchecked(Bits::from_v4(addr), len)
+    /// Creates a new prefix zeroing out host bits.
+    pub fn new_relaxed(addr: IpAddr, len: u8) -> Result<Self, PrefixError> {
+        match addr {
+            IpAddr::V4(addr) => Self::new_v4_relaxed(addr, len),
+            IpAddr::V6(addr) => Self::new_v6_relaxed(addr, len),
+        }
     }
 
-    /// Creates a new prefix from an IPv6 address and length without checks.
-    ///
-    /// This is a transitory function and will be removed.
-    pub(crate) fn new_v6_unchecked(addr: Ipv6Addr, len: u8) -> Self {
-        Self::new_unchecked(Bits::from_v6(addr), len)
+    /// Creates a new prefix zeroing out host bits.
+    pub fn new_v4_relaxed(
+        addr: Ipv4Addr, len: u8
+    ) -> Result<Self, PrefixError> {
+        // Check prefix length.
+        if len > 32 {
+            return Err(PrefixError::LenOverflow)
+        }
+        Ok(Self::new_unchecked(Bits::from_v4(addr).clear_host(len), len))
+    }
+
+    /// Creates a new prefix zeroing out host bits.
+    pub fn new_v6_relaxed(
+        addr: Ipv6Addr, len: u8
+    ) -> Result<Self, PrefixError> {
+        // Check prefix length.
+        if len > 128 {
+            return Err(PrefixError::LenOverflow)
+        }
+        Ok(Self::new_unchecked(Bits::from_v6(addr).clear_host(len), len))
     }
 
     /// Returns whether the prefix is for an IPv4 address.
@@ -454,9 +476,24 @@ impl MaxLenPrefix {
         self.prefix
     }
 
+    /// Returns the address of the prefix.
+    pub fn addr(self) -> IpAddr {
+        self.prefix.addr()
+    }
+
+    /// Returns the prefix length.
+    pub fn prefix_len(self) -> u8 {
+        self.prefix.len()
+    }
+
     /// Returns the max-length.
     pub fn max_len(self) -> Option<u8> {
         self.max_len
+    }
+
+    /// Returns the max-length or the prefix-length if there is no max-length.
+    pub fn unwrapped_max_len(self) -> u8 {
+        self.max_len.unwrap_or_else(|| self.prefix.len())
     }
 }
 
@@ -506,7 +543,7 @@ impl FromStr for MaxLenPrefix {
 //------------ PrefixError ---------------------------------------------------
 
 /// Creating a prefix has failed.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
 pub enum PrefixError {
     /// The prefix length is longer than allowed for the address family.
@@ -516,16 +553,25 @@ pub enum PrefixError {
     NonZeroHost,
 }
 
+impl PrefixError {
+    /// Returns a static error message.
+    pub fn static_description(self) -> &'static str {
+        match self {
+            PrefixError::LenOverflow => "prefix length too large",
+            PrefixError::NonZeroHost => "non-zero host portion",
+        }
+    }
+}
+
+impl From<PrefixError> for &'static str {
+    fn from(err: PrefixError) -> Self {
+        err.static_description()
+    }
+}
+
 impl fmt::Display for PrefixError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(match *self {
-            PrefixError::LenOverflow => {
-                "prefix length too large"
-            }
-            PrefixError::NonZeroHost => {
-                "non-zero host portion"
-            }
-        })
+        f.write_str(self.static_description())
     }
 }
 
@@ -588,6 +634,22 @@ pub enum MaxLenError {
     Underflow,
 }
 
+impl MaxLenError {
+    /// Returns a static error message.
+    pub fn static_description(self) -> &'static str {
+        match self {
+            MaxLenError::Overflow => "max-length too large",
+            MaxLenError::Underflow => "max-length smaller than prefix length",
+        }
+    }
+}
+
+impl From<MaxLenError> for &'static str {
+    fn from(err: MaxLenError) -> Self {
+        err.static_description()
+    }
+}
+
 impl fmt::Display for MaxLenError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -619,7 +681,6 @@ pub enum ParseMaxLenPrefixError {
     /// The max-len value is invalid.
     InvalidMaxLenValue(MaxLenError)
 }
-
 
 impl fmt::Display for ParseMaxLenPrefixError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

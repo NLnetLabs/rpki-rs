@@ -1,4 +1,5 @@
 //! Converting from and to hex strings.
+#![allow(dead_code)]
 
 use std::str;
 
