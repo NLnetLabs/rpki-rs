@@ -92,13 +92,13 @@ impl IpResources {
                         if v4.is_some() {
                             xerr!(return Err(decode::Malformed.into()));
                         }
-                        v4 = Some(Self::take_from(cons)?);
+                        v4 = Some(Self::take_from(cons, AddressFamily::Ipv4)?);
                     }
                     AddressFamily::Ipv6 => {
                         if v6.is_some() {
                             xerr!(return Err(decode::Malformed.into()));
                         }
-                        v6 = Some(Self::take_from(cons)?);
+                        v6 = Some(Self::take_from(cons, AddressFamily::Ipv6)?);
                     }
                 }
                 Ok(())
@@ -112,7 +112,8 @@ impl IpResources {
 
     /// Takes a single set of  IP resources from a constructed value.
     pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
+        cons: &mut decode::Constructed<S>,
+        family: AddressFamily,
     ) -> Result<Self, S::Err> {
         cons.take_value(|tag, content| {
             if tag == Tag::NULL {
@@ -120,7 +121,7 @@ impl IpResources {
                 Ok(ResourcesChoice::Inherit)
             }
             else if tag == Tag::SEQUENCE {
-                IpBlocks::parse_content(content)
+                IpBlocks::parse_content(content, family)
                     .map(ResourcesChoice::Blocks)
             }
             else {
@@ -448,24 +449,39 @@ impl IpBlocks {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        cons.take_sequence(Self::parse_cons_content)
+        cons.take_sequence(|cons| {
+            // The family is here only for checking the lengths of
+            // bitstrings. Since we don’t care, IPv6 will work.
+            Self::parse_cons_content(cons, AddressFamily::Ipv6)
+        })
+    }
+
+    pub fn take_from_with_family<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+        family: AddressFamily
+    ) -> Result<Self, S::Err> {
+        cons.take_sequence(|cons| {
+            Self::parse_cons_content(cons, family)
+        })
     }
 
     /// Parses the content of a AS ID blocks sequence.
     fn parse_content<S: decode::Source>(
-        content: &mut decode::Content<S>
+        content: &mut decode::Content<S>,
+        family: AddressFamily,
     ) -> Result<Self, S::Err> {
         let cons = content.as_constructed()?;
-        Self::parse_cons_content(cons)
+        Self::parse_cons_content(cons, family)
     }
 
     fn parse_cons_content<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
+        cons: &mut decode::Constructed<S>,
+        family: AddressFamily,
     ) -> Result<Self, S::Err> {
         let mut err = None;
 
         let res = iter::repeat_with(||
-            IpBlock::take_opt_from(cons)
+            IpBlock::take_opt_from_with_family(cons, family)
         ).map(|item| {
             match item {
                 Ok(Some(val)) => Some(val),
@@ -699,6 +715,27 @@ impl IpBlock {
             }
             else if tag == Tag::SEQUENCE {
                 AddressRange::parse_content(content).map(IpBlock::Range)
+            }
+            else {
+                xerr!(Err(decode::Malformed.into()))
+            }
+        })
+    }
+
+    pub fn take_opt_from_with_family<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+        family: AddressFamily,
+    ) -> Result<Option<Self>, S::Err> {
+        cons.take_opt_value(|tag, content| {
+            if tag == Tag::BIT_STRING {
+                Prefix::parse_content_with_family(
+                    content, family
+                ).map(IpBlock::Prefix)
+            }
+            else if tag == Tag::SEQUENCE {
+                AddressRange::parse_content_with_family(
+                    content, family
+                ).map(IpBlock::Range)
             }
             else {
                 xerr!(Err(decode::Malformed.into()))
@@ -995,6 +1032,24 @@ impl AddressRange {
         })
     }
 
+    fn parse_content_with_family<S: decode::Source>(
+        content: &mut decode::Content<S>,
+        family: AddressFamily,
+    ) -> Result<Self, S::Err> {
+        let mut cons = content.as_constructed()?;
+        let min = Prefix::take_from(&mut cons)?;
+        let max = Prefix::take_from(&mut cons)?;
+        if min.addr_len() > family.max_addr_len()
+            || max.addr_len() > family.max_addr_len()
+        {
+            return Err(decode::Malformed.into())
+        }
+        Ok(AddressRange {
+            min: min.min(),
+            max: max.max(),
+        })
+    }
+
     /*
     /// Skips over the address range at the beginning of a value.
     fn skip_opt_in<S: decode::Source>(
@@ -1243,6 +1298,19 @@ impl Prefix {
         Ok(Self::from_bit_string(
             &BitString::from_content(content)?
         )?)
+    }
+
+    pub fn parse_content_with_family<S: decode::Source>(
+        content: &mut decode::Content<S>,
+        family: AddressFamily,
+    ) -> Result<Self, S::Err> {
+        let res = Self::from_bit_string(
+            &BitString::from_content(content)?
+        )?;
+        if res.addr_len() > family.max_addr_len() {
+            return Err(decode::Malformed.into())
+        }
+        Ok(res)
     }
 }
 
@@ -1511,6 +1579,14 @@ impl AddressFamily {
                 AddressFamily::Ipv6 => b"\x00\x02",
             }
         )
+    }
+
+    /// Returns the maximum prefix length for this family.
+    pub fn max_addr_len(self) -> u8 {
+        match self {
+            AddressFamily::Ipv4 => 32,
+            AddressFamily::Ipv6 => 128
+        }
     }
 }
 

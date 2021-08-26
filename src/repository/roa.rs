@@ -145,13 +145,17 @@ impl RouteOriginAttestation {
                             if v4.is_some() {
                                 xerr!(return Err(decode::Malformed.into()));
                             }
-                            v4 = Some(RoaIpAddresses::take_from(cons)?);
+                            v4 = Some(RoaIpAddresses::take_from(
+                                cons, AddressFamily::Ipv4
+                            )?);
                         }
                         AddressFamily::Ipv6 => {
                             if v6.is_some() {
                                 xerr!(return Err(decode::Malformed.into()));
                             }
-                            v6 = Some(RoaIpAddresses::take_from(cons)?);
+                            v6 = Some(RoaIpAddresses::take_from(
+                                cons, AddressFamily::Ipv6
+                            )?);
                         }
                     }
                     Ok(())
@@ -222,11 +226,12 @@ pub struct RoaIpAddresses(Captured);
 
 impl RoaIpAddresses {
     fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
+        cons: &mut decode::Constructed<S>,
+        family: AddressFamily,
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             cons.capture(|cons| {
-                while let Some(()) = RoaIpAddress::skip_opt_in(cons)? { }
+                while RoaIpAddress::skip_opt_in(cons, family)?.is_some() { }
                 Ok(())
             })
         }).map(RoaIpAddresses)
@@ -272,7 +277,7 @@ impl<'a> Iterator for RoaIpAddressIter<'a> {
         }
         else {
             Mode::Der.decode(&mut self.0, |cons| {
-                RoaIpAddress::take_opt_from(cons)
+                RoaIpAddress::take_opt_from_unchecked(cons)
             }).unwrap()
         }
     }
@@ -319,7 +324,7 @@ impl RoaIpAddress {
     // The address is the same as in section 2.1.1 of RFC 3779, that is, it
     // is a bit string with all the bits of the prefix.
 
-    fn take_opt_from<S: decode::Source>(
+    fn take_opt_from_unchecked<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, S::Err> {
         cons.take_opt_sequence(|cons| {
@@ -330,10 +335,34 @@ impl RoaIpAddress {
         })
     }
 
+    /// Skips one address in a source.
+    ///
+    /// In order to check that the address is correctly formatted, this
+    /// function needs to know the address family of the address.
     fn skip_opt_in<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
+        cons: &mut decode::Constructed<S>,
+        family: AddressFamily,
     ) -> Result<Option<()>, S::Err> {
-        Self::take_opt_from(cons).map(|res| res.map(|_| ()))
+        let addr = match Self::take_opt_from_unchecked(cons)? {
+            Some(addr) => addr,
+            None => return Ok(None)
+        };
+
+        // Check that the prefix length fits the address family.
+        if addr.prefix.addr_len() > family.max_addr_len() {
+            return Err(decode::Malformed.into())
+        }
+
+        // Check that a max length fits both family and prefix length.
+        if let Some(max_length) = addr.max_length {
+            if max_length > family.max_addr_len() 
+                || max_length < addr.prefix.addr_len()
+            {
+                return Err(decode::Malformed.into())
+            }
+        }
+
+        Ok(Some(()))
     }
 
     fn encode(&self) -> impl encode::Values {
@@ -589,6 +618,30 @@ mod test {
                 false
             ).is_ok()
         )
+    }
+
+    #[test]
+    fn decode_illegal_roas() {
+        assert!(
+            Roa::decode(
+                include_bytes!(
+                    "../../test-data/prefix-len-overflow.roa"
+                ).as_ref(),
+                false
+            ).is_err()
+        );
+        assert!(
+            Roa::decode(
+                include_bytes!("../../test-data/maxlen-overflow.roa").as_ref(),
+                false
+            ).is_err()
+        );
+        assert!(
+            Roa::decode(
+                include_bytes!("../../test-data/maxlen-underflow.roa").as_ref(),
+                false
+            ).is_err()
+        );
     }
 }
 

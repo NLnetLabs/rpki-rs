@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased next version
+## Unreleased future release
 
 Breaking Changes
+
+* The minimal supported Rust version is now 1.47. ([#158])
 
 New
 
@@ -10,15 +12,48 @@ Bug Fixes
 
 Other Changes
 
+[#158]: https://github.com/NLnetLabs/rpki-rs/pull/158
 
-## 0.11.1
 
-Released 2021-07-08.
+## 0.12.2
+
+Released 2021-08-02.
+
+New
+
+* Strict checking for address and prefix lengths in certificates, and for
+  prefix and max-length in ROAs. ([#154], based on an error report by
+  [@job])
+
+[#154]: https://github.com/NLnetLabs/rpki-rs/pull/154
+[@job]: https://github.com/job
+
+
+## 0.12.1
+
+Released 2021-07-26.
+
+Bug Fixes
+
+* `rtr`: Corrected the PDU type of the Cache Reset PDU from 7 to 8.
+  ([#151])
+
+[#151]: https://github.com/NLnetLabs/rpki-rs/pull/151
+
+
+## 0.12.0
+
+Released 2021-07-18.
+
+Breaking
+
+* Added the ability to create and write the various RRDP files. This
+  results in various changes to the types for handling RRDP files.
+  ([#144]) 
 
 New
 
 * Added a simple XML writer. ([#144])
-* Added the ability to create and write the various RRDP files. ([#144]) 
 * Add `uri::Https::{path, canonical_authority, as_slice}`. ([#147])
 
 Bug Fixes
@@ -31,6 +66,14 @@ Bug Fixes
 [#144]: https://github.com/NLnetLabs/rpki-rs/pull/144
 [#147]: https://github.com/NLnetLabs/rpki-rs/pull/147
 [#148]: https://github.com/NLnetLabs/rpki-rs/pull/148
+
+
+## 0.11.1
+
+Released 2021-07-08.
+
+This version was yanked 2021-07-18 and re-published as 0.12.0 because it
+contained breaking changes.
 
 
 ## 0.11.0

@@ -1,6 +1,6 @@
 [package]
 name = "rpki"
-version = "0.11.2-dev"
+version = "0.12.3-dev"
 edition = "2018"
 authors = ["The NLnet Labs RPKI Team <rpki@nlnetlabs.nl>"]
 description = "A library for validating and creating RPKI data."
@@ -10,6 +10,10 @@ repository = "https://github.com/NLnetLabs/rpki-rs"
 keywords = ["rpki", "routing-security"]
 categories = ["network-programming"]
 license = "BSD-3-Clause"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 base64          = { version = "0.13.0", optional = true }

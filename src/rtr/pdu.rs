@@ -1070,7 +1070,7 @@ pub struct CacheReset {
 
 impl CacheReset {
     /// The PDU type for a cache reset.
-    pub const PDU: u8 = 7;
+    pub const PDU: u8 = 8;
 
     /// Creates a cache reset.
     pub fn new(version: u8) -> Self {
