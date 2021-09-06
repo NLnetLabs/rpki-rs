@@ -42,8 +42,6 @@ pub trait PayloadTarget {
     ///
     /// If the update is a for a reset query, `reset` will be `true`, meaning
     /// that when the update is applied, all previous data should be removed.
-    /// This flag is repeated later in `apply`, leaving it to implementations
-    /// whether to store updates differently for reset and serial queries.
     fn start(&mut self, reset: bool) -> Self::Update;
 
     /// Applies an update to the target.
@@ -54,7 +52,7 @@ pub trait PayloadTarget {
     /// `timing` parameter contains the timing information provided by the
     /// server.
     fn apply(
-        &mut self, update: Self::Update, reset: bool, timing: Timing
+        &mut self, update: Self::Update, timing: Timing
     ) -> Result<(), PayloadError>;
 }
 
@@ -118,8 +116,7 @@ pub struct Client<Sock, Target> {
 
     /// The current synchronisation state.
     ///
-    /// The first element is the session ID, the second is the serial. If
-    /// this is `None`, we do a reset query next.
+    /// If this is `None`, we do a reset query next.
     state: Option<State>,
 
     /// The RRDP version to use.
@@ -211,47 +208,24 @@ where
     /// the method will return `Ok(())` –, an error happens – which will be
     /// returned or the future gets dropped.
     pub async fn run(&mut self) -> Result<(), io::Error> {
-        match self._run().await {
-            Ok(()) => Ok(()),
-            Err(err) => {
+        loop {
+            if let Err(err) = self.step().await {
                 if err.kind() == io::ErrorKind::UnexpectedEof {
-                    Ok(())
+                    return Ok(())
                 }
                 else {
-                    Err(err)
+                    return Err(err)
                 }
             }
         }
     }
 
-    /// Internal version of run.
-    ///
-    /// This is only here to make error handling easier.
-    async fn _run(&mut self) -> Result<(), io::Error> {
-        // End of loop via an io::Error.
-        loop {
-            match self.state {
-                Some(state) => {
-                    match self.serial(state).await? {
-                        Some(update) => {
-                            self.apply(update, false).await?;
-                        }
-                        None => continue,
-                    }
-                }
-                None => {
-                    let update = self.reset().await?;
-                    self.apply(update, true).await?;
-                }
-            }
-
-            if let Ok(Err(err)) = timeout(
-                Duration::from_secs(u64::from(self.timing.refresh)),
-                pdu::SerialNotify::read(&mut self.sock)
-            ).await {
-                return Err(err)
-            }
-        }
+    /// Preforms a single update step.
+    pub async fn step(
+        &mut self
+    ) -> Result<(), io::Error> {
+        let update = self.update().await?;
+        self.apply(update).await
     }
 
     /// Performs a single update of the client data.
@@ -393,9 +367,9 @@ where
 
     /// Tries to apply an update and sends errors if that fails.
     pub async fn apply(
-        &mut self, update: Target::Update, reset: bool
+        &mut self, update: Target::Update
     ) -> Result<(), io::Error> {
-        if let Err(err) = self.target.apply(update, reset, self.timing) {
+        if let Err(err) = self.target.apply(update, self.timing) {
             err.send(self.version(), None, &mut self.sock).await?;
             Err(io::Error::new(io::ErrorKind::Other, ""))
         }
