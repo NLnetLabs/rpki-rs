@@ -378,6 +378,13 @@ where
         }
     }
 
+    /// Sends an error response to the server.
+    pub async fn send_error(
+        &mut self, err: PayloadError
+    ) -> Result<(), io::Error> {
+        err.send(self.version(), None, &mut self.sock).await
+    }
+
     /// Performs some IO operation on the socket.
     ///
     /// The mutable reference to the socket is passed to the closure provided
