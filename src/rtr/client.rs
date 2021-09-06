@@ -392,7 +392,7 @@ where
     }
 
     /// Tries to apply an update and sends errors if that fails.
-    async fn apply(
+    pub async fn apply(
         &mut self, update: Target::Update, reset: bool
     ) -> Result<(), io::Error> {
         if let Err(err) = self.target.apply(update, reset, self.timing) {
