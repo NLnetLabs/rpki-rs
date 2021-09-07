@@ -8,7 +8,7 @@
 //! applies it to the target.
 //!
 //! For more information on how to use the client, see the [`Client`] type.
-use std::io;
+use std::{error, fmt, io};
 use std::future::Future;
 use std::marker::Unpin;
 use tokio::time::{timeout, timeout_at, Duration, Instant};
@@ -529,3 +529,15 @@ impl PayloadError {
     }
 }
 
+impl fmt::Display for PayloadError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match *self {
+            PayloadError::UnknownWithdraw => "withdrawal of non-existing item",
+            PayloadError::DuplicateAnnounce => "duplicate announcement",
+            PayloadError::Corrupt => "corrup data set",
+            PayloadError::Internal => "internal error",
+        })
+    }
+}
+
+impl error::Error for PayloadError { }
