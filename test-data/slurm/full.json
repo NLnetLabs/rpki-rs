@@ -22,12 +22,12 @@
         "comment": "All keys for ASN"
       },
       {
-        "SKI": "Zm9v",
+        "SKI": "MTIzNDU2Nzg5MDEyMzQ1Njc4OTA",
         "comment": "Key matching Router SKI"
       },
       {
         "asn": 64497,
-        "SKI": "YmFy",
+        "SKI": "ZGVhZGJlYXRkZWFkYmVhdGRlYWQ",
         "comment": "Key for ASN matching SKI"
       }
     ]
@@ -49,7 +49,7 @@
     "bgpsecAssertions": [
       {
         "asn": 64496,
-        "SKI": "Ymxh",
+        "SKI": "MTIzNDU2Nzg5MDEyMzQ1Njc4OTA",
         "routerPublicKey": "Ymx1YmI"
       }
     ]

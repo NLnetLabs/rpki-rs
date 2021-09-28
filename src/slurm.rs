@@ -15,6 +15,7 @@ use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use crate::payload::rtr;
 use crate::payload::addr::{MaxLenPrefix, Prefix};
+use crate::payload::bgpsec::KeyIdentifier;
 use crate::payload::asn::AsId;
 
 
@@ -230,8 +231,10 @@ impl PrefixFilter {
 pub struct BgpsecFilter {
     /// The Subject Key Identifier of the certificate to be removed.
     #[serde(rename = "SKI")]
+    #[serde(with = "self::serde_opt_key_identifier")]
+    #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ski: Option<Base64Binary>,
+    pub ski: Option<KeyIdentifier>,
 
     /// The AS number of the autonomous system whose key is to be removed.
     #[serde(with = "self::serde_opt_asn")]
@@ -247,7 +250,7 @@ pub struct BgpsecFilter {
 impl BgpsecFilter {
     /// Creates a new BGPsec filter.
     pub fn new(
-        ski: Option<Base64Binary>, asn: Option<AsId>, comment: Option<String>,
+        ski: Option<KeyIdentifier>, asn: Option<AsId>, comment: Option<String>,
     ) -> Self {
         BgpsecFilter { ski, asn, comment }
     }
@@ -280,6 +283,13 @@ impl LocallyAddedAssertions {
             bgpsec: bgpsec.into()
         }
     }
+
+    /// Returns an iterator over RTR payload items to be added.
+    pub fn iter_payload(&self) -> impl Iterator<Item = rtr::Payload> + '_ {
+        self.prefix.iter().map(|item| item.to_payload()).chain(
+            self.bgpsec.iter().map(|item| item.to_payload())
+        )
+    }
 }
 
 
@@ -306,6 +316,10 @@ impl PrefixAssertion {
         comment: Option<String>,
     ) -> Self {
         PrefixAssertion { prefix, asn, comment }
+    }
+
+    fn to_payload(&self) -> rtr::Payload {
+        rtr::Payload::origin(self.prefix, self.asn)
     }
 }
 
@@ -455,7 +469,8 @@ pub struct BgpsecAssertion {
     ///
     /// [RFC4648]: https://tools.ietf.org/html/rfc4648
     #[serde(rename = "SKI")]
-    pub ski: Base64Binary,
+    #[serde(with = "self::serde_key_identifier")]
+    pub ski: KeyIdentifier,
 
     /// The public key.
     ///
@@ -475,11 +490,17 @@ impl BgpsecAssertion {
     /// Creates a new router key assertion.
     pub fn new(
         asn: AsId,
-        ski: Base64Binary,
+        ski: KeyIdentifier,
         router_public_key: Base64Binary,
         comment: Option<String>,
     ) -> Self {
         BgpsecAssertion { asn, ski, router_public_key, comment }
+    }
+
+    fn to_payload(&self) -> rtr::Payload {
+        rtr::Payload::router_key(
+            self.ski, self.asn, self.router_public_key.0.clone()
+        )
     }
 }
 
@@ -665,6 +686,89 @@ mod serde_opt_asn {
 }
 
 
+//----------- Serialization of Key Identifiers ------------------------------
+
+mod serde_key_identifier {
+    use std::fmt;
+    use std::convert::TryFrom;
+    use super::{Base64Binary, KeyIdentifier};
+
+    pub fn serialize<S: serde::Serializer>(
+        key_id: &KeyIdentifier, serializer: S
+    ) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(
+            &base64::encode_config(
+                key_id.as_slice(), Base64Binary::BASE64_CONFIG
+            )
+        )
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<KeyIdentifier, D::Error> {
+        struct Visitor;
+
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = KeyIdentifier;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a Base64-encoded key identifier")
+            }
+
+            fn visit_str<E: serde::de::Error>(
+                self, v: &str
+            ) -> Result<Self::Value, E> {
+                println!("visit_str '{}'", v);
+
+                // The key identifier is 20 bytes. Which means the Base64
+                // encoding has to be 27 characters wrong (since padding is
+                // not included).
+                if v.len() != 27 {
+                    return Err(E::custom("invalid length for key identifier"))
+                }
+
+                // A 27 character Base64 string can contains 20 or 21 bytes.
+                let mut buf = [0u8; 21];
+                let len = base64::decode_config_slice(
+                    v, Base64Binary::BASE64_CONFIG, &mut buf
+                ).map_err(E::custom)?;
+
+                // If we actually get 21 bytes, KeyIdentifier::try_from will
+                // complain.
+                KeyIdentifier::try_from(&buf[..len]).map_err(|_| {
+                    E::custom("invalid length for key identifier")
+                })
+            }
+        }
+
+        deserializer.deserialize_str(Visitor)
+    }
+}
+
+mod serde_opt_key_identifier {
+    use super::KeyIdentifier;
+
+    pub fn serialize<S: serde::Serializer>(
+        key_id: &Option<KeyIdentifier>, serializer: S
+    ) -> Result<S::Ok, S::Error> {
+        match key_id.as_ref() {
+            Some(key_id) => {
+                super::serde_key_identifier::serialize(key_id, serializer)
+            }
+            None => serializer.serialize_none()
+        }
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Option<KeyIdentifier>, D::Error> {
+        // By not accepting a `None` here, we make sure that the field can
+        // never be `null` in the JSON.
+        super::serde_key_identifier::deserialize(deserializer).map(Some)
+    }
+}
+
+
 //============ Tests =========================================================
 
 #[cfg(test)]
@@ -750,12 +854,12 @@ mod test {
                         Some(String::from("All keys for ASN"))
                     ),
                     BgpsecFilter::new(
-                        Some(Bytes::from(b"foo".as_ref()).into()),
+                        Some(KeyIdentifier::from(*b"12345678901234567890")),
                         None,
                         Some(String::from("Key matching Router SKI"))
                     ),
                     BgpsecFilter::new(
-                        Some(Bytes::from(b"bar".as_ref()).into()),
+                        Some(KeyIdentifier::from(*b"deadbeatdeadbeatdead")),
                         Some(64497.into()),
                         Some(String::from("Key for ASN matching SKI"))
                     ),
@@ -785,7 +889,7 @@ mod test {
                 [
                     BgpsecAssertion::new(
                         64496.into(),
-                        Bytes::from(b"bla".as_ref()).into(),
+                        KeyIdentifier::from(*b"12345678901234567890"),
                         Bytes::from(b"blubb".as_ref()).into(),
                         None,
                     ),
@@ -806,7 +910,6 @@ mod test {
 
     #[test]
     fn ser_de_slurm_file() {
-        println!("{}", full_slurm().to_string_pretty());
         assert_eq!(
             SlurmFile::from_str(&full_slurm().to_string_pretty()).unwrap(),
             full_slurm()
