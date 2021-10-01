@@ -334,7 +334,7 @@ mod signer_test {
             assert_eq!(afi, attestation.family);
             assert_eq!(customer_as, attestation.customer_as);
             let decoded_provider_asns: Vec<AsId> = attestation.provider_as_set.iter().collect();
-            assert_eq!(provider_asns, &decoded_provider_asns);
+            assert_eq!(provider_asns, decoded_provider_asns.as_slice());
         }
 
         test_aspa(
