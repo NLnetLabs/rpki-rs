@@ -15,9 +15,9 @@ pub use self::roa::Roa;
 pub use self::rta::Rta;
 pub use self::tal::Tal;
 
-
 //--- Modules
 //
+pub mod aspa;
 pub mod cert;
 pub mod crl;
 pub mod crypto;
@@ -32,4 +32,3 @@ pub mod tal;
 pub mod x509;
 
 mod util;
-

@@ -13,18 +13,17 @@
 //! [RFC 3779]: https://tools.ietf.org/html/rfc3779
 //! [RFC 6487]: https://tools.ietf.org/html/rfc6487
 
-use std::{error, fmt, iter, ops};
-use std::cmp::Ordering;
-use std::iter::FromIterator;
-use std::str::FromStr;
-use bcder::{decode, encode};
-use bcder::{Tag, xerr};
-use bcder::encode::{PrimitiveContent, Nothing};
 use super::super::cert::Overclaim;
 use super::super::x509::{encode_extension, ValidationError};
 use super::chain::{Block, SharedChain};
 use super::choice::ResourcesChoice;
-
+use bcder::encode::{Nothing, PrimitiveContent};
+use bcder::{decode, encode};
+use bcder::{xerr, Tag};
+use std::cmp::Ordering;
+use std::iter::FromIterator;
+use std::str::FromStr;
+use std::{error, fmt, iter, ops};
 
 //------------ AsResources ---------------------------------------------------
 
@@ -60,8 +59,7 @@ impl AsResources {
     pub fn blocks(blocks: AsBlocks) -> Self {
         if blocks.is_empty() {
             AsResources::missing()
-        }
-        else {
+        } else {
             AsResources(ResourcesChoice::Blocks(blocks))
         }
     }
@@ -120,85 +118,61 @@ impl AsResources {
     ///
     /// [RFC 3779]: https://tools.ietf.org/html/rfc3779
     /// [RFC 6487]: https://tools.ietf.org/html/rfc6487
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    pub fn take_from<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             cons.take_constructed_if(Tag::CTX_0, |cons| {
                 cons.take_value(|tag, content| {
                     if tag == Tag::NULL {
                         content.to_null()?;
                         Ok(ResourcesChoice::Inherit)
-                    }
-                    else if tag == Tag::SEQUENCE {
-                        AsBlocks::parse_content(content)
-                            .map(ResourcesChoice::Blocks)
-                    }
-                    else {
+                    } else if tag == Tag::SEQUENCE {
+                        AsBlocks::parse_content(content).map(ResourcesChoice::Blocks)
+                    } else {
                         xerr!(Err(decode::Error::Malformed.into()))
                     }
                 })
             })
-        }).map(AsResources)
+        })
+        .map(AsResources)
     }
 
     pub fn encode(self) -> impl encode::Values {
-        encode::sequence(
-            encode::sequence_as(Tag::CTX_0,
-                match self.0 {
-                    ResourcesChoice::Inherit => {
-                        encode::Choice3::One(().encode())
-                    }
-                    ResourcesChoice::Blocks(blocks) => {
-                        encode::Choice3::Two(
-                            encode::sequence(blocks.encode())
-                        )
-                    }
-                    ResourcesChoice::Missing => {
-                        encode::Choice3::Three(
-                            encode::sequence(Nothing)
-                        )
-                    }
+        encode::sequence(encode::sequence_as(
+            Tag::CTX_0,
+            match self.0 {
+                ResourcesChoice::Inherit => encode::Choice3::One(().encode()),
+                ResourcesChoice::Blocks(blocks) => {
+                    encode::Choice3::Two(encode::sequence(blocks.encode()))
                 }
-            )
-        )
+                ResourcesChoice::Missing => encode::Choice3::Three(encode::sequence(Nothing)),
+            },
+        ))
     }
 
     pub fn encode_ref(&self) -> impl encode::Values + '_ {
-        encode::sequence(
-            encode::sequence_as(Tag::CTX_0,
-                match self.0 {
-                    ResourcesChoice::Inherit => {
-                        encode::Choice3::One(().encode())
-                    }
-                    ResourcesChoice::Blocks(ref blocks) => {
-                        encode::Choice3::Two(
-                            encode::sequence(blocks.encode_ref())
-                        )
-                    }
-                    ResourcesChoice::Missing => {
-                        encode::Choice3::Three(
-                            encode::sequence(Nothing)
-                        )
-                    }
+        encode::sequence(encode::sequence_as(
+            Tag::CTX_0,
+            match self.0 {
+                ResourcesChoice::Inherit => encode::Choice3::One(().encode()),
+                ResourcesChoice::Blocks(ref blocks) => {
+                    encode::Choice3::Two(encode::sequence(blocks.encode_ref()))
                 }
-            )
-        )
+                ResourcesChoice::Missing => encode::Choice3::Three(encode::sequence(Nothing)),
+            },
+        ))
     }
 
-    pub fn encode_extension(
-        &self, overclaim: Overclaim
-    ) -> impl encode::Values + '_ {
+    pub fn encode_extension(&self, overclaim: Overclaim) -> impl encode::Values + '_ {
         if self.0.is_present() {
             Some(encode_extension(
-                overclaim.as_res_id(), true, self.encode_ref()
+                overclaim.as_res_id(),
+                true,
+                self.encode_ref(),
             ))
-        }
-        else {
+        } else {
             None
         }
     }
-
 }
 
 //--- Display
@@ -223,7 +197,6 @@ impl FromStr for AsResources {
     }
 }
 
-
 //------------ AsResourcesBuilder --------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -232,13 +205,13 @@ pub struct AsResourcesBuilder {
     ///
     /// A value of `None` means inherited resources, an empty builder will be
     /// transformed into missing resources.
-    res: Option<AsBlocksBuilder>
+    res: Option<AsBlocksBuilder>,
 }
 
 impl AsResourcesBuilder {
     pub fn new() -> Self {
         AsResourcesBuilder {
-            res: Some(AsBlocksBuilder::new())
+            res: Some(AsBlocksBuilder::new()),
         }
     }
 
@@ -247,11 +220,12 @@ impl AsResourcesBuilder {
     }
 
     pub fn blocks<F>(&mut self, build: F)
-    where F: FnOnce(&mut AsBlocksBuilder) {
+    where
+        F: FnOnce(&mut AsBlocksBuilder),
+    {
         if let Some(ref mut builder) = self.res {
             build(builder)
-        }
-        else {
+        } else {
             let mut builder = AsBlocksBuilder::new();
             build(&mut builder);
             self.res = Some(builder)
@@ -272,7 +246,6 @@ impl Default for AsResourcesBuilder {
     }
 }
 
-
 //------------ AsBlocks ------------------------------------------------------
 
 /// A possibly empty sequence of consecutive sets of AS numbers.
@@ -289,9 +262,7 @@ impl AsBlocks {
     ///
     /// If the AS resources are of the inherited variant, a validation error
     /// is returned.
-    pub fn from_resources(
-        res: AsResources
-    ) -> Result<Self, ValidationError> {
+    pub fn from_resources(res: AsResources) -> Result<Self, ValidationError> {
         match res.0 {
             ResourcesChoice::Missing => Ok(AsBlocks::empty()),
             ResourcesChoice::Inherit => Err(ValidationError),
@@ -305,7 +276,7 @@ impl AsBlocks {
     }
 
     /// Returns an iterator over the individual AS number blocks.
-    pub fn iter(&self) -> impl Iterator<Item=AsBlock> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = AsBlock> + '_ {
         self.0.iter().copied()
     }
 
@@ -318,41 +289,32 @@ impl AsBlocks {
         match res.0 {
             ResourcesChoice::Missing => Ok(Self::empty()),
             ResourcesChoice::Inherit => Ok(self.clone()),
-            ResourcesChoice::Blocks(ref blocks) => {
-                match mode {
-                    Overclaim::Refuse => {
-                        if blocks.0.is_encompassed(&self.0) {
-                            Ok(blocks.clone())
-                        }
-                        else {
-                            Err(ValidationError)
-                        }
-                    }
-                    Overclaim::Trim => {
-                        match blocks.0.trim(&self.0) {
-                            Ok(()) => Ok(blocks.clone()),
-                            Err(new) => Ok(AsBlocks(new.into()))
-                        }
+            ResourcesChoice::Blocks(ref blocks) => match mode {
+                Overclaim::Refuse => {
+                    if blocks.0.is_encompassed(&self.0) {
+                        Ok(blocks.clone())
+                    } else {
+                        Err(ValidationError)
                     }
                 }
-            }
+                Overclaim::Trim => match blocks.0.trim(&self.0) {
+                    Ok(()) => Ok(blocks.clone()),
+                    Err(new) => Ok(AsBlocks(new.into())),
+                },
+            },
         }
     }
 
     /// Verifies that these resources are covered by an issuer’s resources.
     ///
-    /// This is used by bottom-up validation, therefore, issuer resources 
+    /// This is used by bottom-up validation, therefore, issuer resources
     /// of the inherited kind are considered covering.
-    pub fn verify_covered(
-        &self,
-        issuer: &AsResources
-    ) -> Result<(), ValidationError> {
+    pub fn verify_covered(&self, issuer: &AsResources) -> Result<(), ValidationError> {
         match issuer.0 {
             ResourcesChoice::Missing => {
                 if self.0.is_empty() {
                     Ok(())
-                }
-                else {
+                } else {
                     Err(ValidationError)
                 }
             }
@@ -360,8 +322,7 @@ impl AsBlocks {
             ResourcesChoice::Blocks(ref blocks) => {
                 if self.0.is_encompassed(&blocks.0) {
                     Ok(())
-                }
-                else {
+                } else {
                     Err(ValidationError)
                 }
             }
@@ -382,7 +343,7 @@ impl AsBlocks {
     pub fn intersection(&self, other: &Self) -> Self {
         match self.0.trim(&other.0) {
             Ok(()) => self.clone(),
-            Err(owned) => AsBlocks(SharedChain::from_owned(owned))
+            Err(owned) => AsBlocks(SharedChain::from_owned(owned)),
         }
     }
 
@@ -395,14 +356,18 @@ impl AsBlocks {
     /// Returns a new AsBlocks with the values found in self, but not in other.
     pub fn difference(&self, other: &Self) -> Self {
         AsBlocks(SharedChain::from_owned(self.0.difference(&other.0)))
-    }    
+    }
 
     /// Returns a new AsBlocks with the union of this and the other AsBlocks.
     ///
     /// i.e. all resources found in one or both AsBlocks.
     pub fn union(&self, other: &Self) -> Self {
         AsBlocks(
-            self.0.iter().cloned().chain(other.0.iter().cloned()).collect()
+            self.0
+                .iter()
+                .cloned()
+                .chain(other.0.iter().cloned())
+                .collect(),
         )
     }
 }
@@ -410,40 +375,36 @@ impl AsBlocks {
 /// # Decoding and Encoding
 ///
 impl AsBlocks {
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    pub fn take_from<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Self, S::Err> {
         cons.take_sequence(Self::parse_cons_content)
     }
 
     /// Parses the content of a AS ID blocks sequence.
-    fn parse_content<S: decode::Source>(
-        content: &mut decode::Content<S>
-    ) -> Result<Self, S::Err> {
+    fn parse_content<S: decode::Source>(content: &mut decode::Content<S>) -> Result<Self, S::Err> {
         let cons = content.as_constructed()?;
         Self::parse_cons_content(cons)
     }
 
     fn parse_cons_content<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
+        cons: &mut decode::Constructed<S>,
     ) -> Result<Self, S::Err> {
         let mut err = None;
 
-        let res = iter::repeat_with(||
-            AsBlock::take_opt_from(cons)
-        ).map(|item| {
-            match item {
+        let res = iter::repeat_with(|| AsBlock::take_opt_from(cons))
+            .map(|item| match item {
                 Ok(Some(val)) => Some(val),
                 Ok(None) => None,
                 Err(e) => {
                     err = Some(e);
                     None
                 }
-            }
-        }).take_while(|item| item.is_some()).map(Option::unwrap).collect();
+            })
+            .take_while(|item| item.is_some())
+            .map(Option::unwrap)
+            .collect();
         match err {
             Some(err) => Err(err),
-            None => Ok(AsBlocks(res))
+            None => Ok(AsBlocks(res)),
         }
     }
 
@@ -456,7 +417,6 @@ impl AsBlocks {
     }
 }
 
-
 //--- Default
 
 impl Default for AsBlocks {
@@ -464,7 +424,6 @@ impl Default for AsBlocks {
         AsBlocks::empty()
     }
 }
-
 
 //--- FromStr and FromIterator
 
@@ -492,12 +451,10 @@ impl FromIterator<AsBlock> for AsBlocks {
     }
 }
 
-
 //--- Display
 
 impl fmt::Display for AsBlocks {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-
         let mut iter = self.iter();
 
         if let Some(el) = iter.next() {
@@ -517,24 +474,18 @@ impl fmt::Display for AsBlocks {
 
 #[cfg(feature = "serde")]
 impl serde::Serialize for AsBlocks {
-    fn serialize<S: serde::Serializer>(
-        &self,
-        serializer: S
-    ) -> Result<S::Ok, S::Error> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.to_string().serialize(serializer)
     }
 }
 
 #[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for AsBlocks {
-    fn deserialize<D: serde::Deserializer<'de>>(
-        deserializer: D
-    ) -> Result<Self, D::Error> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let string = String::deserialize(deserializer)?;
         Self::from_str(&string).map_err(serde::de::Error::custom)
     }
 }
-
 
 //------------ AsBlocksBuilder -----------------------------------------------
 
@@ -563,11 +514,12 @@ impl Default for AsBlocksBuilder {
 
 impl Extend<AsBlock> for AsBlocksBuilder {
     fn extend<T>(&mut self, iter: T)
-    where T: IntoIterator<Item = AsBlock> {
+    where
+        T: IntoIterator<Item = AsBlock>,
+    {
         self.0.extend(iter)
     }
 }
-
 
 //------------ AsBlock -------------------------------------------------------
 
@@ -606,12 +558,8 @@ impl AsBlock {
     /// maximum, the method will panic.
     pub fn set_min(&mut self, id: AsId) {
         match id.cmp(&self.max()) {
-            Ordering::Less => {
-                *self = AsBlock::Range(AsRange::new(id, self.max()))
-            }
-            Ordering::Equal => {
-                *self = AsBlock::Id(id)
-            }
+            Ordering::Less => *self = AsBlock::Range(AsRange::new(id, self.max())),
+            Ordering::Equal => *self = AsBlock::Id(id),
             Ordering::Greater => {
                 panic!("trying to set minimum beyond current maximum");
             }
@@ -626,12 +574,8 @@ impl AsBlock {
     /// minimum, the method will panic.
     pub fn set_max(&mut self, id: AsId) {
         match id.cmp(&self.min()) {
-            Ordering::Greater => {
-                *self = AsBlock::Range(AsRange::new(self.min(), id))
-            }
-            Ordering::Equal => {
-                *self = AsBlock::Id(id)
-            }
+            Ordering::Greater => *self = AsBlock::Range(AsRange::new(self.min(), id)),
+            Ordering::Equal => *self = AsBlock::Id(id),
             Ordering::Less => {
                 panic!("trying to set maximum below current minimum");
             }
@@ -651,16 +595,14 @@ impl AsBlock {
 impl AsBlock {
     /// Takes an optional AS bock from the beginning of an encoded value.
     pub fn take_opt_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
+        cons: &mut decode::Constructed<S>,
     ) -> Result<Option<Self>, S::Err> {
         cons.take_opt_value(|tag, content| {
             if tag == Tag::INTEGER {
                 AsId::parse_content(content).map(AsBlock::Id)
-            }
-            else if tag == Tag::SEQUENCE {
+            } else if tag == Tag::SEQUENCE {
                 AsRange::parse_content(content).map(AsBlock::Range)
-            }
-            else {
+            } else {
                 xerr!(Err(decode::Error::Malformed.into()))
             }
         })
@@ -668,16 +610,14 @@ impl AsBlock {
 
     /// Skips over the AS block at the beginning of an encoded value.
     pub fn skip_opt_in<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
+        cons: &mut decode::Constructed<S>,
     ) -> Result<Option<()>, S::Err> {
         cons.take_opt_value(|tag, content| {
             if tag == Tag::INTEGER {
                 AsId::skip_content(content)
-            }
-            else if tag == Tag::SEQUENCE {
+            } else if tag == Tag::SEQUENCE {
                 AsRange::skip_content(content)
-            }
-            else {
+            } else {
                 xerr!(Err(decode::Error::Malformed.into()))
             }
         })
@@ -690,7 +630,6 @@ impl AsBlock {
         }
     }
 }
-
 
 //--- From and FromStr
 
@@ -716,7 +655,6 @@ impl FromStr for AsBlock {
     type Err = FromStrError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-
         match s.find('-') {
             None => Ok(AsBlock::Id(AsId::from_str(s)?)),
             Some(pos) => {
@@ -724,11 +662,9 @@ impl FromStr for AsBlock {
                     Err(FromStrError::BadRange)
                 } else {
                     let min_str = &s[..pos];
-                    let max_str = &s[pos + 1 ..];
-                    let min = AsId::from_str(min_str)
-                        .map_err(|_| FromStrError::BadRange)?;
-                    let max = AsId::from_str(max_str)
-                        .map_err(|_| FromStrError::BadRange)?;
+                    let max_str = &s[pos + 1..];
+                    let min = AsId::from_str(min_str).map_err(|_| FromStrError::BadRange)?;
+                    let max = AsId::from_str(max_str).map_err(|_| FromStrError::BadRange)?;
                     Ok(AsBlock::Range(AsRange { min, max }))
                 }
             }
@@ -744,7 +680,6 @@ impl PartialEq for AsBlock {
 
 impl Eq for AsBlock {}
 
-
 //--- Block
 
 impl Block for AsBlock {
@@ -753,8 +688,7 @@ impl Block for AsBlock {
     fn new(min: Self::Item, max: Self::Item) -> Self {
         if min == max {
             AsBlock::Id(min)
-        }
-        else {
+        } else {
             AsBlock::Range(AsRange::new(min, max))
         }
     }
@@ -782,11 +716,10 @@ impl fmt::Display for AsBlock {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             AsBlock::Id(id) => id.fmt(f),
-            AsBlock::Range(range) => range.fmt(f)
+            AsBlock::Range(range) => range.fmt(f),
         }
     }
 }
-
 
 //------------ AsRange -------------------------------------------------------
 
@@ -823,9 +756,7 @@ impl AsRange {
 
 impl AsRange {
     /// Parses the content of an AS range value.
-    fn parse_content<S: decode::Source>(
-        content: &mut decode::Content<S>
-    ) -> Result<Self, S::Err> {
+    fn parse_content<S: decode::Source>(content: &mut decode::Content<S>) -> Result<Self, S::Err> {
         let cons = content.as_constructed()?;
         Ok(AsRange {
             min: AsId::take_from(cons)?,
@@ -834,9 +765,7 @@ impl AsRange {
     }
 
     /// Skips over the content of an AS range value.
-    fn skip_content<S: decode::Source>(
-        content: &mut decode::Content<S>
-    ) -> Result<(), S::Err> {
+    fn skip_content<S: decode::Source>(content: &mut decode::Content<S>) -> Result<(), S::Err> {
         let cons = content.as_constructed()?;
         AsId::skip_in(cons)?;
         AsId::skip_in(cons)?;
@@ -844,13 +773,9 @@ impl AsRange {
     }
 
     fn encode(self) -> impl encode::Values {
-        encode::sequence((
-            self.min.encode(),
-            self.max.encode(),
-        ))
+        encode::sequence((self.min.encode(), self.max.encode()))
     }
 }
-
 
 //--- Block
 
@@ -886,7 +811,6 @@ impl fmt::Display for AsRange {
     }
 }
 
-
 //------------ AsId ----------------------------------------------------------
 
 /// An AS number.
@@ -898,30 +822,27 @@ impl AsId {
     pub const MAX: AsId = AsId(std::u32::MAX);
 
     /// Takes an AS number from the beginning of an encoded value.
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    pub fn take_from<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Self, S::Err> {
         cons.take_u32().map(AsId)
     }
 
     /// Skips over the AS number at the beginning of an encoded value.
-    fn skip_in<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<(), S::Err> {
+    fn skip_in<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<(), S::Err> {
         cons.take_u32().map(|_| ())
     }
 
+    /// Skips over an AS number if it is present.
+    pub fn skip_opt_in<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Option<()>, S::Err> {
+        cons.take_opt_u32().map(|opt| opt.map(|_| ()))
+    }
+
     /// Parses the content of an AS number value.
-    fn parse_content<S: decode::Source>(
-        content: &mut decode::Content<S>
-    ) -> Result<Self, S::Err> {
+    fn parse_content<S: decode::Source>(content: &mut decode::Content<S>) -> Result<Self, S::Err> {
         content.to_u32().map(AsId)
     }
 
     /// Skips the content of an AS number value.
-    fn skip_content<S: decode::Source>(
-        content: &mut decode::Content<S>
-    ) -> Result<(), S::Err> {
+    fn skip_content<S: decode::Source>(content: &mut decode::Content<S>) -> Result<(), S::Err> {
         content.to_u32().map(|_| ())
     }
 
@@ -929,7 +850,6 @@ impl AsId {
         self.0.encode()
     }
 }
-
 
 //--- From
 
@@ -945,14 +865,12 @@ impl From<AsId> for u32 {
     }
 }
 
-
 //--- FromStr
 
 impl FromStr for AsId {
     type Err = FromStrError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-
         let s = if s.len() > 2 && s[..2].eq_ignore_ascii_case("as") {
             &s[2..]
         } else {
@@ -964,14 +882,11 @@ impl FromStr for AsId {
     }
 }
 
-
 //--- Serialize and Deserialize
 
 #[cfg(feature = "serde")]
 impl serde::Serialize for AsId {
-    fn serialize<S: serde::Serializer>(
-        &self, serializer: S
-    ) -> Result<S::Ok, S::Error> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let s = format!("{}", self);
         serializer.serialize_str(&s)
     }
@@ -979,23 +894,17 @@ impl serde::Serialize for AsId {
 
 #[cfg(feature = "serde")]
 impl<'de> serde::de::Deserialize<'de> for AsId {
-    fn deserialize<D: serde::de::Deserializer<'de>>(
-        deserializer: D
-    ) -> Result<Self, D::Error> {
+    fn deserialize<D: serde::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct Visitor;
 
         impl<'de> serde::de::Visitor<'de> for Visitor {
             type Value = AsId;
 
-            fn expecting(
-                &self, formatter: &mut fmt::Formatter
-            ) -> fmt::Result {
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 write!(formatter, "a string with an AS number")
             }
 
-            fn visit_str<E: serde::de::Error>(
-                self, v: &str
-            ) -> Result<Self::Value, E> {
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
                 AsId::from_str(v).map_err(E::custom)
             }
         }
@@ -1003,7 +912,6 @@ impl<'de> serde::de::Deserialize<'de> for AsId {
         deserializer.deserialize_str(Visitor)
     }
 }
-
 
 //--- Add
 
@@ -1015,7 +923,6 @@ impl ops::Add<u32> for AsId {
     }
 }
 
-
 //--- Display
 
 impl fmt::Display for AsId {
@@ -1023,7 +930,6 @@ impl fmt::Display for AsId {
         write!(f, "AS{}", self.0)
     }
 }
-
 
 //------------ FromStrError --------------------------------------------------
 
@@ -1038,25 +944,21 @@ pub enum FromStrError {
 impl fmt::Display for FromStrError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(match *self {
-            FromStrError::BadAsn
-                => "Bad AS number. Expected format: AS#",
-            FromStrError::BadRange
-                => "Bad AS range. Expected format: AS#-AS#",
-            FromStrError::BadBlocks
-                => "Cannot parse blocks."
+            FromStrError::BadAsn => "Bad AS number. Expected format: AS#",
+            FromStrError::BadRange => "Bad AS range. Expected format: AS#-AS#",
+            FromStrError::BadBlocks => "Cannot parse blocks.",
         })
     }
 }
 
-impl error::Error for FromStrError { }
-
+impl error::Error for FromStrError {}
 
 //============ Tests =========================================================
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use serde_test::{Token, assert_de_tokens, assert_tokens};
+    use serde_test::{assert_de_tokens, assert_tokens, Token};
 
     #[test]
     fn as_id_from_str() {
@@ -1080,10 +982,7 @@ mod test {
     #[test]
     fn as_block_from_str() {
         // Good
-        assert_eq!(
-            AsBlock::from_str("AS1").unwrap(),
-            AsId(1).into()
-        );
+        assert_eq!(AsBlock::from_str("AS1").unwrap(), AsId(1).into());
         assert_eq!(
             AsBlock::from_str("AS1-AS3").unwrap(),
             AsRange::new(AsId(1), AsId(3)).into()
@@ -1103,12 +1002,12 @@ mod test {
         }
 
         good(
-            "AS1, AS3-AS7", 
-            vec![AsId(1).into(), AsRange::new(AsId(3), AsId(7)).into()]
+            "AS1, AS3-AS7",
+            vec![AsId(1).into(), AsRange::new(AsId(3), AsId(7)).into()],
         );
         good(
-            "AS1,AS3-AS7", 
-            vec![AsId(1).into(), AsRange::new(AsId(3), AsId(7)).into()]
+            "AS1,AS3-AS7",
+            vec![AsId(1).into(), AsRange::new(AsId(3), AsId(7)).into()],
         );
         good("", Vec::new());
     }
@@ -1128,7 +1027,6 @@ mod test {
 
         assert_eq!(expected, found);
     }
-
 
     #[test]
     #[cfg(feature = "serde")]
