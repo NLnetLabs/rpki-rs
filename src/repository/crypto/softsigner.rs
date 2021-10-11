@@ -6,12 +6,12 @@
 //! Publication Server. In particular, this is not required when validating.
 
 use std::io;
+use std::sync::{Arc, RwLock};
 use openssl::rsa::Rsa;
 use openssl::pkey::{PKey, Private};
 use openssl::hash::MessageDigest;
 use ring::rand;
 use ring::rand::SecureRandom;
-use slab::Slab;
 use super::keys::{PublicKey, PublicKeyFormat};
 use super::signature::{Signature, SignatureAlgorithm};
 use super::signer::{KeyError, Signer, SigningError};
@@ -24,24 +24,53 @@ use super::signer::{KeyError, Signer, SigningError};
 ///
 /// Keeps the keys in memory (for now).
 pub struct OpenSslSigner {
-    keys: Slab<KeyPair>,
+    keys: RwLock<Vec<Option<Arc<KeyPair>>>>,
     rng: rand::SystemRandom,
 }
 
 impl OpenSslSigner {
     pub fn new() -> OpenSslSigner {
         OpenSslSigner {
-            keys: Slab::new(),
+            keys: Default::default(),
             rng: rand::SystemRandom::new(),
         }
     }
 
-    pub fn key_from_der(&mut self, der: &[u8]) -> Result<KeyId, io::Error> {
-        Ok(KeyId(self.keys.insert(KeyPair::from_der(der)?)))
+    pub fn key_from_der(&self, der: &[u8]) -> Result<KeyId, io::Error> {
+        Ok(self.insert_key(KeyPair::from_der(der)?))
     }
 
-    pub fn key_from_pem(&mut self, pem: &[u8]) -> Result<KeyId, io::Error> {
-        Ok(KeyId(self.keys.insert(KeyPair::from_pem(pem)?)))
+    pub fn key_from_pem(&self, pem: &[u8]) -> Result<KeyId, io::Error> {
+        Ok(self.insert_key(KeyPair::from_pem(pem)?))
+    }
+
+    fn insert_key(&self, key: KeyPair) -> KeyId {
+        let mut keys = self.keys.write().unwrap();
+        let res = keys.len();
+        keys.push(Some(key.into()));
+        KeyId(res)
+    }
+
+    fn get_key(&self, id: KeyId) -> Result<Arc<KeyPair>, KeyError<io::Error>> {
+        self.keys.read().unwrap().get(id.0).and_then(|key| {
+            key.as_ref().cloned()
+        }).ok_or(KeyError::KeyNotFound)
+    }
+
+    fn delete_key(&self, key: KeyId) -> Result<(), KeyError<io::Error>> {
+        let mut keys = self.keys.write().unwrap();
+        match keys.get_mut(key.0) {
+            Some(key) => {
+                if key.is_some() {
+                    *key = None;
+                    Ok(())
+                }
+                else {
+                    Err(KeyError::KeyNotFound)
+                }
+            }
+            None => Err(KeyError::KeyNotFound)
+        }
     }
 }
 
@@ -50,33 +79,22 @@ impl Signer for OpenSslSigner {
     type Error = io::Error;
 
     fn create_key(
-        &mut self, algorithm: PublicKeyFormat
+        &self, algorithm: PublicKeyFormat
     ) -> Result<Self::KeyId, Self::Error> {
-        Ok(KeyId(self.keys.insert(KeyPair::new(algorithm)?)))
+        Ok(self.insert_key(KeyPair::new(algorithm)?))
     }
 
     fn get_key_info(
         &self,
         id: &Self::KeyId
     ) -> Result<PublicKey, KeyError<Self::Error>> {
-        match self.keys.get(id.0) {
-            Some(key) => {
-                key.get_key_info().map_err(KeyError::Signer)
-            }
-            None => Err(KeyError::KeyNotFound),
-        }
+        self.get_key(*id)?.get_key_info().map_err(KeyError::Signer)
     }
 
     fn destroy_key(
-        &mut self, key: &Self::KeyId
+        &self, key: &Self::KeyId
     ) -> Result<(), KeyError<Self::Error>> {
-        if self.keys.contains(key.0) {
-            self.keys.remove(key.0);
-            Ok(())
-        }
-        else {
-            Err(KeyError::KeyNotFound)
-        }
+        self.delete_key(*key)
     }
 
     fn sign<D: AsRef<[u8]> + ?Sized>(
@@ -85,10 +103,7 @@ impl Signer for OpenSslSigner {
         algorithm: SignatureAlgorithm,
         data: &D
     ) -> Result<Signature, SigningError<Self::Error>> {
-        match self.keys.get(key.0) {
-            Some(key) => key.sign(algorithm, data.as_ref()).map_err(Into::into),
-            None => Err(SigningError::KeyNotFound)
-        }
+        self.get_key(*key)?.sign(algorithm, data.as_ref()).map_err(Into::into)
     }
 
     fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
@@ -202,7 +217,7 @@ pub mod tests {
 
     #[test]
     fn info_sign_delete() {
-        let mut s = OpenSslSigner::new();
+        let s = OpenSslSigner::new();
         let ki = s.create_key(PublicKeyFormat::Rsa).unwrap();
         let data = b"foobar";
         let _ = s.get_key_info(&ki).unwrap();

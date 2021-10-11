@@ -17,7 +17,7 @@ pub trait Signer {
 
     /// Creates a new key and returns an identifier.
     fn create_key(
-        &mut self,
+        &self,
         algorithm: PublicKeyFormat
     ) -> Result<Self::KeyId, Self::Error>;
 
@@ -33,7 +33,7 @@ pub trait Signer {
     ///
     /// Returns whether the key identified by `key` existed.
     fn destroy_key(
-        &mut self,
+        &self,
         key: &Self::KeyId
     ) -> Result<(), KeyError<Self::Error>>;
 

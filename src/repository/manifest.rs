@@ -545,7 +545,7 @@ mod signer_test {
     use super::*;
 
     fn make_test_manifest() -> Manifest {
-        let mut signer = OpenSslSigner::new();
+        let signer = OpenSslSigner::new();
         let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
         let pubkey = signer.get_key_info(&key).unwrap();
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
