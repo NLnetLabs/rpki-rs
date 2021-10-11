@@ -68,6 +68,35 @@ impl Aspa {
     }
 }
 
+
+//--- Deserialize and Serialize
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for Aspa {
+    fn serialize<S: serde::Serializer>(
+        &self, serializer: S
+    ) -> Result<S::Ok, S::Error> {
+        let bytes = self.to_captured().into_bytes();
+        let b64 = base64::encode(&bytes);
+        b64.serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Aspa {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
+        use serde::de;
+
+        let string = String::deserialize(deserializer)?;
+        let decoded = base64::decode(&string).map_err(de::Error::custom)?;
+        let bytes = bytes::Bytes::from(decoded);
+        Aspa::decode(bytes, true).map_err(de::Error::custom)
+    }
+}
+
+
 //------------ AsProviderAttestation -----------------------------------------
 #[derive(Clone, Debug)]
 pub struct AsProviderAttestation {
@@ -251,14 +280,14 @@ mod signer_test {
     use crate::uri;
     use crate::repository::cert::{KeyUsage, Overclaim, TbsCert};
     use crate::repository::crypto::{PublicKeyFormat, Signer};
-    use crate::repository::crypto::softsigner::{KeyId, OpenSslSigner};
+    use crate::repository::crypto::softsigner::OpenSslSigner;
     use crate::repository::resources::{AsId, Prefix};
     use crate::repository::tal::TalInfo;
     use crate::repository::x509::Validity;
     use super::*;
 
-    #[test]
-    fn encode_aspa() {
+
+    fn make_aspa(afi: AddressFamily) -> Aspa {
         let mut signer = OpenSslSigner::new();
 
         let customer_as: AsId = 64496.into();
@@ -295,78 +324,63 @@ mod signer_test {
             cert.validate_ta(
                 TalInfo::from_name("foo".into()).into_arc(), true
             ).unwrap()
+
+            
         };
 
-        #[allow(clippy::too_many_arguments)]
-        fn test_aspa(
-            afi: AddressFamily,
-            customer_as: AsId,
-            provider_asns: &[AsId],
-            issuer_uri: &uri::Rsync,
-            crl_uri: &uri::Rsync,
-            asa_uri: &uri::Rsync,
-            issuer_cert: &ResourceCert,
-            issuer_key: &KeyId,
-            signer: &OpenSslSigner,
-        ) {
-            let mut aspa = match afi {
-                AddressFamily::Ipv4 => AspaBuilder::new_v4(customer_as),
-                AddressFamily::Ipv6 => AspaBuilder::new_v6(customer_as),
-            };
-            
-            for provider in provider_asns {
-                aspa.add_provider(*provider);
-            }
-            let aspa = aspa.finalize(
-                SignedObjectBuilder::new(
-                    123_u64.into(),
-                    Validity::from_secs(86400),
-                    crl_uri.clone(), 
-                    issuer_uri.clone(),
-                    asa_uri.clone()
-                ),
-                signer,
-                issuer_key
-            ).unwrap();
-            
-            let encoded = aspa.to_captured();
-            let decoded = Aspa::decode(encoded.as_slice(), true).unwrap();
-            
-            assert_eq!(encoded.as_slice(), decoded.to_captured().as_slice());
-            
-            let (_, attestation) = decoded.process(issuer_cert, true, |_| Ok(())).unwrap();
-            
-            assert_eq!(afi, attestation.family);
-            assert_eq!(customer_as, attestation.customer_as);
-            let decoded_provider_asns: Vec<AsId> = attestation.provider_as_set.iter().collect();
-            assert_eq!(provider_asns, decoded_provider_asns.as_slice());
-        }
-
-        test_aspa(
-            AddressFamily::Ipv4,
-            customer_as,
-            &provider_asns,
-            &issuer_uri,
-            &crl_uri,
-            &asa_uri,
-            &issuer_cert,
-            &issuer_key,
-            &signer
-        );
-
-        test_aspa(
-            AddressFamily::Ipv6,
-            customer_as,
-            &provider_asns,
-            &issuer_uri,
-            &crl_uri,
-            &asa_uri,
-            &issuer_cert,
-            &issuer_key,
-            &signer
-        );
+        let mut aspa = match afi {
+            AddressFamily::Ipv4 => AspaBuilder::new_v4(customer_as),
+            AddressFamily::Ipv6 => AspaBuilder::new_v6(customer_as),
+        };
         
+        for provider in &provider_asns {
+            aspa.add_provider(*provider);
+        }
+        let aspa = aspa.finalize(
+            SignedObjectBuilder::new(
+                123_u64.into(),
+                Validity::from_secs(86400),
+                crl_uri.clone(), 
+                issuer_uri.clone(),
+                asa_uri.clone()
+            ),
+            &signer,
+            &issuer_key
+        ).unwrap();
 
+        let encoded = aspa.to_captured();
+        let decoded = Aspa::decode(encoded.as_slice(), true).unwrap();
+        
+        assert_eq!(encoded.as_slice(), decoded.to_captured().as_slice());
+        
+        let (_, attestation) = decoded.process(&issuer_cert, true, |_| Ok(())).unwrap();
+        
+        assert_eq!(afi, attestation.family);
+        assert_eq!(customer_as, attestation.customer_as);
+        let decoded_provider_asns: Vec<AsId> = attestation.provider_as_set.iter().collect();
+        assert_eq!(provider_asns, decoded_provider_asns.as_slice());
+
+        aspa
+    }
+
+    #[test]
+    fn encode_aspa() {
+        make_aspa(AddressFamily::Ipv4);
+        make_aspa(AddressFamily::Ipv6);
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn serde_aspa() {
+        let aspa = make_aspa(AddressFamily::Ipv4);
+
+        let serialized = serde_json::to_string(&aspa).unwrap();
+        let deser_aspa: Aspa = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(
+            aspa.to_captured().into_bytes(),
+            deser_aspa.to_captured().into_bytes()
+        )
     }
 }
 
