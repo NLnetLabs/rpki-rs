@@ -390,7 +390,7 @@ mod test {
         use crate::repository::crypto::softsigner::OpenSslSigner;
         use crate::repository::crypto::PublicKeyFormat;
 
-        let mut signer = OpenSslSigner::new();
+        let signer = OpenSslSigner::new();
         let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
 
 
