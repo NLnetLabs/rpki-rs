@@ -718,6 +718,61 @@ mod signer_test {
     }
 }
 
+#[cfg(all(test, feature="softkeys"))]
+mod reverse_signer_test {
+    use std::str::FromStr;
+    use bcder::encode::Values;
+    use crate::uri;
+    use crate::repository::cert::{KeyUsage, Overclaim, TbsCert};
+    use crate::repository::crypto::{PublicKeyFormat, Signer};
+    use crate::repository::crypto::softsigner::OpenSslSigner;
+    use crate::repository::resources::{AsId, Prefix};
+    use crate::repository::tal::TalInfo;
+    use crate::repository::x509::Validity;
+    use super::*;
+
+    #[test]
+    fn make_roa() {
+        let signer = OpenSslSigner::new();
+        let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
+        let pubkey = signer.get_key_info(&key).unwrap();
+        let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
+
+        let mut cert = TbsCert::new(
+            12u64.into(), pubkey.to_subject_name(),
+            Validity::from_secs(86400), None, pubkey, KeyUsage::Ca,
+            Overclaim::Trim
+        );
+        cert.set_basic_ca(Some(true));
+        cert.set_ca_repository(Some(uri.clone()));
+        cert.set_rpki_manifest(Some(uri.clone()));
+        cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
+        cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
+        cert.build_as_resource_blocks(|b| b.push((AsId::MIN, AsId::MAX)));
+        let cert = signer.sign_with_key(
+            key, cert.sign()
+        ).unwrap();
+
+        let mut roa = RoaBuilder::new(64496.into());
+        roa.push_v4_addr(Ipv4Addr::new(192, 0, 2, 0), 24, None);
+
+        let roa = roa.finalize(
+            SignedObjectBuilder::new(
+                12u64.into(), Validity::from_secs(86400), uri.clone(),
+                uri.clone(), uri.clone()
+            ),
+            &signer, &key
+        ).unwrap();
+        let roa = roa.encode_ref().to_captured(Mode::Der);
+
+        let roa = Roa::decode(roa.as_slice(), true).unwrap();
+        let cert = cert.validate_ta(
+            TalInfo::from_name("foo".into()).into_arc(), true
+        ).unwrap();
+        roa.clone().process(&cert, true, |_| Ok(())).unwrap();
+    }
+}
+
 
 //============ Specification Documentation ===================================
 

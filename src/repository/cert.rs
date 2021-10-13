@@ -31,6 +31,8 @@ use crate::uri;
 use super::crypto::{
     KeyIdentifier, PublicKey, SignatureAlgorithm, Signer, SigningError
 };
+use super::crypto::signer::{AlgorithmError, Sign, SignWithKey};
+use super::crypto::signature::Signature;
 use super::oid;
 use super::resources::{
     AsBlock, AsBlocks, AsBlocksBuilder, AsResources, AsResourcesBuilder,
@@ -995,6 +997,11 @@ impl TbsCert {
             signed_data: SignedData::new(data, signature),
             tbs: self
         })
+    }
+
+    pub fn sign(self) -> EncodedTbsCert {
+        let encoded = Captured::from_values(Mode::Der, self.encode_ref());
+        EncodedTbsCert { tbs: self, encoded }
     }
 }
 
@@ -1990,6 +1997,38 @@ impl Sia {
 }
 
 
+//------------ EncodedTbsCert ------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct EncodedTbsCert {
+    tbs: TbsCert,
+    encoded: Captured,
+}
+
+impl SignWithKey for EncodedTbsCert {
+    type Sign = Self;
+
+    fn set_key(self, _key: &PublicKey) -> Result<Self, AlgorithmError> {
+        Ok(self)
+    }
+}
+
+impl Sign for EncodedTbsCert {
+    type Final = Cert;
+
+    fn signed_data(&self) -> &[u8] {
+        self.encoded.as_ref()
+    }
+
+    fn sign(self, signature: Signature) -> Self::Final {
+        Cert {
+            signed_data: SignedData::new(self.encoded, signature),
+            tbs: self.tbs
+        }
+    }
+}
+
+
 //------------ CertBuilder ---------------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -2430,6 +2469,42 @@ impl CertBuilder {
     }
 }
 
+impl SignWithKey for CertBuilder {
+    type Sign = CertBuilderWithKey;
+
+    fn set_key(
+        self, public_key: &PublicKey
+    ) -> Result<Self::Sign, AlgorithmError> {
+        let alg = match public_key.signature_algorithm() {
+            Some(alg) => alg,
+            None => return Err(AlgorithmError)
+        };
+        Ok(CertBuilderWithKey {
+            tbs_cert: self.encode_tbs_cert(alg, public_key)
+        })
+    }
+}
+
+
+//------------ CertBuilderWithKey --------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct CertBuilderWithKey {
+    tbs_cert: Captured,
+}
+
+impl Sign for CertBuilderWithKey {
+    type Final = SignedData;
+
+    fn signed_data(&self) -> &[u8] {
+        self.tbs_cert.as_ref()
+    }
+
+    fn sign(self, signature: Signature) -> Self::Final {
+        SignedData::new(self.tbs_cert, signature)
+    }
+}
+
 
 //------------ ResourceCert --------------------------------------------------
 
@@ -2703,7 +2778,6 @@ mod signer_test {
     use crate::repository::tal::TalInfo;
     use super::*;
 
-
     #[test]
     fn build_ta_cert() {
         let signer = OpenSslSigner::new();
@@ -2728,4 +2802,39 @@ mod signer_test {
     }
 }
 
+#[cfg(all(test, feature="softkeys"))]
+mod reverse_signer_test {
+    use std::str::FromStr;
+    use crate::repository::cert::Cert;
+    use crate::repository::crypto::PublicKeyFormat;
+    use crate::repository::crypto::softsigner::OpenSslSigner;
+    use crate::repository::resources::{AsId, Prefix};
+    use crate::repository::tal::TalInfo;
+    use super::*;
+
+    #[test]
+    fn build_ta_cert() {
+        let signer = OpenSslSigner::new();
+        let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
+        let pubkey = signer.get_key_info(&key).unwrap();
+        let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
+        let mut cert = TbsCert::new(
+            12u64.into(), pubkey.to_subject_name(),
+            Validity::from_secs(86400), None, pubkey, KeyUsage::Ca,
+            Overclaim::Trim
+        );
+        cert.set_basic_ca(Some(true));
+        cert.set_ca_repository(Some(uri.clone()));
+        cert.set_rpki_manifest(Some(uri.clone()));
+        cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
+        cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
+        cert.build_as_resource_blocks(|b| b.push((AsId::MIN, AsId::MAX)));
+        let cert = signer.sign_with_key(
+            key, cert.sign()
+        ).unwrap().to_captured();
+        let cert = Cert::decode(cert.as_slice()).unwrap();
+        let talinfo = TalInfo::from_name("foo".into()).into_arc();
+        cert.validate_ta(talinfo, true).unwrap();
+    }
+}
 

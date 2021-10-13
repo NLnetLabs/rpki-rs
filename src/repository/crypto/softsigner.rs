@@ -14,7 +14,9 @@ use ring::rand;
 use ring::rand::SecureRandom;
 use super::keys::{PublicKey, PublicKeyFormat};
 use super::signature::{Signature, SignatureAlgorithm};
-use super::signer::{KeyError, Signer, SigningError};
+use super::signer::{
+    AlgorithmError, KeyError, Sign, SignWithKey, Signer, SigningError
+};
 
 
 
@@ -42,6 +44,26 @@ impl OpenSslSigner {
 
     pub fn key_from_pem(&self, pem: &[u8]) -> Result<KeyId, io::Error> {
         Ok(self.insert_key(KeyPair::from_pem(pem)?))
+    }
+
+    pub fn sign_with_key<What: SignWithKey>(
+        &self, key: KeyId, what: What
+    ) -> Result<<What::Sign as Sign>::Final, SignError> {
+        let key = self.get_key(key).map_err(|_| SignError::KeyNotFound)?;
+        let info = key.get_key_info()?;
+        let what = what.set_key(&info)?;
+        let signature = key.sign(what.signed_data())?;
+        Ok(what.sign(signature))
+    }
+
+    pub fn sign_with_one_off_key<What: SignWithKey>(
+        &self, algorithm: SignatureAlgorithm, what: What
+    ) -> Result<<What::Sign as Sign>::Final, SignError> {
+        let key = KeyPair::new(algorithm.public_key_format())?;
+        let info = key.get_key_info()?;
+        let what = what.set_key(&info)?;
+        let signature = key.sign(what.signed_data())?;
+        Ok(what.sign(signature))
     }
 
     fn insert_key(&self, key: KeyPair) -> KeyId {
@@ -100,10 +122,10 @@ impl Signer for OpenSslSigner {
     fn sign<D: AsRef<[u8]> + ?Sized>(
         &self,
         key: &Self::KeyId,
-        algorithm: SignatureAlgorithm,
+        _algorithm: SignatureAlgorithm,
         data: &D
     ) -> Result<Signature, SigningError<Self::Error>> {
-        self.get_key(*key)?.sign(algorithm, data.as_ref()).map_err(Into::into)
+        self.get_key(*key)?.sign(data.as_ref()).map_err(Into::into)
     }
 
     fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
@@ -113,7 +135,7 @@ impl Signer for OpenSslSigner {
     ) -> Result<(Signature, PublicKey), Self::Error> {
         let key = KeyPair::new(algorithm.public_key_format())?;
         let info = key.get_key_info()?;
-        let sig = key.sign(algorithm, data.as_ref())?;
+        let sig = key.sign(data.as_ref())?;
         Ok((sig, info))
     }
 
@@ -193,7 +215,6 @@ impl KeyPair {
 
     fn sign(
         &self,
-        _algorithm: SignatureAlgorithm,
         data: &[u8]
     ) -> Result<Signature, io::Error> {
         let mut signer = ::openssl::sign::Signer::new(
@@ -204,6 +225,28 @@ impl KeyPair {
             SignatureAlgorithm::default(),
             signer.sign_to_vec()?.into()
         ))
+    }
+}
+
+
+//------------ SignError -----------------------------------------------------
+
+#[derive(Debug)]
+pub enum SignError {
+    KeyNotFound,
+    AlgorithmError,
+    Io(io::Error)
+}
+
+impl From<AlgorithmError> for SignError {
+    fn from(_: AlgorithmError) -> Self {
+        SignError::AlgorithmError
+    }
+}
+
+impl From<io::Error> for SignError {
+    fn from(err: io::Error) -> Self {
+        SignError::Io(err)
     }
 }
 

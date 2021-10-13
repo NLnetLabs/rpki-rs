@@ -10,11 +10,14 @@ use bcder::string::OctetStringSource;
 use bytes::Bytes;
 use crate::uri;
 use super::oid;
-use super::cert::{Cert, KeyUsage, Overclaim, ResourceCert, TbsCert};
-use super::crypto::{
-    Digest, DigestAlgorithm, KeyIdentifier, Signature, SignatureAlgorithm,
-    Signer, SigningError
+use super::cert::{
+    Cert, EncodedTbsCert, KeyUsage, Overclaim, ResourceCert, TbsCert
 };
+use super::crypto::{
+    Digest, DigestAlgorithm, KeyIdentifier, PublicKey, Signature,
+    SignatureAlgorithm, Signer, SigningError
+};
+use super::crypto::signer::{AlgorithmError, Sign, SignWithKey};
 use super::resources::{
     AsBlocksBuilder, AsResources, AsResourcesBuilder, IpBlocksBuilder,
     IpResources, IpResourcesBuilder
@@ -888,6 +891,165 @@ impl SignedObjectBuilder {
             binary_signing_time: self.binary_signing_time,
         })
     }
+
+    pub fn sign(
+        self,
+        content_type: Oid<Bytes>,
+        content: Bytes,
+    ) -> CompleteSignedObject {
+        CompleteSignedObject {
+            builder: self,
+            content_type,
+            content
+        }
+    }
+}
+
+
+pub struct CompleteSignedObject {
+    builder: SignedObjectBuilder,
+    content_type: Oid<Bytes>,
+    content: Bytes,
+}
+
+impl SignWithKey for CompleteSignedObject {
+    type Sign = SignedObjectWithKey;
+
+    fn set_key(self, key: &PublicKey) -> Result<Self::Sign, AlgorithmError> {
+        if !key.allow_rpki_cert() {
+            return Err(AlgorithmError)
+        }
+        let message_digest = self.builder.digest_algorithm.digest(
+            &self.content
+        ).into();
+        let signed_attrs = SignedAttrs::new(
+            &self.content_type,
+            &message_digest,
+            self.builder.signing_time,
+            self.builder.binary_signing_time
+        );
+        Ok(SignedObjectWithKey {
+            signed_attrs_data: signed_attrs.encode_verify(),
+            signed_attrs,
+            message_digest,
+            object: self,
+            key: key.clone()
+        })
+    }
+}
+
+
+pub struct SignedObjectWithKey {
+    signed_attrs_data: Vec<u8>,
+    signed_attrs: SignedAttrs,
+    message_digest: MessageDigest,
+    object: CompleteSignedObject,
+    key: PublicKey,
+}
+
+impl Sign for SignedObjectWithKey {
+    type Final = SignedObjectWithSignature;
+
+    fn signed_data(&self) -> &[u8] {
+        &self.signed_attrs_data
+    }
+
+    fn sign(self, signature: Signature) -> Self::Final {
+        SignedObjectWithSignature {
+            signed_attrs: self.signed_attrs,
+            message_digest: self.message_digest,
+            signature,
+            object: self.object,
+            key: self.key,
+        }
+    }
+}
+
+
+pub struct SignedObjectWithSignature {
+    signed_attrs: SignedAttrs,
+    message_digest: MessageDigest,
+    signature: Signature,
+    object: CompleteSignedObject,
+    key: PublicKey,
+}
+
+impl SignWithKey for SignedObjectWithSignature {
+    type Sign = SignedObjectWithIssuer;
+
+    fn set_key(self, key: &PublicKey) -> Result<Self::Sign, AlgorithmError> {
+        if !key.allow_rpki_cert() {
+            return Err(AlgorithmError)
+        }
+        let sid = KeyIdentifier::from_public_key(&self.key);
+        let mut cert = TbsCert::new(
+            self.object.builder.serial_number,
+            self.object.builder.issuer.unwrap_or_else(|| key.to_subject_name()),
+            self.object.builder.validity,
+            self.object.builder.subject,
+            self.key,
+            KeyUsage::Ee,
+            Overclaim::Refuse,
+        );
+        cert.set_authority_key_identifier(Some(key.key_identifier()));
+        cert.set_crl_uri(Some(self.object.builder.crl_uri));
+        cert.set_ca_issuer(Some(self.object.builder.ca_issuer));
+        cert.set_signed_object(Some(self.object.builder.signed_object));
+        cert.set_v4_resources(self.object.builder.v4_resources);
+        cert.set_v6_resources(self.object.builder.v6_resources);
+        cert.set_as_resources(self.object.builder.as_resources);
+
+        Ok(SignedObjectWithIssuer {
+            digest_algorithm: self.object.builder.digest_algorithm,
+            content_type: self.object.content_type,
+            content: OctetString::new(self.object.content),
+            sid,
+            signed_attrs: self.signed_attrs,
+            signature: self.signature,
+            message_digest: self.message_digest,
+            signing_time: self.object.builder.signing_time,
+            binary_signing_time: self.object.builder.binary_signing_time,
+            tbs_cert: cert.sign()
+        })
+    }
+}
+
+
+pub struct SignedObjectWithIssuer {
+    digest_algorithm: DigestAlgorithm,
+    content_type: Oid<Bytes>,
+    content: OctetString,
+    sid: KeyIdentifier,
+    signed_attrs: SignedAttrs,
+    signature: Signature,
+    message_digest: MessageDigest,
+    signing_time: Option<Time>,
+    binary_signing_time: Option<u64>,
+    tbs_cert: EncodedTbsCert,
+}
+
+impl Sign for SignedObjectWithIssuer {
+    type Final = SignedObject;
+
+    fn signed_data(&self) -> &[u8] {
+        self.tbs_cert.signed_data()
+    }
+
+    fn sign(self, signature: Signature) -> Self::Final {
+        let cert = self.tbs_cert.sign(signature);
+        SignedObject {
+            digest_algorithm: self.digest_algorithm,
+            content_type: self.content_type,
+            content: self.content,
+            cert,
+            sid: self.sid,
+            signed_attrs: self.signed_attrs,
+            signature: self.signature,
+            message_digest: self.message_digest,
+            signing_time: self.signing_time,
+            binary_signing_time: self.binary_signing_time,
+        }
+    }
 }
 
 
@@ -1003,6 +1165,66 @@ mod signer_test {
             Bytes::from(b"1234".as_ref()),
             &signer,
             &key,
+        ).unwrap();
+        let sigobj = sigobj.encode_ref().to_captured(Mode::Der);
+
+        let sigobj = SignedObject::decode(sigobj.as_slice(), true).unwrap();
+        let cert = cert.validate_ta(
+            TalInfo::from_name("foo".into()).into_arc(), true
+        ).unwrap();
+        sigobj.validate(&cert, true).unwrap();
+    }
+}
+
+#[cfg(all(test, feature="softkeys"))]
+mod reverse_signer_test {
+    use std::str::FromStr;
+    use bcder::Oid;
+    use bcder::encode::Values;
+    use crate::uri;
+    use crate::repository::crypto::PublicKeyFormat;
+    use crate::repository::crypto::softsigner::OpenSslSigner;
+    use crate::repository::resources::{AsId, Prefix};
+    use crate::repository::tal::TalInfo;
+    use super::*;
+        
+    #[test]
+    fn encode_signed_object() {
+        let signer = OpenSslSigner::new();
+        let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
+        let pubkey = signer.get_key_info(&key).unwrap();
+        let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
+
+        let mut cert = TbsCert::new(
+            12u64.into(), pubkey.to_subject_name(),
+            Validity::from_secs(86400), None, pubkey, KeyUsage::Ca,
+            Overclaim::Trim
+        );
+        cert.set_basic_ca(Some(true));
+        cert.set_ca_repository(Some(uri.clone()));
+        cert.set_rpki_manifest(Some(uri.clone()));
+        cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
+        cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
+        cert.build_as_resource_blocks(|b| b.push((AsId::MIN, AsId::MAX)));
+        let cert = signer.sign_with_key(
+            key, cert.sign()
+        ).unwrap();
+
+        let mut sigobj = SignedObjectBuilder::new(
+            12u64.into(), Validity::from_secs(86400), uri.clone(),
+            uri.clone(), uri.clone()
+        );
+        sigobj.set_v4_resources_inherit();
+
+        let sigobj = sigobj.sign(
+            Oid(oid::SIGNED_DATA.0.into()),
+            Bytes::from(b"1234".as_ref()),
+        );
+        let sigobj = signer.sign_with_one_off_key(
+            SignatureAlgorithm::default(), sigobj
+        ).unwrap();
+        let sigobj = signer.sign_with_key(
+            key, sigobj
         ).unwrap();
         let sigobj = sigobj.encode_ref().to_captured(Mode::Der);
 
