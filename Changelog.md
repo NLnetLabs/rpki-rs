@@ -5,6 +5,8 @@
 Breaking Changes
 
 * The minimal supported Rust version is now 1.47. ([#158])
+* All methods of the `repository::crypto::signer::Signer` trait are now
+  taking a `&self` (some required a `&mut self` before). ([#162])
 
 New
 
@@ -13,6 +15,7 @@ Bug Fixes
 Other Changes
 
 [#158]: https://github.com/NLnetLabs/rpki-rs/pull/158
+[#162]: https://github.com/NLnetLabs/rpki-rs/pull/162
 
 
 ## 0.12.2
