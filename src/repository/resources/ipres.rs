@@ -1586,7 +1586,7 @@ impl AddressFamily {
             None => xerr!(return Err(decode::Malformed))
         };
         if octets.next().is_some() {
-            xerr!(return Err(decode::Malformed.into()))
+            xerr!(return Err(decode::Malformed))
         }
         match (first, second) {
             (0, 1) => Ok(AddressFamily::Ipv4),
