@@ -6,6 +6,7 @@
 //! https://datatracker.ietf.org/doc/draft-ietf-sidrops-aspa-verification/
 
 use std::fmt;
+use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, Oid, Tag};
 use bcder::encode::Values;
@@ -262,6 +263,51 @@ impl fmt::Display for ProviderAs {
     }
 }
 
+impl FromStr for ProviderAs {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Possible options:
+        //  AS#
+        //  AS#(v4)
+        //  AS#(v6)
+        if let Some(as_str) = s.strip_suffix("(v4)") {
+            let as_id = AsId::from_str(as_str).map_err(|_| Error::BadProviderAs)?;
+            Ok(ProviderAs::new_v4(as_id))
+        } else if let Some(as_str) = s.strip_suffix("(v6)") {
+            let as_id = AsId::from_str(as_str).map_err(|_| Error::BadProviderAs)?;
+            Ok(ProviderAs::new_v6(as_id))
+        } else {
+            let as_id = AsId::from_str(s).map_err(|_| Error::BadProviderAs)?;
+            Ok(ProviderAs::new(as_id))
+        }
+    }
+}
+
+//--- Deserialize and Serialize
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for ProviderAs {
+    fn serialize<S: serde::Serializer>(
+        &self, serializer: S
+    ) -> Result<S::Ok, S::Error> {
+        self.to_string().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for ProviderAs {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
+        use serde::de;
+
+        let string = String::deserialize(deserializer)?;
+        ProviderAs::from_str(&string).map_err(de::Error::custom)
+    }
+}
+
+
 
 //------------ AspaBuilder ---------------------------------------------------
 
@@ -319,6 +365,23 @@ impl AspaBuilder {
         Ok(Aspa { signed, content })
     }
 }
+
+//------------ Error ---------------------------------------------------------
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Error {
+    BadProviderAs,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match *self {
+            Error::BadProviderAs=> "cannot parse provider as",
+        })
+    }
+}
+
+impl std::error::Error for Error { }
 
 #[cfg(all(test, feature = "softkeys"))]
 mod signer_test {
@@ -421,11 +484,29 @@ mod signer_test {
         let aspa = make_aspa();
 
         let serialized = serde_json::to_string(&aspa).unwrap();
-        let deser_aspa: Aspa = serde_json::from_str(&serialized).unwrap();
+        let deserialized: Aspa = serde_json::from_str(&serialized).unwrap();
 
         assert_eq!(
             aspa.to_captured().into_bytes(),
-            deser_aspa.to_captured().into_bytes()
+            deserialized.to_captured().into_bytes()
+        )
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn serde_provider_as() {
+        let providers: Vec<ProviderAs> = vec![
+            ProviderAs::new(64497.into()),
+            ProviderAs::new_v4(64498.into()),
+            ProviderAs::new_v6(64499.into())
+        ];
+        
+        let serialized = serde_json::to_string(&providers).unwrap();
+        let deserialized: Vec<ProviderAs> = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(
+            providers,
+            deserialized
         )
     }
 }
@@ -468,8 +549,7 @@ mod signer_test {
 ///          afiLimit     ::= OCTET STRING (SIZE (2)) OPTIONAL
 ///      }
 /// ```
-///
-/// The _version_ must be 0. The _afiLimit, if present, MUST be
+////// The _version_ must be 0. The _afiLimit, if present, MUST be
 /// either `"\0\x01"` for IPv4 or `"\0\x02"` for IPv6.
 ///
 /// [signed object]: ../../sigobj/spec/index.html
