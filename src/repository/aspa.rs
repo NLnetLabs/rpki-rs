@@ -5,7 +5,7 @@
 //! https://datatracker.ietf.org/doc/draft-ietf-sidrops-aspa-profile/
 //! https://datatracker.ietf.org/doc/draft-ietf-sidrops-aspa-verification/
 
-use std::collections::HashSet;
+use std::fmt;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, Oid, Tag};
 use bcder::encode::Values;
@@ -100,7 +100,6 @@ impl<'de> serde::Deserialize<'de> for Aspa {
 //------------ AsProviderAttestation -----------------------------------------
 #[derive(Clone, Debug)]
 pub struct AsProviderAttestation {
-    family: AddressFamily,
     customer_as: AsId,
     provider_as_set: ProviderAsSet,
 }
@@ -111,17 +110,12 @@ impl AsProviderAttestation {
     ) -> Result<Self, S::Err> {
         // version [0] EXPLICIT INTEGER DEFAULT 0
         cons.take_opt_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(0))?;
-        eprintln!("AsProviderAttestation: got version");
-        
+                
         cons.take_sequence(|cons| {
-            let family = AddressFamily::take_from(cons)?;
-            eprintln!("AsProviderAttestation: got family");
             let customer_as = AsId::take_from(cons)?;
-            eprintln!("AsProviderAttestation: got customer_as");
             let provider_as_set = ProviderAsSet::take_from(cons)?;
 
             Ok(AsProviderAttestation {
-                family,
                 customer_as,
                 provider_as_set,
             })
@@ -153,7 +147,6 @@ impl AsProviderAttestation {
     pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             // version is DEFAULT
-            self.family.encode(),
             self.customer_as.encode(),
             &self.provider_as_set.0,
         ))
@@ -174,7 +167,7 @@ impl ProviderAsSet {
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             cons.capture(|cons| {
-                while AsId::skip_opt_in(cons)?.is_some() {}
+                while ProviderAs::skip_opt_in(cons)?.is_some() {}
                 Ok(())
             })
         }).map(ProviderAsSet)
@@ -186,68 +179,122 @@ impl ProviderAsSet {
 pub struct ProviderAsIter<'a>(&'a [u8]);
 
 impl<'a> Iterator for ProviderAsIter<'a> {
-    type Item = AsId;
+    type Item = ProviderAs;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.0.is_empty() {
             None
-        } else {
-            // If self.0 (Captured) is not empty then we know there will be at
-            // least one more AsId we can take and unwrap safely. This is verified
-            // when the ProviderAsSet is constructed during parsing.
-            Mode::Der
-                .decode(&mut self.0, |cons| AsId::take_from(cons).map(Some))
-                .unwrap()
+        }
+        else {
+            Mode::Der.decode(&mut self.0, |cons| {
+                ProviderAs::take_opt_from(cons)
+            }).unwrap()
         }
     }
 }
+
+//------------ AspaProvider ----------------------------------------------
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProviderAs {
+    provider: AsId,
+    afi_limit: Option<AddressFamily>,
+}
+
+impl ProviderAs {
+    pub fn new(provider: AsId) -> Self {
+        ProviderAs { provider, afi_limit: None }
+    }
+
+    pub fn new_v4(provider: AsId) -> Self {
+        ProviderAs { provider, afi_limit: Some(AddressFamily::Ipv4) }
+    }
+
+    pub fn new_v6(provider: AsId) -> Self {
+        ProviderAs { provider, afi_limit: Some(AddressFamily::Ipv6) }
+    }
+
+}
+
+/// Encoding/Decoding
+impl ProviderAs {
+    //
+    //      providerAS     ::= SEQUENCE {
+    //          providerASID ::= ASID,
+    //          afiLimit     ::= OCTET STRING (SIZE (2)) OPTIONAL
+    //      }
+    //
+    //      ASID           ::= INTEGER
+        
+    /// Takes an optional ProviderAS from the beginning of an encoded value.
+    pub fn take_opt_from<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Option<Self>, S::Err> {
+        cons.take_opt_sequence(|cons|{
+            let provider = AsId::take_from(cons)?;
+            let afi_limit = AddressFamily::take_opt_from(cons)?;
+            Ok(ProviderAs { provider, afi_limit })
+        })
+    }
+
+    /// Skips over a ProviderAs if it is present.
+    pub fn skip_opt_in<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Option<()>, S::Err> {
+        Self::take_opt_from(cons).map(|opt| opt.map(|_| ()))
+    }
+
+    pub fn encode(self) -> impl encode::Values {
+        encode::sequence((
+            self.provider.encode(),
+            self.afi_limit.map(|v| v.encode())
+        ))
+    }
+}
+
+impl fmt::Display for ProviderAs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.afi_limit {
+            None => write!(f, "{}", self.provider),
+            Some(family) => {
+                let fam_str = match &family {
+                    AddressFamily::Ipv4 => "v4",
+                    AddressFamily::Ipv6 => "v6",
+                };
+                write!(f, "{}({})", self.provider, fam_str)
+            }
+        }
+    }
+}
+
 
 //------------ AspaBuilder ---------------------------------------------------
 
 pub struct AspaBuilder {
-    family: AddressFamily,
     customer_as: AsId,
-    provider_as_set: HashSet<AsId>, // ensure there are no duplicates
+    providers: Vec<ProviderAs>
 }
 
 impl AspaBuilder {
-    pub fn new_v4(customer_as: AsId) -> Self {
+    pub fn new(customer_as: AsId) -> Self {
         AspaBuilder {
-            family: AddressFamily::Ipv4,
             customer_as,
-            provider_as_set: HashSet::new(),
+            providers: vec![],
         }
     }
 
-    pub fn new_v6(customer_as: AsId) -> Self {
-        AspaBuilder {
-            family: AddressFamily::Ipv6,
-            customer_as,
-            provider_as_set: HashSet::new(),
-        }
-    }
-
-    pub fn add_provider(&mut self, provider: AsId) {
-        self.provider_as_set.insert(provider);
+    pub fn add_provider(&mut self, provider: ProviderAs) {
+        self.providers.push(provider);
     }
 
     pub fn into_attestation(self) -> AsProviderAttestation {
-        let provider_as_set_captured = if self.provider_as_set.is_empty() {
+        let provider_as_set_captured = if self.providers.is_empty() {
             Captured::empty(Mode::Der)
         } else {
-            let mut asns: Vec<AsId> = self.provider_as_set.into_iter().collect();
-            asns.sort();
-
             Captured::from_values(Mode::Der, 
                 encode::sequence(
-                    encode::slice(asns.as_slice(), |as_id| as_id.encode())
+                    encode::slice(self.providers.as_slice(), |prov| prov.encode())
                 )
             )
         };
         let provider_as_set = ProviderAsSet(provider_as_set_captured);
 
         AsProviderAttestation {
-            family: self.family,
             customer_as: self.customer_as,
             provider_as_set,
         }
@@ -287,11 +334,15 @@ mod signer_test {
     use super::*;
 
 
-    fn make_aspa(afi: AddressFamily) -> Aspa {
+    fn make_aspa() -> Aspa {
         let mut signer = OpenSslSigner::new();
 
         let customer_as: AsId = 64496.into();
-        let provider_asns: Vec<AsId> = vec![64497.into(), 64498.into(), 64499.into()];
+        let providers: Vec<ProviderAs> = vec![
+            ProviderAs::new(64497.into()),
+            ProviderAs::new_v4(64498.into()),
+            ProviderAs::new_v6(64499.into())
+        ];
 
         let issuer_key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
         let issuer_uri = uri::Rsync::from_str("rsync://example.com/parent/ca.cer").unwrap();
@@ -328,12 +379,9 @@ mod signer_test {
             
         };
 
-        let mut aspa = match afi {
-            AddressFamily::Ipv4 => AspaBuilder::new_v4(customer_as),
-            AddressFamily::Ipv6 => AspaBuilder::new_v6(customer_as),
-        };
+        let mut aspa = AspaBuilder::new(customer_as);
         
-        for provider in &provider_asns {
+        for provider in &providers {
             aspa.add_provider(*provider);
         }
         let aspa = aspa.finalize(
@@ -355,24 +403,22 @@ mod signer_test {
         
         let (_, attestation) = decoded.process(&issuer_cert, true, |_| Ok(())).unwrap();
         
-        assert_eq!(afi, attestation.family);
         assert_eq!(customer_as, attestation.customer_as);
-        let decoded_provider_asns: Vec<AsId> = attestation.provider_as_set.iter().collect();
-        assert_eq!(provider_asns, decoded_provider_asns.as_slice());
+        let decoded_providers: Vec<ProviderAs> = attestation.provider_as_set.iter().collect();
+        assert_eq!(providers, decoded_providers.as_slice());
 
         aspa
     }
 
     #[test]
     fn encode_aspa() {
-        make_aspa(AddressFamily::Ipv4);
-        make_aspa(AddressFamily::Ipv6);
+        make_aspa();
     }
 
     #[test]
     #[cfg(feature = "serde")]
     fn serde_aspa() {
-        let aspa = make_aspa(AddressFamily::Ipv4);
+        let aspa = make_aspa();
 
         let serialized = serde_json::to_string(&aspa).unwrap();
         let deser_aspa: Aspa = serde_json::from_str(&serialized).unwrap();
@@ -400,22 +446,31 @@ mod signer_test {
 /// which is defined as follows:
 ///
 /// ```txt
-/// ASProviderAttestation   ::= SEQUENCE {
-///      version                [0] ASPAVersion DEFAULT v0,
-///      aFI                    AddressFamilyIdentifier,
-///      customerASID           ASID,
-///      providerASSET          SEQUENCE (SIZE(1..MAX)) OF ASID }
+///      ct-ASPA CONTENT-TYPE ::=
+///          { ASProviderAttestation IDENTIFIED BY id-ct-ASPA }
 ///
-/// ASPAVersion             ::= INTEGER  { v0(0) }
+///      id-ct-ASPA OBJECT IDENTIFIER ::= { id-ct TBD }
 ///
-/// AddressFamilyIdentifier ::= OCTET STRING (SIZE (2))
+///      ASProviderAttestation ::= SEQUENCE {
+///          version [0]   ASPAVersion DEFAULT v0,
+///          customerASID  ASID,
+///          providers     ProviderASSet,
+///      }
 ///
-/// ASID                    ::= INTEGER
+///      ASPAVersion    ::= INTEGER  { v0(0) }
+///
+///      ASID           ::= INTEGER
+///
+///      providerASSET  ::= SEQUENCE (SIZE(1..MAX)) OF ProviderAS }
+///
+///      providerAS     ::= SEQUENCE {
+///          providerASID ::= ASID,
+///          afiLimit     ::= OCTET STRING (SIZE (2)) OPTIONAL
+///      }
 /// ```
 ///
-/// The _version_ must be 0. The _addressFamily_ is identical to the field
-/// used in RPKI certificate IP resources, i.e, `"\0\x01"` for IPv4 and
-/// `"\0\x02"` for IPv6.
+/// The _version_ must be 0. The _afiLimit, if present, MUST be
+/// either `"\0\x01"` for IPv4 or `"\0\x02"` for IPv6.
 ///
 /// [signed object]: ../../sigobj/spec/index.html
 /// [ASPA Profile draft]:  https://datatracker.ietf.org/doc/draft-ietf-sidrops-aspa-profile/
