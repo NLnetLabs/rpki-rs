@@ -168,7 +168,22 @@ impl ProviderAsSet {
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             cons.capture(|cons| {
-                while ProviderAs::skip_opt_in(cons)?.is_some() {}
+                let mut last: Option<AsId> = None;
+                let mut entries = true;
+                while entries {
+                    if let Some(provider_as) = ProviderAs::take_opt_from(cons)? {
+                        let current_as_id = provider_as.provider();
+                        if let Some(last_as_id) = last {
+                            if last_as_id >= current_as_id {
+                                return Err(decode::Malformed.into());
+                            }
+                        }
+                        last = Some(provider_as.provider());
+                    } else {
+                        entries = false;
+                    }
+                }
+                
                 Ok(())
             })
         }).map(ProviderAsSet)
@@ -212,6 +227,14 @@ impl ProviderAs {
 
     pub fn new_v6(provider: AsId) -> Self {
         ProviderAs { provider, afi_limit: Some(AddressFamily::Ipv6) }
+    }
+
+    pub fn provider(&self) -> AsId {
+        self.provider
+    }
+
+    pub fn afi_limit(&self) -> Option<AddressFamily> {
+        self.afi_limit
     }
 
 }
@@ -317,18 +340,47 @@ pub struct AspaBuilder {
 }
 
 impl AspaBuilder {
-    pub fn new(customer_as: AsId) -> Self {
+    pub fn new(
+        customer_as: AsId,
+        providers: Vec<ProviderAs>
+    ) -> Result<Self, Error> {
+        let mut builder = AspaBuilder {
+            customer_as,
+            providers,
+        };
+        builder.sort_and_verify_providers()?;
+        Ok(builder)
+    }
+
+    pub fn empty(customer_as: AsId) -> Self {
         AspaBuilder {
             customer_as,
             providers: vec![],
         }
     }
 
-    pub fn add_provider(&mut self, provider: ProviderAs) {
+    pub fn add_provider(&mut self, provider: ProviderAs) -> Result<(), Error>{
         self.providers.push(provider);
+        self.sort_and_verify_providers()
     }
 
-    pub fn into_attestation(self) -> AsProviderAttestation {
+    fn sort_and_verify_providers(&mut self) -> Result<(), Error> {
+        // sort and verify if there are any duplicates
+        if self.providers.len() > 1 {
+            self.providers.sort_by_key(|p| p.provider());
+            let mut last = self.providers.first().unwrap().provider();
+            for i in 1..self.providers.len() {
+                let new = self.providers.get(i).unwrap().provider();
+                if new == last {
+                    return Err(Error::ProviderAsDuplicate);
+                }
+                last = new;
+            }
+        }
+        Ok(())
+    }
+
+    fn into_attestation(self) -> AsProviderAttestation {
         let provider_as_set_captured = if self.providers.is_empty() {
             Captured::empty(Mode::Der)
         } else {
@@ -371,12 +423,14 @@ impl AspaBuilder {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Error {
     BadProviderAs,
+    ProviderAsDuplicate,
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(match *self {
             Error::BadProviderAs=> "cannot parse provider as",
+            Error::ProviderAsDuplicate=> "provider as set contains duplicate",
         })
     }
 }
@@ -401,9 +455,9 @@ mod signer_test {
         let mut signer = OpenSslSigner::new();
 
         let customer_as: AsId = 64496.into();
-        let providers: Vec<ProviderAs> = vec![
-            ProviderAs::new(64497.into()),
+        let mut providers: Vec<ProviderAs> = vec![
             ProviderAs::new_v4(64498.into()),
+            ProviderAs::new(64497.into()),
             ProviderAs::new_v6(64499.into())
         ];
 
@@ -442,11 +496,12 @@ mod signer_test {
             
         };
 
-        let mut aspa = AspaBuilder::new(customer_as);
+        let mut aspa = AspaBuilder::empty(customer_as);
         
         for provider in &providers {
-            aspa.add_provider(*provider);
+            aspa.add_provider(*provider).unwrap();
         }
+
         let aspa = aspa.finalize(
             SignedObjectBuilder::new(
                 123_u64.into(),
@@ -468,7 +523,10 @@ mod signer_test {
         
         assert_eq!(customer_as, attestation.customer_as);
         let decoded_providers: Vec<ProviderAs> = attestation.provider_as_set.iter().collect();
-        assert_eq!(providers, decoded_providers.as_slice());
+        assert_ne!(providers, decoded_providers.as_slice()); // The set became sorted
+
+        providers.sort_by_key(|p| p.provider());
+        assert_eq!(providers, decoded_providers.as_slice()); // Sorted vecs should match
 
         aspa
     }
