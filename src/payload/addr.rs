@@ -163,8 +163,13 @@ pub struct Prefix {
 
 impl Prefix {
     /// Creates a new prefix without checking.
-    fn new_unchecked(bits: Bits, family_and_len: u8) -> Self {
-        Prefix { bits, family_and_len }
+    fn new_unchecked(bits: Bits, len: u8, v6: bool) -> Self {
+        if v6 {
+            Prefix { bits, family_and_len: len | 0x80 }
+        }
+        else {
+            Prefix { bits, family_and_len: len }
+        }
     }
 
     /// Creates a new prefix from an address and a length.
@@ -199,7 +204,7 @@ impl Prefix {
         }
 
         // Contruct a value
-        Ok(Self::new_unchecked(bits, len))
+        Ok(Self::new_unchecked(bits, len, false))
     }
 
     /// Creates a new prefix from an IPv6 adddress and a prefix length.
@@ -220,7 +225,7 @@ impl Prefix {
         }
 
         // Contruct a value, set the left-most bit in len.
-        Ok(Self::new_unchecked(bits, len | 0x80))
+        Ok(Self::new_unchecked(bits, len, true))
     }
 
     /// Creates a new prefix zeroing out host bits.
@@ -239,7 +244,9 @@ impl Prefix {
         if len > 32 {
             return Err(PrefixError::LenOverflow)
         }
-        Ok(Self::new_unchecked(Bits::from_v4(addr).clear_host(len), len))
+        Ok(Self::new_unchecked(
+            Bits::from_v4(addr).clear_host(len), len, false
+        ))
     }
 
     /// Creates a new prefix zeroing out host bits.
@@ -250,7 +257,9 @@ impl Prefix {
         if len > 128 {
             return Err(PrefixError::LenOverflow)
         }
-        Ok(Self::new_unchecked(Bits::from_v6(addr).clear_host(len), len))
+        Ok(Self::new_unchecked(
+            Bits::from_v6(addr).clear_host(len), len, true
+        ))
     }
 
     /// Returns whether the prefix is for an IPv4 address.
