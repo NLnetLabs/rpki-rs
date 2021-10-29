@@ -263,8 +263,8 @@ impl PublicKey {
 
 /// Value encoder for a public key as a common name.
 ///
-/// This type encodes the bits of a public key in a printable string as a
-/// sequence of hex digits as suggested as one option for subject names in
+/// This type encodes the key identifier of a public key in a printable string
+/// as a sequence of hex digits as suggested as one option for subject names in
 /// RPKI certificates by section 8 of [RFC 6487].
 ///
 /// [RFC 6487]: https://tools.ietf.org/html/rfc6487
@@ -275,7 +275,7 @@ impl<'a> PrimitiveContent for PublicKeyCn<'a> {
     const TAG: Tag = Tag::PRINTABLE_STRING;
 
     fn encoded_len(&self, _mode: Mode) -> usize {
-        self.0.bits.octet_len() * 2
+        self.0.key_identifier().into_hex().len()
     }
 
     fn write_encoded<W: io::Write>(
@@ -283,10 +283,7 @@ impl<'a> PrimitiveContent for PublicKeyCn<'a> {
         _mode: Mode, 
         target: &mut W
     ) -> Result<(), io::Error> {
-        for ch in self.0.bits.octets() {
-            target.write_all(&hex::encode_u8(ch))?
-        }
-        Ok(())
+        target.write_all(&self.0.key_identifier().into_hex())
     }
 }
 
