@@ -242,7 +242,7 @@ impl PublicKey {
             encode::set(
                 encode::sequence((
                     oid::AT_COMMON_NAME.encode(),
-                    PublicKeyCn(self).encode(),
+                    PublicKeyCn(self.key_identifier()).encode(),
                 ))
             )
         )
@@ -268,14 +268,14 @@ impl PublicKey {
 /// RPKI certificates by section 8 of [RFC 6487].
 ///
 /// [RFC 6487]: https://tools.ietf.org/html/rfc6487
-#[derive(Clone, Debug)]
-pub struct PublicKeyCn<'a>(&'a PublicKey);
+#[derive(Clone, Copy, Debug)]
+pub struct PublicKeyCn(KeyIdentifier);
 
-impl<'a> PrimitiveContent for PublicKeyCn<'a> {
+impl PrimitiveContent for PublicKeyCn {
     const TAG: Tag = Tag::PRINTABLE_STRING;
 
     fn encoded_len(&self, _mode: Mode) -> usize {
-        self.0.key_identifier().into_hex().len()
+        self.0.as_slice().len() * 2
     }
 
     fn write_encoded<W: io::Write>(
@@ -283,7 +283,7 @@ impl<'a> PrimitiveContent for PublicKeyCn<'a> {
         _mode: Mode, 
         target: &mut W
     ) -> Result<(), io::Error> {
-        target.write_all(&self.0.key_identifier().into_hex())
+        target.write_all(&self.0.into_hex())
     }
 }
 
