@@ -21,6 +21,7 @@ pub fn encode<'a>(src: &[u8], dest: &'a mut [u8]) -> &'a str {
     unsafe { str::from_utf8_unchecked(dest) }
 }
 
+#[allow(dead_code)]
 pub fn encode_u8(ch: u8) -> [u8; 2] {
     [DIGITS[usize::from(ch >> 4)], DIGITS[usize::from(ch & 0x0F)]]
 }
