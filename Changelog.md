@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased future release
+## 0.13.0
+
+Released 2021-11-01.
 
 Breaking Changes
 
@@ -17,10 +19,6 @@ New
 * Access methods for the signing time in signed objects and RTA
   multi-signed objects. ([#169])
 * Experimental support for ASPA objects. ([#166])
-
-Bug Fixes
-
-Other Changes
 
 [#158]: https://github.com/NLnetLabs/rpki-rs/pull/158
 [#162]: https://github.com/NLnetLabs/rpki-rs/pull/162
