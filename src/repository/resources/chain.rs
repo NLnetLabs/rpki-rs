@@ -1026,6 +1026,7 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::eq_op)]
     fn eq() {
         let empty = OwnedChain::<(u8, u8)>::empty();
         let one = OwnedChain::from([(1, 2)].as_ref());
@@ -1041,15 +1042,15 @@ mod test {
         assert_ne!(two.as_chain(), one.as_chain());
         assert_eq!(two.as_chain(), two.as_chain());
 
-        assert_eq!(empty.clone(), empty.clone());
-        assert_ne!(empty.clone(), one.clone());
-        assert_ne!(empty.clone(), two.clone());
-        assert_ne!(one.clone(), empty.clone());
-        assert_eq!(one.clone(), one.clone());
-        assert_ne!(one.clone(), two.clone());
-        assert_ne!(two.clone(), empty.clone());
-        assert_ne!(two.clone(), one.clone());
-        assert_eq!(two.clone(), two.clone());
+        assert_eq!(empty, empty);
+        assert_ne!(empty, one);
+        assert_ne!(empty, two);
+        assert_ne!(one, empty);
+        assert_eq!(one, one);
+        assert_ne!(one, two);
+        assert_ne!(two, empty);
+        assert_ne!(two, one);
+        assert_eq!(two, two);
     }
 
     #[test]

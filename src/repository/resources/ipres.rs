@@ -1845,10 +1845,7 @@ mod test {
     fn ip_block_from_v4_str() {
         fn check(s: &str, prefix: bool, min: &str, max: &str) {
             let block = IpBlock::from_v4_str(s).unwrap();
-            let is_prefix = match block {
-                IpBlock::Prefix(_) => true,
-                _ => false
-            };
+            let is_prefix = matches!(block, IpBlock::Prefix(_));
             assert_eq!(prefix, is_prefix);
             assert_eq!(
                 block.min(),
@@ -1903,10 +1900,7 @@ mod test {
     fn ip_block_from_str() {
         fn check_v4(s: &str, prefix: bool, min: &str, max: &str) {
             let block = IpBlock::from_str(s).unwrap();
-            let is_prefix = match block {
-                IpBlock::Prefix(_) => true,
-                _ => false
-            };
+            let is_prefix = matches!(block, IpBlock::Prefix(_));
             assert_eq!(prefix, is_prefix);
             assert_eq!(
                 block.min(),
@@ -1991,19 +1985,19 @@ mod test {
     #[test]
     fn addr_from() {
         assert_eq!(
-            Addr::from(0x12345678_12345678),
-            Addr(0x12345678_12345678)
+            Addr::from(0x1234_5678_1234_5678),
+            Addr(0x1234_5678_1234_5678)
         );
         assert_eq!(
-            u128::from(Addr(0x12345678_12345678)),
-            0x12345678_12345678
+            u128::from(Addr(0x1234_5678_1234_5678)),
+            0x1234_5678_1234_5678
         );
         assert_eq!(
             Addr::from(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
-            Addr(0x7F000001_00000000_00000000_00000000)
+            Addr(0x7F00_0001_0000_0000_0000_0000_0000_0000)
         );
         assert_eq!(
-            Ipv4Addr::from(Addr(0x7F000001_00000000_00000000_00000000)),
+            Ipv4Addr::from(Addr(0x7F00_0001_0000_0000_0000_0000_0000_0000)),
             Ipv4Addr::new(127, 0, 0, 1)
         );
         assert_eq!(
@@ -2023,12 +2017,12 @@ mod test {
     #[test]
     fn addr_to_min_max() {
         assert_eq!(
-            Addr(0x12345678_12345678_12345678_12345678).to_min(11).0,
-            0x12200000_00000000_00000000_00000000
+            Addr(0x1234_5678_1234_5678_1234_5678_1234_5678).to_min(11).0,
+            0x1220_0000_0000_0000_0000_0000_0000_0000
         );
         assert_eq!(
-            Addr(0x12345678_12345678_12345678_12345678).to_max(11).0,
-            0x123fffff_ffffffff_ffffffff_ffffffff
+            Addr(0x1234_5678_1234_5678_1234_5678_1234_5678).to_max(11).0,
+            0x123f_ffff_ffff_ffff_ffff_ffff_ffff_ffff
         );
     }
 }

@@ -575,7 +575,7 @@ mod signer_test {
         let manifest = content.into_manifest(
             SignedObjectBuilder::new(
                 12u64.into(), Validity::from_secs(86400), uri.clone(),
-                uri.clone(), uri.clone()
+                uri.clone(), uri
             ),
             &signer, &key
         ).unwrap();
