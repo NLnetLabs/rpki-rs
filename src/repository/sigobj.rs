@@ -995,7 +995,7 @@ mod signer_test {
 
         let mut sigobj = SignedObjectBuilder::new(
             12u64.into(), Validity::from_secs(86400), uri.clone(),
-            uri.clone(), uri.clone()
+            uri.clone(), uri
         );
         sigobj.set_v4_resources_inherit();
         let sigobj = sigobj.finalize(

@@ -1705,7 +1705,7 @@ mod test {
 
     #[test]
     fn snapshot_content() {
-        const CONTENT: &'static [u8] = b"foo bar\n";
+        const CONTENT: &[u8] = b"foo bar\n";
         let snapshot = br#"
             <snapshot version="1"
                 session_id="a2d845c4-5b91-4015-a2b7-988c03ce232a"

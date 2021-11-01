@@ -683,7 +683,7 @@ mod signer_test {
         let roa = roa.finalize(
             SignedObjectBuilder::new(
                 12u64.into(), Validity::from_secs(86400), uri.clone(),
-                uri.clone(), uri.clone()
+                uri.clone(), uri
             ),
             &signer, &key
         ).unwrap();

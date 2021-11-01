@@ -2632,17 +2632,17 @@ mod test {
         Cert::decode(
             include_bytes!("../../test-data/ta.cer").as_ref()
         ).unwrap().inspect_ta_at(
-            true, Time::utc(2020, 11, 01, 12, 00, 00)
+            true, Time::utc(2020, 11, 1, 12, 0, 0)
         ).unwrap();
         Cert::decode(
             include_bytes!("../../test-data/ca1.cer").as_ref()
         ).unwrap().inspect_ca_at(
-            true, Time::utc(2020, 05, 01, 12, 00, 00)
+            true, Time::utc(2020, 5, 1, 12, 0, 0)
         ).unwrap();
         Cert::decode(
             include_bytes!("../../test-data/router.cer").as_ref()
         ).unwrap().inspect_router_at(
-            true, Time::utc(2020, 11, 01, 12, 00, 00)
+            true, Time::utc(2020, 11, 1, 12, 0, 0)
         ).unwrap();
     }
 
@@ -2662,7 +2662,7 @@ mod test {
         ).unwrap();
         assert!(
             roa.cert().inspect_ee_at(
-                true, Time::utc(2020, 05, 01, 0, 0, 0)
+                true, Time::utc(2020, 5, 1, 0, 0, 0)
             ).is_ok()
         );
 
@@ -2674,7 +2674,7 @@ mod test {
         ).unwrap();
         assert!(
             mft.cert().inspect_ee_at(
-                true, Time::utc(2020, 05, 01, 0, 0, 0)
+                true, Time::utc(2020, 5, 1, 0, 0, 0)
             ).is_err()
         );
     }
@@ -2717,7 +2717,7 @@ mod signer_test {
         );
         cert.set_basic_ca(Some(true));
         cert.set_ca_repository(Some(uri.clone()));
-        cert.set_rpki_manifest(Some(uri.clone()));
+        cert.set_rpki_manifest(Some(uri));
         cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_as_resource_blocks(|b| b.push((AsId::MIN, AsId::MAX)));
