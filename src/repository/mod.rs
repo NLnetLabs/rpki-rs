@@ -18,6 +18,7 @@ pub use self::tal::Tal;
 
 //--- Modules
 //
+pub mod aspa;
 pub mod cert;
 pub mod crl;
 pub mod crypto;
