@@ -20,7 +20,7 @@ use super::state::State;
 
 //------------ Configuration Constants ---------------------------------------
 
-const IO_TIMEOUT: Duration = Duration::from_secs(1);
+const IO_TIMEOUT: Duration = Duration::from_secs(10);
 
 
 //------------ PayloadTarget -------------------------------------------------
