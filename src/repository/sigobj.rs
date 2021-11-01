@@ -72,6 +72,16 @@ impl SignedObject {
     pub fn cert(&self) -> &Cert {
         &self.cert
     }
+
+    /// Returns the signing time if available.
+    pub fn signing_time(&self) -> Option<Time> {
+        self.signing_time
+    }
+
+    /// Returns the binary signing time if available.
+    pub fn binary_signing_time(&self) -> Option<u64> {
+        self.binary_signing_time
+    }
 }
 
 /// # Decoding, Validation, and Encoding
