@@ -13,7 +13,9 @@ use bcder::encode::Values;
 use super::oid;
 use super::cert::{Cert, ResourceCert};
 use super::crypto::{Signer, SigningError};
-use super::resources::{AddressFamily, AsBlock, AsBlocks, AsBlocksBuilder, AsId, AsResources};
+use super::resources::{
+    AddressFamily, AsBlock, AsBlocks, AsBlocksBuilder, AsId, AsResources
+};
 use super::sigobj::{SignedObject, SignedObjectBuilder};
 use super::x509::ValidationError;
 
@@ -99,6 +101,7 @@ impl<'de> serde::Deserialize<'de> for Aspa {
 
 
 //------------ AsProviderAttestation -----------------------------------------
+
 #[derive(Clone, Debug)]
 pub struct AsProviderAttestation {
     customer_as: AsId,
@@ -154,7 +157,9 @@ impl AsProviderAttestation {
     }
 }
 
+
 //------------ ProviderAsSet -------------------------------------------------
+
 #[derive(Clone, Debug)]
 pub struct ProviderAsSet(Captured);
 
@@ -171,7 +176,9 @@ impl ProviderAsSet {
                 let mut last: Option<AsId> = None;
                 let mut entries = true;
                 while entries {
-                    if let Some(provider_as) = ProviderAs::take_opt_from(cons)? {
+                    if let Some(provider_as) = ProviderAs::take_opt_from(
+                        cons
+                    )? {
                         let current_as_id = provider_as.provider();
                         if let Some(last_as_id) = last {
                             if last_as_id >= current_as_id {
@@ -190,7 +197,9 @@ impl ProviderAsSet {
     }
 }
 
+
 //------------ ProviderAsIter ------------------------------------------------
+
 #[derive(Clone, Debug)]
 pub struct ProviderAsIter<'a>(&'a [u8]);
 
@@ -209,7 +218,9 @@ impl<'a> Iterator for ProviderAsIter<'a> {
     }
 }
 
+
 //------------ AspaProvider ----------------------------------------------
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProviderAs {
     provider: AsId,
@@ -239,7 +250,6 @@ impl ProviderAs {
 
 }
 
-/// Encoding/Decoding
 impl ProviderAs {
     //
     //      providerAS     ::= SEQUENCE {
@@ -250,7 +260,9 @@ impl ProviderAs {
     //      ASID           ::= INTEGER
         
     /// Takes an optional ProviderAS from the beginning of an encoded value.
-    pub fn take_opt_from<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Option<Self>, S::Err> {
+    pub fn take_opt_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Option<Self>, S::Err> {
         cons.take_opt_sequence(|cons|{
             let provider = AsId::take_from(cons)?;
             let afi_limit = AddressFamily::take_opt_from(cons)?;
@@ -259,7 +271,9 @@ impl ProviderAs {
     }
 
     /// Skips over a ProviderAs if it is present.
-    pub fn skip_opt_in<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Option<()>, S::Err> {
+    pub fn skip_opt_in<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Option<()>, S::Err> {
         Self::take_opt_from(cons).map(|opt| opt.map(|_| ()))
     }
 
@@ -270,6 +284,32 @@ impl ProviderAs {
         ))
     }
 }
+
+
+//--- FromStr
+
+impl FromStr for ProviderAs {
+    type Err = <AsId as FromStr>::Err;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Possible options:
+        //  AS#
+        //  AS#(v4)
+        //  AS#(v6)
+        if let Some(as_str) = s.strip_suffix("(v4)") {
+            Ok(ProviderAs::new_v4(AsId::from_str(as_str)?))
+        }
+        else if let Some(as_str) = s.strip_suffix("(v6)") {
+            Ok(ProviderAs::new_v6(AsId::from_str(as_str)?))
+        }
+        else {
+            Ok(ProviderAs::new(AsId::from_str(s)?))
+        }
+    }
+}
+
+
+//--- Display
 
 impl fmt::Display for ProviderAs {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -286,26 +326,6 @@ impl fmt::Display for ProviderAs {
     }
 }
 
-impl FromStr for ProviderAs {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // Possible options:
-        //  AS#
-        //  AS#(v4)
-        //  AS#(v6)
-        if let Some(as_str) = s.strip_suffix("(v4)") {
-            let as_id = AsId::from_str(as_str).map_err(|_| Error::BadProviderAs)?;
-            Ok(ProviderAs::new_v4(as_id))
-        } else if let Some(as_str) = s.strip_suffix("(v6)") {
-            let as_id = AsId::from_str(as_str).map_err(|_| Error::BadProviderAs)?;
-            Ok(ProviderAs::new_v6(as_id))
-        } else {
-            let as_id = AsId::from_str(s).map_err(|_| Error::BadProviderAs)?;
-            Ok(ProviderAs::new(as_id))
-        }
-    }
-}
 
 //--- Deserialize and Serialize
 
@@ -331,7 +351,6 @@ impl<'de> serde::Deserialize<'de> for ProviderAs {
 }
 
 
-
 //------------ AspaBuilder ---------------------------------------------------
 
 pub struct AspaBuilder {
@@ -343,7 +362,7 @@ impl AspaBuilder {
     pub fn new(
         customer_as: AsId,
         providers: Vec<ProviderAs>
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, DuplicateProviderAs> {
         let mut builder = AspaBuilder {
             customer_as,
             providers,
@@ -359,12 +378,16 @@ impl AspaBuilder {
         }
     }
 
-    pub fn add_provider(&mut self, provider: ProviderAs) -> Result<(), Error>{
+    pub fn add_provider(
+        &mut self, provider: ProviderAs
+    ) -> Result<(), DuplicateProviderAs> {
         self.providers.push(provider);
         self.sort_and_verify_providers()
     }
 
-    fn sort_and_verify_providers(&mut self) -> Result<(), Error> {
+    fn sort_and_verify_providers(
+        &mut self
+    ) -> Result<(), DuplicateProviderAs> {
         // sort and verify if there are any duplicates
         if self.providers.len() > 1 {
             self.providers.sort_by_key(|p| p.provider());
@@ -372,7 +395,7 @@ impl AspaBuilder {
             for i in 1..self.providers.len() {
                 let new = self.providers.get(i).unwrap().provider();
                 if new == last {
-                    return Err(Error::ProviderAsDuplicate);
+                    return Err(DuplicateProviderAs);
                 }
                 last = new;
             }
@@ -386,7 +409,10 @@ impl AspaBuilder {
         } else {
             Captured::from_values(Mode::Der, 
                 encode::sequence(
-                    encode::slice(self.providers.as_slice(), |prov| prov.encode())
+                    encode::slice(
+                        self.providers.as_slice(),
+                        |prov| prov.encode()
+                    )
                 )
             )
         };
@@ -418,28 +444,25 @@ impl AspaBuilder {
     }
 }
 
-//------------ Error ---------------------------------------------------------
+
+//------------ DuplicateProviderAs -------------------------------------------
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Error {
-    BadProviderAs,
-    ProviderAsDuplicate,
-}
+pub struct DuplicateProviderAs;
 
-impl fmt::Display for Error {
+impl fmt::Display for DuplicateProviderAs {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(match *self {
-            Error::BadProviderAs=> "cannot parse provider as",
-            Error::ProviderAsDuplicate=> "provider as set contains duplicate",
-        })
+        f.write_str("provider as set contains duplicate")
     }
 }
 
-impl std::error::Error for Error { }
+impl std::error::Error for DuplicateProviderAs { }
+
+
+//============ Test ==========================================================
 
 #[cfg(all(test, feature = "softkeys"))]
 mod signer_test {
-
     use std::str::FromStr;
     use crate::uri;
     use crate::repository::cert::{KeyUsage, Overclaim, TbsCert};
@@ -462,13 +485,23 @@ mod signer_test {
         ];
 
         let issuer_key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
-        let issuer_uri = uri::Rsync::from_str("rsync://example.com/parent/ca.cer").unwrap();
-        let crl_uri = uri::Rsync::from_str("rsync://example.com/ca/ca.crl").unwrap();
-        let asa_uri = uri::Rsync::from_str("rsync://example.com/ca/asa.asa").unwrap();
+        let issuer_uri = uri::Rsync::from_str(
+            "rsync://example.com/parent/ca.cer"
+        ).unwrap();
+        let crl_uri = uri::Rsync::from_str(
+            "rsync://example.com/ca/ca.crl"
+        ).unwrap();
+        let asa_uri = uri::Rsync::from_str(
+            "rsync://example.com/ca/asa.asa"
+        ).unwrap();
         
         let issuer_cert = {
-            let repo_uri = uri::Rsync::from_str("rsync://example.com/ca/").unwrap();
-            let mft_uri = uri::Rsync::from_str("rsync://example.com/ca/ca.mft").unwrap();
+            let repo_uri = uri::Rsync::from_str(
+                "rsync://example.com/ca/"
+            ).unwrap();
+            let mft_uri = uri::Rsync::from_str(
+                "rsync://example.com/ca/ca.mft"
+            ).unwrap();
 
             let pubkey = signer.get_key_info(&issuer_key).unwrap();
 
@@ -519,14 +552,19 @@ mod signer_test {
         
         assert_eq!(encoded.as_slice(), decoded.to_captured().as_slice());
         
-        let (_, attestation) = decoded.process(&issuer_cert, true, |_| Ok(())).unwrap();
+        let (_, attestation) = decoded.process(
+            &issuer_cert, true, |_| Ok(())
+        ).unwrap();
         
         assert_eq!(customer_as, attestation.customer_as);
-        let decoded_providers: Vec<ProviderAs> = attestation.provider_as_set.iter().collect();
-        assert_ne!(providers, decoded_providers.as_slice()); // The set became sorted
+        let decoded_providers: Vec<_> =
+            attestation.provider_as_set.iter().collect();
+        assert_ne!(providers, decoded_providers.as_slice());
+            // The set became sorted
 
         providers.sort_by_key(|p| p.provider());
-        assert_eq!(providers, decoded_providers.as_slice()); // Sorted vecs should match
+        assert_eq!(providers, decoded_providers.as_slice());
+            // Sorted vecs should match
 
         aspa
     }
@@ -560,7 +598,7 @@ mod signer_test {
         ];
         
         let serialized = serde_json::to_string(&providers).unwrap();
-        let deserialized: Vec<ProviderAs> = serde_json::from_str(&serialized).unwrap();
+        let deserialized: Vec<_> = serde_json::from_str(&serialized).unwrap();
 
         assert_eq!(
             providers,
@@ -568,6 +606,7 @@ mod signer_test {
         )
     }
 }
+
 
 //============ Specification Documentation ===================================
 
@@ -607,7 +646,8 @@ mod signer_test {
 ///          afiLimit     ::= OCTET STRING (SIZE (2)) OPTIONAL
 ///      }
 /// ```
-////// The _version_ must be 0. The _afiLimit, if present, MUST be
+///
+/// The _version_ must be 0. The _afiLimit, if present, MUST be
 /// either `"\0\x01"` for IPv4 or `"\0\x02"` for IPv6.
 ///
 /// [signed object]: ../../sigobj/spec/index.html
