@@ -14,12 +14,18 @@ Breaking Changes
 
 New
 
+* Access methods for the signing time in signed objects and RTA
+  multi-signed objects. ([#169])
+* Experimental support for ASPA objects. ([#166])
+
 Bug Fixes
 
 Other Changes
 
 [#158]: https://github.com/NLnetLabs/rpki-rs/pull/158
 [#162]: https://github.com/NLnetLabs/rpki-rs/pull/162
+[#166]: https://github.com/NLnetLabs/rpki-rs/pull/166
+[#169]: https://github.com/NLnetLabs/rpki-rs/pull/169
 
 
 ## 0.12.2
