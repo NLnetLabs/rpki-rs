@@ -1552,23 +1552,46 @@ impl AddressFamily {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        let str = OctetString::take_from(cons)?;
-        let mut octets = str.octets();
+        let octet_string = OctetString::take_from(cons)?;
+        let afi = Self::decode_octet_string(octet_string)?;
+        Ok(afi)
+    }
+
+    pub fn take_opt_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Option<Self>, S::Err> {
+        match OctetString::take_opt_from(cons)? {
+            None => Ok(None),
+            Some(octet_string) => {
+                let afi = Self::decode_octet_string(octet_string)?;
+                Ok(Some(afi))
+            }
+        }
+    }
+
+    pub fn skip_opt_in<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Option<()>, S::Err> {
+        Self::take_opt_from(cons).map(|opt| opt.map(|_| ()))
+    }
+
+    fn decode_octet_string(octet_string: OctetString) -> Result<AddressFamily, decode::Error> {
+        let mut octets = octet_string.octets();
         let first = match octets.next() {
             Some(first) => first,
-            None => xerr!(return Err(decode::Malformed.into()))
+            None => xerr!(return Err(decode::Malformed))
         };
         let second = match octets.next() {
             Some(second) => second,
-            None => xerr!(return Err(decode::Malformed.into()))
+            None => xerr!(return Err(decode::Malformed))
         };
         if octets.next().is_some() {
-            xerr!(return Err(decode::Malformed.into()))
+            xerr!(return Err(decode::Malformed))
         }
         match (first, second) {
             (0, 1) => Ok(AddressFamily::Ipv4),
             (0, 2) => Ok(AddressFamily::Ipv6),
-            _ => xerr!(Err(decode::Malformed.into())),
+            _ => xerr!(Err(decode::Malformed)),
         }
     }
 
