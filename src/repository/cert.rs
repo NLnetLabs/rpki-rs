@@ -145,7 +145,7 @@ impl Cert {
 /// resource certificates laid out in [RFC 6487] and whether the certificate
 /// has been correctly issued by its CA.
 ///
-/// In some cases it is useful to perform these two steps separatedly.
+/// In some cases it is useful to perform these two steps separately.
 /// Therefore, methods are available both for each step and for doing both
 /// steps at once. Since we need to name these consistently, we devised the
 /// following convention:
@@ -291,14 +291,14 @@ impl Cert {
         self.inspect_ca_basics(strict)?;
 
         // 4.8.3. Authority Key Identifier. May be present, if so, must be
-        // equal to the subject key indentifier.
+        // equal to the subject key identifier.
         if let Some(ref aki) = self.authority_key_identifier {
             if *aki != self.subject_key_identifier {
                 return Err(ValidationError);
             }
         }
 
-        // 4.8.6. CRL Distribution Points. There musn’t be one.
+        // 4.8.6. CRL Distribution Points. There mustn’t be one.
         if self.crl_uri.is_some() {
             return Err(ValidationError)
         }
@@ -432,7 +432,7 @@ impl Cert {
             xerr!(return Err(ValidationError))
         }
 
-        // 4.8.2. Subject Key Identifer. Must be the SHA-1 hash of the octets
+        // 4.8.2. Subject Key Identifier. Must be the SHA-1 hash of the octets
         // of the subjectPublicKey.
         if self.subject_key_identifier() !=
                              self.subject_public_key_info().key_identifier() {
@@ -492,7 +492,7 @@ impl Cert {
     pub fn verify_ta(
         self, tal: Arc<TalInfo>, _strict: bool
     ) -> Result<ResourceCert, ValidationError> {
-        // 4.8.10. IP Resources. If present, musn’t be "inherit".
+        // 4.8.10. IP Resources. If present, mustn’t be "inherit".
         let v4_resources = IpBlocks::from_resources(
             self.v4_resources.clone()
         )?;
@@ -500,7 +500,7 @@ impl Cert {
             self.v6_resources.clone()
         )?;
 
-        // 4.8.11.  AS Resources. If present, musn’t be "inherit". That
+        // 4.8.11.  AS Resources. If present, mustn’t be "inherit". That
         // IP resources (logical) or AS resources are present has already
         // been checked during parsing.
         let as_resources = AsBlocks::from_resources(
@@ -523,7 +523,7 @@ impl Cert {
     pub fn verify_ta_ref(
         &self, _strict: bool
     ) -> Result<(), ValidationError> {
-        // 4.8.10. IP Resources. If present, musn’t be "inherit".
+        // 4.8.10. IP Resources. If present, mustn’t be "inherit".
         if self.v4_resources.is_inherited() {
             return Err(ValidationError)
         }
@@ -531,7 +531,7 @@ impl Cert {
             return Err(ValidationError)
         }
 
-        // 4.8.11.  AS Resources. If present, musn’t be "inherit".
+        // 4.8.11.  AS Resources. If present, mustn’t be "inherit".
         if self.as_resources.is_inherited() {
             return Err(ValidationError)
         }
@@ -608,7 +608,7 @@ impl Cert {
         // 4.8.1. Basic Constraints. Differing requirements for CA and EE
         // certificates.
 
-        // 4.8.2. Subject Key Identifer. Must be the SHA-1 hash of the octets
+        // 4.8.2. Subject Key Identifier. Must be the SHA-1 hash of the octets
         // of the subjectPublicKey.
         if self.subject_key_identifier() !=
                              self.subject_public_key_info().key_identifier() {
@@ -873,7 +873,7 @@ pub struct TbsCert {
     /// Information about the public key of this certificate.
     subject_public_key_info: PublicKey,
 
-    /// Basic Contraints extension.
+    /// Basic Constraints extension.
     ///
     /// The field indicates whether the extension is present and, if so,
     /// whether the "cA" boolean is set. See 4.8.1. of RFC 6487.
@@ -921,7 +921,7 @@ pub struct TbsCert {
     /// Certificate Policies
     ///
     /// Must be present and critical. RFC 6484 demands there to be a single
-    /// policy with a specific OID and no paramters. RFC 8630 adds a second
+    /// policy with a specific OID and no parameters. RFC 8630 adds a second
     /// OID for a different way of handling overclaim of resources.
     ///
     /// We reflect this choice of policy with an overclaim mode.
@@ -1489,7 +1489,7 @@ impl TbsCert {
         update_once(subject_key_id, || KeyIdentifier::take_from(cons))
     }
 
-    /// Parses the Authority Key Identifer extension.
+    /// Parses the Authority Key Identifier extension.
     ///
     /// ```text
     /// AuthorityKeyIdentifier ::= SEQUENCE {
@@ -1786,7 +1786,7 @@ impl TbsCert {
             self.subject.encode_ref(),
             self.subject_public_key_info.encode_ref(),
             // no issuerUniqueID
-            // no subjetUniqueID
+            // no subjectUniqueID
             // extensions
             encode::sequence_as(Tag::CTX_3, encode::sequence((
                 // Basic Constraints
@@ -2020,7 +2020,7 @@ pub struct CertBuilder {
     ///
     /// This is the signature algorithm and must be identical to the one used
     /// on the outer value. Thus, it needs to be set when constructing the
-    /// certifcate for signing.
+    /// certificate for signing.
 
     /// Issuer.
     ///
@@ -2037,7 +2037,7 @@ pub struct CertBuilder {
     ///
     /// This needs to be present for all certifications. In RPKI, we commonly
     /// derive the name from the public key of the certificate, so this is an
-    /// option. If it is not set explicitely, we derive the name.
+    /// option. If it is not set explicitly, we derive the name.
     subject: Option<Name>, // XXX NameBuilder?
 
     /// Subject Public Key Info
@@ -2328,7 +2328,7 @@ impl CertBuilder {
                     }
                 ),
 
-                // Extented Key Usage: currently not supported.
+                // Extended Key Usage: currently not supported.
 
                 // CRL Distribution Points
                 self.crl_distribution.as_ref().map(|uri| {
@@ -2348,7 +2348,7 @@ impl CertBuilder {
                     )
                 }),
 
-                // Authority Inforamtion Access
+                // Authority Information Access
                 self.authority_info_access.as_ref().map(|uri| {
                     Self::extension(
                         &oid::PE_AUTHORITY_INFO_ACCESS, false,
@@ -2649,7 +2649,7 @@ mod test {
     /// Tests that inconsistent algorithm encoding fail validation.
     ///
     /// Specifically, tests that a certificate with different encoding of
-    /// the signature algorithm paramteres (NULL value v. not present) in
+    /// the signature algorithm parameters (NULL value v. not present) in
     /// the outer certificate structure and inside the TbsCertificate will
     /// be rejected during the inspection step.
     #[test]
