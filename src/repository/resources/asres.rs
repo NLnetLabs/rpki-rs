@@ -13,7 +13,7 @@
 //! [RFC 3779]: https://tools.ietf.org/html/rfc3779
 //! [RFC 6487]: https://tools.ietf.org/html/rfc6487
 
-use std::{error, fmt, iter, ops};
+use std::{error, fmt, iter};
 use std::cmp::Ordering;
 use std::iter::FromIterator;
 use std::str::FromStr;
@@ -24,6 +24,11 @@ use super::super::cert::Overclaim;
 use super::super::x509::{encode_extension, ValidationError};
 use super::chain::{Block, SharedChain};
 use super::choice::ResourcesChoice;
+
+
+//------------ Re-exports ----------------------------------------------------
+
+pub use crate::payload::asn::{AsId, ParseAsIdError};
 
 
 //------------ AsResources ---------------------------------------------------
@@ -768,11 +773,11 @@ impl Block for AsBlock {
     }
 
     fn next(item: Self::Item) -> Option<Self::Item> {
-        item.0.checked_add(1).map(AsId)
+        item.into_u32().checked_add(1).map(AsId::from_u32)
     }
 
     fn previous(item: Self::Item) -> Option<Self::Item> {
-        item.0.checked_sub(1).map(AsId)
+        item.into_u32().checked_sub(1).map(AsId::from_u32)
     }
 }
 
@@ -870,11 +875,11 @@ impl Block for AsRange {
     }
 
     fn next(item: Self::Item) -> Option<Self::Item> {
-        item.0.checked_add(1).map(AsId)
+        item.into_u32().checked_add(1).map(AsId::from_u32)
     }
 
     fn previous(item: Self::Item) -> Option<Self::Item> {
-        item.0.checked_sub(1).map(AsId)
+        item.into_u32().checked_sub(1).map(AsId::from_u32)
     }
 }
 
@@ -887,144 +892,6 @@ impl fmt::Display for AsRange {
 }
 
 
-//------------ AsId ----------------------------------------------------------
-
-/// An AS number.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct AsId(u32);
-
-impl AsId {
-    pub const MIN: AsId = AsId(std::u32::MIN);
-    pub const MAX: AsId = AsId(std::u32::MAX);
-
-    /// Takes an AS number from the beginning of an encoded value.
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_u32().map(AsId)
-    }
-
-    /// Skips over the AS number at the beginning of an encoded value.
-    fn skip_in<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<(), S::Err> {
-        cons.take_u32().map(|_| ())
-    }
-
-    /// Parses the content of an AS number value.
-    fn parse_content<S: decode::Source>(
-        content: &mut decode::Content<S>
-    ) -> Result<Self, S::Err> {
-        content.to_u32().map(AsId)
-    }
-
-    /// Skips the content of an AS number value.
-    fn skip_content<S: decode::Source>(
-        content: &mut decode::Content<S>
-    ) -> Result<(), S::Err> {
-        content.to_u32().map(|_| ())
-    }
-
-    pub fn encode(self) -> impl encode::Values {
-        self.0.encode()
-    }
-}
-
-
-//--- From
-
-impl From<u32> for AsId {
-    fn from(id: u32) -> Self {
-        AsId(id)
-    }
-}
-
-impl From<AsId> for u32 {
-    fn from(id: AsId) -> Self {
-        id.0
-    }
-}
-
-
-//--- FromStr
-
-impl FromStr for AsId {
-    type Err = FromStrError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-
-        let s = if s.len() > 2 && s[..2].eq_ignore_ascii_case("as") {
-            &s[2..]
-        } else {
-            s
-        };
-
-        let id = u32::from_str(s).map_err(|_| FromStrError::BadAsn)?;
-        Ok(AsId(id))
-    }
-}
-
-
-//--- Serialize and Deserialize
-
-#[cfg(feature = "serde")]
-impl serde::Serialize for AsId {
-    fn serialize<S: serde::Serializer>(
-        &self, serializer: S
-    ) -> Result<S::Ok, S::Error> {
-        let s = format!("{}", self);
-        serializer.serialize_str(&s)
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de> serde::de::Deserialize<'de> for AsId {
-    fn deserialize<D: serde::de::Deserializer<'de>>(
-        deserializer: D
-    ) -> Result<Self, D::Error> {
-        struct Visitor;
-
-        impl<'de> serde::de::Visitor<'de> for Visitor {
-            type Value = AsId;
-
-            fn expecting(
-                &self, formatter: &mut fmt::Formatter
-            ) -> fmt::Result {
-                write!(formatter, "a string with an AS number")
-            }
-
-            fn visit_str<E: serde::de::Error>(
-                self, v: &str
-            ) -> Result<Self::Value, E> {
-                AsId::from_str(v).map_err(E::custom)
-            }
-        }
-
-        deserializer.deserialize_str(Visitor)
-    }
-}
-
-
-//--- Add
-
-impl ops::Add<u32> for AsId {
-    type Output = Self;
-
-    fn add(self, rhs: u32) -> Self {
-        AsId(self.0.checked_add(rhs).unwrap())
-    }
-}
-
-
-//--- Display
-
-impl fmt::Display for AsId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "AS{}", self.0)
-    }
-}
-
-
 //------------ FromStrError --------------------------------------------------
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1033,6 +900,12 @@ pub enum FromStrError {
     BadAsn,
     BadRange,
     BadBlocks,
+}
+
+impl From<ParseAsIdError> for FromStrError {
+    fn from(_: ParseAsIdError) -> Self {
+        Self::BadAsn
+    }
 }
 
 impl fmt::Display for FromStrError {
@@ -1056,37 +929,17 @@ impl error::Error for FromStrError { }
 #[cfg(test)]
 mod test {
     use super::*;
-    use serde_test::{Token, assert_de_tokens, assert_tokens};
-
-    #[test]
-    fn as_id_from_str() {
-        assert_eq!(AsId::from_str("AS1").unwrap(), AsId(1));
-        assert_eq!(AsId::from_str("As1").unwrap(), AsId(1));
-        assert_eq!(AsId::from_str("1").unwrap(), AsId(1));
-    }
-
-    #[test]
-    fn as_id_display() {
-        assert_eq!(format!("{}", AsId(1)), "AS1");
-    }
-
-    #[test]
-    fn as_id_serde() {
-        assert_tokens(&AsId(12), &[Token::Str("AS12")]);
-        assert_de_tokens(&AsId(12), &[Token::Str("as12")]);
-        assert_de_tokens(&AsId(12), &[Token::Str("12")]);
-    }
 
     #[test]
     fn as_block_from_str() {
         // Good
         assert_eq!(
             AsBlock::from_str("AS1").unwrap(),
-            AsId(1).into()
+            AsId::from_u32(1).into()
         );
         assert_eq!(
             AsBlock::from_str("AS1-AS3").unwrap(),
-            AsRange::new(AsId(1), AsId(3)).into()
+            AsRange::new(AsId::from_u32(1), AsId::from_u32(3)).into()
         );
 
         // Bad
@@ -1104,11 +957,17 @@ mod test {
 
         good(
             "AS1, AS3-AS7", 
-            vec![AsId(1).into(), AsRange::new(AsId(3), AsId(7)).into()]
+            vec![
+                AsId::from_u32(1).into(),
+                AsRange::new(AsId::from_u32(3), AsId::from_u32(7)).into()
+            ]
         );
         good(
             "AS1,AS3-AS7", 
-            vec![AsId(1).into(), AsRange::new(AsId(3), AsId(7)).into()]
+            vec![
+                AsId::from_u32(1).into(),
+                AsRange::new(AsId::from_u32(3), AsId::from_u32(7)).into()
+            ]
         );
         good("", Vec::new());
     }
@@ -1154,3 +1013,4 @@ mod test {
         assert_eq!(as_resources, deser_as_resources)
     }
 }
+

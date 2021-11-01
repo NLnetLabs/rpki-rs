@@ -1,3 +1,4 @@
+/// Autonomous system identifiers.
 
 use std::{error, fmt, ops};
 use std::str::FromStr;
@@ -167,4 +168,32 @@ impl fmt::Display for ParseAsIdError {
 }
 
 impl error::Error for ParseAsIdError { }
+
+
+//============ Tests =========================================================
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use serde_test::{Token, assert_de_tokens};
+
+    #[test]
+    fn as_id_from_str() {
+        assert_eq!(AsId::from_str("AS1").unwrap(), AsId::from_u32(1));
+        assert_eq!(AsId::from_str("As1").unwrap(), AsId::from_u32(1));
+        assert_eq!(AsId::from_str("1").unwrap(), AsId::from_u32(1));
+    }
+
+    #[test]
+    fn as_id_display() {
+        assert_eq!(format!("{}", AsId::from_u32(1)), "AS1");
+    }
+
+    #[test]
+    fn as_id_serde() {
+        assert_de_tokens(&AsId::from_u32(12), &[Token::Str("AS12")]);
+        assert_de_tokens(&AsId::from_u32(12), &[Token::Str("as12")]);
+        assert_de_tokens(&AsId::from_u32(12), &[Token::Str("12")]);
+    }
+}
 

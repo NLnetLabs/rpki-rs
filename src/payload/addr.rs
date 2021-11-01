@@ -13,15 +13,16 @@ use std::str::FromStr;
 
 /// The value of an IP address.
 ///
-/// This private type holds the content of an IP address. It can be both an
-/// IPv4 and IPv6 address. It keeps the address internally as a 128 bit
-/// unsigned integer. IPv6 address are kept in all bits host byte order while
-/// IPv4 addresses are kept in the upper four bytes and are padded with zero
-/// bits. This makes it possible to count prefix lengths the same way for both
-/// addresses, i.e., starting from the top of the raw integer.
+/// This private type holds the content of an IP address. It is big enough to
+/// hold either an IPv4 and IPv6 address as it keeps the address internally
+/// as a 128 bit unsigned integer. IPv6 addresses are kept in all bits in host
+/// byte order while IPv4 addresses are kept in the upper four bytes and are
+/// right-padded with zero bits. This makes it possible to count prefix
+/// lengths the same way for both addresses, i.e., starting from the top of
+/// the raw integer.
 ///
 /// There is no way of distinguishing between IPv4 and IPv6 from just a value
-/// of this type. This information needs to be carried separatedly.
+/// of this type. This information needs to be carried separately.
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Bits(u128);
 
@@ -60,7 +61,7 @@ impl Bits {
 
     /// Checks whether the host portion of the bits used in a prefix is zero.
     fn is_host_zero(self, len: u8) -> bool {
-        self.into_int().trailing_zeros() >= 128u32.saturating_sub(len.into())
+        self.0.trailing_zeros() >= 128u32.saturating_sub(len.into())
     }
 
     /// Clears the bits in the host portion of a prefix.
@@ -68,7 +69,7 @@ impl Bits {
         Bits(self.0 & (u128::MAX << (128u8.saturating_sub(len))))
     }
 
-    /// Returns a value ith all but the first `prefix_len` bits set.
+    /// Returns a value with all but the first `prefix_len` bits set.
     ///
     /// The first `prefix_len` bits are retained. Thus, the returned address
     /// is the largest address in a prefix of this length.
@@ -77,7 +78,7 @@ impl Bits {
             self
         }
         else {
-            Self(self.0 | (!0 >> prefix_len as usize))
+            Self(self.0 | (u128::MAX >> prefix_len as usize))
         }
     }
 }
@@ -165,7 +166,7 @@ impl Prefix {
     /// Creates a new prefix without checking.
     fn new_unchecked(bits: Bits, len: u8, v6: bool) -> Self {
         if v6 {
-            Prefix { bits, family_and_len: len | 0x80 }
+            Prefix { bits, family_and_len: len | 0b_1000_0000 }
         }
         else {
             Prefix { bits, family_and_len: len }
@@ -331,9 +332,8 @@ impl Prefix {
         }
 
         // other now needs to start with the same bits as self.
-        let left = self.bits.into_int() & !(u128::MAX >> self.len());
-        let right = other.bits.into_int() & !(u128::MAX >> self.len());
-        left == right
+        self.bits.into_int()
+            ==  other.bits.into_int() & !(u128::MAX >> self.len())
     }
 }
 

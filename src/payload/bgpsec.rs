@@ -112,10 +112,12 @@ impl From<KeyIdentifier> for [u8; 20] {
 }
 
 impl<'a> TryFrom<&'a [u8]> for KeyIdentifier {
-    type Error = std::array::TryFromSliceError;
+    type Error = KeyIdentifierSliceError;
 
     fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
-        value.try_into().map(KeyIdentifier)
+        value.try_into()
+            .map(KeyIdentifier)
+            .map_err(|_| KeyIdentifierSliceError)
     }
 }
 
@@ -253,4 +255,20 @@ impl fmt::Display for ParseKeyIdentifierError {
 }
 
 impl error::Error for ParseKeyIdentifierError { }
+
+
+//------------ KeyIdentifierSliceError ----------------------------------
+
+/// Creating a prefix has failed.
+#[derive(Clone, Debug)]
+pub struct KeyIdentifierSliceError;
+
+impl fmt::Display for KeyIdentifierSliceError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("invalid slice for key identifier")
+    }
+}
+
+impl error::Error for KeyIdentifierSliceError { }
+
 

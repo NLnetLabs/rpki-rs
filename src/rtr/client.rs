@@ -370,7 +370,7 @@ where
         &mut self, update: Target::Update
     ) -> Result<(), io::Error> {
         if let Err(err) = self.target.apply(update, self.timing) {
-            err.send(self.version(), None, &mut self.sock).await?;
+            self.send_error(err).await?;
             Err(io::Error::new(io::ErrorKind::Other, ""))
         }
         else {
