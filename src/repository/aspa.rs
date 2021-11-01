@@ -506,9 +506,9 @@ mod signer_test {
             SignedObjectBuilder::new(
                 123_u64.into(),
                 Validity::from_secs(86400),
-                crl_uri.clone(), 
-                issuer_uri.clone(),
-                asa_uri.clone()
+                crl_uri, 
+                issuer_uri,
+                asa_uri
             ),
             &signer,
             &issuer_key
