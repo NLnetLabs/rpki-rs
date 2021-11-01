@@ -1,6 +1,6 @@
 //! The object identifiers used in this crate.
 //!
-//! This module collects all the object indentifiers used at various places
+//! This module collects all the object identifiers used at various places
 //! in this crate in one central place. They are public so you can refer to
 //! them should that ever become necessary.
 
@@ -27,7 +27,7 @@ pub const SHA256_WITH_RSA_ENCRYPTION: ConstOid
 
 /// [RFC 5480](https://tools.ietf.org/html/rfc5480) `ecPublicKey`.
 ///
-/// Indentifies public keys for ellipic curve cryptography.
+/// Identifies public keys for elliptic curve cryptography.
 pub const EC_PUBLIC_KEY: ConstOid = Oid(&[42, 134, 72, 206, 61, 2, 1]);
 
 /// [RFC 5480](https://tools.ietf.org/html/rfc5480) `secp256r1`.

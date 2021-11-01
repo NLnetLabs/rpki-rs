@@ -1,7 +1,7 @@
 //! Resource Tagged Attestations.
 //!
-//! Resouce Tagged Attestations attaching signed attestations of ownership of 
-//! resources referred to by a docuement. This is currently an IETF draft,
+//! Resource Tagged Attestations attaching signed attestations of ownership of 
+//! resources referred to by a document. This is currently an IETF draft,
 //! see [draft-michaelson-rpki-rta] for details.
 //!
 //! Current limitations:
@@ -686,7 +686,7 @@ impl<'a> Ca<'a> {
 
 #[derive(Clone, Debug)]
 struct Chain<'a> {
-    /// The topmost certifcate of the path.
+    /// The topmost certificate of the path.
     cert: &'a Cert,
 
     /// The resources of the topmost cert.
@@ -910,7 +910,7 @@ impl<'a> Chain<'a> {
         // Now check properly if `ca` should be our CA and return if it isn’t.
         //
         // If it isn’t not all is lost. There may just be a key identifier
-        // collission or something. Unlikely but hey.
+        // collision or something. Unlikely but hey.
         if self.cert.verify_issuer_claim(ca, strict).is_err()
             || self.cert.verify_signature(ca, strict).is_err()
         {

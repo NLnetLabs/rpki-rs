@@ -214,7 +214,7 @@ impl SignedObject {
         // Sub-items a, b, d, e, f, g, h, i, j, k, l have been validated while
         // parsing. This leaves these:
         //
-        // c. cert is an EE cert with the SubjectKeyIdentifer matching
+        // c. cert is an EE cert with the SubjectKeyIdentifier matching
         //    the sid field of the SignerInfo.
         if self.sid != self.cert.subject_key_identifier() {
             return Err(ValidationError)
@@ -1032,7 +1032,7 @@ mod signer_test {
 /// This is a documentation-only module. It summarizes the specification for
 /// signed objects, how they are to be parsed and constructed.
 ///
-/// Signed objects are CMS signed objects that have been severly limited in
+/// Signed objects are CMS signed objects that have been severely limited in
 /// the options of the various fields. They are specified in [RFC 6488] while
 /// CMS is specified in [RFC 5652].
 ///
@@ -1078,7 +1078,7 @@ mod signer_test {
 /// * The _version_ must be 3.
 /// * The _digestAlgorithms_ set must be exactly one algorithm chosen from
 ///   those defined in [RFC 7935]. The [`DigestAlgorithm`] type implements
-///   both the _DigestAlgorithmIdentifier_ and _DigestAlgorithmIndentifiers_
+///   both the _DigestAlgorithmIdentifier_ and _DigestAlgorithmIdentifiers_
 ///   definitions (the latter via `take_set_from` and `encode_set`).
 /// * The _eContentType_ field of _encapContentInfo_ defines the type of an
 ///   object. Check the specific signed objects for their matching object ID.
@@ -1123,7 +1123,7 @@ mod signer_test {
 ///   extension of the included certificate. I.e., it must be the second
 ///   choice.
 /// * The _digestAlgorithm_ must be the same as the only value in the outer
-///   _digestAlgorthm_ field.
+///   _digestAlgorithm_ field.
 /// * The _signedAttrs_ field must be present. See below.
 /// * For the content of the _signature_ field, see below.
 /// * The _unsignedAttrs_ field must be omitted.

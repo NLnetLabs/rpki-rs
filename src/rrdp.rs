@@ -486,7 +486,7 @@ pub enum DeltaElement {
 }
 
 impl DeltaElement {
-    /// Writes the elmement’s XML.
+    /// Writes the element’s XML.
     fn write_xml(
         &self,
         content: &mut xml::encode::Content<impl io::Write>
@@ -1115,7 +1115,7 @@ pub struct DeltaInfo {
 }
 
 impl DeltaInfo {
-    /// Creates a new info from its compontents.
+    /// Creates a new info from its components.
     pub fn new(serial: u64, uri: uri::Https, hash: Hash) -> Self {
         DeltaInfo {
             serial,
@@ -1189,7 +1189,7 @@ impl UriAndHash {
 /// This hash is used both for verifying the correctness of RRDP files as well
 /// as update or deletion of the right objects.
 ///
-/// RRDP exclusively uses SHA-256 and provides no means of chosing a different
+/// RRDP exclusively uses SHA-256 and provides no means of choosing a different
 /// algorithm. Consequently, this type is a wrapper around a 32 byte array
 /// holding SHA-256 output.
 #[derive(Clone, Copy, Eq, hash::Hash, PartialEq)]

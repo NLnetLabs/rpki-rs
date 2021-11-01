@@ -693,12 +693,12 @@ impl IpBlock {
         }
     }
 
-    /// Returns an object that sisplays the block as an IPv4 block.
+    /// Returns an object that displays the block as an IPv4 block.
     pub fn display_v4(self) -> DisplayV4Block {
         DisplayV4Block(self)
     }
 
-    /// Returns an object that sisplays the block as an IPv4 block.
+    /// Returns an object that displays the block as an IPv4 block.
     pub fn display_v6(self) -> DisplayV6Block {
         DisplayV6Block(self)
     }
@@ -1187,12 +1187,12 @@ impl Prefix {
         let len = u8::from_str(&s[sep + 1..])?;
         if addr.is_ipv4() {
             if len > 32 {
-                // XXX Produce an artifical overflow error.
+                // XXX Produce an artificial overflow error.
                 let _ = u8::from_str("256")?;
             }
         }
         else if len > 128 {
-            // XXX Produce an artifical overflow error.
+            // XXX Produce an artificial overflow error.
             let _ = u8::from_str("256")?;
         }
         Ok(Prefix::new(addr, len))
@@ -1203,7 +1203,7 @@ impl Prefix {
         let addr = Ipv4Addr::from_str(&s[..sep])?;
         let len = u8::from_str(&s[sep + 1..])?;
         if len > 32 {
-            // XXX Produce an artifical overflow error.
+            // XXX Produce an artificial overflow error.
             let _ = u8::from_str("256")?;
         }
         Ok(Prefix::new(addr, len))
@@ -1220,7 +1220,7 @@ impl Prefix {
         let addr = Ipv6Addr::from_str(&s[..sep])?;
         let len = u8::from_str(&s[sep + 1..])?;
         if len > 128 {
-            // XXX Produce an artifical overflow error.
+            // XXX Produce an artificial overflow error.
             let _ = u8::from_str("256")?;
         }
         Ok(Prefix::new(addr, len))
@@ -1270,7 +1270,7 @@ impl Prefix {
     /// address, the second element is the largest.
     pub fn range(self) -> (Addr, Addr) {
         // self.addr has all unused bits cleared, so we don’t need to
-        // explicitely do that for min.
+        // explicitly do that for min.
         (self.addr, self.addr.to_max(self.len))
     }
 
@@ -1279,7 +1279,7 @@ impl Prefix {
         self.addr
     }
 
-    /// Returns the largest address convered by the prefix.
+    /// Returns the largest address covered by the prefix.
     pub fn max(self) -> Addr {
         self.addr.to_max(self.addr_len())
     }
@@ -1376,7 +1376,7 @@ impl encode::PrimitiveContent for Prefix {
 
 //------------ Addr ----------------------------------------------------------
 
-/// An adddress.
+/// An address.
 ///
 /// This can be both an IPv4 and IPv6 address. It keeps the address internally
 /// as a 128 bit unsigned integer. IPv6 address are kept in there in host byte

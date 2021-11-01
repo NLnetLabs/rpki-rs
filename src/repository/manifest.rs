@@ -377,7 +377,7 @@ impl Iterator for FileListIter {
 /// An entry in the manifest file list.
 ///
 /// This type contains a file name and a hash over the file. Both are
-/// expressed through generic types for superiour flexibility.
+/// expressed through generic types for superior flexibility.
 #[derive(Clone, Debug)]
 pub struct FileAndHash<F, H> {
     /// The name of a file.
