@@ -1,6 +1,7 @@
 //! IP address resources.
 
 use std::{error, fmt};
+use std::cmp::Ordering;
 use std::net::{AddrParseError, IpAddr, Ipv4Addr, Ipv6Addr};
 use std::num::ParseIntError;
 use std::str::FromStr;
@@ -143,6 +144,91 @@ impl fmt::Debug for Bits {
 }
 
 
+//------------ FamilyAndLen --------------------------------------------------
+
+/// The address family and prefix length stored in a single byte.
+///
+/// This private types wraps a `u8` and uses it to store both the address
+/// family – i.e., whether this is an IPv4 or IPv6 prefix –, and the prefix
+/// length.
+///
+/// The encoding is as follows: Values up to 32 represent IPv4 prefixes with
+/// the value as their prefix length. If the left-most bit is set, the value
+/// is a IPv6 prefix with the length encoded by flipping all the bits. The
+/// value of 64 stands in for an IPv6 prefix with length 128.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct FamilyAndLen(u8);
+
+impl FamilyAndLen {
+    /// Creates a value for an IPv4 prefix.
+    pub fn new_v4(len: u8) -> Result<Self, PrefixError> {
+        if len > 32 {
+            Err(PrefixError::LenOverflow)
+        }
+        else {
+            Ok(Self(len))
+        }
+    }
+
+    /// Creates a value for an IPv6 prefix.
+    pub fn new_v6(len: u8) -> Result<Self, PrefixError> {
+        match len.cmp(&128) {
+            Ordering::Greater => Err(PrefixError::LenOverflow),
+            Ordering::Equal => Ok(Self(0x40)),
+            Ordering::Less => Ok(Self(len ^ 0xFF))
+        }
+    }
+
+    /// Returns whether this a IPv4 prefix.
+    pub fn is_v4(self) -> bool {
+        self.0 & 0xc0 == 0
+    }
+
+    /// Returns whether this a IPv6 prefix.
+    pub fn is_v6(self) -> bool {
+        self.0 & 0xc0 != 0
+    }
+
+    /// Returns the prefix length.
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(self) -> u8 {
+        match self.0 & 0xc0 {
+            0x00 => self.0,
+            0x40 => 128,
+            _ => self.0 ^ 0xFF
+        }
+    }
+
+    /// Returns the family and length squeezed into a result.
+    ///
+    /// This is used to simplify trait implementations below. `Ok(_)` is for
+    /// IPv4, `Err(_)` is for IPv6. This choice does _not_ indicate any kind
+    /// of preference.
+    fn into_result(self) -> Result<u8, u8> {
+        match self.0 & 0xc0 {
+            0x00 => Ok(self.0),
+            0x40 => Err(128),
+            _ => Err(self.0 ^ 0xFF)
+        }
+    }
+}
+
+
+//--- PartialOrd and Ord
+
+impl PartialOrd for FamilyAndLen {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for FamilyAndLen {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.into_result().cmp(&other.into_result())
+    }
+}
+
+
 //------------ Prefix --------------------------------------------------------
 
 /// An IP address prefix: an IP address and a prefix length.
@@ -152,27 +238,10 @@ pub struct Prefix {
     bits: Bits,
 
     /// The address family and prefix length all in one.
-    ///
-    /// Because the maximum length is 128, we can use the most-significant
-    /// bit of a `u8` to determine the address family. If it is set, this
-    /// is an IPv6 prefix. If it is not set, this is an IPv4 prefix.
-    ///
-    /// The field name is awkward on purpose so you go and use the appropriate
-    /// methods instead …
-    family_and_len: u8,
+    family_and_len: FamilyAndLen,
 }
 
 impl Prefix {
-    /// Creates a new prefix without checking.
-    fn new_unchecked(bits: Bits, len: u8, v6: bool) -> Self {
-        if v6 {
-            Prefix { bits, family_and_len: len | 0b_1000_0000 }
-        }
-        else {
-            Prefix { bits, family_and_len: len }
-        }
-    }
-
     /// Creates a new prefix from an address and a length.
     ///
     /// The function returns an error if `len` is too large for the address
@@ -194,18 +263,15 @@ impl Prefix {
     /// Use `saturating_new_v4` if you want the prefix length to be capped
     /// instead.
     pub fn new_v4(addr: Ipv4Addr, len: u8) -> Result<Self, PrefixError> {
-        // Check prefix length.
-        if len > 32 {
-            return Err(PrefixError::LenOverflow)
-        }
+        let family_and_len = FamilyAndLen::new_v4(len)?;
+
         // Check that host bits are zero.
         let bits = Bits::from_v4(addr);
         if !bits.is_host_zero(len) {
             return Err(PrefixError::NonZeroHost)
         }
 
-        // Contruct a value
-        Ok(Self::new_unchecked(bits, len, false))
+        Ok(Prefix { bits, family_and_len })
     }
 
     /// Creates a new prefix from an IPv6 adddress and a prefix length.
@@ -215,18 +281,15 @@ impl Prefix {
     /// Use `saturating_new_v6` if you want the prefix length to be capped
     /// instead.
     pub fn new_v6(addr: Ipv6Addr, len: u8) -> Result<Self, PrefixError> {
-        // Check prefix length.
-        if len > 128 {
-            return Err(PrefixError::LenOverflow)
-        }
+        let family_and_len = FamilyAndLen::new_v6(len)?;
+
         // Check that host bits are zero.
         let bits = Bits::from_v6(addr);
         if !bits.is_host_zero(len) {
             return Err(PrefixError::NonZeroHost)
         }
 
-        // Contruct a value, set the left-most bit in len.
-        Ok(Self::new_unchecked(bits, len, true))
+        Ok(Prefix { bits, family_and_len })
     }
 
     /// Creates a new prefix zeroing out host bits.
@@ -241,36 +304,32 @@ impl Prefix {
     pub fn new_v4_relaxed(
         addr: Ipv4Addr, len: u8
     ) -> Result<Self, PrefixError> {
-        // Check prefix length.
-        if len > 32 {
-            return Err(PrefixError::LenOverflow)
-        }
-        Ok(Self::new_unchecked(
-            Bits::from_v4(addr).clear_host(len), len, false
-        ))
+        let family_and_len = FamilyAndLen::new_v4(len)?;
+        Ok(Prefix {
+            bits: Bits::from_v4(addr).clear_host(len),
+            family_and_len
+        })
     }
 
     /// Creates a new prefix zeroing out host bits.
     pub fn new_v6_relaxed(
         addr: Ipv6Addr, len: u8
     ) -> Result<Self, PrefixError> {
-        // Check prefix length.
-        if len > 128 {
-            return Err(PrefixError::LenOverflow)
-        }
-        Ok(Self::new_unchecked(
-            Bits::from_v6(addr).clear_host(len), len, true
-        ))
+        let family_and_len = FamilyAndLen::new_v6(len)?;
+        Ok(Prefix {
+            bits: Bits::from_v6(addr).clear_host(len),
+            family_and_len
+        })
     }
 
     /// Returns whether the prefix is for an IPv4 address.
     pub fn is_v4(self) -> bool {
-        self.family_and_len & 0x80 == 0
+        self.family_and_len.is_v4()
     }
 
     /// Returns whether the prefix is for an IPv6 address.
     pub fn is_v6(self) -> bool {
-        self.family_and_len & 0x80 == 0x80
+        self.family_and_len.is_v6()
     }
 
     /// Returns the IP address part of a prefix.
@@ -286,7 +345,7 @@ impl Prefix {
     /// Returns the length part of a prefix.
     #[allow(clippy::len_without_is_empty)]
     pub fn len(self) -> u8 {
-        self.family_and_len & 0x7F
+        self.family_and_len.len()
     }
 
     /// Returns the smallest address of the prefix.
@@ -552,7 +611,7 @@ impl FromStr for MaxLenPrefix {
 //------------ PrefixError ---------------------------------------------------
 
 /// Creating a prefix has failed.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum PrefixError {
     /// The prefix length is longer than allowed for the address family.
@@ -708,4 +767,44 @@ impl fmt::Display for ParseMaxLenPrefixError {
 }
 
 impl error::Error for ParseMaxLenPrefixError { }
+
+
+//============ Tests =========================================================
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn good_family_and_len() {
+        for i in 0..=32 {
+            let fal = FamilyAndLen::new_v4(i).unwrap();
+            assert!(fal.is_v4());
+            assert!(!fal.is_v6());
+            assert_eq!(fal.len(), i)
+        }
+        for i in 0..=128 {
+            let fal = FamilyAndLen::new_v6(i).unwrap();
+            assert!(!fal.is_v4());
+            assert!(fal.is_v6());
+            assert_eq!(fal.len(), i)
+        }
+    }
+
+    #[test]
+    fn bad_family_and_len() {
+        for i in 33..=255 {
+            assert_eq!(
+                FamilyAndLen::new_v4(i),
+                Err(PrefixError::LenOverflow)
+            );
+        }
+        for i in 129..=255 {
+            assert_eq!(
+                FamilyAndLen::new_v6(i),
+                Err(PrefixError::LenOverflow)
+            );
+        }
+    }
+}
 
