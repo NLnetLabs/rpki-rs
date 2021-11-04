@@ -404,18 +404,16 @@ impl AspaBuilder {
     }
 
     fn into_attestation(self) -> AsProviderAttestation {
-        let provider_as_set_captured = if self.providers.is_empty() {
-            Captured::empty(Mode::Der)
-        } else {
-            Captured::from_values(Mode::Der, 
-                encode::sequence(
-                    encode::slice(
-                        self.providers.as_slice(),
-                        |prov| prov.encode()
-                    )
+        let provider_as_set_captured = Captured::from_values(
+            Mode::Der,
+            encode::sequence(
+                encode::slice(
+                    self.providers.as_slice(),
+                    |prov| prov.encode()
                 )
             )
-        };
+        );
+        
         let provider_as_set = ProviderAsSet(provider_as_set_captured);
 
         AsProviderAttestation {
@@ -474,15 +472,11 @@ mod signer_test {
     use super::*;
 
 
-    fn make_aspa() -> Aspa {
+    fn make_aspa(
+        customer_as: AsId,
+        mut providers: Vec<ProviderAs>,
+    ) -> Aspa {
         let signer = OpenSslSigner::new();
-
-        let customer_as: AsId = 64496.into();
-        let mut providers: Vec<ProviderAs> = vec![
-            ProviderAs::new_v4(64498.into()),
-            ProviderAs::new(64497.into()),
-            ProviderAs::new_v6(64499.into())
-        ];
 
         let issuer_key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
         let issuer_uri = uri::Rsync::from_str(
@@ -559,9 +553,7 @@ mod signer_test {
         assert_eq!(customer_as, attestation.customer_as);
         let decoded_providers: Vec<_> =
             attestation.provider_as_set.iter().collect();
-        assert_ne!(providers, decoded_providers.as_slice());
-            // The set became sorted
-
+        
         providers.sort_by_key(|p| p.provider());
         assert_eq!(providers, decoded_providers.as_slice());
             // Sorted vecs should match
@@ -571,14 +563,42 @@ mod signer_test {
 
     #[test]
     fn encode_aspa() {
-        make_aspa();
+        let customer_as: AsId = 64496.into();
+        let providers: Vec<ProviderAs> = vec![
+            ProviderAs::new_v4(64498.into()),
+            ProviderAs::new(64497.into()),
+            ProviderAs::new_v6(64499.into())
+        ];
+        make_aspa(customer_as, providers);
     }
 
     #[test]
     #[cfg(feature = "serde")]
     fn serde_aspa() {
-        let aspa = make_aspa();
+        let customer_as: AsId = 64496.into();
+        let providers: Vec<ProviderAs> = vec![
+            ProviderAs::new_v4(64498.into()),
+            ProviderAs::new(64497.into()),
+            ProviderAs::new_v6(64499.into())
+        ];
+        let aspa = make_aspa(customer_as, providers);
+        
+        let serialized = serde_json::to_string(&aspa).unwrap();
+        let deserialized: Aspa = serde_json::from_str(&serialized).unwrap();
 
+        assert_eq!(
+            aspa.to_captured().into_bytes(),
+            deserialized.to_captured().into_bytes()
+        )
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn serde_aspa_empty_providers() {
+        let customer_as: AsId = 64496.into();
+        let providers: Vec<ProviderAs> = vec![];
+        let aspa = make_aspa(customer_as, providers);
+        
         let serialized = serde_json::to_string(&aspa).unwrap();
         let deserialized: Aspa = serde_json::from_str(&serialized).unwrap();
 
