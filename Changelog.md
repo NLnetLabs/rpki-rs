@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased future version
+## 0.13.1-rc1
+
+Released 2021-11-05.
 
 Other Changes
 
