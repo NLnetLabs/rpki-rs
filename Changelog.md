@@ -2,13 +2,11 @@
 
 ## Unreleased future version
 
-Breaking Changes
-
-New
-
-Bug Fixes
-
 Other Changes
+
+* ASPA: support empty sequences of provider ASes. ([#171])
+
+[#171]: https://github.com/NLnetLabs/rpki-rs/pull/171
 
 
 ## 0.13.0
