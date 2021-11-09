@@ -94,12 +94,9 @@ pub const ROUTE_ORIGIN_AUTHZ: ConstOid
     = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 16, 1, 24]);
 
 
-// TODO: Update once IANA assigns the real value.
-// 
-// For now, this uses a temporary OID under the Workonline private
-// enterprise registry to avoid squatting.
+/// id-ct-ASPA https://www.iana.org/assignments/smi-numbers/smi-numbers.xhtml#security-smime-1
 pub const AS_PROVIDER_AUTHZ: ConstOid
-    = Oid(&[43, 6, 1, 4, 1, 130, 151, 31, 3, 1, 1, 1, 7]);
+    = Oid(&[42, 6, 72, 6, 119, 13, 1, 9, 16, 1, 49]);
 
 /// [RFC 2985](https://tools.ietf.org/html/rfc2985) `extensionRequest`
 pub const EXTENSION_REQUEST: ConstOid
