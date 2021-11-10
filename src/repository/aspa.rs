@@ -33,7 +33,7 @@ impl Aspa {
         strict: bool
     ) -> Result<Self, S::Err> {
         let signed = SignedObject::decode(source, strict)?;
-        if signed.content_type().ne(&oid::AS_PROVIDER_AUTHZ) {
+        if signed.content_type().ne(&oid::CT_ASPA) {
             return Err(decode::Malformed.into())
         }
         let content = signed.decode_content(|cons| {
@@ -433,7 +433,7 @@ impl AspaBuilder {
         sigobj.set_as_resources(content.as_resources());
 
         let signed = sigobj.finalize(
-            Oid(oid::AS_PROVIDER_AUTHZ.0.into()),
+            Oid(oid::CT_ASPA.0.into()),
             content.encode_ref().to_captured(Mode::Der).into_bytes(),
             signer,
             issuer_key,

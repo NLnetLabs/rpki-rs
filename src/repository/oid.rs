@@ -75,6 +75,8 @@ pub const CT_RPKI_MANIFEST: ConstOid
     = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 16, 1, 26]);
 pub const CT_RESOURCE_TAGGED_ATTESTATION: ConstOid
     = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 16, 1, 36]);
+pub const CT_ASPA: ConstOid
+    = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 16, 1, 49]);
 
 pub const KP_BGPSEC_ROUTER: ConstOid
     = Oid(&[43, 6, 1, 5, 5, 7, 3, 30]);
@@ -92,14 +94,6 @@ pub const PE_SUBJECT_INFO_ACCESS: Oid<&[u8]>
 
 pub const ROUTE_ORIGIN_AUTHZ: ConstOid
     = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 16, 1, 24]);
-
-
-// TODO: Update once IANA assigns the real value.
-// 
-// For now, this uses a temporary OID under the Workonline private
-// enterprise registry to avoid squatting.
-pub const AS_PROVIDER_AUTHZ: ConstOid
-    = Oid(&[43, 6, 1, 4, 1, 130, 151, 31, 3, 1, 1, 1, 7]);
 
 /// [RFC 2985](https://tools.ietf.org/html/rfc2985) `extensionRequest`
 pub const EXTENSION_REQUEST: ConstOid
