@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.13.1-rc2
+
+Released 2021-11-10.
+
+Other Changes
+
+* ASPA: Switch to final content type OID. ([#173])
+
+[#173]: https://github.com/NLnetLabs/rpki-rs/pull/173
+
 ## 0.13.1-rc1
 
 Released 2021-11-05.
