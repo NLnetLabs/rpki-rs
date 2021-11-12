@@ -14,7 +14,7 @@ use untrusted::Input;
 use super::super::oid;
 use super::super::util::hex;
 use super::super::x509::{Name, RepresentationError};
-use super::signature::Signature;
+use super::signature::{Signature, SignatureAlgorithm};
 
 
 //------------ PublicKeyFormat -----------------------------------------------
@@ -49,6 +49,17 @@ impl PublicKeyFormat {
     /// signed objects.
     pub fn allow_rpki_cert(self) -> bool {
         matches!(self, PublicKeyFormat::Rsa)
+    }
+
+    /// Returns the RPKI signature algorithm for this key if available.
+    ///
+    /// Only keys for which [`allow_rpki_cert`][Self::allow_rpki_cert] returns
+    /// `true` will return a value.
+    pub fn signature_algorithm(self) -> Option<SignatureAlgorithm> {
+        match self {
+            PublicKeyFormat::Rsa => Some(SignatureAlgorithm::default()),
+            _ => None
+        }
     }
 
     /// Returns whether the format is acceptable for router certificates.
@@ -163,6 +174,14 @@ impl PublicKey {
     /// signed objects.
     pub fn allow_rpki_cert(&self) -> bool {
         self.algorithm.allow_rpki_cert()
+    }
+
+    /// Returns the RPKI signature algorithm for this key if available.
+    ///
+    /// Only keys for which [`allow_rpki_cert`][Self::allow_rpki_cert] returns
+    /// `true` will return a value.
+    pub fn signature_algorithm(&self) -> Option<SignatureAlgorithm> {
+        self.algorithm.signature_algorithm()
     }
 
     /// Returns whether the key is acceptable for BGPSec router certificates.
