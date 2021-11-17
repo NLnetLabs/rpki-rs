@@ -14,7 +14,7 @@ use super::oid;
 use super::cert::{Cert, ResourceCert};
 use super::crypto::{Signer, SigningError};
 use super::resources::{
-    AddressFamily, AsBlock, AsBlocks, AsBlocksBuilder, AsId, AsResources
+    AddressFamily, AsBlock, AsBlocks, AsBlocksBuilder, Asn, AsResources
 };
 use super::sigobj::{SignedObject, SignedObjectBuilder};
 use super::x509::ValidationError;
@@ -104,7 +104,7 @@ impl<'de> serde::Deserialize<'de> for Aspa {
 
 #[derive(Clone, Debug)]
 pub struct AsProviderAttestation {
-    customer_as: AsId,
+    customer_as: Asn,
     provider_as_set: ProviderAsSet,
 }
 
@@ -116,7 +116,7 @@ impl AsProviderAttestation {
         cons.take_opt_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(0))?;
                 
         cons.take_sequence(|cons| {
-            let customer_as = AsId::take_from(cons)?;
+            let customer_as = Asn::take_from(cons)?;
             let provider_as_set = ProviderAsSet::take_from(cons)?;
 
             Ok(AsProviderAttestation {
@@ -173,7 +173,7 @@ impl ProviderAsSet {
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             cons.capture(|cons| {
-                let mut last: Option<AsId> = None;
+                let mut last: Option<Asn> = None;
                 let mut entries = true;
                 while entries {
                     if let Some(provider_as) = ProviderAs::take_opt_from(
@@ -223,24 +223,24 @@ impl<'a> Iterator for ProviderAsIter<'a> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProviderAs {
-    provider: AsId,
+    provider: Asn,
     afi_limit: Option<AddressFamily>,
 }
 
 impl ProviderAs {
-    pub fn new(provider: AsId) -> Self {
+    pub fn new(provider: Asn) -> Self {
         ProviderAs { provider, afi_limit: None }
     }
 
-    pub fn new_v4(provider: AsId) -> Self {
+    pub fn new_v4(provider: Asn) -> Self {
         ProviderAs { provider, afi_limit: Some(AddressFamily::Ipv4) }
     }
 
-    pub fn new_v6(provider: AsId) -> Self {
+    pub fn new_v6(provider: Asn) -> Self {
         ProviderAs { provider, afi_limit: Some(AddressFamily::Ipv6) }
     }
 
-    pub fn provider(&self) -> AsId {
+    pub fn provider(&self) -> Asn {
         self.provider
     }
 
@@ -264,7 +264,7 @@ impl ProviderAs {
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, S::Err> {
         cons.take_opt_sequence(|cons|{
-            let provider = AsId::take_from(cons)?;
+            let provider = Asn::take_from(cons)?;
             let afi_limit = AddressFamily::take_opt_from(cons)?;
             Ok(ProviderAs { provider, afi_limit })
         })
@@ -289,7 +289,7 @@ impl ProviderAs {
 //--- FromStr
 
 impl FromStr for ProviderAs {
-    type Err = <AsId as FromStr>::Err;
+    type Err = <Asn as FromStr>::Err;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // Possible options:
@@ -297,13 +297,13 @@ impl FromStr for ProviderAs {
         //  AS#(v4)
         //  AS#(v6)
         if let Some(as_str) = s.strip_suffix("(v4)") {
-            Ok(ProviderAs::new_v4(AsId::from_str(as_str)?))
+            Ok(ProviderAs::new_v4(Asn::from_str(as_str)?))
         }
         else if let Some(as_str) = s.strip_suffix("(v6)") {
-            Ok(ProviderAs::new_v6(AsId::from_str(as_str)?))
+            Ok(ProviderAs::new_v6(Asn::from_str(as_str)?))
         }
         else {
-            Ok(ProviderAs::new(AsId::from_str(s)?))
+            Ok(ProviderAs::new(Asn::from_str(s)?))
         }
     }
 }
@@ -354,13 +354,13 @@ impl<'de> serde::Deserialize<'de> for ProviderAs {
 //------------ AspaBuilder ---------------------------------------------------
 
 pub struct AspaBuilder {
-    customer_as: AsId,
+    customer_as: Asn,
     providers: Vec<ProviderAs>
 }
 
 impl AspaBuilder {
     pub fn new(
-        customer_as: AsId,
+        customer_as: Asn,
         providers: Vec<ProviderAs>
     ) -> Result<Self, DuplicateProviderAs> {
         let mut builder = AspaBuilder {
@@ -371,7 +371,7 @@ impl AspaBuilder {
         Ok(builder)
     }
 
-    pub fn empty(customer_as: AsId) -> Self {
+    pub fn empty(customer_as: Asn) -> Self {
         AspaBuilder {
             customer_as,
             providers: vec![],
@@ -466,14 +466,14 @@ mod signer_test {
     use crate::repository::cert::{KeyUsage, Overclaim, TbsCert};
     use crate::repository::crypto::{PublicKeyFormat, Signer};
     use crate::repository::crypto::softsigner::OpenSslSigner;
-    use crate::repository::resources::{AsId, Prefix};
+    use crate::repository::resources::{Asn, Prefix};
     use crate::repository::tal::TalInfo;
     use crate::repository::x509::Validity;
     use super::*;
 
 
     fn make_aspa(
-        customer_as: AsId,
+        customer_as: Asn,
         mut providers: Vec<ProviderAs>,
     ) -> Aspa {
         let signer = OpenSslSigner::new();
@@ -513,7 +513,7 @@ mod signer_test {
             cert.set_rpki_manifest(Some(mft_uri));
             cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
             cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
-            cert.build_as_resource_blocks(|b| b.push((AsId::MIN, AsId::MAX)));
+            cert.build_as_resource_blocks(|b| b.push((Asn::MIN, Asn::MAX)));
             let cert = cert.into_cert(&signer, &issuer_key).unwrap();
 
             cert.validate_ta(
@@ -563,7 +563,7 @@ mod signer_test {
 
     #[test]
     fn encode_aspa() {
-        let customer_as: AsId = 64496.into();
+        let customer_as: Asn = 64496.into();
         let providers: Vec<ProviderAs> = vec![
             ProviderAs::new_v4(64498.into()),
             ProviderAs::new(64497.into()),
@@ -575,7 +575,7 @@ mod signer_test {
     #[test]
     #[cfg(feature = "serde")]
     fn serde_aspa() {
-        let customer_as: AsId = 64496.into();
+        let customer_as: Asn = 64496.into();
         let providers: Vec<ProviderAs> = vec![
             ProviderAs::new_v4(64498.into()),
             ProviderAs::new(64497.into()),
@@ -595,7 +595,7 @@ mod signer_test {
     #[test]
     #[cfg(feature = "serde")]
     fn serde_aspa_empty_providers() {
-        let customer_as: AsId = 64496.into();
+        let customer_as: Asn = 64496.into();
         let providers: Vec<ProviderAs> = vec![];
         let aspa = make_aspa(customer_as, providers);
         

@@ -25,6 +25,7 @@ log             = "0.4.7"
 openssl         = { version = "0.10.23", optional = true }
 quick-xml       = { version = "0.22.0", optional = true }
 ring            = { version = "0.16.11", optional = true }
+routecore       = { git = "https://github.com/NLnetLabs/routecore.git" }
 serde           = { version = "1.0.95", optional = true, features = [ "derive" ] }
 tokio           = { version = "1.0", optional = true, features = ["io-util",  "net", "rt", "sync", "time"] }
 tokio-stream    = { version = "0.1", optional = true }
@@ -40,7 +41,7 @@ tokio           = { version="1.0", features=["net", "macros"]}
 default = []
 
 # Main components of the crate.
-repository = [ "base64", "bcder", "ring", "untrusted" ]
+repository = [ "base64", "bcder", "ring", "untrusted", "routecore/bcder" ]
 rrdp       = [ "xml", "base64", "ring" ]
 rtr        = [ "futures-util", "tokio", "tokio-stream" ]
 
@@ -48,6 +49,7 @@ rtr        = [ "futures-util", "tokio", "tokio-stream" ]
 xml = [ "quick-xml" ]
 
 # Extra features provided.
+serde-support = ["serde", "routecore/serde"]
 softkeys = [ "repository", "openssl" ]
 extra-debug = [ "bcder/extra-debug" ]
 

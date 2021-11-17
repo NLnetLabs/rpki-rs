@@ -15,7 +15,7 @@
 //! [RFC 6487]: https://tools.ietf.org/html/rfc6487
 
 pub use self::asres::{
-    AsBlock, AsBlocks, AsBlocksBuilder, AsId, AsResources, AsResourcesBuilder
+    AsBlock, AsBlocks, AsBlocksBuilder, Asn, AsResources, AsResourcesBuilder
 };
 pub use self::choice::ResourcesChoice;
 pub use self::ipres::{

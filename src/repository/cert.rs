@@ -2699,7 +2699,7 @@ mod signer_test {
     use crate::repository::cert::Cert;
     use crate::repository::crypto::PublicKeyFormat;
     use crate::repository::crypto::softsigner::OpenSslSigner;
-    use crate::repository::resources::{AsId, Prefix};
+    use crate::repository::resources::{Asn, Prefix};
     use crate::repository::tal::TalInfo;
     use super::*;
 
@@ -2720,7 +2720,7 @@ mod signer_test {
         cert.set_rpki_manifest(Some(uri));
         cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
-        cert.build_as_resource_blocks(|b| b.push((AsId::MIN, AsId::MAX)));
+        cert.build_as_resource_blocks(|b| b.push((Asn::MIN, Asn::MAX)));
         let cert = cert.into_cert(&signer, &key).unwrap().to_captured();
         let cert = Cert::decode(cert.as_slice()).unwrap();
         let talinfo = TalInfo::from_name("foo".into()).into_arc();
