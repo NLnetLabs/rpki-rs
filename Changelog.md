@@ -1,10 +1,10 @@
 # Changelog
 
-## Unreleased future version
+## 0.13.1
 
-Bug Fixes
+Released 2021-11-17.
 
-Other Changes
+No changes since 0.13.1-rc2.
 
 
 ## 0.13.1-rc2
