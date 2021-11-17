@@ -752,7 +752,7 @@ mod signer_test {
             Time::now(),
             Time::tomorrow(),
             vec![CrlEntry::new(12u64.into(), Time::now())],
-            KeyIdentifier::from_public_key(&pubkey),
+            pubkey.key_identifier(),
             12u64.into()
         );
         let crl = crl.into_crl(&signer, &key).unwrap().to_captured();

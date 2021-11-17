@@ -962,9 +962,7 @@ impl TbsCert {
                     subject_public_key_info.to_subject_name()
                 )
             },
-            subject_key_identifier: {
-                KeyIdentifier::from_public_key(&subject_public_key_info)
-            },
+            subject_key_identifier: subject_public_key_info.key_identifier(),
             subject_public_key_info,
             basic_ca: None,
             authority_key_identifier: None,
@@ -1053,7 +1051,7 @@ impl TbsCert {
     /// the public key itself as well as the `subject_public_key_identifier`
     /// to the identifier of that key.
     pub fn set_subject_public_key(&mut self, key: PublicKey) {
-        self.subject_key_identifier = KeyIdentifier::from_public_key(&key);
+        self.subject_key_identifier = key.key_identifier();
         self.subject_public_key_info = key;
     }
 

@@ -1277,7 +1277,7 @@ impl RtaBuilder {
         )?;
 
         self.signer_infos.push(SignerInfo {
-            sid: KeyIdentifier::from_public_key(&signer.get_key_info(key)?),
+            sid: signer.get_key_info(key)?.key_identifier(),
             digest_algorithm: self.digest_algorithm,
             signed_attrs,
             signature,

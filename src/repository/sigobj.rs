@@ -864,7 +864,7 @@ impl SignedObjectBuilder {
         let (signature, key_info) = signer.sign_one_off(
             SignatureAlgorithm::default(), &signed_attrs.encode_verify()
         )?;
-        let sid = KeyIdentifier::from_public_key(&key_info);
+        let sid = key_info.key_identifier();
 
         // Make the certificate.
         let mut cert = TbsCert::new(
