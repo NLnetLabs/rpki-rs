@@ -1,9 +1,11 @@
 //! Autonomous System Provider Authorization
 //!
 //! This is still being discussed in the IETF. No RFC just yet.
-//! See the following drafts:
-//! https://datatracker.ietf.org/doc/draft-ietf-sidrops-aspa-profile/
-//! https://datatracker.ietf.org/doc/draft-ietf-sidrops-aspa-verification/
+//! See the [draft-ietf-sidrops-aspa-profile] and
+//! [draft-ietf-sidrops-aspa-verification].
+//!
+//! [draft-ietf-sidrops-aspa-profile]: https://datatracker.ietf.org/doc/draft-ietf-sidrops-aspa-profile/
+//! [draft-ietf-sidrops-aspa-verification]: https://datatracker.ietf.org/doc/draft-ietf-sidrops-aspa-verification/
 
 use std::fmt;
 use std::str::FromStr;
