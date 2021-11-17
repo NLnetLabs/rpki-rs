@@ -9,7 +9,9 @@
 use std::{io, mem, slice};
 use std::convert::TryFrom;
 use std::marker::Unpin;
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use bytes::Bytes;
+use routecore::addr::{MaxLenPrefix, Prefix};
 use tokio::io::{
     AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt
 };
@@ -465,44 +467,240 @@ impl Ipv6Prefix {
 concrete!(Ipv6Prefix);
 
 
+//------------ RouterKey -----------------------------------------------------
+
+/// A BGPsec router key.
+pub struct RouterKey {
+    fixed: RouterKeyFixed,
+    key_info: Bytes,
+}
+
+#[derive(Default)]
+#[repr(packed)]
+struct RouterKeyFixed {
+    header: Header,
+    key_identifier: [u8; 20],
+    asn: u32,
+}
+
+impl RouterKey {
+    /// The PRDU type of a Router Key PDU.
+    pub const PDU: u8 = 9;
+
+    /// Creates a new router key PDU.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the length of the resulting PDU doesn’t fit
+    /// in a `u32`.
+    pub fn new(
+        version: u8,
+        flags: u8,
+        key_identifier: [u8; 20],
+        asn: u32,
+        key_info: Bytes,
+    ) -> Self {
+        let len = u32::try_from(
+            mem::size_of::<RouterKeyFixed>().checked_add(
+                key_info.as_ref().len()
+            ).expect("RouterKey RTR PDU size overflow")
+        ).expect("RouterKey RTR PDU size overflow");
+        RouterKey {
+            fixed: RouterKeyFixed {
+                header: Header::new(
+                    version, Self::PDU,
+                    (flags as u16) << 8,
+                    len
+                ),
+                key_identifier,
+                asn
+            },
+            key_info
+        }
+    }
+
+    /// Returns the value of the version field of the header.
+    pub fn version(&self) -> u8 {
+        self.fixed.header.version()
+    }
+
+    /// Returns the PDU size.
+    ///
+    /// The size is returned as a `u32` since that type is used in
+    /// the header.
+    pub fn size(&self) -> u32 {
+        (
+            mem::size_of::<RouterKeyFixed>() + self.key_info.as_ref().len()
+        ) as u32
+    }
+
+    /// Returns the flags field for the router key.
+    ///
+    /// The only flag currently used is the least significant but that is
+    /// 1 for an announcement and 0 for a withdrawal.
+    pub fn flags(&self) -> u8 {
+        (self.fixed.header.session >> 8) as u8
+    }
+
+    /// Returns the subject key identifier.
+    pub fn key_identifier(&self) -> [u8; 20] {
+        self.fixed.key_identifier
+    }
+
+    /// Returns the ASN.
+    pub fn asn(&self) -> u32 {
+        self.fixed.asn
+    }
+
+    /// Returns a reference to the subject key info
+    pub fn key_info(&self) -> &Bytes {
+        &self.key_info
+    }
+
+    /// Converts the PDU into the subject key info.
+    pub fn into_key_info(self) -> Bytes {
+        self.key_info
+    }
+
+    /// Writes a value to a writer.
+    pub async fn write<A: AsyncWrite + Unpin>(
+        &self,
+        a: &mut A
+    ) -> Result<(), io::Error> {
+        a.write_all(self.fixed.as_ref()).await?;
+        a.write_all(self.key_info.as_ref()).await
+    }
+
+    /// Reads a value from a reader.
+    ///
+    /// If a value with a different PDU type is received, returns an
+    /// error.
+    pub async fn read<Sock: AsyncRead + Unpin>(
+        sock: &mut Sock 
+    ) -> Result<Self, io::Error> {
+        let mut fixed = RouterKeyFixed::default();
+        sock.read_exact(fixed.header.as_mut()).await?;
+        if fixed.header.pdu() != Self::PDU {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "PDU type mismatch when expecting router key"
+            ))
+        }
+        let info_len = match
+            (fixed.header.length() as usize).checked_sub(fixed.as_ref().len())
+        {
+            Some(len) => len,
+            None => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "invalid length for router key"
+                ))
+            }
+        };
+        sock.read_exact(&mut fixed.as_mut()[Header::LEN..]).await?;
+        let mut key_info = vec![0u8; info_len];
+        sock.read_exact(&mut key_info.as_mut()).await?;
+        Ok(RouterKey { fixed, key_info: key_info.into() })
+    }
+
+    /// Reads only the payload part of a value from a reader.
+    pub async fn read_payload<Sock: AsyncRead + Unpin>(
+        header: Header, sock: &mut Sock
+    ) -> Result<Self, io::Error> {
+        let info_len = match
+            (header.length() as usize).checked_sub(
+                mem::size_of::<RouterKeyFixed>()
+            )
+        {
+            Some(len) => len,
+            None => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "invalid length for router key"
+                ))
+            }
+        };
+        let mut fixed = RouterKeyFixed::default();
+        sock.read_exact(&mut fixed.as_mut()[Header::LEN..]).await?;
+        let mut key_info = vec![0u8; info_len];
+        sock.read_exact(&mut key_info.as_mut()).await?;
+        Ok(RouterKey { fixed, key_info: key_info.into() })
+    }
+}
+
+impl AsRef<[u8]> for RouterKeyFixed {
+    fn as_ref(&self) -> &[u8] {
+        unsafe {
+            slice::from_raw_parts(
+                self as *const Self as *const u8,
+                mem::size_of::<Self>()
+            )
+        }
+    }
+}
+
+impl AsMut<[u8]> for RouterKeyFixed {
+    fn as_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            slice::from_raw_parts_mut(
+                self as *mut Self as *mut u8,
+                mem::size_of::<Self>()
+            )
+        }
+    }
+}
+
+
 //------------ Payload -------------------------------------------------------
 
 /// All possible payload types.
+#[non_exhaustive]
 pub enum Payload {
     /// An IPv4 prefix.
     V4(Ipv4Prefix),
 
     /// An IPv6 prefix.
     V6(Ipv6Prefix),
+
+    /// A router key.
+    RouterKey(RouterKey),
 }
 
 impl Payload {
     /// Creates an payload value for the given payload.
-    pub fn new(version: u8, flags: u8, payload: payload::Payload) -> Self {
+    pub fn new(version: u8, flags: u8, payload: &payload::Payload) -> Self {
         match payload {
-            payload::Payload::V4(prefix) => {
-                Payload::V4(
-                    Ipv4Prefix::new(
-                        version,
-                        flags,
-                        prefix.prefix_len,
-                        prefix.max_len,
-                        prefix.prefix,
-                        prefix.asn
-                    )
-                )
+            payload::Payload::Origin(origin) => {
+                match origin.prefix.addr() {
+                    IpAddr::V4(addr) => {
+                        Payload::V4(Ipv4Prefix::new(
+                            version,
+                            flags,
+                            origin.prefix.prefix_len(),
+                            origin.prefix.resolved_max_len(),
+                            addr,
+                            origin.asn.into()
+                        ))
+                    }
+                    IpAddr::V6(addr) => {
+                        Payload::V6(Ipv6Prefix::new(
+                            version,
+                            flags,
+                            origin.prefix.prefix_len(),
+                            origin.prefix.resolved_max_len(),
+                            addr,
+                            origin.asn.into()
+                        ))
+                    }
+                }
             }
-            payload::Payload::V6(prefix) => {
-                Payload::V6(
-                    Ipv6Prefix::new(
-                        version,
-                        flags,
-                        prefix.prefix_len,
-                        prefix.max_len,
-                        prefix.prefix,
-                        prefix.asn
-                    )
-                )
+            payload::Payload::RouterKey(key) => {
+                Payload::RouterKey(RouterKey::new(
+                    version, flags,
+                    key.key_identifier.into(),
+                    key.asn.into(),
+                    key.key_info.clone()
+                ))
             }
         }
     }
@@ -535,16 +733,10 @@ impl Payload {
                     Ok(Some(Payload::V6(res)))
                 })
             }
-            9 => { // Router Key
-                // Let’s skip over this in blocks of one 1k.
-                let mut buf = [0u8; 1024];
-                let mut len = header.length() as usize;
-                while len > 1024 {
-                    sock.read_exact(&mut buf).await?;
-                    len -= 1024;
-                }
-                sock.read_exact(&mut buf[..len]).await?;
-                Ok(Ok(None))
+            RouterKey::PDU => {
+                RouterKey::read_payload(header, sock).await.map(|res| {
+                    Ok(Some(Payload::RouterKey(res)))
+                })
             }
             EndOfData::PDU => {
                 EndOfData::read_payload(header, sock).await.map(Err)
@@ -563,6 +755,7 @@ impl Payload {
         match *self {
             Payload::V4(ref data) => data.version(),
             Payload::V6(ref data) => data.version(),
+            Payload::RouterKey(ref key) => key.version(),
         }
     }
 
@@ -571,6 +764,7 @@ impl Payload {
         match *self {
             Payload::V4(ref data) => data.flags(),
             Payload::V6(ref data) => data.flags(),
+            Payload::RouterKey(ref key) => key.flags(),
         }
     }
 
@@ -579,49 +773,70 @@ impl Payload {
         &self,
         a: &mut A
     ) -> Result<(), io::Error> {
-        a.write_all(self.as_ref()).await
+        match *self {
+            Payload::V4(ref data) => data.write(a).await,
+            Payload::V6(ref data) => data.write(a).await,
+            Payload::RouterKey(ref data) => data.write(a).await,
+        }
     }
 
     /// Converts the payload PDU into action and payload.
-    pub fn to_payload(&self) -> (payload::Action, payload::Payload) {
-        (
-            payload::Action::from_flags(self.flags()),
-            match self {
+    ///
+    /// Returns an error if the PDU isn’t acceptable for some reason.
+    pub fn to_payload(
+        &self
+    ) -> Result<(payload::Action, payload::Payload), Error> {
+        fn make_payload(
+            payload: &Payload,
+        ) -> Result<payload::Payload, &'static str> {
+            match payload {
                 Payload::V4(data) => {
-                    payload::Payload::V4(payload::Ipv4Prefix {
-                        prefix: data.prefix(),
-                        prefix_len: data.prefix_len(),
-                        max_len: data.max_len(),
-                        asn: data.asn(),
-                    })
+                    Ok(payload::Payload::origin(
+                        MaxLenPrefix::new(
+                            Prefix::new_v4_relaxed(
+                                data.prefix(), data.prefix_len()
+                            )?,
+                            Some(data.max_len())
+                        )?,
+                        data.asn().into()
+                    ))
                 }
                 Payload::V6(data) => {
-                    payload::Payload::V6(payload::Ipv6Prefix {
-                        prefix: data.prefix(),
-                        prefix_len: data.prefix_len(),
-                        max_len: data.max_len(),
-                        asn: data.asn(),
-                    })
+                    Ok(payload::Payload::origin(
+                        MaxLenPrefix::new(
+                            Prefix::new_v6_relaxed(
+                                data.prefix(), data.prefix_len()
+                            )?,
+                            Some(data.max_len())
+                        )?,
+                        data.asn().into()
+                    ))
+                }
+                Payload::RouterKey(key) => {
+                    Ok(payload::Payload::router_key(
+                        key.key_identifier().into(), key.asn().into(),
+                        key.key_info().clone()
+                    ))
                 }
             }
-        )
-    }
-}
+        }
 
-impl AsRef<[u8]> for Payload {
-    fn as_ref(&self) -> &[u8] {
+        Ok((
+            payload::Action::from_flags(self.flags()),
+            make_payload(self).map_err(|text| {
+                Error::new(
+                    self.version(), 0, self.as_partial_slice(), text.as_bytes()
+                )
+            })?
+        ))
+    }
+
+    /// Returns an octets slice of as much of the PDU as possible.
+    pub fn as_partial_slice(&self) -> &[u8] {
         match *self {
             Payload::V4(ref prefix) => prefix.as_ref(),
             Payload::V6(ref prefix) => prefix.as_ref(),
-        }
-    }
-}
-
-impl AsMut<[u8]> for Payload {
-    fn as_mut(&mut self) -> &mut [u8] {
-        match *self {
-            Payload::V4(ref mut prefix) => prefix.as_mut(),
-            Payload::V6(ref mut prefix) => prefix.as_mut(),
+            Payload::RouterKey(ref key) => key.fixed.as_ref(),
         }
     }
 }
