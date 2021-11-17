@@ -55,7 +55,7 @@ extra-debug = [ "bcder/extra-debug" ]
 
 # Dummy features for Windows CI runs where we don’t want to have to deal
 # with OpenSSL
-__windows_ci_all = [ "repository", "rrdp", "rtr", "serde", "extra-debug" ]
+__windows_ci_all = [ "repository", "rrdp", "rtr", "serde-support", "extra-debug" ]
 
 [[bin]]
 name = "readcer"
