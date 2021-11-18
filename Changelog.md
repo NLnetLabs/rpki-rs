@@ -4,11 +4,32 @@
 
 Breaking Changes
 
+* The type for autonomous system numbers has been renamed from `AsId` to
+  `Asn`. In addition, the `Asn` type from [_routecore_] is used rather
+  than defining a separate type. It is, however, being re-exported at the
+  old location. ([#175])
+* The type for public key identifier, `KeyIdentifer`, has moved to
+  [_routecore_] but is exposed at its old location.
+  As a consequence of the move, `KeyIdentifier::from_public_key` has
+  been removed. Please use `PublicKey::key_identifier` instead. ([#175])
+* The RTR payload types have been revised to use types from [_routecore_].
+  Support for BGPsec router keys was added. ([#177])
+
 New
+
+* Added parsing and generation of local exception files defined in [RFC 8416]
+  via the new `slurm` module, available if the `"slurm"` feature is
+  enabled. ([#178])
 
 Bug Fixes
 
 Other Changes
+
+[#175]: https://github.com/NLnetLabs/rpki-rs/pull/175
+[#177]: https://github.com/NLnetLabs/rpki-rs/pull/177
+[#178]: https://github.com/NLnetLabs/rpki-rs/pull/178
+[RFC 8416]: https://tools.ietf.org/html/rfc8416
+[_routecore_]: https://github.com/NLnetLabs/routecore
 
 
 ## 0.13.1
