@@ -20,6 +20,9 @@ use routecore::bgpsec::KeyIdentifier;
 ///
 /// Values of this type authorize the autonomous system given in the `asn`
 /// field to routes for the IP address prefixes given in the `prefix` field.
+///
+/// The type includes authorizations for both IPv4 and IPv6 prefixes which
+/// are separate payload types in RTR.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RouteOrigin {
     /// The address prefix to authorize.
@@ -40,7 +43,6 @@ impl RouteOrigin {
 //------------ RouterKey -----------------------------------------------------
 
 /// A BGPsec router key.
-///
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RouterKey {
     /// The subject key identifier of the router key.
@@ -66,9 +68,6 @@ impl RouterKey {
 //------------ Payload -------------------------------------------------------
 
 /// All payload types supported by RTR and this crate.
-///
-/// There is at least one more payload type – BGPSEC router keys – that is not
-/// currently supported by the crate.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum Payload {
