@@ -13,17 +13,23 @@
 //! [RFC 3779]: https://tools.ietf.org/html/rfc3779
 //! [RFC 6487]: https://tools.ietf.org/html/rfc6487
 
-use std::{error, fmt, iter, ops};
+use std::{error, fmt, iter};
 use std::cmp::Ordering;
 use std::iter::FromIterator;
 use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{Tag, xerr};
 use bcder::encode::{PrimitiveContent, Nothing};
+use routecore::asn::ParseAsnError;
 use super::super::cert::Overclaim;
 use super::super::x509::{encode_extension, ValidationError};
 use super::chain::{Block, SharedChain};
 use super::choice::ResourcesChoice;
+
+
+//------------ Re-exports ----------------------------------------------------
+
+pub use routecore::asn::Asn;
 
 
 //------------ AsResources ---------------------------------------------------
@@ -39,7 +45,10 @@ use super::choice::ResourcesChoice;
 /// the `AsResources::Blocks` variant –, or the AS resources of the issuer can
 /// be inherited – the `AsResources::Inherit` variant.
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "serde-support",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 pub struct AsResources(ResourcesChoice<AsBlocks>);
 
 impl AsResources {
@@ -515,7 +524,7 @@ impl fmt::Display for AsBlocks {
 
 //--- Serialize and Deserialize
 
-#[cfg(feature = "serde")]
+#[cfg(feature = "serde-support")]
 impl serde::Serialize for AsBlocks {
     fn serialize<S: serde::Serializer>(
         &self,
@@ -525,7 +534,7 @@ impl serde::Serialize for AsBlocks {
     }
 }
 
-#[cfg(feature = "serde")]
+#[cfg(feature = "serde-support")]
 impl<'de> serde::Deserialize<'de> for AsBlocks {
     fn deserialize<D: serde::Deserializer<'de>>(
         deserializer: D
@@ -575,7 +584,7 @@ impl Extend<AsBlock> for AsBlocksBuilder {
 #[derive(Clone, Copy, Debug)]
 pub enum AsBlock {
     /// The block is a single AS number.
-    Id(AsId),
+    Id(Asn),
 
     /// The block is a range of AS numbers.
     Range(AsRange),
@@ -583,7 +592,7 @@ pub enum AsBlock {
 
 impl AsBlock {
     /// The smallest AS number that is part of this block.
-    pub fn min(&self) -> AsId {
+    pub fn min(&self) -> Asn {
         match *self {
             AsBlock::Id(id) => id,
             AsBlock::Range(ref range) => range.min(),
@@ -591,7 +600,7 @@ impl AsBlock {
     }
 
     /// The largest AS number that is still part of this block.
-    pub fn max(&self) -> AsId {
+    pub fn max(&self) -> Asn {
         match *self {
             AsBlock::Id(id) => id,
             AsBlock::Range(ref range) => range.max(),
@@ -604,7 +613,7 @@ impl AsBlock {
     ///
     /// If you try to set the minimum to value larger than the current
     /// maximum, the method will panic.
-    pub fn set_min(&mut self, id: AsId) {
+    pub fn set_min(&mut self, id: Asn) {
         match id.cmp(&self.max()) {
             Ordering::Less => {
                 *self = AsBlock::Range(AsRange::new(id, self.max()))
@@ -624,7 +633,7 @@ impl AsBlock {
     ///
     /// If you try to set the minimum to value smaller than the current
     /// minimum, the method will panic.
-    pub fn set_max(&mut self, id: AsId) {
+    pub fn set_max(&mut self, id: Asn) {
         match id.cmp(&self.min()) {
             Ordering::Greater => {
                 *self = AsBlock::Range(AsRange::new(self.min(), id))
@@ -643,7 +652,7 @@ impl AsBlock {
         matches!(
             *self,
             AsBlock::Range(range)
-                if range.min() == AsId::MIN && range.max() == AsId::MAX
+                if range.min() == Asn::MIN && range.max() == Asn::MAX
         )
     }
 }
@@ -655,7 +664,7 @@ impl AsBlock {
     ) -> Result<Option<Self>, S::Err> {
         cons.take_opt_value(|tag, content| {
             if tag == Tag::INTEGER {
-                AsId::parse_content(content).map(AsBlock::Id)
+                Asn::parse_content(content).map(AsBlock::Id)
             }
             else if tag == Tag::SEQUENCE {
                 AsRange::parse_content(content).map(AsBlock::Range)
@@ -672,7 +681,7 @@ impl AsBlock {
     ) -> Result<Option<()>, S::Err> {
         cons.take_opt_value(|tag, content| {
             if tag == Tag::INTEGER {
-                AsId::skip_content(content)
+                Asn::skip_content(content)
             }
             else if tag == Tag::SEQUENCE {
                 AsRange::skip_content(content)
@@ -694,8 +703,8 @@ impl AsBlock {
 
 //--- From and FromStr
 
-impl From<AsId> for AsBlock {
-    fn from(id: AsId) -> Self {
+impl From<Asn> for AsBlock {
+    fn from(id: Asn) -> Self {
         AsBlock::Id(id)
     }
 }
@@ -706,8 +715,8 @@ impl From<AsRange> for AsBlock {
     }
 }
 
-impl From<(AsId, AsId)> for AsBlock {
-    fn from(range: (AsId, AsId)) -> Self {
+impl From<(Asn, Asn)> for AsBlock {
+    fn from(range: (Asn, Asn)) -> Self {
         AsBlock::Range(AsRange::new(range.0, range.1))
     }
 }
@@ -718,16 +727,16 @@ impl FromStr for AsBlock {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
 
         match s.find('-') {
-            None => Ok(AsBlock::Id(AsId::from_str(s)?)),
+            None => Ok(AsBlock::Id(Asn::from_str(s)?)),
             Some(pos) => {
                 if s.len() < pos + 2 {
                     Err(FromStrError::BadRange)
                 } else {
                     let min_str = &s[..pos];
                     let max_str = &s[pos + 1 ..];
-                    let min = AsId::from_str(min_str)
+                    let min = Asn::from_str(min_str)
                         .map_err(|_| FromStrError::BadRange)?;
-                    let max = AsId::from_str(max_str)
+                    let max = Asn::from_str(max_str)
                         .map_err(|_| FromStrError::BadRange)?;
                     Ok(AsBlock::Range(AsRange { min, max }))
                 }
@@ -748,7 +757,7 @@ impl Eq for AsBlock {}
 //--- Block
 
 impl Block for AsBlock {
-    type Item = AsId;
+    type Item = Asn;
 
     fn new(min: Self::Item, max: Self::Item) -> Self {
         if min == max {
@@ -768,11 +777,11 @@ impl Block for AsBlock {
     }
 
     fn next(item: Self::Item) -> Option<Self::Item> {
-        item.0.checked_add(1).map(AsId)
+        item.into_u32().checked_add(1).map(Asn::from)
     }
 
     fn previous(item: Self::Item) -> Option<Self::Item> {
-        item.0.checked_sub(1).map(AsId)
+        item.into_u32().checked_sub(1).map(Asn::from)
     }
 }
 
@@ -794,29 +803,29 @@ impl fmt::Display for AsBlock {
 #[derive(Clone, Copy, Debug)]
 pub struct AsRange {
     /// The smallest AS number that is part of the range.
-    min: AsId,
+    min: Asn,
 
     /// The largest AS number that is part of the range.
     ///
     /// Note that this means that, unlike normal Rust ranges, our range is
     /// inclusive at the upper end. This is necessary to represent a range
     /// that goes all the way to the last number.
-    max: AsId,
+    max: Asn,
 }
 
 impl AsRange {
     /// Creates a new AS number range from the smallest and largest number.
-    pub fn new(min: AsId, max: AsId) -> Self {
+    pub fn new(min: Asn, max: Asn) -> Self {
         AsRange { min, max }
     }
 
     /// Returns the smallest AS number that is part of this range.
-    pub fn min(self) -> AsId {
+    pub fn min(self) -> Asn {
         self.min
     }
 
     /// Returns the largest AS number that is still part of this range.
-    pub fn max(self) -> AsId {
+    pub fn max(self) -> Asn {
         self.max
     }
 }
@@ -828,8 +837,8 @@ impl AsRange {
     ) -> Result<Self, S::Err> {
         let cons = content.as_constructed()?;
         Ok(AsRange {
-            min: AsId::take_from(cons)?,
-            max: AsId::take_from(cons)?,
+            min: Asn::take_from(cons)?,
+            max: Asn::take_from(cons)?,
         })
     }
 
@@ -838,8 +847,8 @@ impl AsRange {
         content: &mut decode::Content<S>
     ) -> Result<(), S::Err> {
         let cons = content.as_constructed()?;
-        AsId::skip_in(cons)?;
-        AsId::skip_in(cons)?;
+        Asn::skip_in(cons)?;
+        Asn::skip_in(cons)?;
         Ok(())
     }
 
@@ -855,7 +864,7 @@ impl AsRange {
 //--- Block
 
 impl Block for AsRange {
-    type Item = AsId;
+    type Item = Asn;
 
     fn new(min: Self::Item, max: Self::Item) -> Self {
         Self::new(min, max)
@@ -870,11 +879,11 @@ impl Block for AsRange {
     }
 
     fn next(item: Self::Item) -> Option<Self::Item> {
-        item.0.checked_add(1).map(AsId)
+        item.into_u32().checked_add(1).map(Asn::from)
     }
 
     fn previous(item: Self::Item) -> Option<Self::Item> {
-        item.0.checked_sub(1).map(AsId)
+        item.into_u32().checked_sub(1).map(Asn::from)
     }
 }
 
@@ -887,144 +896,6 @@ impl fmt::Display for AsRange {
 }
 
 
-//------------ AsId ----------------------------------------------------------
-
-/// An AS number.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct AsId(u32);
-
-impl AsId {
-    pub const MIN: AsId = AsId(std::u32::MIN);
-    pub const MAX: AsId = AsId(std::u32::MAX);
-
-    /// Takes an AS number from the beginning of an encoded value.
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_u32().map(AsId)
-    }
-
-    /// Skips over the AS number at the beginning of an encoded value.
-    fn skip_in<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<(), S::Err> {
-        cons.take_u32().map(|_| ())
-    }
-
-    /// Parses the content of an AS number value.
-    fn parse_content<S: decode::Source>(
-        content: &mut decode::Content<S>
-    ) -> Result<Self, S::Err> {
-        content.to_u32().map(AsId)
-    }
-
-    /// Skips the content of an AS number value.
-    fn skip_content<S: decode::Source>(
-        content: &mut decode::Content<S>
-    ) -> Result<(), S::Err> {
-        content.to_u32().map(|_| ())
-    }
-
-    pub fn encode(self) -> impl encode::Values {
-        self.0.encode()
-    }
-}
-
-
-//--- From
-
-impl From<u32> for AsId {
-    fn from(id: u32) -> Self {
-        AsId(id)
-    }
-}
-
-impl From<AsId> for u32 {
-    fn from(id: AsId) -> Self {
-        id.0
-    }
-}
-
-
-//--- FromStr
-
-impl FromStr for AsId {
-    type Err = FromStrError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-
-        let s = if s.len() > 2 && s[..2].eq_ignore_ascii_case("as") {
-            &s[2..]
-        } else {
-            s
-        };
-
-        let id = u32::from_str(s).map_err(|_| FromStrError::BadAsn)?;
-        Ok(AsId(id))
-    }
-}
-
-
-//--- Serialize and Deserialize
-
-#[cfg(feature = "serde")]
-impl serde::Serialize for AsId {
-    fn serialize<S: serde::Serializer>(
-        &self, serializer: S
-    ) -> Result<S::Ok, S::Error> {
-        let s = format!("{}", self);
-        serializer.serialize_str(&s)
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de> serde::de::Deserialize<'de> for AsId {
-    fn deserialize<D: serde::de::Deserializer<'de>>(
-        deserializer: D
-    ) -> Result<Self, D::Error> {
-        struct Visitor;
-
-        impl<'de> serde::de::Visitor<'de> for Visitor {
-            type Value = AsId;
-
-            fn expecting(
-                &self, formatter: &mut fmt::Formatter
-            ) -> fmt::Result {
-                write!(formatter, "a string with an AS number")
-            }
-
-            fn visit_str<E: serde::de::Error>(
-                self, v: &str
-            ) -> Result<Self::Value, E> {
-                AsId::from_str(v).map_err(E::custom)
-            }
-        }
-
-        deserializer.deserialize_str(Visitor)
-    }
-}
-
-
-//--- Add
-
-impl ops::Add<u32> for AsId {
-    type Output = Self;
-
-    fn add(self, rhs: u32) -> Self {
-        AsId(self.0.checked_add(rhs).unwrap())
-    }
-}
-
-
-//--- Display
-
-impl fmt::Display for AsId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "AS{}", self.0)
-    }
-}
-
-
 //------------ FromStrError --------------------------------------------------
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1033,6 +904,12 @@ pub enum FromStrError {
     BadAsn,
     BadRange,
     BadBlocks,
+}
+
+impl From<ParseAsnError> for FromStrError {
+    fn from(_: ParseAsnError) -> Self {
+        FromStrError::BadAsn
+    }
 }
 
 impl fmt::Display for FromStrError {
@@ -1056,37 +933,17 @@ impl error::Error for FromStrError { }
 #[cfg(test)]
 mod test {
     use super::*;
-    use serde_test::{Token, assert_de_tokens, assert_tokens};
-
-    #[test]
-    fn as_id_from_str() {
-        assert_eq!(AsId::from_str("AS1").unwrap(), AsId(1));
-        assert_eq!(AsId::from_str("As1").unwrap(), AsId(1));
-        assert_eq!(AsId::from_str("1").unwrap(), AsId(1));
-    }
-
-    #[test]
-    fn as_id_display() {
-        assert_eq!(format!("{}", AsId(1)), "AS1");
-    }
-
-    #[test]
-    fn as_id_serde() {
-        assert_tokens(&AsId(12), &[Token::Str("AS12")]);
-        assert_de_tokens(&AsId(12), &[Token::Str("as12")]);
-        assert_de_tokens(&AsId(12), &[Token::Str("12")]);
-    }
 
     #[test]
     fn as_block_from_str() {
         // Good
         assert_eq!(
             AsBlock::from_str("AS1").unwrap(),
-            AsId(1).into()
+            Asn::from(1).into()
         );
         assert_eq!(
             AsBlock::from_str("AS1-AS3").unwrap(),
-            AsRange::new(AsId(1), AsId(3)).into()
+            AsRange::new(Asn::from(1), Asn::from(3)).into()
         );
 
         // Bad
@@ -1104,11 +961,11 @@ mod test {
 
         good(
             "AS1, AS3-AS7", 
-            vec![AsId(1).into(), AsRange::new(AsId(3), AsId(7)).into()]
+            vec![Asn::from(1).into(), AsRange::new(Asn::from(3), Asn::from(7)).into()]
         );
         good(
             "AS1,AS3-AS7", 
-            vec![AsId(1).into(), AsRange::new(AsId(3), AsId(7)).into()]
+            vec![Asn::from(1).into(), AsRange::new(Asn::from(3), Asn::from(7)).into()]
         );
         good("", Vec::new());
     }

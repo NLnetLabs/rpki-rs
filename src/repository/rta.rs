@@ -9,7 +9,7 @@
 //! * Resources are read in a rather relaxed way: they can be unordered and
 //!   overlapping. This happens even if the strict flag is set.
 //!
-//! draft-michaelson-rpki-rta: https://tools.ietf.org/html/draft-michaelson-rpki-rta
+//! [draft-michaelson-rpki-rta]: https://tools.ietf.org/html/draft-michaelson-rpki-rta
 
 use std::ops;
 use bcder::{decode, encode};
@@ -1277,7 +1277,7 @@ impl RtaBuilder {
         )?;
 
         self.signer_infos.push(SignerInfo {
-            sid: KeyIdentifier::from_public_key(&signer.get_key_info(key)?),
+            sid: signer.get_key_info(key)?.key_identifier(),
             digest_algorithm: self.digest_algorithm,
             signed_attrs,
             signature,

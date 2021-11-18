@@ -9,7 +9,7 @@ use bcder::encode::{PrimitiveContent, Values};
 use super::oid;
 use super::cert::{Cert, ResourceCert};
 use super::crypto::{Signer, SigningError};
-use super::resources::{Addr, AddressFamily, AsId, IpResources, Prefix};
+use super::resources::{Addr, AddressFamily, Asn, IpResources, Prefix};
 use super::sigobj::{SignedObject, SignedObjectBuilder};
 use super::x509::ValidationError;
 
@@ -99,13 +99,13 @@ impl<'de> serde::Deserialize<'de> for Roa {
 
 #[derive(Clone, Debug)]
 pub struct RouteOriginAttestation {
-    as_id: AsId,
+    as_id: Asn,
     v4_addrs: RoaIpAddresses,
     v6_addrs: RoaIpAddresses,
 }
 
 impl RouteOriginAttestation {
-    pub fn as_id(&self) -> AsId {
+    pub fn as_id(&self) -> Asn {
         self.as_id
     }
 
@@ -135,7 +135,7 @@ impl RouteOriginAttestation {
         cons.take_sequence(|cons| {
             // version [0] EXPLICIT INTEGER DEFAULT 0
             cons.take_opt_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(0))?;
-            let as_id = AsId::take_from(cons)?;
+            let as_id = Asn::take_from(cons)?;
             let mut v4 = None;
             let mut v6 = None;
             cons.take_sequence(|cons| {
@@ -419,13 +419,13 @@ impl FriendlyRoaIpAddress {
 //------------ RoaBuilder ----------------------------------------------------
 
 pub struct RoaBuilder {
-    as_id: AsId,
+    as_id: Asn,
     v4: RoaIpAddressesBuilder,
     v6: RoaIpAddressesBuilder,
 }
 
 impl RoaBuilder {
-    pub fn new(as_id: AsId) -> Self {
+    pub fn new(as_id: Asn) -> Self {
         Self::with_addresses(
             as_id,
             RoaIpAddressesBuilder::new(),
@@ -434,18 +434,18 @@ impl RoaBuilder {
     }
 
     pub fn with_addresses(
-        as_id: AsId,
+        as_id: Asn,
         v4: RoaIpAddressesBuilder,
         v6: RoaIpAddressesBuilder
     ) -> Self {
         Self { as_id, v4, v6 }
     }
 
-    pub fn as_id(&self) -> AsId {
+    pub fn as_id(&self) -> Asn {
         self.as_id
     }
 
-    pub fn set_as_id(&mut self, as_id: AsId) {
+    pub fn set_as_id(&mut self, as_id: Asn) {
         self.as_id = as_id
     }
 
@@ -653,7 +653,7 @@ mod signer_test {
     use crate::repository::cert::{KeyUsage, Overclaim, TbsCert};
     use crate::repository::crypto::{PublicKeyFormat, Signer};
     use crate::repository::crypto::softsigner::OpenSslSigner;
-    use crate::repository::resources::{AsId, Prefix};
+    use crate::repository::resources::{Asn, Prefix};
     use crate::repository::tal::TalInfo;
     use crate::repository::x509::Validity;
     use super::*;
@@ -674,7 +674,7 @@ mod signer_test {
         cert.set_rpki_manifest(Some(uri.clone()));
         cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
-        cert.build_as_resource_blocks(|b| b.push((AsId::MIN, AsId::MAX)));
+        cert.build_as_resource_blocks(|b| b.push((Asn::MIN, Asn::MAX)));
         let cert = cert.into_cert(&signer, &key).unwrap();
 
         let mut roa = RoaBuilder::new(64496.into());

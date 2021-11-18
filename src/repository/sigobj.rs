@@ -864,7 +864,7 @@ impl SignedObjectBuilder {
         let (signature, key_info) = signer.sign_one_off(
             SignatureAlgorithm::default(), &signed_attrs.encode_verify()
         )?;
-        let sid = KeyIdentifier::from_public_key(&key_info);
+        let sid = key_info.key_identifier();
 
         // Make the certificate.
         let mut cert = TbsCert::new(
@@ -979,7 +979,7 @@ mod signer_test {
     use crate::uri;
     use crate::repository::crypto::PublicKeyFormat;
     use crate::repository::crypto::softsigner::OpenSslSigner;
-    use crate::repository::resources::{AsId, Prefix};
+    use crate::repository::resources::{Asn, Prefix};
     use crate::repository::tal::TalInfo;
     use super::*;
         
@@ -1000,7 +1000,7 @@ mod signer_test {
         cert.set_rpki_manifest(Some(uri.clone()));
         cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
-        cert.build_as_resource_blocks(|b| b.push((AsId::MIN, AsId::MAX)));
+        cert.build_as_resource_blocks(|b| b.push((Asn::MIN, Asn::MAX)));
         let cert = cert.into_cert(&signer, &key).unwrap();
 
         let mut sigobj = SignedObjectBuilder::new(

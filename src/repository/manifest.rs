@@ -539,7 +539,7 @@ mod signer_test {
     use crate::repository::cert::{KeyUsage, Overclaim, TbsCert};
     use crate::repository::crypto::{PublicKeyFormat, Signer};
     use crate::repository::crypto::softsigner::OpenSslSigner;
-    use crate::repository::resources::{AsId, Prefix};
+    use crate::repository::resources::{Asn, Prefix};
     use crate::repository::tal::TalInfo;
     use crate::repository::x509::Validity;
     use super::*;
@@ -560,7 +560,7 @@ mod signer_test {
         cert.set_rpki_manifest(Some(uri.clone()));
         cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
-        cert.build_as_resource_blocks(|b| b.push((AsId::MIN, AsId::MAX)));
+        cert.build_as_resource_blocks(|b| b.push((Asn::MIN, Asn::MAX)));
         let cert = cert.into_cert(&signer, &key).unwrap();
 
         let content = ManifestContent::new(
