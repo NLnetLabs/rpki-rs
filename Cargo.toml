@@ -27,6 +27,7 @@ quick-xml       = { version = "0.22.0", optional = true }
 ring            = { version = "0.16.11", optional = true }
 routecore       = { git = "https://github.com/NLnetLabs/routecore.git", branch = "main" }
 serde           = { version = "1.0.95", optional = true, features = [ "derive" ] }
+serde_json      = { version = "1.0.40", optional = true }
 tokio           = { version = "1.0", optional = true, features = ["io-util",  "net", "rt", "sync", "time"] }
 tokio-stream    = { version = "0.1", optional = true }
 uuid            = "^0.8.1"
@@ -44,6 +45,7 @@ default = []
 repository = [ "base64", "bcder", "ring", "untrusted", "routecore/bcder" ]
 rrdp       = [ "xml", "base64", "ring" ]
 rtr        = [ "futures-util", "tokio", "tokio-stream" ]
+slurm      = [ "base64", "serde-support", "serde_json" ]
 
 # Dependent components of the crate.
 xml = [ "quick-xml" ]

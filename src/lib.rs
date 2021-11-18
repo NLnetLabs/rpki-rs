@@ -17,6 +17,7 @@
 //! * `"rrdp"`: support for the RRDP protocol for synchronising RPKI
 //!   repositories;
 //! * `"rtr"`: support for the RPKI-to-router protocol (RTR);
+//! * `"slurm"`: support for local exceptions aka SLURM;
 //! * `"serde-support"`: support for Serde serialization and deserialization
 //!   for many of the crate’s types;
 //! * `"softkeys"`: enables an OpenSSL-based signer for creating repository
@@ -32,6 +33,7 @@
 pub mod repository;
 pub mod rrdp;
 pub mod rtr;
+pub mod slurm;
 pub mod uri;
 pub mod xml;
 
