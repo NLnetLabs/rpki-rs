@@ -8,6 +8,9 @@ Breaking Changes
   `Asn`. In addition, the `Asn` type from [_routecore_] is used rather
   than defining a separate type. It is, however, being re-exported at the
   old location. ([#175])
+* The Serde serialization format for `Asn` has changed: it now serializes
+  as number rather than a string. The type exposes methods for use with
+  Serde’s field attributes to retain the old formatting.
 * The type for public key identifier, `KeyIdentifer`, has moved to
   [_routecore_] but is exposed at its old location.
   As a consequence of the move, `KeyIdentifier::from_public_key` has
