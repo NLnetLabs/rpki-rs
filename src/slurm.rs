@@ -132,7 +132,7 @@ impl Serialize for SlurmVersion {
 
 //------------ ValidationOutputFilters ---------------------------------------
 
-/// The set of description of entries to be removed from the data set.
+/// The set of descriptions of entries to be removed from the data set.
 #[derive(Clone, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ValidationOutputFilters {
@@ -345,7 +345,7 @@ impl<'de> Deserialize<'de> for PrefixAssertion {
             type Value = PrefixAssertion;
 
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("PrefixAssertion struct")
+                f.write_str("PrefixAssertion object")
             }
 
             fn visit_map<V: de::MapAccess<'de>>(
@@ -423,13 +423,15 @@ impl Serialize for PrefixAssertion {
     ) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
 
+        let field_num = match
+            (self.prefix.max_len().is_some(), self.comment.is_some())
+        {
+            (true, true) => 4,
+            (true, false) | (false, true) => 3,
+            (false, false) => 2
+        };
         let mut serializer = serializer.serialize_struct(
-            "PrefixAssertion",
-            match (self.prefix.max_len().is_some(), self.comment.is_some()) {
-                (true, true) => 4,
-                (true, false) | (false, true) => 3,
-                (false, false) => 2
-            }
+            "PrefixAssertion", field_num,
         )?;
         serializer.serialize_field(
             "prefix", &self.prefix.prefix(),
@@ -521,9 +523,7 @@ impl BgpsecAssertion {
 pub struct Base64Binary(Bytes);
 
 impl Base64Binary {
-    const BASE64_CONFIG: base64::Config = base64::Config::new(
-        base64::CharacterSet::UrlSafe, false
-    );
+    const BASE64_CONFIG: base64::Config = base64::URL_SAFE_NO_PAD;
 }
 
 
@@ -721,7 +721,7 @@ mod serde_key_identifier {
                 println!("visit_str '{}'", v);
 
                 // The key identifier is 20 bytes. Which means the Base64
-                // encoding has to be 27 characters wrong (since padding is
+                // encoding has to be 27 characters long (since padding is
                 // not included).
                 if v.len() != 27 {
                     return Err(E::custom("invalid length for key identifier"))
@@ -777,7 +777,7 @@ mod test {
 
     #[test]
     fn base64_binary_from_str() {
-        // This uses the test vector from RFC 4648 which doesn’t actually
+        // This uses a test vector from RFC 4648 which doesn’t actually
         // allow testing for the correct alphabet. Since there is hardly any
         // use of BGPsec in the wild, there also aren’t any real-world
         // examples. In other words, this test may succeed and we are still
@@ -918,6 +918,56 @@ mod test {
 
     #[test]
     fn parse_bad_slurm_files() {
+        // Bad version.
+        assert!(
+            SlurmFile::from_str(
+                r##"
+                    {
+                      "slurmVersion": 0,
+                      "validationOutputFilters": {
+                        "prefixFilters": [],
+                        "bgpsecFilters": []
+                      },
+                      "locallyAddedAssertions": {
+                        "prefixAssertions": [
+                          {
+                            "asn": 64496,
+                            "prefix": "198.51.100.0/24",
+                            "maxPrefixLength": 20,
+                            "comment": "invalid max len"
+                          },
+                        ],
+                        "bgpsecAssertions": []
+                      }
+                    }
+                "##
+            ).is_err()
+        );
+        assert!(
+            SlurmFile::from_str(
+                r##"
+                    {
+                      "slurmVersion": 2,
+                      "validationOutputFilters": {
+                        "prefixFilters": [],
+                        "bgpsecFilters": []
+                      },
+                      "locallyAddedAssertions": {
+                        "prefixAssertions": [
+                          {
+                            "asn": 64496,
+                            "prefix": "198.51.100.0/24",
+                            "maxPrefixLength": 20,
+                            "comment": "invalid max len"
+                          },
+                        ],
+                        "bgpsecAssertions": []
+                      }
+                    }
+                "##
+            ).is_err()
+        );
+
         // Bad max len.
         assert!(
             SlurmFile::from_str(
