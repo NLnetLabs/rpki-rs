@@ -484,7 +484,7 @@ struct RouterKeyFixed {
 }
 
 impl RouterKey {
-    /// The PRDU type of a Router Key PDU.
+    /// The PDU type of a Router Key PDU.
     pub const PDU: u8 = 9;
 
     /// Creates a new router key PDU.
@@ -513,7 +513,7 @@ impl RouterKey {
                     len
                 ),
                 key_identifier,
-                asn
+                asn: asn.to_be(),
             },
             key_info
         }
@@ -536,7 +536,7 @@ impl RouterKey {
 
     /// Returns the flags field for the router key.
     ///
-    /// The only flag currently used is the least significant but that is
+    /// The only flag currently used is the least significant bit that is
     /// 1 for an announcement and 0 for a withdrawal.
     pub fn flags(&self) -> u8 {
         (self.fixed.header.session >> 8) as u8
@@ -549,7 +549,7 @@ impl RouterKey {
 
     /// Returns the ASN.
     pub fn asn(&self) -> u32 {
-        self.fixed.asn
+        u32::from_be(self.fixed.asn)
     }
 
     /// Returns a reference to the subject key info
