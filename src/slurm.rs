@@ -8,8 +8,8 @@
 
 #![cfg(feature = "slurm")]
 
-use std::{borrow, fmt, io, ops};
-use std::convert::TryFrom;
+use std::{borrow, error, fmt, io, ops};
+use std::convert::{TryFrom, TryInto};
 use std::str::FromStr;
 use bytes::Bytes;
 use routecore::addr::{MaxLenPrefix, Prefix};
@@ -17,6 +17,7 @@ use routecore::bgpsec::KeyIdentifier;
 use routecore::asn::Asn;
 use serde::{Deserialize, Serialize};
 use crate::rtr::payload as rtr;
+use crate::rtr::pdu::{RouterKeyInfo, KeyInfoError};
 
 
 //------------ SlurmFile -----------------------------------------------------
@@ -481,7 +482,7 @@ pub struct BgpsecAssertion {
     ///
     /// [RFC4648]: https://tools.ietf.org/html/rfc4648
     #[serde(rename = "routerPublicKey")]
-    pub router_public_key: Base64Binary,
+    pub router_public_key: Base64KeyInfo,
 
     /// An optional comment.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -493,7 +494,7 @@ impl BgpsecAssertion {
     pub fn new(
         asn: Asn,
         ski: KeyIdentifier,
-        router_public_key: Base64Binary,
+        router_public_key: Base64KeyInfo,
         comment: Option<String>,
     ) -> Self {
         BgpsecAssertion { asn, ski, router_public_key, comment }
@@ -507,7 +508,7 @@ impl BgpsecAssertion {
 }
 
 
-//------------ Base64Binary --------------------------------------------------
+//------------ Base64KeyInfo -------------------------------------------------
 
 /// A sequence of binary data encoded in Base64 when serialized.
 ///
@@ -519,49 +520,59 @@ impl BgpsecAssertion {
 /// `[u8]`.
 ///
 /// [RFC4648]: https://tools.ietf.org/html/rfc4648
-#[derive(Clone, Default, Eq, Hash)]
-pub struct Base64Binary(Bytes);
+#[derive(Clone, Eq, Hash)]
+pub struct Base64KeyInfo(RouterKeyInfo);
 
-impl Base64Binary {
+impl Base64KeyInfo {
     const BASE64_CONFIG: base64::Config = base64::URL_SAFE_NO_PAD;
 }
 
 
-//--- From
+//--- TryFrom and From
 
-impl From<Vec<u8>> for Base64Binary {
-    fn from(src: Vec<u8>) -> Self {
-        Base64Binary(src.into())
+impl TryFrom<Vec<u8>> for Base64KeyInfo {
+    type Error = KeyInfoError;
+
+    fn try_from(src: Vec<u8>) -> Result<Self, Self::Error> {
+        RouterKeyInfo::try_from(src).map(Base64KeyInfo)
     }
 }
 
-impl From<Bytes> for Base64Binary {
-    fn from(src: Bytes) -> Self {
-        Base64Binary(src)
+impl TryFrom<Bytes> for Base64KeyInfo {
+    type Error = KeyInfoError;
+
+    fn try_from(src: Bytes) -> Result<Self, Self::Error> {
+        RouterKeyInfo::try_from(src).map(Base64KeyInfo)
     }
 }
 
-impl From<Base64Binary> for Bytes {
-    fn from(src: Base64Binary) -> Self {
+impl From<Base64KeyInfo> for RouterKeyInfo {
+    fn from(src: Base64KeyInfo) -> Self {
         src.0
+    }
+}
+
+impl From<Base64KeyInfo> for Bytes {
+    fn from(src: Base64KeyInfo) -> Self {
+        src.0.into_bytes()
     }
 }
 
 
 //--- FromStr
 
-impl FromStr for Base64Binary {
-    type Err = base64::DecodeError;
+impl FromStr for Base64KeyInfo {
+    type Err = ParseBase64KeyInfoError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        base64::decode_config(s, Self::BASE64_CONFIG).map(Into::into)
+        Ok(base64::decode_config(s, Self::BASE64_CONFIG)?.try_into()?)
     }
 }
 
 
 //--- Deref, AsRef, Borrow
 
-impl ops::Deref for Base64Binary {
+impl ops::Deref for Base64KeyInfo {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -569,13 +580,13 @@ impl ops::Deref for Base64Binary {
     }
 }
 
-impl AsRef<[u8]> for Base64Binary {
+impl AsRef<[u8]> for Base64KeyInfo {
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
     }
 }
 
-impl borrow::Borrow<[u8]> for Base64Binary {
+impl borrow::Borrow<[u8]> for Base64KeyInfo {
     fn borrow(&self) -> &[u8] {
         self.0.as_ref()
     }
@@ -584,16 +595,16 @@ impl borrow::Borrow<[u8]> for Base64Binary {
 
 //--- PartialEq
 
-impl<T: AsRef<[u8]>> PartialEq<T> for Base64Binary {
+impl<T: AsRef<[u8]>> PartialEq<T> for Base64KeyInfo {
     fn eq(&self, other: &T) -> bool {
-        self.0.as_ref().eq(other.as_ref())
+        self.0.as_slice().eq(other.as_ref())
     }
 }
 
 
 //--- Display and Debug
 
-impl fmt::Display for Base64Binary {
+impl fmt::Display for Base64KeyInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         base64::display::Base64Display::with_config(
             self.0.as_ref(),
@@ -602,9 +613,9 @@ impl fmt::Display for Base64Binary {
     }
 }
 
-impl fmt::Debug for Base64Binary {
+impl fmt::Debug for Base64KeyInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("Base64Binary")
+        f.debug_tuple("Base64KeyInfo")
         .field(&format_args!("{}", self))
         .finish()
     }
@@ -613,23 +624,22 @@ impl fmt::Debug for Base64Binary {
 
 //--- Serialize and Deserialize
 
-impl Serialize for Base64Binary {
+impl Serialize for Base64KeyInfo {
     fn serialize<S: serde::Serializer>(
         &self, serializer: S
     ) -> Result<S::Ok, S::Error> {
-        // XXX Can this be done without making a string first?
-        serializer.serialize_str(&format!("{}", self))
+        serializer.collect_str(&format_args!("{}", self))
     }
 }
 
-impl<'de> Deserialize<'de> for Base64Binary {
+impl<'de> Deserialize<'de> for Base64KeyInfo {
     fn deserialize<D: serde::Deserializer<'de>>(
         deserializer: D
     ) -> Result<Self, D::Error> {
         struct Visitor;
 
         impl<'de> serde::de::Visitor<'de> for Visitor {
-            type Value = Base64Binary;
+            type Value = Base64KeyInfo;
 
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 f.write_str("a Base64 string")
@@ -638,7 +648,7 @@ impl<'de> Deserialize<'de> for Base64Binary {
             fn visit_str<E: serde::de::Error>(
                 self, v: &str
             ) -> Result<Self::Value, E> {
-                Base64Binary::from_str(v).map_err(E::custom)
+                Base64KeyInfo::from_str(v).map_err(E::custom)
             }
         }
 
@@ -691,14 +701,14 @@ mod serde_opt_asn {
 mod serde_key_identifier {
     use std::fmt;
     use std::convert::TryFrom;
-    use super::{Base64Binary, KeyIdentifier};
+    use super::{Base64KeyInfo, KeyIdentifier};
 
     pub fn serialize<S: serde::Serializer>(
         key_id: &KeyIdentifier, serializer: S
     ) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(
             &base64::encode_config(
-                key_id.as_slice(), Base64Binary::BASE64_CONFIG
+                key_id.as_slice(), Base64KeyInfo::BASE64_CONFIG
             )
         )
     }
@@ -730,7 +740,7 @@ mod serde_key_identifier {
                 // A 27 character Base64 string can contains 20 or 21 bytes.
                 let mut buf = [0u8; 21];
                 let len = base64::decode_config_slice(
-                    v, Base64Binary::BASE64_CONFIG, &mut buf
+                    v, Base64KeyInfo::BASE64_CONFIG, &mut buf
                 ).map_err(E::custom)?;
 
                 // If we actually get 21 bytes, KeyIdentifier::try_from will
@@ -769,6 +779,39 @@ mod serde_opt_key_identifier {
 }
 
 
+//============ Error Types ===================================================
+
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub enum ParseBase64KeyInfoError {
+    Base64(base64::DecodeError),
+    KeyInfo(KeyInfoError)
+}
+
+impl From<base64::DecodeError> for ParseBase64KeyInfoError {
+    fn from(src: base64::DecodeError) -> ParseBase64KeyInfoError {
+        ParseBase64KeyInfoError::Base64(src)
+    }
+}
+
+impl From<KeyInfoError> for ParseBase64KeyInfoError {
+    fn from(src: KeyInfoError) -> ParseBase64KeyInfoError {
+        ParseBase64KeyInfoError::KeyInfo(src)
+    }
+}
+
+impl fmt::Display for ParseBase64KeyInfoError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            ParseBase64KeyInfoError::Base64(ref inner) => inner.fmt(f),
+            ParseBase64KeyInfoError::KeyInfo(ref inner) => inner.fmt(f),
+        }
+    }
+}
+
+impl error::Error for ParseBase64KeyInfoError { }
+
+
 //============ Tests =========================================================
 
 #[cfg(test)]
@@ -784,14 +827,16 @@ mod test {
         // using the wrong decoding config.
         assert_eq!(
             b"foo",
-            Base64Binary::from_str("Zm9v").unwrap().as_ref()
+            Base64KeyInfo::from_str("Zm9v").unwrap().as_ref()
         );
     }
 
     #[test]
     fn base64_binary_display() {
         assert_eq!(
-            format!("{}", Base64Binary::from(Vec::from(b"foo".as_ref()))),
+            format!("{}",
+                Base64KeyInfo::try_from(Vec::from(b"foo".as_ref())).unwrap()
+            ),
             "Zm9v".as_ref()
         );
     }
@@ -890,7 +935,7 @@ mod test {
                     BgpsecAssertion::new(
                         64496.into(),
                         KeyIdentifier::from(*b"12345678901234567890"),
-                        Bytes::from(b"blubb".as_ref()).into(),
+                        Bytes::from(b"blubb".as_ref()).try_into().unwrap(),
                         None,
                     ),
                 ],

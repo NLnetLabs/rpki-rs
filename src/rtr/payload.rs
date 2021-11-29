@@ -8,10 +8,10 @@
 //! they become necessary. So don’t hesitate to ask for them!
 
 use std::time::Duration;
-use bytes::Bytes;
 use routecore::addr::MaxLenPrefix;
 use routecore::asn::Asn;
 use routecore::bgpsec::KeyIdentifier;
+use super::pdu::RouterKeyInfo;
 
 
 //------------ RouteOrigin ---------------------------------------------------
@@ -52,17 +52,18 @@ pub struct RouterKey {
     pub asn: Asn,
 
     /// The actual key.
-    pub key_info: Bytes,
+    pub key_info: RouterKeyInfo,
 }
 
 impl RouterKey {
     /// Creates a new value from the various components.
     pub fn new(
-        key_identifier: KeyIdentifier, asn: Asn, key_info: Bytes
+        key_identifier: KeyIdentifier, asn: Asn, key_info: RouterKeyInfo
     ) -> Self {
         RouterKey { key_identifier, asn, key_info }
     }
 }
+
 
 
 //------------ Payload -------------------------------------------------------
@@ -86,7 +87,7 @@ impl Payload {
 
     /// Creates a new router key payload.
     pub fn router_key(
-        key_identifier: KeyIdentifier, asn: Asn, key_info: Bytes
+        key_identifier: KeyIdentifier, asn: Asn, key_info: RouterKeyInfo
     ) -> Self {
         Payload::RouterKey(RouterKey::new(key_identifier, asn, key_info))
     }
