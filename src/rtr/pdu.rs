@@ -6,7 +6,7 @@
 //! RFC 8210. Annoyingly, the format of the `EndOfData` PDU changes between
 //! the two versions.
 
-use std::{io, mem, slice};
+use std::{borrow, error, fmt, io, mem, ops, slice};
 use std::convert::TryFrom;
 use std::marker::Unpin;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -472,7 +472,7 @@ concrete!(Ipv6Prefix);
 /// A BGPsec router key.
 pub struct RouterKey {
     fixed: RouterKeyFixed,
-    key_info: Bytes,
+    key_info: RouterKeyInfo,
 }
 
 #[derive(Default)]
@@ -487,6 +487,11 @@ impl RouterKey {
     /// The PDU type of a Router Key PDU.
     pub const PDU: u8 = 9;
 
+    /// The maximum size of the subject public key info data.
+    pub const fn max_key_info_size() -> usize {
+        (u32::MAX as usize) - mem::size_of::<RouterKeyFixed>()
+    }
+
     /// Creates a new router key PDU.
     ///
     /// # Panics
@@ -498,13 +503,15 @@ impl RouterKey {
         flags: u8,
         key_identifier: [u8; 20],
         asn: u32,
-        key_info: Bytes,
+        key_info: RouterKeyInfo,
     ) -> Self {
+        // We know it fits but let’s be sure.
         let len = u32::try_from(
             mem::size_of::<RouterKeyFixed>().checked_add(
-                key_info.as_ref().len()
+                key_info.len()
             ).expect("RouterKey RTR PDU size overflow")
         ).expect("RouterKey RTR PDU size overflow");
+
         RouterKey {
             fixed: RouterKeyFixed {
                 header: Header::new(
@@ -530,7 +537,7 @@ impl RouterKey {
     /// the header.
     pub fn size(&self) -> u32 {
         (
-            mem::size_of::<RouterKeyFixed>() + self.key_info.as_ref().len()
+            mem::size_of::<RouterKeyFixed>() + self.key_info.len()
         ) as u32
     }
 
@@ -553,12 +560,12 @@ impl RouterKey {
     }
 
     /// Returns a reference to the subject key info
-    pub fn key_info(&self) -> &Bytes {
+    pub fn key_info(&self) -> &RouterKeyInfo {
         &self.key_info
     }
 
     /// Converts the PDU into the subject key info.
-    pub fn into_key_info(self) -> Bytes {
+    pub fn into_key_info(self) -> RouterKeyInfo {
         self.key_info
     }
 
@@ -598,9 +605,8 @@ impl RouterKey {
             }
         };
         sock.read_exact(&mut fixed.as_mut()[Header::LEN..]).await?;
-        let mut key_info = vec![0u8; info_len];
-        sock.read_exact(&mut key_info.as_mut()).await?;
-        Ok(RouterKey { fixed, key_info: key_info.into() })
+        let key_info = RouterKeyInfo::read(sock, info_len).await?;
+        Ok(RouterKey { fixed, key_info })
     }
 
     /// Reads only the payload part of a value from a reader.
@@ -622,9 +628,8 @@ impl RouterKey {
         };
         let mut fixed = RouterKeyFixed::default();
         sock.read_exact(&mut fixed.as_mut()[Header::LEN..]).await?;
-        let mut key_info = vec![0u8; info_len];
-        sock.read_exact(&mut key_info.as_mut()).await?;
-        Ok(RouterKey { fixed, key_info: key_info.into() })
+        let key_info = RouterKeyInfo::read(sock, info_len).await?;
+        Ok(RouterKey { fixed, key_info })
     }
 }
 
@@ -647,6 +652,104 @@ impl AsMut<[u8]> for RouterKeyFixed {
                 mem::size_of::<Self>()
             )
         }
+    }
+}
+
+
+//------------ RouterKeyInfo -------------------------------------------------
+
+/// The subject public key info data of a router key.
+///
+/// This is a simple newtype around a `Bytes` enforcing a size limit so that
+/// a value can always be used in a router key PDU.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RouterKeyInfo(Bytes);
+
+impl RouterKeyInfo {
+    /// Creates a new value from some bytes.
+    ///
+    /// Returns an error if the bytes are too large to fit into a router key
+    /// PDU.
+    pub fn new(bytes: Bytes) -> Result<Self, KeyInfoError> {
+        if bytes.len() > RouterKey::max_key_info_size() {
+            Err(KeyInfoError)
+        }
+        else {
+            Ok(RouterKeyInfo(bytes))
+        }
+    }
+
+    /// Returns a reference to the octets of the value.
+    pub fn as_slice(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+
+    /// Converts the value into the underlying bytes.
+    pub fn into_bytes(self) -> Bytes {
+        self.0
+    }
+
+    /// Reads a value of the given length from the buffer.
+    async fn read<Sock: AsyncRead + Unpin>(
+        sock: &mut Sock, len: usize,
+    ) -> Result<Self, io::Error> {
+        let mut key_info = vec![0u8; len];
+        sock.read_exact(&mut key_info.as_mut()).await?;
+        Ok(RouterKeyInfo(key_info.into()))
+    }
+}
+
+
+//--- TryFrom
+
+impl TryFrom<Vec<u8>> for RouterKeyInfo {
+    type Error = KeyInfoError;
+
+    fn try_from(src: Vec<u8>) -> Result<Self, Self::Error> {
+        Self::new(src.into())
+    }
+}
+
+impl TryFrom<Bytes> for RouterKeyInfo {
+    type Error = KeyInfoError;
+
+    fn try_from(src: Bytes) -> Result<Self, Self::Error> {
+        Self::new(src)
+    }
+}
+
+
+//--- Deref, AsRef, and Borrow
+
+impl ops::Deref for RouterKeyInfo {
+    type Target = Bytes;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl AsRef<Bytes> for RouterKeyInfo {
+    fn as_ref(&self) -> &Bytes {
+        &self.0
+    }
+}
+
+impl AsRef<[u8]> for RouterKeyInfo {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl borrow::Borrow<Bytes> for RouterKeyInfo {
+    fn borrow(&self) -> &Bytes {
+        self.as_ref()
+    }
+}
+
+impl borrow::Borrow<[u8]> for RouterKeyInfo {
+    fn borrow(&self) -> &[u8] {
+        self.as_ref()
     }
 }
 
@@ -1243,4 +1346,19 @@ impl Header {
 }
 
 common!(Header);
+
+
+//============ ErrorTypes ====================================================
+
+/// The key info of a router key was too large.
+#[derive(Clone, Copy, Debug)]
+pub struct KeyInfoError;
+
+impl fmt::Display for KeyInfoError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("router key size overflow")
+    }
+}
+
+impl error::Error for KeyInfoError { }
 
