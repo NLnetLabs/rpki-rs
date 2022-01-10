@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased future version
+## 0.14.0
+
+Released 2022-01-10.
 
 Breaking Changes
 
@@ -23,10 +25,6 @@ New
 * Added parsing and generation of local exception files defined in [RFC 8416]
   via the new `slurm` module, available if the `"slurm"` feature is
   enabled. ([#178])
-
-Bug Fixes
-
-Other Changes
 
 [#175]: https://github.com/NLnetLabs/rpki-rs/pull/175
 [#177]: https://github.com/NLnetLabs/rpki-rs/pull/177
