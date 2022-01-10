@@ -1,6 +1,6 @@
 [package]
 name = "rpki"
-version = "0.14.0"
+version = "0.14.1-dev"
 edition = "2018"
 authors = ["The NLnet Labs RPKI Team <rpki@nlnetlabs.nl>"]
 description = "A library for validating and creating RPKI data."
