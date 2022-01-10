@@ -694,7 +694,7 @@ impl RouterKeyInfo {
         sock: &mut Sock, len: usize,
     ) -> Result<Self, io::Error> {
         let mut key_info = vec![0u8; len];
-        sock.read_exact(&mut key_info.as_mut()).await?;
+        sock.read_exact(key_info.as_mut()).await?;
         Ok(RouterKeyInfo(key_info.into()))
     }
 }
