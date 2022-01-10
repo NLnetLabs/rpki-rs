@@ -837,7 +837,7 @@ mod test {
             format!("{}",
                 Base64KeyInfo::try_from(Vec::from(b"foo".as_ref())).unwrap()
             ),
-            "Zm9v".as_ref()
+            "Zm9v"
         );
     }
 
@@ -926,7 +926,7 @@ mod test {
                                 32
                             ).unwrap(),
                             Some(48),
-                        ).unwrap().into(),
+                        ).unwrap(),
                         64496.into(),
                         Some(String::from("My de-aggregated route"))
                     ),

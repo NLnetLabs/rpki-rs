@@ -380,10 +380,10 @@ impl Serial {
 
 //--- Default
 
+// Derive would do the same thing, but let’s be explicit here.
+#[allow(clippy::derivable_impls)]
 impl Default for Serial {
     fn default() -> Self {
-        // derive would probably do the same thing, but let’s be explicit
-        // here.
         Serial([0; 20])
     }
 }

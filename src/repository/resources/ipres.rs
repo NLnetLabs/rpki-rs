@@ -1025,10 +1025,10 @@ impl AddressRange {
     fn parse_content<S: decode::Source>(
         content: &mut decode::Content<S>
     ) -> Result<Self, S::Err> {
-        let mut cons = content.as_constructed()?;
+        let cons = content.as_constructed()?;
         Ok(AddressRange {
-            min: Prefix::take_from(&mut cons)?.min(),
-            max: Prefix::take_from(&mut cons)?.max(),
+            min: Prefix::take_from(cons)?.min(),
+            max: Prefix::take_from(cons)?.max(),
         })
     }
 
@@ -1036,9 +1036,9 @@ impl AddressRange {
         content: &mut decode::Content<S>,
         family: AddressFamily,
     ) -> Result<Self, S::Err> {
-        let mut cons = content.as_constructed()?;
-        let min = Prefix::take_from(&mut cons)?;
-        let max = Prefix::take_from(&mut cons)?;
+        let cons = content.as_constructed()?;
+        let min = Prefix::take_from(cons)?;
+        let max = Prefix::take_from(cons)?;
         if min.addr_len() > family.max_addr_len()
             || max.addr_len() > family.max_addr_len()
         {
