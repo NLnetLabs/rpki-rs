@@ -728,8 +728,6 @@ mod serde_key_identifier {
             fn visit_str<E: serde::de::Error>(
                 self, v: &str
             ) -> Result<Self::Value, E> {
-                println!("visit_str '{}'", v);
-
                 // The key identifier is 20 bytes. Which means the Base64
                 // encoding has to be 27 characters long (since padding is
                 // not included).
