@@ -7,7 +7,7 @@
 //! value is not used for an address family, the set of addresses must be
 //! non-empty.
 
-use std::{error, fmt, io, iter, mem, str};
+use std::{error, fmt, io, iter, str};
 use std::fmt::Display;
 use std::iter::FromIterator;
 use std::net::{AddrParseError, IpAddr, Ipv4Addr, Ipv6Addr};
@@ -1431,7 +1431,7 @@ impl Addr {
 
     /// Returns a byte array for the address.
     pub fn to_bytes(self) -> [u8; 16] {
-        unsafe { mem::transmute(self.0.to_be()) }
+        self.0.to_be_bytes()
     }
 
     /// Returns an address with all but the first `prefix_len` bits cleared.
