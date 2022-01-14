@@ -662,7 +662,7 @@ impl AsMut<[u8]> for RouterKeyFixed {
 ///
 /// This is a simple newtype around a `Bytes` enforcing a size limit so that
 /// a value can always be used in a router key PDU.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RouterKeyInfo(Bytes);
 
 impl RouterKeyInfo {
@@ -750,6 +750,32 @@ impl borrow::Borrow<Bytes> for RouterKeyInfo {
 impl borrow::Borrow<[u8]> for RouterKeyInfo {
     fn borrow(&self) -> &[u8] {
         self.as_ref()
+    }
+}
+
+
+//--- Display and Debug
+
+impl fmt::Display for RouterKeyInfo{
+    /// Formats the key info using the given formatter.
+    ///
+    /// The output format is identical to that used in local exception
+    /// files defined by [RFC 8416], i.e., unpadded Base 64 using the URL-safe
+    /// alphabet.
+    ///
+    /// [RFC 8416]: https://tools.ietf.org/html/rfc8416
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        base64::display::Base64Display::with_config(
+            self.0.as_ref(), base64::URL_SAFE_NO_PAD,
+        ).fmt(f)
+    }
+}
+
+impl fmt::Debug for RouterKeyInfo{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("RouterKeyInfo")
+        .field(&format_args!("{}", self))
+        .finish()
     }
 }
 
