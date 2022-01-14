@@ -13,3 +13,7 @@
 //! which are currently missing.
 
 #![cfg(feature = "remote")]
+
+//--- Modules
+//
+pub mod idcert;
