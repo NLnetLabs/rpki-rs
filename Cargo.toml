@@ -42,6 +42,7 @@ tokio           = { version="1.0", features=["net", "macros"]}
 default = []
 
 # Main components of the crate.
+remote     = []
 repository = [ "base64", "bcder", "ring", "untrusted", "routecore/bcder" ]
 rrdp       = [ "xml", "base64", "ring" ]
 rtr        = [ "futures-util", "tokio", "tokio-stream" ]

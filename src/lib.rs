@@ -12,6 +12,8 @@
 //! The crate uses the features to enable functionality that isn’t necessary
 //! for all use cases. Currently, the following features are defined:
 //!
+//! * `"remote"`: support for remote access protocols between CAs and their
+//!   parents/children and publication servers;
 //! * `"repository"`: support for creating, validating, and processing of
 //!   repository objects, such as certificates, manifests, or ROAs;
 //! * `"rrdp"`: support for the RRDP protocol for synchronising RPKI
@@ -30,6 +32,7 @@
 #![allow(renamed_and_removed_lints)]
 #![allow(clippy::unknown_clippy_lints)]
 
+pub mod remote;
 pub mod repository;
 pub mod rrdp;
 pub mod rtr;
