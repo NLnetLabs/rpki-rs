@@ -2,67 +2,20 @@
 //! protocol CMS messages and XML exchanges.
 
 //! Support for building RPKI Certificates and Objects
-use bytes::Bytes;
-use log::debug;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use std::ops;
 use bcder::{
     encode::{PrimitiveContent, Values},
-    {decode, encode, Mode, OctetString, Oid, Tag, Unsigned},
+    {decode, encode, Mode, OctetString, Oid, Tag},
 };
+use bytes::Bytes;
+use log::debug;
 
 use crate::repository::{
     crypto::{KeyIdentifier, PublicKey, SignatureAlgorithm},
     oid,
-    x509::{encode_extension, update_once, Name, SignedData, Time, ValidationError, Validity},
+    x509::{encode_extension, update_once, Name, SignedData, Time, ValidationError, Validity, Serial},
 };
-
-
-/// Validity Time for the self-signed (TA) Identity certificates used to sign
-/// the EE certificates used in CMS exchanges. Note that the EE certificates
-/// will of course use much shorter validity times.
-pub const ID_CERTIFICATE_VALIDITY_YEARS: i32 = 15;
-
-//------------ IdTbsCertificate ------------------------------------------------
-
-/// This type represents the signed content part of an RPKI Certificate.
-#[allow(dead_code)]
-struct IdTbsCertificate {
-    // The General structure is documented in section 4.1 or RFC5280
-    //
-    //    TBSCertificate  ::=  SEQUENCE  {
-    //        version         [0]  EXPLICIT Version DEFAULT v1,
-    //        serialNumber         CertificateSerialNumber,
-    //        signature            AlgorithmIdentifier,
-    //        issuer               Name,
-    //        validity             Validity,
-    //        subject              Name,
-    //        subjectPublicKeyInfo SubjectPublicKeyInfo,
-    //        issuerUniqueID  [1]  IMPLICIT UniqueIdentifier OPTIONAL,
-    //                             -- If present, version MUST be v2 or v3
-    //        subjectUniqueID [2]  IMPLICIT UniqueIdentifier OPTIONAL,
-    //                             -- If present, version MUST be v2 or v3
-    //        extensions      [3]  EXPLICIT Extensions OPTIONAL
-    //                             -- If present, version MUST be v3
-    //        }
-    //
-    //  In the RPKI we always use Version 3 Certificates with certain
-    //  extensions (SubjectKeyIdentifier in particular). issuerUniqueID and
-    //  subjectUniqueID are not used.
-    //
-
-    // version is always 3
-    serial_number: u32,
-    // signature is always Sha256WithRsaEncryption
-    issuer: Name,
-    validity: Validity,
-    subject: Name,
-    subject_public_key_info: PublicKey,
-    // issuerUniqueID is not used
-    // subjectUniqueID is not used
-    extensions: IdExtensions,
-}
-
 
 //------------ IdCert --------------------------------------------------------
 
@@ -88,57 +41,8 @@ pub struct IdCert {
     /// The outer structure of the certificate.
     signed_data: SignedData,
 
-    /// The serial number.
-    serial_number: Unsigned,
-
-    /// The algorithm used for signing the certificate.
-    #[allow(dead_code)]
-    signature: SignatureAlgorithm,
-    
-    /// The name of the issuer.
-    ///
-    /// It isn’t really relevant in RPKI.
-    #[allow(dead_code)]
-    issuer: Name,
-    
-    /// The validity of the certificate.
-    validity: Validity,
-    
-    /// The name of the subject of this certificate.
-    ///
-    /// This isn’t really relevant in RPKI.
-    #[allow(dead_code)]
-    subject: Name,
-
-    /// Information about the public key of this certificate.
-    subject_public_key_info: PublicKey,
-
-    /// The certificate extensions.
-    extensions: IdExtensions,
-}
-
-/// # Data Access
-///
-impl IdCert {
-    /// Returns a reference to the certificate’s public key.
-    pub fn public_key(&self) -> &[u8] {
-        self.subject_public_key_info.bits()
-    }
-
-    /// Returns the hex encoded SKI
-    pub fn ski_hex(&self) -> String {
-        self.subject_public_key_info.key_identifier().to_string()
-    }
-
-    /// Returns a reference to the entire public key information structure.
-    pub fn subject_public_key_info(&self) -> &PublicKey {
-        &self.subject_public_key_info
-    }
-
-    /// Returns a reference to the certificate’s serial number.
-    pub fn serial_number(&self) -> &Unsigned {
-        &self.serial_number
-    }
+    /// The actual data of the certificate.
+    tbs: TbsIdCert,
 }
 
 /// # Decoding and Encoding
@@ -166,17 +70,35 @@ impl IdCert {
                     // version [0] EXPLICIT Version DEFAULT v1.
                     //  -- we need extensions so apparently, we want v3 which,
                     //     confusingly, is 2.
-                    cons.take_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(2))?;
+                    cons.take_constructed_if(
+                        Tag::CTX_0, |c| c.skip_u8_if(2)
+                    )?;
+
+                    let tbs = {
+                        let serial_number = Serial::take_from(cons)?;
+                        let _sig = SignatureAlgorithm::x509_take_from(cons)?;
+                        let issuer = Name::take_from(cons)?;
+                        let validity = Validity::take_from(cons)?;
+                        let subject = Name::take_from(cons)?;
+                        let subject_public_key_info = PublicKey::take_from(cons)?;
+                        
+                        let extensions = cons.take_constructed_if(
+                            Tag::CTX_3, IdExtensions::take_from
+                        )?;
+
+                        TbsIdCert {
+                            serial_number,
+                            issuer,
+                            validity,
+                            subject,
+                            subject_public_key_info,
+                            extensions,
+                        }
+                    };
 
                     Ok(IdCert {
                         signed_data,
-                        serial_number: Unsigned::take_from(cons)?,
-                        signature: SignatureAlgorithm::x509_take_from(cons)?,
-                        issuer: Name::take_from(cons)?,
-                        validity: Validity::take_from(cons)?,
-                        subject: Name::take_from(cons)?,
-                        subject_public_key_info: PublicKey::take_from(cons)?,
-                        extensions: cons.take_constructed_if(Tag::CTX_3, IdExtensions::take_from)?,
+                        tbs
                     })
                 })
             })
@@ -311,7 +233,15 @@ impl IdCert {
     }
 }
 
-//--- AsRef
+//--- Deref, AsRef
+
+impl ops::Deref for IdCert {
+    type Target = TbsIdCert;
+
+    fn deref(&self) -> &Self::Target {
+        &self.tbs
+    }
+}
 
 impl AsRef<IdCert> for IdCert {
     fn as_ref(&self) -> &Self {
@@ -319,16 +249,41 @@ impl AsRef<IdCert> for IdCert {
     }
 }
 
-impl Serialize for IdCert {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
+impl AsRef<TbsIdCert> for IdCert {
+    fn as_ref(&self) -> &TbsIdCert {
+        &self.tbs
+    }
+}
+
+
+//--- Deserialize and Serialize
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for IdCert {
+    fn serialize<S: serde::Serializer>(
+        &self, serializer: S
+    ) -> Result<S::Ok, S::Error> {
         let bytes = self.to_bytes();
         let str = base64::encode(&bytes);
         str.serialize(serializer)
     }
 }
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for IdCert {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
+        use serde::de;
+
+        let some = String::deserialize(deserializer)?;
+        let dec = base64::decode(&some).map_err(de::Error::custom)?;
+        let b = Bytes::from(dec);
+        IdCert::decode(b).map_err(de::Error::custom)
+    }
+}
+
+//--- PartialEq and Eq
 
 impl PartialEq for IdCert {
     fn eq(&self, other: &Self) -> bool {
@@ -338,19 +293,92 @@ impl PartialEq for IdCert {
 
 impl Eq for IdCert {}
 
-impl<'de> Deserialize<'de> for IdCert {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        use serde::de;
 
-        let some = String::deserialize(deserializer)?;
-        let dec = base64::decode(&some).map_err(de::Error::custom)?;
-        let b = Bytes::from(dec);
-        IdCert::decode(b).map_err(de::Error::custom)
+
+//------------ TbsIdCert -------------------------------------------------------
+
+/// The data of an identity certificate.
+#[derive(Clone, Debug)]
+pub struct TbsIdCert {
+    // The General structure is documented in section 4.1 or RFC5280
+    //
+    //    TBSCertificate  ::=  SEQUENCE  {
+    //        version         [0]  EXPLICIT Version DEFAULT v1,
+    //        serialNumber         CertificateSerialNumber,
+    //        signature            AlgorithmIdentifier,
+    //        issuer               Name,
+    //        validity             Validity,
+    //        subject              Name,
+    //        subjectPublicKeyInfo SubjectPublicKeyInfo,
+    //        issuerUniqueID  [1]  IMPLICIT UniqueIdentifier OPTIONAL,
+    //                             -- If present, version MUST be v2 or v3
+    //        subjectUniqueID [2]  IMPLICIT UniqueIdentifier OPTIONAL,
+    //                             -- If present, version MUST be v2 or v3
+    //        extensions      [3]  EXPLICIT Extensions OPTIONAL
+    //                             -- If present, version MUST be v3
+    //        }
+    //
+    //  In the RPKI we always use Version 3 Certificates with certain
+    //  extensions (SubjectKeyIdentifier in particular). issuerUniqueID and
+    //  subjectUniqueID are not used.
+    //
+
+    // version is always 3
+
+    /// The serial number.
+    serial_number: Serial,
+
+    // signature is always Sha256WithRsaEncryption
+
+    /// The name of the issuer.
+    ///
+    /// It isn’t really relevant even in the RPKI remote protocols.
+    #[allow(dead_code)]
+    issuer: Name,
+    
+    /// The validity of the certificate.
+    validity: Validity,
+    
+    /// The name of the subject of this certificate.
+    ///
+    /// It isn’t really relevant even in the RPKI remote protocols.
+    #[allow(dead_code)]
+    subject: Name,
+
+    /// Information about the public key of this certificate.
+    subject_public_key_info: PublicKey,
+
+    // issuerUniqueID is not used
+    // subjectUniqueID is not used
+
+    // IdExtension include basic_ca, ski and aki
+    extensions: IdExtensions,
+}
+
+/// # Data Access
+///
+impl TbsIdCert {
+    /// Returns a reference to the certificate’s public key.
+    pub fn public_key(&self) -> &[u8] {
+        self.subject_public_key_info.bits()
+    }
+
+    /// Returns the hex encoded SKI
+    pub fn ski_hex(&self) -> String {
+        self.subject_public_key_info.key_identifier().to_string()
+    }
+
+    /// Returns a reference to the entire public key information structure.
+    pub fn subject_public_key_info(&self) -> &PublicKey {
+        &self.subject_public_key_info
+    }
+
+    /// Returns a reference to the certificate’s serial number.
+    pub fn serial_number(&self) -> Serial {
+        self.serial_number
     }
 }
+
 
 //------------ IdExtensions --------------------------------------------------
 
