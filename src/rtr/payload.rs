@@ -70,7 +70,6 @@ impl RouterKey {
 
 /// All payload types supported by RTR and this crate.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[non_exhaustive]
 pub enum Payload {
     /// A route origin authorisation.
     Origin(RouteOrigin),
