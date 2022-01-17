@@ -4,9 +4,11 @@
 //! Support for building RPKI Certificates and Objects
 
 use std::ops;
+use bcder::{decode, encode};
+use bcder::xerr;
+use bcder::encode::PrimitiveContent;
 use bcder::{
-    encode::{PrimitiveContent, Constructed},
-    {decode, encode, Mode, OctetString, Oid, Tag}, Captured,
+    Mode, OctetString, Oid, Tag, Captured,
 };
 use bytes::Bytes;
 use log::debug;
@@ -69,14 +71,11 @@ impl IdCert {
         let issuing_key = &pub_key;
         let subject_key = &pub_key;
         
-        let extensions = IdExtensions::for_id_ta_cert(&pub_key);
-
         TbsIdCert::new(
             serial_number,
             validity,
             issuing_key,
             subject_key,
-            extensions
         ).into_cert(signer, &key_id)
     }
 }
@@ -135,16 +134,18 @@ impl IdCert {
         self.validate_basics(now)?;
         self.validate_ca_basics()?;
 
-        // RFC says that the ID certificate ought to be (no normative language) self-signed.. just log if it isn't
-        if let Some(aki) = self.extensions.authority_key_id() {
-            if aki != self.extensions.subject_key_id() {
-                debug!("ID certificate is not self-signed.")
-            }
-        }
+        // RFC 8183 does not use clear normative language but it refers to the
+        // "BPKI TA" certificates as 'self-signed' in many cases. So, let's
+        // insist that the TA certificate is properly self-signed.
+        self.signed_data.verify_signature(&self.subject_public_key_info)?;
 
-        // RFC says that the ID certificate ought to be (no normative language) self-signed.. just log if it isn't
-        if let Err(_e) = self.signed_data.verify_signature(&self.subject_public_key_info) {
-            debug!("ID certificate is not self-signed.")
+        // Normally the AKI should be left out - if it is set though, then
+        // we should insist that it matches the SKI.
+        if let Some(aki) = self.authority_key_id {
+            if aki != self.subject_key_id {
+                debug!("ID TA certificate has AKI not equal to SKI");
+                return Err(ValidationError)
+            }
         }
 
         Ok(())
@@ -169,7 +170,7 @@ impl IdCert {
         self.validate_issued(issuer)?;
 
         // Basic Constraints: Must not be a CA cert.
-        if let Some(basic_ca) = self.extensions.basic_ca {
+        if let Some(basic_ca) = self.basic_ca {
             if basic_ca {
                 return Err(ValidationError);
             }
@@ -190,8 +191,8 @@ impl IdCert {
         self.validity.validate_at(now)?;
 
         // Subject Key Identifier must match the subjectPublicKey.
-        if *self.extensions.subject_key_id() != 
-                            self.subject_public_key_info().key_identifier() {
+        if self.subject_key_id != 
+                            self.subject_public_key_info.key_identifier() {
             return Err(ValidationError);
         }
 
@@ -211,8 +212,8 @@ impl IdCert {
     ) -> Result<(), ValidationError> {
         // Authority Key Identifier. Must be present and match the
         // subject key ID of `issuer`.
-        if let Some(aki) = self.extensions.authority_key_id() {
-            if aki != issuer.extensions.subject_key_id() {
+        if let Some(aki) = self.authority_key_id {
+            if aki != issuer.subject_key_id {
                 return Err(ValidationError);
             }
         } else {
@@ -229,7 +230,7 @@ impl IdCert {
     fn validate_ca_basics(&self) -> Result<(), ValidationError> {
         // 4.8.1. Basic Constraints: For a CA it must be present (RFC6487)
         // und the “cA” flag must be set (RFC5280).
-        if let Some(ca) = self.extensions.basic_ca {
+        if let Some(ca) = self.basic_ca {
             if ca {
                 return Ok(());
             }
@@ -334,8 +335,17 @@ pub struct TbsIdCert {
     /// Information about the public key of this certificate.
     subject_public_key_info: PublicKey,
 
-    // IdExtension include basic_ca, ski and aki
-    extensions: IdExtensions,
+    /// Basic Constraints.
+    ///
+    /// The field indicates whether the extension is present and, if so,
+    /// whether the "cA" boolean is set. See 4.8.1. of RFC 6487.
+    basic_ca: Option<bool>,
+
+    /// Subject Key Identifier.
+    subject_key_id: KeyIdentifier,
+
+    /// Authority Key Identifier
+    authority_key_id: Option<KeyIdentifier>,
 }
 
 /// # Data Access
@@ -359,6 +369,14 @@ impl TbsIdCert {
     /// Returns a reference to the certificate’s serial number.
     pub fn serial_number(&self) -> Serial {
         self.serial_number
+    }
+
+    pub fn subject_key_id(&self) -> &KeyIdentifier {
+        &self.subject_key_id
+    }
+
+    pub fn authority_key_id(&self) -> Option<&KeyIdentifier> {
+        self.authority_key_id.as_ref()
     }
 }
 
@@ -407,9 +425,44 @@ impl TbsIdCert {
             let subject = Name::take_from(cons)?;
             let subject_public_key_info = PublicKey::take_from(cons)?;
             
-            let extensions = cons.take_constructed_if(
-                Tag::CTX_3, IdExtensions::take_from
-            )?;
+            // issuerUniqueID and subjectUniqueID must not be present in
+            // resource certificates. So extension is next.
+
+            let mut basic_ca = None;
+            let mut subject_key_id = None;
+            let mut authority_key_id = None;
+
+            cons.take_constructed_if(Tag::CTX_3, |c| c.take_sequence(|cons| {
+                while let Some(()) = cons.take_opt_sequence(|cons| {
+                    let id = Oid::take_from(cons)?;
+                    let critical = cons.take_opt_bool()?.unwrap_or(false);
+                    let value = OctetString::take_from(cons)?;
+                    Mode::Der.decode(value.to_source(), |content| {
+                        if id == oid::CE_BASIC_CONSTRAINTS {
+                            Self::take_basic_constraints(
+                                content, &mut basic_ca
+                            )
+                        } else if id == oid::CE_SUBJECT_KEY_IDENTIFIER {
+                            Self::take_subject_key_identifier(
+                                content, &mut subject_key_id
+                            )
+                        } else if id == oid::CE_AUTHORITY_KEY_IDENTIFIER {
+                            Self::take_authority_key_identifier(
+                                content, &mut authority_key_id
+                            )
+                        } else if critical {
+                            xerr!(Err(decode::Malformed))
+                        } else {
+                            // RFC 5280 says we can ignore non-critical
+                            // extensions we don’t know of. RFC 6487
+                            // agrees. So let’s do that.
+                            Ok(())
+                        }
+                    })?;
+                    Ok(())
+                })? { }
+                Ok(())
+            }))?;
 
             Ok(TbsIdCert {
                 serial_number,
@@ -417,134 +470,9 @@ impl TbsIdCert {
                 validity,
                 subject,
                 subject_public_key_info,
-                extensions,
-            })
-        })
-    }
-
-    /// Returns an encoder for the value.
-    pub fn encode_ref(&self) -> impl encode::Values + '_ {
-        encode::sequence((
-            (
-                Constructed::new(
-                    Tag::CTX_0,
-                    2.encode(), // Version 3 is encoded as 2
-                ),
-                self.serial_number.encode(),
-                SignatureAlgorithm::default().x509_encode(),
-                self.issuer.encode_ref(),
-            ),
-            (
-                self.validity.encode(),
-                self.subject.encode_ref(),
-                self.subject_public_key_info.clone().encode(),
-                self.extensions.encode_ref(),
-            ),
-        ))
-    }
-}
-
-/// # Creation and Conversion
-///
-impl TbsIdCert {
-    
-    /// Creates an TbsIdCert to be signed with the Signer trait.
-    /// 
-    /// Note that this function is private - it is used by the specific
-    /// public functions for creating a TA ID cert, or CMS EE ID cert.
-    fn new(
-        serial_number: Serial,
-        validity: Validity,
-        issuing_key: &PublicKey,
-        subject_key: &PublicKey,
-        extensions: IdExtensions,
-    ) -> TbsIdCert {
-        let issuer = Name::from_pub_key(issuing_key);
-        let subject = Name::from_pub_key(subject_key);
-
-        TbsIdCert {
-            serial_number,
-            issuer,
-            validity,
-            subject,
-            subject_public_key_info: subject_key.clone(),
-            extensions,
-        }
-    }
-
-    /// Converts the value into a signed ID certificate.
-    fn into_cert<S: Signer>(
-        self,
-        signer: &S,
-        key: &S::KeyId,
-    ) -> Result<IdCert, SigningError<S::Error>> {
-        let data = Captured::from_values(Mode::Der, self.encode_ref());
-        let signature = signer.sign(
-            key, SignatureAlgorithm::default(), &data
-        )?;
-        Ok(IdCert {
-            signed_data: SignedData::new(data, signature),
-            tbs: self
-        })
-    }
-
-
-}
-
-//------------ IdExtensions --------------------------------------------------
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IdExtensions {
-    /// Basic Constraints.
-    ///
-    /// The field indicates whether the extension is present and, if so,
-    /// whether the "cA" boolean is set. See 4.8.1. of RFC 6487.
-    basic_ca: Option<bool>,
-
-    /// Subject Key Identifier.
-    subject_key_id: KeyIdentifier,
-
-    /// Authority Key Identifier
-    authority_key_id: Option<KeyIdentifier>,
-}
-
-/// # Decoding
-///
-impl IdExtensions {
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_sequence(|cons| {
-            let mut basic_ca = None;
-            let mut subject_key_id = None;
-            let mut authority_key_id = None;
-            while let Some(()) = cons.take_opt_sequence(|cons| {
-                let id = Oid::take_from(cons)?;
-                let _critical = cons.take_opt_bool()?.unwrap_or(false);
-                let value = OctetString::take_from(cons)?;
-                Mode::Der.decode(value.to_source(), |content| {
-                    if id == oid::CE_BASIC_CONSTRAINTS {
-                        Self::take_basic_constraints(content, &mut basic_ca)
-                    } else if id == oid::CE_SUBJECT_KEY_IDENTIFIER {
-                        Self::take_subject_key_identifier(
-                            content, &mut subject_key_id
-                        )
-                    } else if id == oid::CE_AUTHORITY_KEY_IDENTIFIER {
-                        Self::take_authority_key_identifier(
-                            content, &mut authority_key_id
-                        )
-                    } else {
-                        // Id Certificates are poorly defined and may
-                        // contain critical extensions we do not actually
-                        // understand or need.
-                        Ok(())
-                    }
-                })?;
-                Ok(())
-            })? {}
-            Ok(IdExtensions {
                 basic_ca,
-                subject_key_id: subject_key_id.ok_or(decode::Malformed)?,
+                subject_key_id:
+                    subject_key_id.ok_or(decode::Malformed)?,
                 authority_key_id,
             })
         })
@@ -595,7 +523,7 @@ impl IdExtensions {
         update_once(subject_key_id, || KeyIdentifier::take_from(cons))
     }
 
-    /// Parses the Authority Key Identifer extension.
+    /// Parses the Authority Key Identifier extension.
     ///
     /// ```text
     /// AuthorityKeyIdentifier ::= SEQUENCE {
@@ -617,96 +545,116 @@ impl IdExtensions {
             })
         })
     }
-}
 
-/// # Encoding
-///
-// We have to do this the hard way because some extensions are optional.
-// Therefore we need logic to determine which ones to encode.
-impl IdExtensions {
-    pub fn encode_ref(&self) -> impl encode::Values + '_ {
-        encode::sequence_as(
-            Tag::CTX_3,
-            encode::sequence((
+    /// Returns an encoder for the value.
+pub fn encode_ref(&self) -> impl encode::Values + '_ {
+        encode::sequence((
+            encode::sequence_as(Tag::CTX_0, 2.encode()), // version
+            self.serial_number.encode(),
+            SignatureAlgorithm::default().x509_encode(),
+            self.issuer.encode_ref(),
+            self.validity.encode(),
+            self.subject.encode_ref(),
+            self.subject_public_key_info.encode_ref(),
+            // no issuerUniqueID
+            // no subjectUniqueID
+            // extensions
+            encode::sequence_as(Tag::CTX_3, encode::sequence((
                 // Basic Constraints
                 self.basic_ca.map(|ca| {
                     encode_extension(
-                        &oid::CE_BASIC_CONSTRAINTS,
-                        true,
+                        &oid::CE_BASIC_CONSTRAINTS, true,
                         encode::sequence(
-                            if ca { Some(ca.encode()) } else { None }
-                        ),
+                            if ca {
+                                Some(ca.encode())
+                            }
+                            else {
+                                None
+                            }
+                        )
                     )
                 }),
+
                 // Subject Key Identifier
                 encode_extension(
-                    &oid::CE_SUBJECT_KEY_IDENTIFIER,
-                    false,
-                    self.subject_key_id.encode_ref()
+                    &oid::CE_SUBJECT_KEY_IDENTIFIER, false,
+                    self.subject_key_id.encode_ref(),
                 ),
+
                 // Authority Key Identifier
                 self.authority_key_id.as_ref().map(|id| {
                     encode_extension(
-                        &oid::CE_AUTHORITY_KEY_IDENTIFIER,
-                        false,
-                        encode::sequence(id.encode_ref_as(Tag::CTX_0)),
+                        &oid::CE_AUTHORITY_KEY_IDENTIFIER, false,
+                        encode::sequence(id.encode_ref_as(Tag::CTX_0))
                     )
                 }),
-            )),
-        )
+            )))
+        ))
     }
 }
 
-/// # Creating
+/// # Creation and Conversion
 ///
-impl IdExtensions {
-    /// Creates extensions to be used on a self-signed TA IdCert
-    pub fn for_id_ta_cert(pub_key: &PublicKey) -> Self {
-        let ki = pub_key.key_identifier();
-        IdExtensions {
-            basic_ca: Some(true),
-            subject_key_id: ki,
-            authority_key_id: Some(ki),
-        }
-    }
+impl TbsIdCert {
+    
+    /// Creates an TbsIdCert to be signed with the Signer trait.
+    /// 
+    /// Note that this function is private - it is used by the specific
+    /// public functions for creating a TA ID cert, or CMS EE ID cert.
+    fn new(
+        serial_number: Serial,
+        validity: Validity,
+        issuing_key: &PublicKey,
+        subject_key: &PublicKey,
+    ) -> TbsIdCert {
+        let issuer = Name::from_pub_key(issuing_key);
+        let subject = Name::from_pub_key(subject_key);
 
-    /// Creates extensions to be used on an EE IdCert in a protocol CMS
-    pub fn for_id_ee_cert(
-        subject_key: &PublicKey, issuing_key: &PublicKey
-    ) -> Self {
-        IdExtensions {
-            basic_ca: None,
-            subject_key_id: subject_key.key_identifier(),
-            authority_key_id: Some(issuing_key.key_identifier()),
-        }
-    }
-}
+        let basic_ca = if issuing_key == subject_key {
+            Some(true)
+        } else {
+            None
+        };
+        
+        let subject_key_id = subject_key.key_identifier();
 
-/// # Data Access
-///
-impl IdExtensions {
-    pub fn subject_key_id(&self) -> &KeyIdentifier {
-        &self.subject_key_id
-    }
+        let authority_key_id = if issuing_key == subject_key {
+            None
+        } else {
+            Some(issuing_key.key_identifier())
+        };
 
-    pub fn authority_key_id(&self) -> Option<&KeyIdentifier> {
-        self.authority_key_id.as_ref()
-    }
-}
-
-impl From<&PublicKey> for IdExtensions {
-    fn from(pub_key: &PublicKey) -> Self {
-        let basic_ca = Some(true);
-        let subject_key_id = pub_key.key_identifier();
-        let authority_key_id = Some(subject_key_id);
-
-        IdExtensions {
+        TbsIdCert {
+            serial_number,
+            issuer,
+            validity,
+            subject,
+            subject_public_key_info: subject_key.clone(),
             basic_ca,
             subject_key_id,
-            authority_key_id,
+            authority_key_id
         }
     }
+
+    /// Converts the value into a signed ID certificate.
+    fn into_cert<S: Signer>(
+        self,
+        signer: &S,
+        key: &S::KeyId,
+    ) -> Result<IdCert, SigningError<S::Error>> {
+        let data = Captured::from_values(Mode::Der, self.encode_ref());
+        let signature = signer.sign(
+            key, SignatureAlgorithm::default(), &data
+        )?;
+        Ok(IdCert {
+            signed_data: SignedData::new(data, signature),
+            tbs: self
+        })
+    }
+
+
 }
+
 
 //------------ Tests ---------------------------------------------------------
 
