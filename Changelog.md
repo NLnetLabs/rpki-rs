@@ -10,6 +10,8 @@ New
   Base 64 as used by [RFC 8416] local exception files. ([#187])
 * Added `repository::roa::RouteOriginAttestation::iter_origins` that
   iterates over the content as `rtr::payload::RouteOrigins`. ([#188])
+* Dropped the `non_exhaustive` attribute from `rtr::payload::Payload`.
+  ([#189])
 
 Bug Fixes
 
@@ -17,6 +19,7 @@ Other Changes
 
 [#187]: https://github.com/NLnetLabs/rpki-rs/pull/187
 [#188]: https://github.com/NLnetLabs/rpki-rs/pull/188
+[#189]: https://github.com/NLnetLabs/rpki-rs/pull/189
 [RFC 8416]: https://tools.ietf.org/html/rfc8416
 
 
