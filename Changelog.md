@@ -6,9 +6,15 @@ Breaking Changes
 
 New
 
+* Added `Display` impl to `rtr::pdu::RouterKeyInfo`. It outputs the key in
+  Base 64 as used by [RFC 8416] local exception files. ([#187])
+
 Bug Fixes
 
 Other Changes
+
+[#187]: https://github.com/NLnetLabs/rpki-rs/pull/187
+[RFC 8416]: https://tools.ietf.org/html/rfc8416
 
 
 ## 0.14.1
