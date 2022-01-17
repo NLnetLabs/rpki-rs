@@ -12,9 +12,15 @@ use bytes::Bytes;
 use log::debug;
 
 use crate::repository::{
-    crypto::{KeyIdentifier, PublicKey, SignatureAlgorithm, Signer, SigningError, PublicKeyFormat},
+    crypto::{
+        KeyIdentifier, PublicKey, SignatureAlgorithm, Signer, SigningError,
+        PublicKeyFormat
+    },
     oid,
-    x509::{encode_extension, update_once, Name, SignedData, Time, ValidationError, Validity, Serial},
+    x509::{
+        encode_extension, update_once, Name, SignedData, Time,
+        ValidationError, Validity, Serial
+    },
 };
 
 //------------ IdCert --------------------------------------------------------
@@ -49,7 +55,9 @@ pub struct IdCert {
 /// 
 impl IdCert {
     /// Make a new TA ID certificate
-    pub fn new_ta<S: Signer>(valid_years: i32, signer: &S) -> Result<Self, SigningError<S::Error>> {
+    pub fn new_ta<S: Signer>(
+        valid_years: i32, signer: &S
+    ) -> Result<Self, SigningError<S::Error>> {
         let key_id = signer.create_key(PublicKeyFormat::Rsa)?;
         let pub_key = signer.get_key_info(&key_id)?;
 
@@ -82,12 +90,16 @@ impl IdCert {
     }
 
     /// Takes an encoded certificate from the beginning of a value.
-    pub fn take_from<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Self, S::Err> {
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
         cons.take_sequence(Self::from_constructed)
     }
 
     /// Parses the content of a Certificate sequence.
-    pub fn from_constructed<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Self, S::Err> {
+    pub fn from_constructed<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
         let signed_data = SignedData::from_constructed(cons)?;
         let tbs = signed_data.data().clone().decode(
             TbsIdCert::from_constructed
@@ -144,11 +156,15 @@ impl IdCert {
     /// by the provided `issuer` certificate.
     ///
     /// Note that this does _not_ check the CRL.
-    pub fn validate_ee(&self, issuer: &IdCert) -> Result<(), ValidationError> {
+    pub fn validate_ee(
+        &self, issuer: &IdCert
+    ) -> Result<(), ValidationError> {
         self.validate_ee_at(issuer, Time::now())
     }
 
-    pub fn validate_ee_at(&self, issuer: &IdCert, now: Time) -> Result<(), ValidationError> {
+    pub fn validate_ee_at(
+        &self, issuer: &IdCert, now: Time
+    ) -> Result<(), ValidationError> {
         self.validate_basics(now)?;
         self.validate_issued(issuer)?;
 
@@ -174,7 +190,8 @@ impl IdCert {
         self.validity.validate_at(now)?;
 
         // Subject Key Identifier must match the subjectPublicKey.
-        if *self.extensions.subject_key_id() != self.subject_public_key_info().key_identifier() {
+        if *self.extensions.subject_key_id() != 
+                            self.subject_public_key_info().key_identifier() {
             return Err(ValidationError);
         }
 
@@ -189,7 +206,9 @@ impl IdCert {
     ///
     /// This check assumes for now that we are always dealing with V3
     /// certificates and AKI and SKI have to match.
-    fn validate_issued(&self, issuer: &IdCert) -> Result<(), ValidationError> {
+    fn validate_issued(
+        &self, issuer: &IdCert
+    ) -> Result<(), ValidationError> {
         // Authority Key Identifier. Must be present and match the
         // subject key ID of `issuer`.
         if let Some(aki) = self.extensions.authority_key_id() {
@@ -220,7 +239,9 @@ impl IdCert {
     }
 
     /// Validates the certificate’s signature.
-    fn validate_signature(&self, issuer: &IdCert) -> Result<(), ValidationError> {
+    fn validate_signature(
+        &self, issuer: &IdCert
+    ) -> Result<(), ValidationError> {
         self.signed_data.verify_signature(issuer.subject_public_key_info())
     }
 }
@@ -366,7 +387,8 @@ impl TbsIdCert {
     ///
     ///  In the RPKI we always use Version 3 Certificates with certain
     ///  extensions (SubjectKeyIdentifier in particular). issuerUniqueID and
-    ///  subjectUniqueID are not used. The signature is always Sha256WithRsaEncryption
+    ///  subjectUniqueID are not used. The signature is always 
+    ///  Sha256WithRsaEncryption
     fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
@@ -457,7 +479,9 @@ impl TbsIdCert {
         key: &S::KeyId,
     ) -> Result<IdCert, SigningError<S::Error>> {
         let data = Captured::from_values(Mode::Der, self.encode_ref());
-        let signature = signer.sign(key, SignatureAlgorithm::default(), &data)?;
+        let signature = signer.sign(
+            key, SignatureAlgorithm::default(), &data
+        )?;
         Ok(IdCert {
             signed_data: SignedData::new(data, signature),
             tbs: self
@@ -487,7 +511,9 @@ pub struct IdExtensions {
 /// # Decoding
 ///
 impl IdExtensions {
-    pub fn take_from<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Self, S::Err> {
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             let mut basic_ca = None;
             let mut subject_key_id = None;
@@ -500,9 +526,13 @@ impl IdExtensions {
                     if id == oid::CE_BASIC_CONSTRAINTS {
                         Self::take_basic_constraints(content, &mut basic_ca)
                     } else if id == oid::CE_SUBJECT_KEY_IDENTIFIER {
-                        Self::take_subject_key_identifier(content, &mut subject_key_id)
+                        Self::take_subject_key_identifier(
+                            content, &mut subject_key_id
+                        )
                     } else if id == oid::CE_AUTHORITY_KEY_IDENTIFIER {
-                        Self::take_authority_key_identifier(content, &mut authority_key_id)
+                        Self::take_authority_key_identifier(
+                            content, &mut authority_key_id
+                        )
                     } else {
                         // Id Certificates are poorly defined and may
                         // contain critical extensions we do not actually
@@ -582,7 +612,9 @@ impl IdExtensions {
         authority_key_id: &mut Option<KeyIdentifier>,
     ) -> Result<(), S::Err> {
         update_once(authority_key_id, || {
-            cons.take_sequence(|cons| cons.take_value_if(Tag::CTX_0, KeyIdentifier::from_content))
+            cons.take_sequence(|cons| {
+                cons.take_value_if(Tag::CTX_0, KeyIdentifier::from_content)
+            })
         })
     }
 }
@@ -601,11 +633,17 @@ impl IdExtensions {
                     encode_extension(
                         &oid::CE_BASIC_CONSTRAINTS,
                         true,
-                        encode::sequence(if ca { Some(ca.encode()) } else { None }),
+                        encode::sequence(
+                            if ca { Some(ca.encode()) } else { None }
+                        ),
                     )
                 }),
                 // Subject Key Identifier
-                encode_extension(&oid::CE_SUBJECT_KEY_IDENTIFIER, false, self.subject_key_id.encode_ref()),
+                encode_extension(
+                    &oid::CE_SUBJECT_KEY_IDENTIFIER,
+                    false,
+                    self.subject_key_id.encode_ref()
+                ),
                 // Authority Key Identifier
                 self.authority_key_id.as_ref().map(|id| {
                     encode_extension(
@@ -633,7 +671,9 @@ impl IdExtensions {
     }
 
     /// Creates extensions to be used on an EE IdCert in a protocol CMS
-    pub fn for_id_ee_cert(subject_key: &PublicKey, issuing_key: &PublicKey) -> Self {
+    pub fn for_id_ee_cert(
+        subject_key: &PublicKey, issuing_key: &PublicKey
+    ) -> Self {
         IdExtensions {
             basic_ca: None,
             subject_key_id: subject_key.key_identifier(),
@@ -679,7 +719,7 @@ pub mod tests {
 
     #[test]
     fn parse_id_publisher_ta_cert() {
-        let data = include_bytes!("../../test-data/remote/id_publisher_ta.cer");
+        let data = include_bytes!("../../test-data/remote/id_ta.cer");
         let idcert = IdCert::decode(Bytes::from_static(data)).unwrap();
         let idcert_moment = Time::utc(2012, 1, 1, 0, 0, 0);
         idcert.validate_ta_at(idcert_moment).unwrap();
