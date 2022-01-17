@@ -5,14 +5,14 @@
 
 use std::ops;
 use bcder::{
-    encode::{PrimitiveContent, Values},
-    {decode, encode, Mode, OctetString, Oid, Tag},
+    encode::{PrimitiveContent, Constructed},
+    {decode, encode, Mode, OctetString, Oid, Tag}, Captured,
 };
 use bytes::Bytes;
 use log::debug;
 
 use crate::repository::{
-    crypto::{KeyIdentifier, PublicKey, SignatureAlgorithm},
+    crypto::{KeyIdentifier, PublicKey, SignatureAlgorithm, Signer, SigningError, PublicKeyFormat},
     oid,
     x509::{encode_extension, update_once, Name, SignedData, Time, ValidationError, Validity, Serial},
 };
@@ -61,57 +61,21 @@ impl IdCert {
     /// Parses the content of a Certificate sequence.
     pub fn from_constructed<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Self, S::Err> {
         let signed_data = SignedData::from_constructed(cons)?;
+        let tbs = signed_data.data().clone().decode(
+            TbsIdCert::from_constructed
+        )?;
 
-        signed_data
-            .data()
-            .clone()
-            .decode(|cons| {
-                cons.take_sequence(|cons| {
-                    // version [0] EXPLICIT Version DEFAULT v1.
-                    //  -- we need extensions so apparently, we want v3 which,
-                    //     confusingly, is 2.
-                    cons.take_constructed_if(
-                        Tag::CTX_0, |c| c.skip_u8_if(2)
-                    )?;
-
-                    let tbs = {
-                        let serial_number = Serial::take_from(cons)?;
-                        let _sig = SignatureAlgorithm::x509_take_from(cons)?;
-                        let issuer = Name::take_from(cons)?;
-                        let validity = Validity::take_from(cons)?;
-                        let subject = Name::take_from(cons)?;
-                        let subject_public_key_info = PublicKey::take_from(cons)?;
-                        
-                        let extensions = cons.take_constructed_if(
-                            Tag::CTX_3, IdExtensions::take_from
-                        )?;
-
-                        TbsIdCert {
-                            serial_number,
-                            issuer,
-                            validity,
-                            subject,
-                            subject_public_key_info,
-                            extensions,
-                        }
-                    };
-
-                    Ok(IdCert {
-                        signed_data,
-                        tbs
-                    })
-                })
-            })
-            .map_err(Into::into)
+        Ok(Self { signed_data, tbs })
     }
 
-    #[allow(clippy::needless_lifetimes)]
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+    /// Returns a value encoder for a reference to the certificate.
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         self.signed_data.encode_ref()
     }
 
-    pub fn to_bytes(&self) -> Bytes {
-        self.encode().to_captured(Mode::Der).into_bytes()
+    /// Returns a captured encoding of the certificate.
+    pub fn to_captured(&self) -> Captured {
+        Captured::from_values(Mode::Der, self.encode_ref())
     }
 }
 
@@ -263,7 +227,7 @@ impl serde::Serialize for IdCert {
     fn serialize<S: serde::Serializer>(
         &self, serializer: S
     ) -> Result<S::Ok, S::Error> {
-        let bytes = self.to_bytes();
+        let bytes = self.to_captured().into_bytes();
         let str = base64::encode(&bytes);
         str.serialize(serializer)
     }
@@ -287,7 +251,7 @@ impl<'de> serde::Deserialize<'de> for IdCert {
 
 impl PartialEq for IdCert {
     fn eq(&self, other: &Self) -> bool {
-        self.to_bytes().eq(&other.to_bytes())
+        self.to_captured().into_bytes().eq(&other.to_captured().into_bytes())
     }
 }
 
@@ -300,35 +264,8 @@ impl Eq for IdCert {}
 /// The data of an identity certificate.
 #[derive(Clone, Debug)]
 pub struct TbsIdCert {
-    // The General structure is documented in section 4.1 or RFC5280
-    //
-    //    TBSCertificate  ::=  SEQUENCE  {
-    //        version         [0]  EXPLICIT Version DEFAULT v1,
-    //        serialNumber         CertificateSerialNumber,
-    //        signature            AlgorithmIdentifier,
-    //        issuer               Name,
-    //        validity             Validity,
-    //        subject              Name,
-    //        subjectPublicKeyInfo SubjectPublicKeyInfo,
-    //        issuerUniqueID  [1]  IMPLICIT UniqueIdentifier OPTIONAL,
-    //                             -- If present, version MUST be v2 or v3
-    //        subjectUniqueID [2]  IMPLICIT UniqueIdentifier OPTIONAL,
-    //                             -- If present, version MUST be v2 or v3
-    //        extensions      [3]  EXPLICIT Extensions OPTIONAL
-    //                             -- If present, version MUST be v3
-    //        }
-    //
-    //  In the RPKI we always use Version 3 Certificates with certain
-    //  extensions (SubjectKeyIdentifier in particular). issuerUniqueID and
-    //  subjectUniqueID are not used.
-    //
-
-    // version is always 3
-
     /// The serial number.
     serial_number: Serial,
-
-    // signature is always Sha256WithRsaEncryption
 
     /// The name of the issuer.
     ///
@@ -347,9 +284,6 @@ pub struct TbsIdCert {
 
     /// Information about the public key of this certificate.
     subject_public_key_info: PublicKey,
-
-    // issuerUniqueID is not used
-    // subjectUniqueID is not used
 
     // IdExtension include basic_ca, ski and aki
     extensions: IdExtensions,
@@ -379,6 +313,155 @@ impl TbsIdCert {
     }
 }
 
+/// # Decoding and Encoding
+///
+impl TbsIdCert {
+    /// Parses the content of an ID Certificate sequence.
+    ///
+    /// The General structure is documented in section 4.1 or RFC5280
+    ///
+    ///    TBSCertificate  ::=  SEQUENCE  {
+    ///        version         [0]  EXPLICIT Version DEFAULT v1,
+    ///        serialNumber         CertificateSerialNumber,
+    ///        signature            AlgorithmIdentifier,
+    ///        issuer               Name,
+    ///        validity             Validity,
+    ///        subject              Name,
+    ///        subjectPublicKeyInfo SubjectPublicKeyInfo,
+    ///        issuerUniqueID  [1]  IMPLICIT UniqueIdentifier OPTIONAL,
+    ///                             -- If present, version MUST be v2 or v3
+    ///        subjectUniqueID [2]  IMPLICIT UniqueIdentifier OPTIONAL,
+    ///                             -- If present, version MUST be v2 or v3
+    ///        extensions      [3]  EXPLICIT Extensions OPTIONAL
+    ///                             -- If present, version MUST be v3
+    ///        }
+    ///
+    ///  In the RPKI we always use Version 3 Certificates with certain
+    ///  extensions (SubjectKeyIdentifier in particular). issuerUniqueID and
+    ///  subjectUniqueID are not used. The signature is always Sha256WithRsaEncryption
+    fn from_constructed<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        cons.take_sequence(|cons| {
+            // version [0] EXPLICIT Version DEFAULT v1.
+            //  -- we need extensions so apparently, we want v3 which,
+            //     confusingly, is 2.
+            cons.take_constructed_if(
+                Tag::CTX_0, |c| c.skip_u8_if(2)
+            )?;
+
+            let serial_number = Serial::take_from(cons)?;
+            let _sig = SignatureAlgorithm::x509_take_from(cons)?;
+            let issuer = Name::take_from(cons)?;
+            let validity = Validity::take_from(cons)?;
+            let subject = Name::take_from(cons)?;
+            let subject_public_key_info = PublicKey::take_from(cons)?;
+            
+            let extensions = cons.take_constructed_if(
+                Tag::CTX_3, IdExtensions::take_from
+            )?;
+
+            Ok(TbsIdCert {
+                serial_number,
+                issuer,
+                validity,
+                subject,
+                subject_public_key_info,
+                extensions,
+            })
+        })
+    }
+
+    /// Returns an encoder for the value.
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
+        encode::sequence((
+            (
+                Constructed::new(
+                    Tag::CTX_0,
+                    2.encode(), // Version 3 is encoded as 2
+                ),
+                self.serial_number.encode(),
+                SignatureAlgorithm::default().x509_encode(),
+                self.issuer.encode_ref(),
+            ),
+            (
+                self.validity.encode(),
+                self.subject.encode_ref(),
+                self.subject_public_key_info.clone().encode(),
+                self.extensions.encode_ref(),
+            ),
+        ))
+    }
+}
+
+/// # Creation and Conversion
+///
+impl TbsIdCert {
+    
+    /// Creates an TbsIdCert to be signed with the Signer trait.
+    /// 
+    /// Note that this function is private - it is used by the specific
+    /// public functions for creating a TA ID cert, or CMS EE ID cert.
+    fn new(
+        serial_number: Serial,
+        validity: Validity,
+        issuing_key: &PublicKey,
+        subject_key: &PublicKey,
+        extensions: IdExtensions,
+    ) -> TbsIdCert {
+        let issuer = Name::from_pub_key(issuing_key);
+        let subject = Name::from_pub_key(subject_key);
+
+        TbsIdCert {
+            serial_number,
+            issuer,
+            validity,
+            subject,
+            subject_public_key_info: subject_key.clone(),
+            extensions,
+        }
+    }
+
+    /// Make a new TA ID certificate
+    pub fn new_ta_id_cert<S: Signer>(valid_years: i32, signer: &S) -> Result<IdCert, SigningError<S::Error>> {
+        let key_id = signer.create_key(PublicKeyFormat::Rsa)?;
+        let pub_key = signer.get_key_info(&key_id)?;
+
+        let serial_number = Serial::from(1_u64);
+        let validity = Validity::new(
+            Time::five_minutes_ago(),
+            Time::years_from_now(valid_years)
+        );
+        let issuing_key = &pub_key;
+        let subject_key = &pub_key;
+        
+        let extensions = IdExtensions::for_id_ta_cert(&pub_key);
+
+        Self::new(
+            serial_number,
+            validity,
+            issuing_key,
+            subject_key,
+            extensions
+        ).into_cert(signer, &key_id)
+    }
+
+    /// Converts the value into a signed ID certificate.
+    fn into_cert<S: Signer>(
+        self,
+        signer: &S,
+        key: &S::KeyId,
+    ) -> Result<IdCert, SigningError<S::Error>> {
+        let data = Captured::from_values(Mode::Der, self.encode_ref());
+        let signature = signer.sign(key, SignatureAlgorithm::default(), &data)?;
+        Ok(IdCert {
+            signed_data: SignedData::new(data, signature),
+            tbs: self
+        })
+    }
+
+
+}
 
 //------------ IdExtensions --------------------------------------------------
 
@@ -505,8 +588,7 @@ impl IdExtensions {
 // We have to do this the hard way because some extensions are optional.
 // Therefore we need logic to determine which ones to encode.
 impl IdExtensions {
-    #[allow(clippy::needless_lifetimes)]
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence_as(
             Tag::CTX_3,
             encode::sequence((
@@ -537,8 +619,8 @@ impl IdExtensions {
 ///
 impl IdExtensions {
     /// Creates extensions to be used on a self-signed TA IdCert
-    pub fn for_id_ta_cert(key: &PublicKey) -> Self {
-        let ki = key.key_identifier();
+    pub fn for_id_ta_cert(pub_key: &PublicKey) -> Self {
+        let ki = pub_key.key_identifier();
         IdExtensions {
             basic_ca: Some(true),
             subject_key_id: ki,
@@ -587,6 +669,8 @@ impl From<&PublicKey> for IdExtensions {
 #[cfg(test)]
 pub mod tests {
 
+    use crate::repository::crypto::softsigner::OpenSslSigner;
+
     use super::*;
 
     #[test]
@@ -595,5 +679,12 @@ pub mod tests {
         let idcert = IdCert::decode(Bytes::from_static(data)).unwrap();
         let idcert_moment = Time::utc(2012, 1, 1, 0, 0, 0);
         idcert.validate_ta_at(idcert_moment).unwrap();
+    }
+
+    #[test]
+    fn build_id_ta_cert() {
+        let signer = OpenSslSigner::new();
+        let id_cert = TbsIdCert::new_ta_id_cert(15, &signer).unwrap();
+        id_cert.validate_ta().unwrap();
     }
 }
