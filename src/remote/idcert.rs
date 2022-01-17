@@ -45,6 +45,34 @@ pub struct IdCert {
     tbs: TbsIdCert,
 }
 
+/// # Creation
+/// 
+impl IdCert {
+    /// Make a new TA ID certificate
+    pub fn new_ta<S: Signer>(valid_years: i32, signer: &S) -> Result<Self, SigningError<S::Error>> {
+        let key_id = signer.create_key(PublicKeyFormat::Rsa)?;
+        let pub_key = signer.get_key_info(&key_id)?;
+
+        let serial_number = Serial::from(1_u64);
+        let validity = Validity::new(
+            Time::five_minutes_ago(),
+            Time::years_from_now(valid_years)
+        );
+        let issuing_key = &pub_key;
+        let subject_key = &pub_key;
+        
+        let extensions = IdExtensions::for_id_ta_cert(&pub_key);
+
+        TbsIdCert::new(
+            serial_number,
+            validity,
+            issuing_key,
+            subject_key,
+            extensions
+        ).into_cert(signer, &key_id)
+    }
+}
+
 /// # Decoding and Encoding
 ///
 impl IdCert {
@@ -422,30 +450,6 @@ impl TbsIdCert {
         }
     }
 
-    /// Make a new TA ID certificate
-    pub fn new_ta_id_cert<S: Signer>(valid_years: i32, signer: &S) -> Result<IdCert, SigningError<S::Error>> {
-        let key_id = signer.create_key(PublicKeyFormat::Rsa)?;
-        let pub_key = signer.get_key_info(&key_id)?;
-
-        let serial_number = Serial::from(1_u64);
-        let validity = Validity::new(
-            Time::five_minutes_ago(),
-            Time::years_from_now(valid_years)
-        );
-        let issuing_key = &pub_key;
-        let subject_key = &pub_key;
-        
-        let extensions = IdExtensions::for_id_ta_cert(&pub_key);
-
-        Self::new(
-            serial_number,
-            validity,
-            issuing_key,
-            subject_key,
-            extensions
-        ).into_cert(signer, &key_id)
-    }
-
     /// Converts the value into a signed ID certificate.
     fn into_cert<S: Signer>(
         self,
@@ -684,7 +688,7 @@ pub mod tests {
     #[test]
     fn build_id_ta_cert() {
         let signer = OpenSslSigner::new();
-        let id_cert = TbsIdCert::new_ta_id_cert(15, &signer).unwrap();
+        let id_cert = IdCert::new_ta(15, &signer).unwrap();
         id_cert.validate_ta().unwrap();
     }
 }
