@@ -126,6 +126,33 @@ impl RouteOriginAttestation {
                     .map(|addr| FriendlyRoaIpAddress::new(addr, false))
             )
     }
+
+    /// Returns an iterator over the route origins contained in the ROA.
+    #[cfg(feature = "rtr")]
+    pub fn iter_origins(
+        &self
+    ) -> impl Iterator<Item = crate::rtr::payload::RouteOrigin> + '_ {
+        use routecore::addr::{MaxLenPrefix, Prefix as PayloadPrefix};
+        use crate::rtr::payload::RouteOrigin;
+
+        self.v4_addrs.iter().filter_map(move |addr| {
+            PayloadPrefix::new(
+                addr.prefix.to_v4().into(),
+                addr.prefix.addr_len()
+            ).ok().and_then(|prefix| {
+                MaxLenPrefix::new(prefix, addr.max_length).ok()
+            }).map(|prefix| RouteOrigin::new(prefix, self.as_id))
+        }).chain(
+            self.v6_addrs.iter().filter_map(move |addr| {
+                PayloadPrefix::new(
+                    addr.prefix.to_v6().into(),
+                    addr.prefix.addr_len()
+                ).ok().and_then(|prefix| {
+                    MaxLenPrefix::new(prefix, addr.max_length).ok()
+                }).map(|prefix| RouteOrigin::new(prefix, self.as_id))
+            })
+        )
+    }
 }
 
 impl RouteOriginAttestation {
