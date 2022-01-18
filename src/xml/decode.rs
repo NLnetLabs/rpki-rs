@@ -101,7 +101,7 @@ impl<'b, 'n> Element<'b, 'n> {
     {
         for attr in self.start.attributes() {
             let attr = attr.map_err(Into::into)?;
-            if attr.key == b"xmlns" {
+            if attr.key == b"xmlns" || attr.key.starts_with(b"xmlns:") {
                 continue
             }
             op(attr.key, AttrValue(attr))?;
