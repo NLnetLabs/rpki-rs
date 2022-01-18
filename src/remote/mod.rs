@@ -17,3 +17,4 @@
 //--- Modules
 //
 pub mod idcert;
+pub mod idexchange;
