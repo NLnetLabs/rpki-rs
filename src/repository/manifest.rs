@@ -580,7 +580,7 @@ mod signer_test {
         let cert = cert.into_cert(&signer, &key).unwrap();
 
         let content = ManifestContent::new(
-            12u64.into(), Time::now(), Time::now(),
+            12u64.into(), Time::now(), Time::next_week(),
             DigestAlgorithm::default(),
             [
                 FileAndHash::new(b"file".as_ref(), b"hash".as_ref()),
