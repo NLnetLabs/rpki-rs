@@ -13,6 +13,7 @@ use bcder::{
 use bytes::Bytes;
 use log::debug;
 
+use crate::repository::cert::TbsCert;
 use crate::repository::{
     crypto::{
         KeyIdentifier, PublicKey, SignatureAlgorithm, Signer, SigningError,
@@ -20,7 +21,7 @@ use crate::repository::{
     },
     oid,
     x509::{
-        encode_extension, update_once, Name, SignedData, Time,
+        encode_extension, Name, SignedData, Time,
         ValidationError, Validity, Serial
     },
 };
@@ -439,15 +440,15 @@ impl TbsIdCert {
                     let value = OctetString::take_from(cons)?;
                     Mode::Der.decode(value.to_source(), |content| {
                         if id == oid::CE_BASIC_CONSTRAINTS {
-                            Self::take_basic_constraints(
+                            TbsCert::take_basic_constraints(
                                 content, &mut basic_ca
                             )
                         } else if id == oid::CE_SUBJECT_KEY_IDENTIFIER {
-                            Self::take_subject_key_identifier(
+                            TbsCert::take_subject_key_identifier(
                                 content, &mut subject_key_id
                             )
                         } else if id == oid::CE_AUTHORITY_KEY_IDENTIFIER {
-                            Self::take_authority_key_identifier(
+                            TbsCert::take_authority_key_identifier(
                                 content, &mut authority_key_id
                             )
                         } else if critical {
@@ -478,76 +479,8 @@ impl TbsIdCert {
         })
     }
 
-    /// Parses the Basic Constraints extension.
-    ///
-    /// ```text
-    /// BasicConstraints        ::= SEQUENCE {
-    ///     cA                      BOOLEAN DEFAULT FALSE,
-    ///     pathLenConstraint       INTEGER (0..MAX) OPTIONAL
-    /// }
-    /// ```
-    ///
-    /// For resource certificates, the extension must be critical. It must be
-    /// present for CA certificates and must not be present for EE
-    /// certificates. RFC 6487 says that the issued decides whether the cA
-    /// boolean is to be set or not, but for all CA certificates it must be
-    /// set (required indirectly by requiring the keyCertSign bit set in
-    /// the key usage extension) so really it must always be true if the
-    /// extension is present.
-    ///
-    /// The pathLenConstraint field must not be present.
-    pub(crate) fn take_basic_constraints<S: decode::Source>(
-        cons: &mut decode::Constructed<S>,
-        basic_ca: &mut Option<bool>,
-    ) -> Result<(), S::Err> {
-        update_once(basic_ca, || {
-            cons.take_sequence(|cons| cons.take_opt_bool())
-                .map(|ca| ca.unwrap_or(false))
-        })
-    }
-
-    /// Parses the Subject Key Identifier extension.
-    ///
-    /// ```text
-    /// SubjectKeyIdentifier ::= KeyIdentifier
-    /// ```
-    ///
-    /// The extension must be present and contain the 160 bit SHA-1 hash of
-    /// the value of the DER-encoded bit string of the subject public key.
-    ///
-    /// Conforming CAs MUST mark this extension as non-critical.
-    fn take_subject_key_identifier<S: decode::Source>(
-        cons: &mut decode::Constructed<S>,
-        subject_key_id: &mut Option<KeyIdentifier>,
-    ) -> Result<(), S::Err> {
-        update_once(subject_key_id, || KeyIdentifier::take_from(cons))
-    }
-
-    /// Parses the Authority Key Identifier extension.
-    ///
-    /// ```text
-    /// AuthorityKeyIdentifier ::= SEQUENCE {
-    ///   keyIdentifier             [0] KeyIdentifier           OPTIONAL,
-    ///   authorityCertIssuer       [1] GeneralNames            OPTIONAL,
-    ///   authorityCertSerialNumber [2] CertificateSerialNumber OPTIONAL  }
-    /// ```
-    ///
-    /// Must be present except in self-signed CA certificates where it is
-    /// optional. The keyIdentifier field must be present, the other must not
-    /// be.
-    fn take_authority_key_identifier<S: decode::Source>(
-        cons: &mut decode::Constructed<S>,
-        authority_key_id: &mut Option<KeyIdentifier>,
-    ) -> Result<(), S::Err> {
-        update_once(authority_key_id, || {
-            cons.take_sequence(|cons| {
-                cons.take_value_if(Tag::CTX_0, KeyIdentifier::from_content)
-            })
-        })
-    }
-
     /// Returns an encoder for the value.
-pub fn encode_ref(&self) -> impl encode::Values + '_ {
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
             encode::sequence_as(Tag::CTX_0, 2.encode()), // version
             self.serial_number.encode(),
