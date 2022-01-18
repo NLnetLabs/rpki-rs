@@ -74,6 +74,22 @@ impl Manifest {
         now: Time
     ) -> Result<(ResourceCert, ManifestContent), ValidationError> {
         let cert = self.signed.validate_at(cert, strict, now)?;
+
+        // RFC 6486, section 4.4:
+        //
+        // |   1. The eContentType in the EncapsulatedContentInfo is
+        // |      id-ad-rpkiManifest (OID 1.2.840.113549.1.9.16.1.26).
+        // |
+        // |   2. The version of the rpkiManifest is 0.
+        //
+        // Both checked during parsing.
+        //
+        // |   3. In the rpkiManifest, thisUpdate precedes nextUpdate.
+
+        if self.content.this_update >= self.content.next_update {
+            return Err(ValidationError)
+        }
+
         Ok((cert, self.content))
     }
 
