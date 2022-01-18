@@ -189,7 +189,7 @@ impl ChildRequest {
 }
 
 
-/// # Validation
+/// # XML Support
 ///
 impl ChildRequest {
     /// Parses a <child_request /> message, and validates the
@@ -198,6 +198,39 @@ impl ChildRequest {
         reader: R
     ) -> Result<Self, IdExchangeError> {
         Self::validate_at(reader, Time::now())
+    }
+
+    /// Writes the ChildRequest's XML representation.
+    pub fn write_xml(
+        &self, writer: &mut impl io::Write
+    ) -> Result<(), io::Error> {
+        let mut writer = xml::encode::Writer::new(writer);
+
+        writer.element(CHILD_REQUEST.into_unqualified())?
+            .attr("xmlns", NS)?
+            .attr("version", VERSION)?
+            .attr("child_handle", self.child_handle())?
+            .opt_attr("tag", self.tag())?
+            .content(|content| {
+                content.element(CHILD_BPKI_TA.into_unqualified())?
+                    .content(|content| {
+                        content.base64(self.id_cert.to_captured().as_slice())
+                    })?;
+                Ok(())
+            })?;
+
+        writer.done()
+    }
+
+    #[cfg(test)]
+    fn to_xml_string(&self) -> String {
+        use std::str::from_utf8;
+
+        let mut vec = vec![];
+        self.write_xml(&mut vec).unwrap(); // safe
+        let xml = from_utf8(vec.as_slice()).unwrap(); // safe
+
+        xml.to_string()
     }
 
     /// Parses a <child_request /> message.
@@ -276,6 +309,7 @@ impl ChildRequest {
 }
 
 
+
 //------------ Error ---------------------------------------------------------
 
 #[derive(Debug)]
@@ -342,10 +376,20 @@ mod tests {
     #[test]
     fn child_request() {
         let xml = include_str!("../../test-data/remote/rpkid-child-id.xml");
-        let req = ChildRequest::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
+        let req = ChildRequest::validate_at(
+            xml.as_bytes(), rpkid_time()
+        ).unwrap();
 
         assert_eq!(&Handle::from_str("Carol").unwrap(), req.child_handle());
         assert_eq!(None, req.tag());
+
+        let re_encoded_xml = req.to_xml_string();
+        let re_decoded = ChildRequest::validate_at(
+            re_encoded_xml.as_bytes(),
+            rpkid_time()
+        ).unwrap();
+
+        assert_eq!(req, re_decoded);
     }
 
     
