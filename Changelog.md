@@ -15,12 +15,16 @@ New
 
 Bug Fixes
 
+* Added a check to manifest validation that _thisUpdate_ is before
+  _nextUpdate_ as mandated by [RFC 6486]. ([#191])
+
 Other Changes
 
 [#187]: https://github.com/NLnetLabs/rpki-rs/pull/187
 [#188]: https://github.com/NLnetLabs/rpki-rs/pull/188
 [#189]: https://github.com/NLnetLabs/rpki-rs/pull/189
-[RFC 8416]: https://tools.ietf.org/html/rfc8416
+[#191]: https://github.com/NLnetLabs/rpki-rs/pull/191
+[RFC 6486]: https://tools.ietf.org/html/rfc6486
 
 
 ## 0.14.1
