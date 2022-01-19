@@ -3,15 +3,14 @@
 
 //! Support for building RPKI Certificates and Objects
 
-use std::ops;
+use std::{io, ops};
 use bcder::{decode, encode};
-use bcder::xerr;
 use bcder::encode::PrimitiveContent;
 use bcder::{
     Mode, OctetString, Oid, Tag, Captured,
 };
 use bytes::Bytes;
-use log::debug;
+use log::{debug, error};
 
 use crate::repository::cert::TbsCert;
 use crate::repository::{
@@ -25,6 +24,10 @@ use crate::repository::{
         ValidationError, Validity, Serial
     },
 };
+use crate::xml;
+use crate::xml::decode::Error as XmlError;
+
+use super::error::IdExchangeError;
 
 //------------ IdCert --------------------------------------------------------
 
@@ -136,18 +139,28 @@ impl IdCert {
         self.validate_ca_basics()?;
 
         // RFC 8183 does not use clear normative language but it refers to the
-        // "BPKI TA" certificates as 'self-signed' in many cases. So, let's
-        // insist that the TA certificate is properly self-signed.
-        self.signed_data.verify_signature(&self.subject_public_key_info)?;
-
-        // Normally the AKI should be left out - if it is set though, then
-        // we should insist that it matches the SKI.
+        // "BPKI TA" certificates as 'self-signed' in many cases. As it turns
+        // out the APNIC parent BPKI TA is not self-signed. This should not
+        // really matter as it's essentially just a certificate that wraps
+        // the public key that will be used to sign CMS messages signed under
+        // it.
+        //
+        // So, in short.. let's just do some debug logging in case we think
+        // this is not self-signed, but validate if it does appear to be
+        // self-signed.
         if let Some(aki) = self.authority_key_id {
             if aki != self.subject_key_id {
-                debug!("ID TA certificate has AKI not equal to SKI");
-                return Err(ValidationError)
+                debug!("ID TA certificate not self-signed, still accepting");
+            } else if let Err(e) = self.signed_data
+                            .verify_signature(&self.subject_public_key_info) {
+
+                error!("ID TA certificate is *invalidly* self-signed");
+                return Err(e)
             }
         }
+
+        // // Normally the AKI should be left out - if it is set though, then
+        // // we should insist that it matches the SKI.
 
         Ok(())
     }
@@ -245,6 +258,54 @@ impl IdCert {
         &self, issuer: &IdCert
     ) -> Result<(), ValidationError> {
         self.signed_data.verify_signature(issuer.subject_public_key_info())
+    }
+}
+
+/// # XML Support
+/// 
+impl IdCert {
+    /// Parses an IdCert for the given XML element name
+    /// and validates that it's a validly signed TA certificate
+    /// valid on the given time. Normally the 'time' would be
+    /// 'now' - but we need to allow overriding this to support
+    /// testing.
+    pub fn parse_and_validate_xml<R: io::BufRead>(
+        outer: &xml::decode::Content,
+        reader: &mut xml::decode::Reader<R>,
+        element_name: &xml::decode::Name,
+        when: Time
+    ) -> Result<Self, IdExchangeError> {
+        let mut content = outer.take_element(reader, |element| {
+            if element.name().local() != element_name.local() {
+                Err(XmlError::Malformed)
+            } else {
+                Ok(())
+            }
+        })?;
+
+        let base64 = content.take_text(reader, |text| {
+            // The text is supposed to be xsd:base64Binary which only allows
+            // the base64 characters plus whitespace.
+            text.to_ascii()
+                .map_err(|_| XmlError::Malformed)
+                .map(|text| {
+                    text.as_bytes()
+                    .iter()
+                    .filter(|c| **c < 128_u8) // strip anything above 7bit ascii.. like unicode whitespace
+                    .filter(|c| !b" \n\t\r\x0b\x0c=".contains(c))
+                    .copied()
+                    .collect::<Vec<_>>() 
+                })
+        })?;
+
+        let bytes = base64::decode_config(base64, base64::STANDARD_NO_PAD)?;
+
+        let id_cert = IdCert::decode(bytes.as_slice())?;
+        id_cert.validate_ta_at(when)?;
+
+        content.take_end(reader)?;
+
+        Ok(id_cert)
     }
 }
 
@@ -436,7 +497,7 @@ impl TbsIdCert {
             cons.take_constructed_if(Tag::CTX_3, |c| c.take_sequence(|cons| {
                 while let Some(()) = cons.take_opt_sequence(|cons| {
                     let id = Oid::take_from(cons)?;
-                    let critical = cons.take_opt_bool()?.unwrap_or(false);
+                    let _critical = cons.take_opt_bool()?.unwrap_or(false);
                     let value = OctetString::take_from(cons)?;
                     Mode::Der.decode(value.to_source(), |content| {
                         if id == oid::CE_BASIC_CONSTRAINTS {
@@ -451,12 +512,16 @@ impl TbsIdCert {
                             TbsCert::take_authority_key_identifier(
                                 content, &mut authority_key_id
                             )
-                        } else if critical {
-                            xerr!(Err(decode::Malformed))
                         } else {
-                            // RFC 5280 says we can ignore non-critical
-                            // extensions we don’t know of. RFC 6487
-                            // agrees. So let’s do that.
+                            // Id Certificates are poorly defined and may
+                            // contain critical extensions we do not actually
+                            // understand or need.
+                            //
+                            // E.g. APNIC includes 'key usage', and rpkid
+                            // does not. Neither does Krill at this time. We
+                            // can ignore this particular one - because the
+                            // allowed key usage is unambiguous in the context
+                            // of the RPKI remote protocols.
                             Ok(())
                         }
                     })?;

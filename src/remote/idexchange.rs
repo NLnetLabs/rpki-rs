@@ -14,18 +14,21 @@ use serde::{
     Deserialize, Serialize, Serializer, Deserializer
 };
 use crate::repository::x509::Time;
-use crate::repository::x509::ValidationError;
+use crate::uri;
 use crate::xml;
 use crate::xml::decode::{
     Error as XmlError, Name
 };
 use super::idcert::IdCert;
+use super::error::IdExchangeError;
 
 // Constants for the RFC 8183 XML
 const VERSION: &str = "1";
 const NS: &[u8] = b"http://www.hactrn.net/uris/rpki/rpki-setup/";
 const CHILD_REQUEST: Name = Name::qualified(NS, b"child_request");
 const CHILD_BPKI_TA: Name = Name::unqualified(b"child_bpki_ta");
+const PARENT_RESPONSE: Name = Name::qualified(NS, b"parent_response");
+const PARENT_BPKI_TA: Name = Name::unqualified(b"parent_bpki_ta");
 
 
 //------------ Handle --------------------------------------------------------
@@ -143,6 +146,65 @@ impl fmt::Display for InvalidHandle {
         write!(f, "Handle MUST have pattern: [-_A-Za-z0-9/]{{1,255}}")
     }
 }
+
+
+//------------ ServiceUri ----------------------------------------------------
+
+/// The service URI where a child or publisher needs to send its
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ServiceUri {
+    Https(uri::Https),
+    Http(String),
+}
+
+impl TryFrom<String> for ServiceUri {
+    type Error = IdExchangeError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::from_str(&value)
+    }
+}
+
+impl FromStr for ServiceUri {
+    type Err = IdExchangeError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        if value.to_lowercase().starts_with("http://") {
+            Ok(ServiceUri::Http(value.to_string()))
+        } else {
+            Ok(ServiceUri::Https(uri::Https::from_str(value)?))
+        }
+    }
+}
+
+impl fmt::Display for ServiceUri {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ServiceUri::Http(string) => string.fmt(f),
+            ServiceUri::Https(https) => https.fmt(f),
+        }
+    }
+}
+
+impl Serialize for ServiceUri {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.to_string().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ServiceUri {
+    fn deserialize<D>(deserializer: D) -> Result<ServiceUri, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string = String::deserialize(deserializer)?;
+        ServiceUri::try_from(string).map_err(serde::de::Error::custom)
+    }
+}
+
 
 //------------ ChildRequest --------------------------------------------------
 
@@ -268,38 +330,12 @@ impl ChildRequest {
 
         let child_handle = child_handle.ok_or(XmlError::Malformed)?;
 
-        let id_cert = {
-            let mut content = outer.take_element(&mut reader, |element| {
-                if element.name().local() != CHILD_BPKI_TA.local() {
-                    Err(XmlError::Malformed)
-                } else {
-                    Ok(())
-                }
-            })?;
-
-            let base64 = content.take_text(&mut reader, |text| {
-                // The text is supposed to be xsd:base64Binary which only allows
-                // the base64 characters plus whitespace.
-                text.to_ascii()
-                    .map_err(|_| XmlError::Malformed)
-                    .map(|text| {
-                      text.as_bytes().iter().filter_map(|b| {
-                        if b.is_ascii_whitespace() { None }
-                        else { Some(*b) }
-                    })
-                    .collect::<Vec<_>>()  
-                })
-            })?;
-
-            let bytes = base64::decode(base64)?;
-
-            let id_cert = IdCert::decode(bytes.as_slice())?;
-            id_cert.validate_ta_at(when)?;
-
-            content.take_end(&mut reader)?;
-
-            id_cert
-        };
+        let id_cert = IdCert::parse_and_validate_xml(
+            &outer,
+            &mut reader,
+            &CHILD_BPKI_TA,
+            when
+        )?;
         
         outer.take_end(&mut reader)?;
         reader.end()?;
@@ -309,56 +345,138 @@ impl ChildRequest {
 }
 
 
+//------------ ParentResponse ------------------------------------------------
 
-//------------ Error ---------------------------------------------------------
+/// Type representing a <parent_response /> defined in section 5.2.2 of
+/// RFC8183.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ParentResponse {
+    /// The optional 'tag' identifier used like a session identifier
+    tag: Option<String>,
 
-#[derive(Debug)]
-pub enum IdExchangeError {
-    InvalidXml(xml::decode::Error),
-    InvalidVersion,
-    InvalidHandle,
-    InvalidTaBase64(base64::DecodeError),
-    InvalidTaCertEncoding(bcder::decode::Error),
-    InvalidTaCert,
+    /// The parent CA's IdCert
+    id_cert: IdCert,
+
+    /// The handle of the parent CA.
+    parent_handle: Handle,
+
+    /// The handle chosen for the child CA. Note that this may not be the
+    /// same as the handle the CA asked for.
+    child_handle: Handle,
+
+    /// The URI where the CA needs to send its RFC6492 messages
+    service_uri: ServiceUri,
 }
 
-impl fmt::Display for IdExchangeError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            IdExchangeError::InvalidXml(e) => e.fmt(f),
-            IdExchangeError::InvalidVersion => write!(f, "Invalid version"),
-            IdExchangeError::InvalidHandle => write!(f, "Invalid handle"),
-            IdExchangeError::InvalidTaBase64(e) => e.fmt(f),
-            IdExchangeError::InvalidTaCertEncoding(e) => {
-                write!(f, "Cannot decode TA cert: {}", e)
-            },
-            IdExchangeError::InvalidTaCert => write!(f, "Invalid TA cert"),
+/// # Construct and Data Access
+///
+impl ParentResponse {
+    pub fn new(
+        tag: Option<String>,
+        id_cert: IdCert,
+        parent_handle: Handle,
+        child_handle: Handle,
+        service_uri: ServiceUri,
+    ) -> Self {
+        ParentResponse {
+            tag,
+            id_cert,
+            parent_handle,
+            child_handle,
+            service_uri,
         }
     }
-}
 
-impl From<xml::decode::Error> for IdExchangeError {
-    fn from(e: xml::decode::Error) -> Self {
-        IdExchangeError::InvalidXml(e)
+    pub fn tag(&self) -> Option<&String> {
+        self.tag.as_ref()
+    }
+    pub fn id_cert(&self) -> &IdCert {
+        &self.id_cert
+    }
+    pub fn parent_handle(&self) -> &Handle {
+        &self.parent_handle
+    }
+    pub fn child_handle(&self) -> &Handle {
+        &self.child_handle
+    }
+    pub fn service_uri(&self) -> &ServiceUri {
+        &self.service_uri
     }
 }
 
-impl From<base64::DecodeError> for IdExchangeError {
-    fn from(e: base64::DecodeError) -> Self {
-        IdExchangeError::InvalidTaBase64(e)
+/// # XML Support
+/// 
+impl ParentResponse {
+    /// Parses a <parent_response /> message, and validates the
+    /// embedded certificate. MUST be a validly signed TA cert.
+    pub fn validate<R: io::BufRead>(
+        reader: R
+    ) -> Result<Self, IdExchangeError> {
+        Self::validate_at(reader, Time::now())
     }
-}
 
-impl From<bcder::decode::Error> for IdExchangeError {
-    fn from(e: bcder::decode::Error) -> Self {
-        IdExchangeError::InvalidTaCertEncoding(e)
-    }
-}
+    /// Parses a <parent_response /> message.
+    fn validate_at<R: io::BufRead>(
+        reader: R, when: Time
+    ) -> Result<Self, IdExchangeError> {
+        let mut reader = xml::decode::Reader::new(reader);
 
-impl From<ValidationError> for IdExchangeError {
-    fn from(_e: ValidationError) -> Self {
-        IdExchangeError::InvalidTaCert
+        let mut child_handle: Option<ChildHandle> = None;
+        let mut parent_handle: Option<ParentHandle> = None;
+        let mut service_uri: Option<ServiceUri> = None;
+        let mut tag: Option<String> = None;
+        
+        let mut outer = reader.start(|element| {
+            if element.name() != PARENT_RESPONSE {
+                return Err(XmlError::Malformed)
+            }
+            
+            element.attributes(|name, value| match name {
+                b"version" => {
+                    if value.ascii_into::<String>()? != VERSION {
+                        return Err(XmlError::Malformed)
+                    }
+                    Ok(())
+                }
+                b"service_uri" => {
+                    service_uri = Some(value.ascii_into()?);
+                    Ok(())
+                }
+                b"parent_handle" => {
+                    parent_handle = Some(value.ascii_into()?);
+                    Ok(())
+                }
+                b"child_handle" => {
+                    child_handle = Some(value.ascii_into()?);
+                    Ok(())
+                }
+                b"tag" => {
+                    tag = Some(value.ascii_into()?);
+                    Ok(())
+                }
+                _ => Err(XmlError::Malformed)
+            })
+        })?;
+
+        let service_uri = service_uri.ok_or(XmlError::Malformed)?;
+        let parent_handle = parent_handle.ok_or(XmlError::Malformed)?;
+        let child_handle = child_handle.ok_or(XmlError::Malformed)?;
+
+        let id_cert = IdCert::parse_and_validate_xml(
+            &outer,
+            &mut reader,
+            &PARENT_BPKI_TA,
+            when
+        )?;
+
+        outer.take_end(&mut reader)?;
+        reader.end()?;
+
+        Ok(ParentResponse { 
+            tag, id_cert, parent_handle, child_handle, service_uri 
+        })
     }
+
 }
 
 
@@ -371,6 +489,10 @@ mod tests {
     
     fn rpkid_time() -> Time {
         Time::utc(2012, 1, 1, 0, 0, 0)
+    }
+
+    fn apnic_time() -> Time {
+        Time::utc(2020, 3, 3, 0, 0, 0)
     }
 
     #[test]
@@ -390,6 +512,14 @@ mod tests {
         ).unwrap();
 
         assert_eq!(req, re_decoded);
+    }
+
+    #[test]
+    fn parent_response() {
+        let xml = include_str!("../../test-data/remote/apnic-parent-response.xml");
+        let req = ParentResponse::validate_at(
+            xml.as_bytes(), apnic_time()
+        ).unwrap();
     }
 
     
