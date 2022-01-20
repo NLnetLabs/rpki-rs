@@ -224,43 +224,43 @@ impl<'de> Deserialize<'de> for ServiceUri {
 /// RFC8183.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildRequest {
-    /// The optional 'tag' identifier used like a session identifier
-    tag: Option<String>,
+    /// The self-signed IdCert containing the child's public key.
+    id_cert: IdCert,
 
     /// The handle the child wants to use for itself. This may not be honored
     /// by the parent.
-    child_handle: Handle,
+    child_handle: ChildHandle,
 
-    /// The self-signed IdCert containing the child's public key.
-    id_cert: IdCert,
+    /// The optional 'tag' identifier used like a session identifier
+    tag: Option<String>,
 }
 
 
 /// # Data Access
 ///
 impl ChildRequest {
-    pub fn new(child_handle: Handle, id_cert: IdCert) -> Self {
+    pub fn new(id_cert: IdCert, child_handle: Handle) -> Self {
         ChildRequest {
-            tag: None,
-            child_handle,
             id_cert,
+            child_handle,
+            tag: None,
         }
     }
 
-    pub fn unpack(self) -> (Option<String>, Handle, IdCert) {
-        (self.tag, self.child_handle, self.id_cert)
+    pub fn unpack(self) -> (IdCert, ChildHandle, Option<String>) {
+        (self.id_cert, self.child_handle, self.tag)
     }
-
-    pub fn tag(&self) -> Option<&String> {
-        self.tag.as_ref()
+    
+    pub fn id_cert(&self) -> &IdCert {
+        &self.id_cert
     }
 
     pub fn child_handle(&self) -> &Handle {
         &self.child_handle
     }
 
-    pub fn id_cert(&self) -> &IdCert {
-        &self.id_cert
+    pub fn tag(&self) -> Option<&String> {
+        self.tag.as_ref()
     }
 }
 
@@ -375,56 +375,60 @@ impl ChildRequest {
 /// RFC8183.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentResponse {
-    /// The optional 'tag' identifier used like a session identifier
-    tag: Option<String>,
-
     /// The parent CA's IdCert
     id_cert: IdCert,
-
+    
     /// The handle of the parent CA.
-    parent_handle: Handle,
-
+    parent_handle: ParentHandle,
+    
     /// The handle chosen for the child CA. Note that this may not be the
     /// same as the handle the CA asked for.
-    child_handle: Handle,
-
+    child_handle: ChildHandle,
+    
     /// The URI where the CA needs to send its RFC6492 messages
     service_uri: ServiceUri,
+
+    /// The optional 'tag' identifier used like a session identifier
+    tag: Option<String>,
 }
 
 /// # Construct and Data Access
 ///
 impl ParentResponse {
     pub fn new(
-        tag: Option<String>,
         id_cert: IdCert,
-        parent_handle: Handle,
-        child_handle: Handle,
+        parent_handle: ParentHandle,
+        child_handle: ChildHandle,
         service_uri: ServiceUri,
+        tag: Option<String>,
     ) -> Self {
         ParentResponse {
-            tag,
             id_cert,
             parent_handle,
             child_handle,
             service_uri,
+            tag,
         }
+    }
+
+    pub fn id_cert(&self) -> &IdCert {
+        &self.id_cert
+    }
+
+    pub fn parent_handle(&self) -> &ParentHandle {
+        &self.parent_handle
+    }
+
+    pub fn child_handle(&self) -> &ChildHandle {
+        &self.child_handle
+    }
+
+    pub fn service_uri(&self) -> &ServiceUri {
+        &self.service_uri
     }
 
     pub fn tag(&self) -> Option<&String> {
         self.tag.as_ref()
-    }
-    pub fn id_cert(&self) -> &IdCert {
-        &self.id_cert
-    }
-    pub fn parent_handle(&self) -> &Handle {
-        &self.parent_handle
-    }
-    pub fn child_handle(&self) -> &Handle {
-        &self.child_handle
-    }
-    pub fn service_uri(&self) -> &ServiceUri {
-        &self.service_uri
     }
 }
 
@@ -449,9 +453,9 @@ impl ParentResponse {
         writer.element(PARENT_RESPONSE.into_unqualified())?
             .attr("xmlns", NS)?
             .attr("version", VERSION)?
-            .attr("service_uri", self.service_uri())?
             .attr("parent_handle", self.parent_handle())?
             .attr("child_handle", self.child_handle())?
+            .attr("service_uri", self.service_uri())?
             .opt_attr("tag", self.tag())?
             .content(|content|{
                 content
@@ -600,45 +604,45 @@ impl ParentResponse {
 /// For more info, see: https://tools.ietf.org/html/rfc8183#section-5.2.3
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherRequest {
-    /// The optional 'tag' identifier used like a session identifier
-    tag: Option<String>,
+    /// The self-signed IdCert containing the publisher's public key.
+    id_cert: IdCert,
 
     /// The name the publishing CA likes to call itself by
     publisher_handle: PublisherHandle,
 
-    /// The self-signed IdCert containing the publisher's public key.
-    id_cert: IdCert,
+    /// The optional 'tag' identifier used like a session identifier
+    tag: Option<String>,
 }
 
 /// # Construct and Data Access
 ///
 impl PublisherRequest {
     pub fn new(
-        tag: Option<String>,
+        id_cert: IdCert,
         publisher_handle: PublisherHandle,
-        id_cert: IdCert
+        tag: Option<String>
     ) -> Self {
         PublisherRequest {
-            tag,
-            publisher_handle,
             id_cert,
+            publisher_handle,
+            tag,
         }
     }
 
-    pub fn unpack(self) -> (Option<String>, PublisherHandle, IdCert) {
-        (self.tag, self.publisher_handle, self.id_cert)
+    pub fn unpack(self) -> (IdCert, PublisherHandle, Option<String>) {
+        (self.id_cert, self.publisher_handle, self.tag)
     }
-
-    pub fn tag(&self) -> Option<&String> {
-        self.tag.as_ref()
+    
+    pub fn id_cert(&self) -> &IdCert {
+        &self.id_cert
     }
 
     pub fn publisher_handle(&self) -> &Handle {
         &self.publisher_handle
     }
 
-    pub fn id_cert(&self) -> &IdCert {
-        &self.id_cert
+    pub fn tag(&self) -> Option<&String> {
+        self.tag.as_ref()
     }
 }
 
@@ -756,24 +760,24 @@ impl PublisherRequest {
 /// See https://tools.ietf.org/html/rfc8183#section-5.2.4
 #[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
 pub struct RepositoryResponse {
-    /// The optional 'tag' identifier used like a session identifier
-    tag: Option<String>,
-
-    /// The name the publication server decided to call the CA by.
-    /// Note that this may not be the same as the handle the CA asked for.
-    publisher_handle: Handle,
-
     /// The Publication Server Identity Certificate
     id_cert: IdCert,
-
+    
+    /// The name the publication server decided to call the CA by.
+    /// Note that this may not be the same as the handle the CA asked for.
+    publisher_handle: PublisherHandle,
+    
     /// The URI where the CA needs to send its RFC8181 messages
     service_uri: ServiceUri,
-
+    
     /// Contains the rsync base (sia_base)
     sia_base: uri::Rsync,
-
+    
     /// Contains the RRDP (RFC8182) notification xml uri
     rrdp_notification_uri: Option<uri::Https>,
+
+    /// The optional 'tag' identifier used like a session identifier
+    tag: Option<String>,
 }
 
 /// # Construct and Data Access
@@ -781,45 +785,45 @@ pub struct RepositoryResponse {
 impl RepositoryResponse {
     /// Creates a new response.
     pub fn new(
-        tag: Option<String>,
-        publisher_handle: Handle,
         id_cert: IdCert,
+        publisher_handle: Handle,
         service_uri: ServiceUri,
         sia_base: uri::Rsync,
         rrdp_notification_uri: Option<uri::Https>,
+        tag: Option<String>,
     ) -> Self {
         RepositoryResponse {
-            tag,
-            publisher_handle,
             id_cert,
+            publisher_handle,
             service_uri,
             sia_base,
-            rrdp_notification_uri
+            rrdp_notification_uri,
+            tag
         }
-    }
-
-    pub fn tag(&self) -> Option<&String> {
-        self.tag.as_ref()
-    }
-
-    pub fn publisher_handle(&self) -> &Handle {
-        &self.publisher_handle
     }
 
     pub fn id_cert(&self) -> &IdCert {
         &self.id_cert
     }
-
+    
+    pub fn publisher_handle(&self) -> &Handle {
+        &self.publisher_handle
+    }
+    
     pub fn service_uri(&self) -> &ServiceUri {
         &self.service_uri
     }
-
+    
     pub fn sia_base(&self) -> &uri::Rsync {
         &self.sia_base
     }
-
+    
     pub fn rrdp_notification_uri(&self) -> Option<&uri::Https> {
         self.rrdp_notification_uri.as_ref()
+    }
+
+    pub fn tag(&self) -> Option<&String> {
+        self.tag.as_ref()
     }
 }
 
@@ -843,8 +847,8 @@ impl RepositoryResponse {
         writer.element(REPOSITORY_RESPONSE.into_unqualified())?
             .attr("xmlns", NS)?
             .attr("version", VERSION)?
-            .attr("service_uri", self.service_uri())?
             .attr("publisher_handle", self.publisher_handle())?
+            .attr("service_uri", self.service_uri())?
             .attr("sia_base", self.sia_base())?
             .opt_attr("rrdp_notification_uri", self.rrdp_notification_uri())?
             .opt_attr("tag", self.tag())?
