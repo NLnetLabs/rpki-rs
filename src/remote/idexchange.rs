@@ -29,6 +29,8 @@ const VERSION: &str = "1";
 const NS: &[u8] = b"http://www.hactrn.net/uris/rpki/rpki-setup/";
 const CHILD_REQUEST: Name = Name::qualified(NS, b"child_request");
 const CHILD_BPKI_TA: Name = Name::qualified(NS, b"child_bpki_ta");
+const PUBLISHER_REQUEST: Name = Name::qualified(NS, b"publisher_request");
+const PUBLISHER_BPKI_TA: Name = Name::qualified(NS, b"publisher_bpki_ta");
 const PARENT_RESPONSE: Name = Name::qualified(NS, b"parent_response");
 const PARENT_BPKI_TA: Name = Name::qualified(NS, b"parent_bpki_ta");
 const PARENT_REFERRAL: Name = Name::qualified(NS, b"referral");
@@ -246,9 +248,11 @@ impl ChildRequest {
     pub fn tag(&self) -> Option<&String> {
         self.tag.as_ref()
     }
+
     pub fn child_handle(&self) -> &Handle {
         &self.child_handle
     }
+
     pub fn id_cert(&self) -> &IdCert {
         &self.id_cert
     }
@@ -580,6 +584,161 @@ impl ParentResponse {
 }
 
 
+//------------ PublisherRequest ----------------------------------------------
+
+/// Type representing a <publisher_request/>
+///
+/// This is the XML message with identity information that a CA sends to a
+/// Publication Server.
+///
+/// For more info, see: https://tools.ietf.org/html/rfc8183#section-5.2.3
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PublisherRequest {
+    /// The optional 'tag' identifier used like a session identifier
+    tag: Option<String>,
+
+    /// The name the publishing CA likes to call itself by
+    publisher_handle: PublisherHandle,
+
+    /// The self-signed IdCert containing the publisher's public key.
+    id_cert: IdCert,
+}
+
+/// # Construct and Data Access
+///
+impl PublisherRequest {
+    pub fn new(
+        tag: Option<String>,
+        publisher_handle: PublisherHandle,
+        id_cert: IdCert
+    ) -> Self {
+        PublisherRequest {
+            tag,
+            publisher_handle,
+            id_cert,
+        }
+    }
+
+    pub fn unpack(self) -> (Option<String>, PublisherHandle, IdCert) {
+        (self.tag, self.publisher_handle, self.id_cert)
+    }
+
+    pub fn tag(&self) -> Option<&String> {
+        self.tag.as_ref()
+    }
+
+    pub fn publisher_handle(&self) -> &Handle {
+        &self.publisher_handle
+    }
+
+    pub fn id_cert(&self) -> &IdCert {
+        &self.id_cert
+    }
+}
+
+/// # XML Support
+/// 
+impl PublisherRequest {
+    /// Parses a <publisher_request /> message, and validates the
+    /// embedded certificate. MUST be a validly signed TA cert.
+    pub fn validate<R: io::BufRead>(
+        reader: R
+    ) -> Result<Self, IdExchangeError> {
+        Self::validate_at(reader, Time::now())
+    }
+
+    /// Writes the PublisherRequest's XML representation.
+    pub fn write_xml(
+        &self, writer: &mut impl io::Write
+    ) -> Result<(), io::Error> {
+        let mut writer = xml::encode::Writer::new(writer);
+
+        writer.element(PUBLISHER_REQUEST.into_unqualified())?
+            .attr("xmlns", NS)?
+            .attr("version", VERSION)?
+            .attr("publisher_handle", self.publisher_handle())?
+            .opt_attr("tag", self.tag())?
+            .content(|content| {
+                content
+                    .element(PUBLISHER_BPKI_TA.into_unqualified())?
+                    .content(|content| {
+                        content.base64(self.id_cert.to_captured().as_slice())
+                    })?;
+                Ok(())
+            })?;
+
+        writer.done()
+    }
+
+    #[cfg(test)]
+    fn to_xml_string(&self) -> String {
+        let mut vec = vec![];
+        self.write_xml(&mut vec).unwrap(); // safe
+        let xml = from_utf8(vec.as_slice()).unwrap(); // safe
+
+        xml.to_string()
+    }
+
+    /// Parses a <publisher_request /> message.
+    fn validate_at<R: io::BufRead>(
+        reader: R, when: Time
+    ) -> Result<Self, IdExchangeError> {
+        let mut reader = xml::decode::Reader::new(reader);
+
+        let mut publisher_handle: Option<PublisherHandle> = None;
+        let mut tag: Option<String> = None;
+        
+        let mut outer = reader.start(|element| {
+            if element.name() != PUBLISHER_REQUEST {
+                return Err(XmlError::Malformed)
+            }
+            
+            element.attributes(|name, value| match name {
+                b"version" => {
+                    if value.ascii_into::<String>()? != VERSION {
+                        return Err(XmlError::Malformed)
+                    }
+                    Ok(())
+                }
+                b"publisher_handle" => {
+                    publisher_handle = Some(value.ascii_into()?);
+                    Ok(())
+                }
+                b"tag" => {
+                    tag = Some(value.ascii_into()?);
+                    Ok(())
+                }
+                _ => Err(XmlError::Malformed)
+            })
+        })?;
+
+        let publisher_handle = publisher_handle.ok_or(XmlError::Malformed)?;
+
+        // We expect a single element 'child_bpki_ta' to be present which
+        // will contain the child id_cert.
+        let mut content = outer.take_element(&mut reader, |element| {
+            match element.name() {
+                PUBLISHER_BPKI_TA => Ok(()),
+                _ => Err(XmlError::Malformed)
+            }
+        })?;
+
+        let id_cert = IdCert::parse_and_validate_xml(
+            &mut content,
+            &mut reader,
+            when
+        )?;
+
+        content.take_end(&mut reader)?;
+
+        outer.take_end(&mut reader)?;
+
+        reader.end()?;
+
+        Ok(PublisherRequest { tag, publisher_handle, id_cert })
+    }
+}
+
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
@@ -644,6 +803,22 @@ mod tests {
         let _req = ParentResponse::validate_at(
             xml.as_bytes(), rpkid_time()
         ).unwrap();
+    }
+    
+    #[test]
+    fn publisher_request_codec() {
+        let xml = include_str!("../../test-data/remote/rpkid-publisher-request.xml");
+        let req = PublisherRequest::validate_at(
+            xml.as_bytes(), rpkid_time()
+        ).unwrap();
+
+        let re_encoded_xml = req.to_xml_string();
+        let re_decoded = PublisherRequest::validate_at(
+            re_encoded_xml.as_bytes(),
+            rpkid_time()
+        ).unwrap();
+
+        assert_eq!(req, re_decoded);
     }
     
 }
