@@ -156,7 +156,14 @@ impl PublicKey {
 
     /// Returns the bits of this public key.
     pub fn bits(&self) -> &[u8] {
+        // Public keys have to be DER encoded, so `octet_slice` will never
+        // return `Err(_)`.
         self.bits.octet_slice().unwrap()
+    }
+
+    /// Returns the bits as a `Bytes` value.
+    pub fn bits_bytes(&self) -> Bytes {
+        self.bits.octet_bytes()
     }
 
     /// Returns whether the key is acceptable for RPKI-internal certificates.
