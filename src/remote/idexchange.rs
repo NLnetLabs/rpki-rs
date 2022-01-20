@@ -27,14 +27,20 @@ use super::error::IdExchangeError;
 // Constants for the RFC 8183 XML
 const VERSION: &str = "1";
 const NS: &[u8] = b"http://www.hactrn.net/uris/rpki/rpki-setup/";
+
 const CHILD_REQUEST: Name = Name::qualified(NS, b"child_request");
 const CHILD_BPKI_TA: Name = Name::qualified(NS, b"child_bpki_ta");
+
 const PUBLISHER_REQUEST: Name = Name::qualified(NS, b"publisher_request");
 const PUBLISHER_BPKI_TA: Name = Name::qualified(NS, b"publisher_bpki_ta");
+
 const PARENT_RESPONSE: Name = Name::qualified(NS, b"parent_response");
 const PARENT_BPKI_TA: Name = Name::qualified(NS, b"parent_bpki_ta");
 const PARENT_REFERRAL: Name = Name::qualified(NS, b"referral");
 const PARENT_OFFER: Name = Name::qualified(NS, b"offer");
+
+const REPOSITORY_RESPONSE: Name = Name::qualified(NS, b"repository_response");
+const REPOSITORY_BPKI_TA: Name = Name::qualified(NS, b"repository_bpki_ta");
 
 
 //------------ Handle --------------------------------------------------------
@@ -739,6 +745,223 @@ impl PublisherRequest {
     }
 }
 
+
+//------------ RepositoryResponse --------------------------------------------
+
+/// Type representing a <repository_response/>
+///
+/// This is the response sent to a CA by the publication server. It contains
+/// the details needed by the CA to send publication messages to the server.
+///
+/// See https://tools.ietf.org/html/rfc8183#section-5.2.4
+#[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
+pub struct RepositoryResponse {
+    /// The optional 'tag' identifier used like a session identifier
+    tag: Option<String>,
+
+    /// The name the publication server decided to call the CA by.
+    /// Note that this may not be the same as the handle the CA asked for.
+    publisher_handle: Handle,
+
+    /// The Publication Server Identity Certificate
+    id_cert: IdCert,
+
+    /// The URI where the CA needs to send its RFC8181 messages
+    service_uri: ServiceUri,
+
+    /// Contains the rsync base (sia_base)
+    sia_base: uri::Rsync,
+
+    /// Contains the RRDP (RFC8182) notification xml uri
+    rrdp_notification_uri: Option<uri::Https>,
+}
+
+/// # Construct and Data Access
+///
+impl RepositoryResponse {
+    /// Creates a new response.
+    pub fn new(
+        tag: Option<String>,
+        publisher_handle: Handle,
+        id_cert: IdCert,
+        service_uri: ServiceUri,
+        sia_base: uri::Rsync,
+        rrdp_notification_uri: Option<uri::Https>,
+    ) -> Self {
+        RepositoryResponse {
+            tag,
+            publisher_handle,
+            id_cert,
+            service_uri,
+            sia_base,
+            rrdp_notification_uri
+        }
+    }
+
+    pub fn tag(&self) -> Option<&String> {
+        self.tag.as_ref()
+    }
+
+    pub fn publisher_handle(&self) -> &Handle {
+        &self.publisher_handle
+    }
+
+    pub fn id_cert(&self) -> &IdCert {
+        &self.id_cert
+    }
+
+    pub fn service_uri(&self) -> &ServiceUri {
+        &self.service_uri
+    }
+
+    pub fn sia_base(&self) -> &uri::Rsync {
+        &self.sia_base
+    }
+
+    pub fn rrdp_notification_uri(&self) -> Option<&uri::Https> {
+        self.rrdp_notification_uri.as_ref()
+    }
+}
+
+/// # XML Support
+///
+impl RepositoryResponse {
+    /// Parses a <repository_response /> message, and validates the
+    /// embedded certificate. MUST be a validly signed TA cert.
+    pub fn validate<R: io::BufRead>(
+        reader: R
+    ) -> Result<Self, IdExchangeError> {
+        Self::validate_at(reader, Time::now())
+    }
+
+    /// Writes the ParentResponse's XML representation.
+    pub fn write_xml(
+        &self, writer: &mut impl io::Write
+    ) -> Result<(), io::Error> {
+        let mut writer = xml::encode::Writer::new(writer);
+
+        writer.element(REPOSITORY_RESPONSE.into_unqualified())?
+            .attr("xmlns", NS)?
+            .attr("version", VERSION)?
+            .attr("service_uri", self.service_uri())?
+            .attr("publisher_handle", self.publisher_handle())?
+            .attr("sia_base", self.sia_base())?
+            .opt_attr("rrdp_notification_uri", self.rrdp_notification_uri())?
+            .opt_attr("tag", self.tag())?
+            .content(|content|{
+                content
+                    .element(REPOSITORY_BPKI_TA.into_unqualified())?
+                    .content(|content| {
+                        content.base64(self.id_cert.to_captured().as_slice())
+                    })?;
+                Ok(())
+            })?;
+        writer.done()
+    }
+
+
+    /// Parses a <repository_response /> message.
+    fn validate_at<R: io::BufRead>(
+        reader: R, when: Time
+    ) -> Result<Self, IdExchangeError> {
+        let mut reader = xml::decode::Reader::new(reader);
+
+        let mut tag: Option<String> = None;
+        let mut publisher_handle: Option<PublisherHandle> = None;
+        let mut service_uri: Option<ServiceUri> = None;
+
+        let mut sia_base: Option<uri::Rsync>  = None;
+        let mut rrdp_notification_uri: Option<uri::Https> = None;
+
+        let mut outer = reader.start(|element| {
+            if element.name() != REPOSITORY_RESPONSE {
+                return Err(XmlError::Malformed)
+            }
+            
+            element.attributes(|name, value| match name {
+                b"version" => {
+                    if value.ascii_into::<String>()? != VERSION {
+                        return Err(XmlError::Malformed)
+                    }
+                    Ok(())
+                }
+                b"service_uri" => {
+                    service_uri = Some(value.ascii_into()?);
+                    Ok(())
+                }
+                b"publisher_handle" => {
+                    publisher_handle = Some(value.ascii_into()?);
+                    Ok(())
+                }
+                b"sia_base" => {
+                    sia_base = Some(value.ascii_into()?);
+                    Ok(())
+                }
+                b"rrdp_notification_uri" => {
+                    rrdp_notification_uri = Some(value.ascii_into()?);
+                    Ok(())
+                }
+                b"tag" => {
+                    tag = Some(value.ascii_into()?);
+                    Ok(())
+                }
+                _ => {
+                    debug!(
+                        "Ignoring attribute in <parent_response />: {:?}",
+                        from_utf8(name).unwrap_or("can't parse attr!?")
+                    );
+                    Ok(())
+                }
+            })
+        })?;
+
+        // Check mandatory attributes
+        let service_uri = service_uri.ok_or(XmlError::Malformed)?;
+        let publisher_handle = publisher_handle.ok_or(XmlError::Malformed)?;
+        let sia_base = sia_base.ok_or(XmlError::Malformed)?;
+
+        // We expect a single element 'child_bpki_ta' to be present which
+        // will contain the child id_cert.
+        let mut content = outer.take_element(&mut reader, |element| {
+            match element.name() {
+                REPOSITORY_BPKI_TA => Ok(()),
+                _ => Err(XmlError::Malformed)
+            }
+        })?;
+
+        let id_cert = IdCert::parse_and_validate_xml(
+            &mut content,
+            &mut reader,
+            when
+        )?;
+
+        content.take_end(&mut reader)?;
+
+        outer.take_end(&mut reader)?;
+
+        reader.end()?;
+
+        Ok(RepositoryResponse { 
+            tag,
+            publisher_handle,
+            id_cert,
+            service_uri,
+            sia_base,
+            rrdp_notification_uri 
+        })
+    }
+
+    #[cfg(test)]
+    fn to_xml_string(&self) -> String {
+        let mut vec = vec![];
+        self.write_xml(&mut vec).unwrap(); // safe
+        let xml = from_utf8(vec.as_slice()).unwrap(); // safe
+
+        xml.to_string()
+    }
+}
+
+
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
@@ -821,4 +1044,19 @@ mod tests {
         assert_eq!(req, re_decoded);
     }
     
+    #[test]
+    fn repository_response_codec() {
+        let xml = include_str!("../../test-data/remote/apnic-repository-response.xml");
+        let req = RepositoryResponse::validate_at(
+            xml.as_bytes(), apnic_time()
+        ).unwrap();
+
+        let re_encoded_xml = req.to_xml_string();
+        let re_decoded = RepositoryResponse::validate_at(
+            re_encoded_xml.as_bytes(),
+            apnic_time()
+        ).unwrap();
+
+        assert_eq!(req, re_decoded);
+    }
 }
