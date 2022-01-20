@@ -313,9 +313,14 @@ impl AsBlocks {
         self.0.is_empty()
     }
 
-    /// Returns an iterator over the individual AS number blocks.
-    pub fn iter(&self) -> impl Iterator<Item=AsBlock> + '_ {
+    /// Returns an iterator over the ASN blocks.
+    pub fn iter(&self) -> impl Iterator<Item = AsBlock> + '_ {
         self.0.iter().copied()
+    }
+
+    /// Returns an iterator over the individual ASNs.
+    pub fn iter_asns(&self) -> impl Iterator<Item = Asn> + '_ {
+        self.iter().flatten()
     }
 
     /// Validates AS resources issued under these blocks.
@@ -655,6 +660,11 @@ impl AsBlock {
                 if range.min() == Asn::MIN && range.max() == Asn::MAX
         )
     }
+
+    /// Returns an iterator over the ASNs in the block.
+    pub fn iter(self) -> AsBlockIter {
+        AsBlockIter::new(self.min(), self.max())
+    }
 }
 
 impl AsBlock {
@@ -745,6 +755,21 @@ impl FromStr for AsBlock {
     }
 }
 
+
+//--- IntoIterator
+
+impl IntoIterator for AsBlock {
+    type Item = Asn;
+    type IntoIter = AsBlockIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+
+//--- PartialEq and Eq
+
 impl PartialEq for AsBlock {
     fn eq(&self, other: &AsBlock) -> bool {
         self.is_equivalent(other)
@@ -793,6 +818,40 @@ impl fmt::Display for AsBlock {
             AsBlock::Id(id) => id.fmt(f),
             AsBlock::Range(range) => range.fmt(f)
         }
+    }
+}
+
+
+//------------ AsBlockIter ---------------------------------------------------
+
+/// An iterator over all the ASNs in a block.
+#[derive(Clone, Debug)]
+pub struct AsBlockIter {
+    next: Option<Asn>,
+    max: Asn,
+}
+
+impl AsBlockIter {
+    fn new(min: Asn, max: Asn) -> Self {
+        Self {
+            next: Some(min),
+            max
+        }
+    }
+}
+
+impl Iterator for AsBlockIter {
+    type Item = Asn;
+
+    fn next(&mut self) -> Option<Asn> {
+        let next = self.next?;
+        if next == self.max {
+            self.next = None;
+        }
+        else {
+            self.next = Some(next + 1);
+        }
+        Some(next)
     }
 }
 
@@ -948,6 +1007,44 @@ mod test {
 
         // Bad
         assert!(AsBlock::from_str("AS1-").is_err());
+    }
+
+    #[test]
+    fn as_block_iter() {
+        assert_eq!(
+            AsBlock::Id(0.into()).iter().collect::<Vec<_>>(),
+            [0.into()]
+        );
+        assert_eq!(
+            AsBlock::Id(1200.into()).iter().collect::<Vec<_>>(),
+            [1200.into()]
+        );
+        assert_eq!(
+            AsBlock::Id(u32::MAX.into()).iter().collect::<Vec<_>>(),
+            [u32::MAX.into()]
+        );
+        assert_eq!(
+            AsBlock::Range(
+                AsRange::new(0.into(), 4.into())
+            ).iter().collect::<Vec<_>>(),
+            [0.into(), 1.into(), 2.into(), 3.into(), 4.into()]
+        );
+        assert_eq!(
+            AsBlock::Range(
+                AsRange::new(10.into(), 14.into())
+            ).iter().collect::<Vec<_>>(),
+            [10.into(), 11.into(), 12.into(), 13.into(), 14.into()]
+        );
+        assert_eq!(
+            AsBlock::Range(
+                AsRange::new((u32::MAX - 4).into(), u32::MAX.into())
+            ).iter().collect::<Vec<_>>(),
+            [
+                (u32::MAX - 4).into(), (u32::MAX - 3).into(),
+                (u32::MAX - 2).into(), (u32::MAX - 1).into(),
+                u32::MAX.into()
+            ]
+        );
     }
 
     #[test]
