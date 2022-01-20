@@ -594,5 +594,13 @@ mod tests {
             xml.as_bytes(), rpkid_time()
         ).unwrap();
     }
+
+    #[test]
+    fn parent_response_rpkid_offer() {
+        let xml = include_str!("../../test-data/remote/rpkid-parent-response-offer.xml");
+        let _req = ParentResponse::validate_at(
+            xml.as_bytes(), rpkid_time()
+        ).unwrap();
+    }
     
 }
