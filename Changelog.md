@@ -12,6 +12,11 @@ New
   iterates over the content as `rtr::payload::RouteOrigins`. ([#188])
 * Dropped the `non_exhaustive` attribute from `rtr::payload::Payload`.
   ([#189])
+* Added `repository::crypto::keys::PublicKey::bit_bytes` which returns
+  the key’s bits as a shareable `Bytes` value. ([#193])
+* Added iterators over individual ASNs to
+  `repository::resources::AsBlock` and `repository::resources::AsBlocks`.
+  ([#194])
 
 Bug Fixes
 
@@ -24,6 +29,8 @@ Other Changes
 [#188]: https://github.com/NLnetLabs/rpki-rs/pull/188
 [#189]: https://github.com/NLnetLabs/rpki-rs/pull/189
 [#191]: https://github.com/NLnetLabs/rpki-rs/pull/191
+[#193]: https://github.com/NLnetLabs/rpki-rs/pull/193
+[#194]: https://github.com/NLnetLabs/rpki-rs/pull/194
 [RFC 6486]: https://tools.ietf.org/html/rfc6486
 
 
