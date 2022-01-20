@@ -278,7 +278,8 @@ impl ChildRequest {
             .attr("child_handle", self.child_handle())?
             .opt_attr("tag", self.tag())?
             .content(|content| {
-                content.element(CHILD_BPKI_TA.into_unqualified())?
+                content
+                    .element(CHILD_BPKI_TA.into_unqualified())?
                     .content(|content| {
                         content.base64(self.id_cert.to_captured().as_slice())
                     })?;
@@ -428,6 +429,32 @@ impl ParentResponse {
         Self::validate_at(reader, Time::now())
     }
 
+
+    /// Writes the ParentResponse's XML representation.
+    pub fn write_xml(
+        &self, writer: &mut impl io::Write
+    ) -> Result<(), io::Error> {
+        let mut writer = xml::encode::Writer::new(writer);
+
+        writer.element(PARENT_RESPONSE.into_unqualified())?
+            .attr("xmlns", NS)?
+            .attr("version", VERSION)?
+            .attr("service_uri", self.service_uri())?
+            .attr("parent_handle", self.parent_handle())?
+            .attr("child_handle", self.child_handle())?
+            .opt_attr("tag", self.tag())?
+            .content(|content|{
+                content
+                    .element(PARENT_BPKI_TA.into_unqualified())?
+                    .content(|content| {
+                        content.base64(self.id_cert.to_captured().as_slice())
+                    })?;
+                Ok(())
+            })?;
+        writer.done()
+    }
+
+
     /// Parses a <parent_response /> message.
     fn validate_at<R: io::BufRead>(
         reader: R, when: Time
@@ -542,6 +569,14 @@ impl ParentResponse {
         })
     }
 
+    #[cfg(test)]
+    fn to_xml_string(&self) -> String {
+        let mut vec = vec![];
+        self.write_xml(&mut vec).unwrap(); // safe
+        let xml = from_utf8(vec.as_slice()).unwrap(); // safe
+
+        xml.to_string()
+    }    
 }
 
 
@@ -561,7 +596,7 @@ mod tests {
     }
 
     #[test]
-    fn child_request() {
+    fn child_request_codec() {
         let xml = include_str!("../../test-data/remote/rpkid-child-id.xml");
         let req = ChildRequest::validate_at(
             xml.as_bytes(), rpkid_time()
@@ -580,15 +615,23 @@ mod tests {
     }
 
     #[test]
-    fn parent_response_apnic() {
+    fn parent_response_codec() {
         let xml = include_str!("../../test-data/remote/apnic-parent-response.xml");
-        let _req = ParentResponse::validate_at(
+        let req = ParentResponse::validate_at(
             xml.as_bytes(), apnic_time()
         ).unwrap();
+        
+        let re_encoded_xml = req.to_xml_string();
+        let re_decoded = ParentResponse::validate_at(
+            re_encoded_xml.as_bytes(),
+            apnic_time()
+        ).unwrap();
+
+        assert_eq!(req, re_decoded);
     }
 
     #[test]
-    fn parent_response_rpkid_referral() {
+    fn parent_response_parse_rpkid_referral() {
         let xml = include_str!("../../test-data/remote/rpkid-parent-response-referral.xml");
         let _req = ParentResponse::validate_at(
             xml.as_bytes(), rpkid_time()
@@ -596,7 +639,7 @@ mod tests {
     }
 
     #[test]
-    fn parent_response_rpkid_offer() {
+    fn parent_response_parse_rpkid_offer() {
         let xml = include_str!("../../test-data/remote/rpkid-parent-response-offer.xml");
         let _req = ParentResponse::validate_at(
             xml.as_bytes(), rpkid_time()
