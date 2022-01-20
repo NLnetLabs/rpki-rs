@@ -118,6 +118,18 @@ pub struct Content {
 }
 
 impl Content {
+    pub fn empty() -> Self {
+        Content { empty: true }
+    }
+
+    pub fn filled() -> Self {
+        Content { empty: false }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.empty
+    }
+    
     pub fn take_element<R, F, E>(
         &self,
         reader: &mut Reader<R>,
@@ -275,6 +287,37 @@ impl Content {
                 }
                 Event::Comment(_) => { }
                 _ => return Err(Error::Malformed.into())
+            }
+        }
+    }
+
+    pub fn skip_opt_text<R>(
+        &mut self,
+        reader: &mut Reader<R>
+    ) -> Result<(), Error>
+    where
+        R: io::BufRead,
+    {
+        if self.empty {
+            return Ok(())
+        }
+
+        loop {
+            reader.buf.clear();
+            let event = reader.reader.read_event(
+                &mut reader.buf
+            )?;
+            match event {
+                Event::Text(_text) => {
+                    self.take_end(reader)?;
+                    return Ok(())
+                }
+                Event::End(_) => {
+                    self.empty = true;
+                    return Ok(())
+                }
+                Event::Comment(_) => { }
+                _ => return Err(Error::Malformed)
             }
         }
     }

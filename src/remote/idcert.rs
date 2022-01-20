@@ -270,19 +270,10 @@ impl IdCert {
     /// 'now' - but we need to allow overriding this to support
     /// testing.
     pub fn parse_and_validate_xml<R: io::BufRead>(
-        outer: &xml::decode::Content,
+        content: &mut xml::decode::Content,
         reader: &mut xml::decode::Reader<R>,
-        element_name: &xml::decode::Name,
         when: Time
     ) -> Result<Self, IdExchangeError> {
-        let mut content = outer.take_element(reader, |element| {
-            if element.name().local() != element_name.local() {
-                Err(XmlError::Malformed)
-            } else {
-                Ok(())
-            }
-        })?;
-
         let base64 = content.take_text(reader, |text| {
             // The text is supposed to be xsd:base64Binary which only allows
             // the base64 characters plus whitespace.
@@ -302,8 +293,6 @@ impl IdCert {
 
         let id_cert = IdCert::decode(bytes.as_slice())?;
         id_cert.validate_ta_at(when)?;
-
-        content.take_end(reader)?;
 
         Ok(id_cert)
     }

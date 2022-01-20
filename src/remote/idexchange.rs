@@ -9,7 +9,9 @@ use std::io;
 use std::convert::TryFrom;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::str::from_utf8;
 use std::sync::Arc;
+use log::debug;
 use serde::{
     Deserialize, Serialize, Serializer, Deserializer
 };
@@ -26,9 +28,11 @@ use super::error::IdExchangeError;
 const VERSION: &str = "1";
 const NS: &[u8] = b"http://www.hactrn.net/uris/rpki/rpki-setup/";
 const CHILD_REQUEST: Name = Name::qualified(NS, b"child_request");
-const CHILD_BPKI_TA: Name = Name::unqualified(b"child_bpki_ta");
+const CHILD_BPKI_TA: Name = Name::qualified(NS, b"child_bpki_ta");
 const PARENT_RESPONSE: Name = Name::qualified(NS, b"parent_response");
-const PARENT_BPKI_TA: Name = Name::unqualified(b"parent_bpki_ta");
+const PARENT_BPKI_TA: Name = Name::qualified(NS, b"parent_bpki_ta");
+const PARENT_REFERRAL: Name = Name::qualified(NS, b"referral");
+const PARENT_OFFER: Name = Name::qualified(NS, b"offer");
 
 
 //------------ Handle --------------------------------------------------------
@@ -286,8 +290,6 @@ impl ChildRequest {
 
     #[cfg(test)]
     fn to_xml_string(&self) -> String {
-        use std::str::from_utf8;
-
         let mut vec = vec![];
         self.write_xml(&mut vec).unwrap(); // safe
         let xml = from_utf8(vec.as_slice()).unwrap(); // safe
@@ -330,14 +332,25 @@ impl ChildRequest {
 
         let child_handle = child_handle.ok_or(XmlError::Malformed)?;
 
+        // We expect a single element 'child_bpki_ta' to be present which
+        // will contain the child id_cert.
+        let mut content = outer.take_element(&mut reader, |element| {
+            match element.name() {
+                CHILD_BPKI_TA => Ok(()),
+                _ => Err(XmlError::Malformed)
+            }
+        })?;
+
         let id_cert = IdCert::parse_and_validate_xml(
-            &outer,
+            &mut content,
             &mut reader,
-            &CHILD_BPKI_TA,
             when
         )?;
-        
+
+        content.take_end(&mut reader)?;
+
         outer.take_end(&mut reader)?;
+
         reader.end()?;
 
         Ok(ChildRequest { tag, child_handle, id_cert })
@@ -454,7 +467,13 @@ impl ParentResponse {
                     tag = Some(value.ascii_into()?);
                     Ok(())
                 }
-                _ => Err(XmlError::Malformed)
+                _ => {
+                    debug!(
+                        "Ignoring attribute in <parent_response />: {:?}",
+                        from_utf8(name).unwrap_or("can't parse attr!?")
+                    );
+                    Ok(())
+                }
             })
         })?;
 
@@ -462,14 +481,60 @@ impl ParentResponse {
         let parent_handle = parent_handle.ok_or(XmlError::Malformed)?;
         let child_handle = child_handle.ok_or(XmlError::Malformed)?;
 
-        let id_cert = IdCert::parse_and_validate_xml(
-            &outer,
-            &mut reader,
-            &PARENT_BPKI_TA,
-            when
-        )?;
+        // There can be three different elements:
+        //  - parent_bpki_ta
+        //  - referral
+        //  - offer
+        //
+        // We only care about the first, we can ignore the others. But,
+        // we cannot assume that 'parent_bpki_ta' will be the first element.
+        // And we should return an error if we find any other unexpected
+        // element here.
+        let mut id_cert: Option<IdCert> = None;
+
+        loop {
+            let mut bpki_ta_element_found = false;
+            let inner = outer.take_opt_element(&mut reader, |element|{
+                match element.name() {
+                    PARENT_BPKI_TA => {
+                        bpki_ta_element_found = true;
+                        Ok(())
+                    },
+                    PARENT_OFFER | PARENT_REFERRAL => {
+                        Ok(())
+                    },
+                    _ => {
+                        Err(XmlError::Malformed)
+                    }
+                }
+            })?;
+            
+            // Break out of loop if we got no element, get the
+            // actual element if we can.
+            let mut inner = match inner {
+                Some(inner) => inner,
+                None => break
+            };
+            
+            if bpki_ta_element_found {
+                // parse inner text as the ID certificate
+                id_cert = Some(IdCert::parse_and_validate_xml(
+                    &mut inner,
+                    &mut reader,
+                    when
+                )?);
+            } else {
+                // skip inner text if there is any (offer does not have any)
+                inner.skip_opt_text(&mut reader)?;
+            }
+            
+            inner.take_end(&mut reader)?;
+        }
+
+        let id_cert = id_cert.ok_or(XmlError::Malformed)?;
 
         outer.take_end(&mut reader)?;
+
         reader.end()?;
 
         Ok(ParentResponse { 
@@ -515,12 +580,19 @@ mod tests {
     }
 
     #[test]
-    fn parent_response() {
+    fn parent_response_apnic() {
         let xml = include_str!("../../test-data/remote/apnic-parent-response.xml");
-        let req = ParentResponse::validate_at(
+        let _req = ParentResponse::validate_at(
             xml.as_bytes(), apnic_time()
         ).unwrap();
     }
 
+    #[test]
+    fn parent_response_rpkid_referral() {
+        let xml = include_str!("../../test-data/remote/rpkid-parent-response-referral.xml");
+        let _req = ParentResponse::validate_at(
+            xml.as_bytes(), rpkid_time()
+        ).unwrap();
+    }
     
 }
