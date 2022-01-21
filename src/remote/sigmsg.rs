@@ -63,8 +63,22 @@ pub struct  SignedMessage {
     //--- SignedAttributes
     //
     message_digest: MessageDigest,
-    signing_time: Option<Time>,
-    binary_signing_time: Option<u64>,
+    _signing_time: Option<Time>,
+    _binary_signing_time: Option<u64>,
+}
+
+/// # Data Access
+/// 
+impl SignedMessage {
+    /// Returns a reference to the object’s content type.
+    pub fn content_type(&self) -> &Oid<Bytes> {
+        &self.content_type
+    }
+
+    /// Returns a reference to the object’s content.
+    pub fn content(&self) -> &OctetString {
+        &self.content
+    }
 }
 
 
@@ -116,11 +130,7 @@ impl SignedMessage {
             }
 
             let id_cert = Self::take_id_cert(cons)?;
-
-            eprintln!("Got id cert!!!!");
-            
             let crl = Self::take_crl(cons)?;
-            eprintln!("Got crl!!!!");
 
             let (sid, attrs, signature) = {
                 // signerInfos
@@ -162,8 +172,8 @@ impl SignedMessage {
                 signature,
 
                 message_digest: attrs.1,
-                signing_time: attrs.3,
-                binary_signing_time: attrs.4
+                _signing_time: attrs.3,
+                _binary_signing_time: attrs.4
             })
         })
     }
@@ -211,10 +221,30 @@ impl SignedMessage {
 
     /// Validates a signed message for a given point in time.
     pub fn validate_at(
-        &self, issuer: &IdCert, now: Time
+        &self, issuer: &IdCert, when: Time
     ) -> Result<(), ValidationError> {
-        self.id_cert.validate_ee_at(issuer, now)?;
+        self.verify_compliance()?;
         self.verify_signature()?;
+        self.id_cert.validate_ee_at(issuer, when)?;
+        self.crl.validate(issuer, when)?;
+        self.crl.validate_not_revoked(&self.id_cert)?;
+        Ok(())
+    }
+
+    /// Validates that the signed object complies with the specification.
+    ///
+    /// This is item 1 of [RFC 6488]`s section 3.
+    fn verify_compliance(
+        &self,
+    ) -> Result<(), ValidationError> {
+        // Sub-items a, b, d, e, f, g, h, i, j, k, l have been validated while
+        // parsing. This leaves these:
+        //
+        // c. cert is an EE cert with the SubjectKeyIdentifier matching
+        //    the sid field of the SignerInfo.
+        if self.sid != self.id_cert.subject_key_identifier() {
+            return Err(ValidationError)
+        }
         Ok(())
     }
 
@@ -257,14 +287,39 @@ struct SignedMessageCrl {
     tbs: SignedMessageTbsCrl,
 }
 
+/// # Validation
+/// 
+impl SignedMessageCrl {
+    /// Validates the certificate revocation list.
+    ///
+    /// The list’s signature is validated against the provided public key.
+    pub fn validate(
+        &self,
+        issuer: &IdCert,
+        when: Time
+    ) -> Result<(), ValidationError> {
+        if self.tbs.signature != self.signed_data.signature().algorithm() {
+            return Err(ValidationError)
+        }
+        self.signed_data.verify_signature(issuer.subject_public_key_info())?;
+        self.tbs.validate(issuer, when)
+    }
+
+    /// Returns whether the given serial number is on this revocation list.
+    fn validate_not_revoked(
+        &self, id_cert: &IdCert
+    ) -> Result<(), ValidationError> {
+        if self.tbs.revoked_certs.contains(id_cert.serial_number()) {
+            Err(ValidationError)
+        } else {
+            Ok(())
+        }
+    }
+}
+
 /// # Decode
 /// 
 impl SignedMessageCrl {
-    /// Parses a source as a certificate revocation list.
-    fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
-        Mode::Der.decode(source, Self::take_from)
-    }
-
     /// Takes an encoded CRL from the beginning of a constructed value.
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
@@ -293,25 +348,52 @@ struct SignedMessageTbsCrl {
     
     /// The name of the issuer.
     ///
-    /// This isn’t really used, but we have to include it. It would
-    /// relevant if we need to support multiple embedded certificates
-    /// and CRLs so we can match them up.
-    issuer: Name,
+    /// This should match the subject of the issuing certificate.
+    _issuer: Name,
 
-    /// The time this version of the CRL was created.
+    /// The time this version of the CRL was created. Must be before now.
     this_update: Time,
 
-    /// The time the next version of the CRL is likely to be created.
+    /// The time the next version of the CRL is likely to be created. Must
+    /// be after now - we do not accept stale CRLs.
     next_update: Time,
 
     /// The list of revoked certificates.
     revoked_certs: RevokedCertificates,
 
-    /// Authority Key Identifier, may be included.. who knows?
+    /// Authority Key Identifier, may be included.. if it is included
+    /// then we should validate that it matches the issuing certificate.
     authority_key_id: Option<KeyIdentifier>,
 
-    /// CRL Number, may be included.. who knows?
-    crl_number: Option<Serial>,
+    /// CRL Number, may be included but it's irrelevant in this context
+    _crl_number: Option<Serial>,
+}
+
+/// # Validation
+/// 
+impl SignedMessageTbsCrl {
+    /// Validates the certificate revocation list content
+    /// 
+    /// Note that the signature is verified earlier on the outer wrapping
+    /// of this content.
+    fn validate(
+        &self,
+        issuer: &IdCert,
+        when: Time,
+    ) -> Result<(), ValidationError> {
+        if self.this_update > when || self.next_update < when {
+            Err(ValidationError)
+        } else {
+            match self.authority_key_id {
+                None => Ok(()),
+                Some(aki) => if issuer.subject_key_id() == aki {
+                    Ok(())
+                } else {
+                    Err(ValidationError)
+                }
+            }
+        }
+    }
 }
 
 /// # Decoding
@@ -363,12 +445,12 @@ impl SignedMessageTbsCrl {
             
             Ok(Self {
                 signature,
-                issuer,
+                _issuer: issuer,
                 this_update,
                 next_update,
                 revoked_certs,
                 authority_key_id,
-                crl_number
+                _crl_number: crl_number
             })
         })
     }

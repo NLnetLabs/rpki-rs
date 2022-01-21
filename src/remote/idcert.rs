@@ -417,17 +417,26 @@ impl TbsIdCert {
         &self.subject_public_key_info
     }
 
+    /// Returns the public key's key identifier
+    pub fn subject_key_identifier(&self) -> KeyIdentifier {
+        self.subject_key_id
+    }
+
     /// Returns a reference to the certificate’s serial number.
     pub fn serial_number(&self) -> Serial {
         self.serial_number
     }
 
-    pub fn subject_key_id(&self) -> &KeyIdentifier {
-        &self.subject_key_id
+    pub fn subject_key_id(&self) -> KeyIdentifier {
+        self.subject_key_id
     }
 
-    pub fn authority_key_id(&self) -> Option<&KeyIdentifier> {
-        self.authority_key_id.as_ref()
+    pub fn authority_key_id(&self) -> Option<KeyIdentifier> {
+        self.authority_key_id
+    }
+
+    pub fn subject(&self) -> &Name {
+        &self.subject
     }
 }
 
