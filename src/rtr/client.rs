@@ -12,7 +12,7 @@ use std::{error, fmt, io};
 use std::future::Future;
 use std::marker::Unpin;
 use tokio::time::{timeout, timeout_at, Duration, Instant};
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use super::payload::{Action, Payload, Timing};
 use super::pdu;
 use super::state::State;
@@ -273,6 +273,7 @@ where
         pdu::SerialQuery::new(
             self.version(), state,
         ).write(&mut self.sock).await?;
+        self.sock.flush().await?;
         let start = match self.try_io(FirstReply::read).await? {
             FirstReply::Response(start) => start,
             FirstReply::Reset(_) => {
@@ -324,6 +325,7 @@ where
         pdu::ResetQuery::new(
             self.version()
         ).write(&mut self.sock).await?;
+        self.sock.flush().await?;
         let start = self.try_io(|sock| {
             pdu::CacheResponse::read(sock)
         }).await?;
