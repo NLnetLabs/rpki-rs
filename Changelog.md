@@ -22,6 +22,9 @@ Bug Fixes
 
 * Added a check to manifest validation that _thisUpdate_ is before
   _nextUpdate_ as mandated by [RFC 6486]. ([#191])
+* `rtr::payload::RouteOrigin` now compares considering a missing max
+  length equal to a max length set to the prefix length. This is necessary
+  to filter out duplicates in RTR where max len is always given. ([#195])
 
 Other Changes
 
@@ -31,6 +34,7 @@ Other Changes
 [#191]: https://github.com/NLnetLabs/rpki-rs/pull/191
 [#193]: https://github.com/NLnetLabs/rpki-rs/pull/193
 [#194]: https://github.com/NLnetLabs/rpki-rs/pull/194
+[#195]: https://github.com/NLnetLabs/rpki-rs/pull/195
 [RFC 6486]: https://tools.ietf.org/html/rfc6486
 
 
