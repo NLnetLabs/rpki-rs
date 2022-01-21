@@ -7,6 +7,8 @@
 //! The types are currently not very rich. They will receive more methods as
 //! they become necessary. So don’t hesitate to ask for them!
 
+use std::hash;
+use std::cmp::Ordering;
 use std::time::Duration;
 use routecore::addr::MaxLenPrefix;
 use routecore::asn::Asn;
@@ -23,7 +25,7 @@ use super::pdu::RouterKeyInfo;
 ///
 /// The type includes authorizations for both IPv4 and IPv6 prefixes which
 /// are separate payload types in RTR.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug)]
 pub struct RouteOrigin {
     /// The address prefix to authorize.
     pub prefix: MaxLenPrefix,
@@ -36,6 +38,54 @@ impl RouteOrigin {
     /// Creates a new value from a prefix and an ASN.
     pub fn new(prefix: MaxLenPrefix, asn: Asn) -> Self {
         RouteOrigin { prefix, asn }
+    }
+}
+
+
+//--- PartialEq and Eq
+impl PartialEq for RouteOrigin {
+    fn eq(&self, other: &Self) -> bool {
+        self.prefix.prefix() == other.prefix.prefix()
+        && self.prefix.resolved_max_len() == other.prefix.resolved_max_len()
+        && self.asn == other.asn
+    }
+}
+
+impl Eq for RouteOrigin { }
+
+
+//--- PartialOrd and Ord
+
+impl PartialOrd for RouteOrigin {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for RouteOrigin {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.prefix.prefix().cmp(&other.prefix.prefix()) {
+            Ordering::Equal => { }
+            other => return other
+        }
+        match self.prefix.resolved_max_len().cmp(
+            &other.prefix.resolved_max_len()
+        ) {
+            Ordering::Equal => { }
+            other => return other
+        }
+        self.asn.cmp(&other.asn)
+    }
+}
+
+
+//--- Hash
+
+impl hash::Hash for RouteOrigin {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.prefix.prefix().hash(state);
+        self.prefix.resolved_max_len().hash(state);
+        self.asn.hash(state);
     }
 }
 
