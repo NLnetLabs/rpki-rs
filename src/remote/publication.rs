@@ -272,7 +272,7 @@ mod tests {
     #[test]
     fn parse_and_encode_list_query() {
         let xml = include_bytes!("../../test-data/remote/rfc8181/list.xml");
-        let msg = Message::decode(xml.as_slice()).unwrap();
+        let msg = Message::decode(xml.as_ref()).unwrap();
 
         let re_encoded = msg.to_xml_string();
         let re_decoded = Message::decode(re_encoded.as_bytes()).unwrap();
