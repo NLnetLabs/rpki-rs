@@ -16,7 +16,6 @@ use crate::repository::cert::TbsCert;
 use crate::repository::{
     crypto::{
         KeyIdentifier, PublicKey, SignatureAlgorithm, Signer, SigningError,
-        PublicKeyFormat
     },
     oid,
     x509::{
@@ -62,16 +61,14 @@ pub struct IdCert {
 impl IdCert {
     /// Make a new TA ID certificate
     pub fn new_ta<S: Signer>(
-        valid_years: i32, signer: &S
+        validity: Validity,
+        issuing_key_id: &S::KeyId,
+        signer: &S
     ) -> Result<Self, SigningError<S::Error>> {
-        let issuing_key_id = signer.create_key(PublicKeyFormat::Rsa)?;
-        let pub_key = signer.get_key_info(&issuing_key_id)?;
+        let pub_key = signer.get_key_info(issuing_key_id)?;
 
         let serial_number = Serial::from(1_u64);
-        let validity = Validity::new(
-            Time::five_minutes_ago(),
-            Time::years_from_now(valid_years)
-        );
+        
         let issuing_key = &pub_key;
         let subject_key = &pub_key;
         
@@ -80,14 +77,14 @@ impl IdCert {
             validity,
             issuing_key,
             subject_key,
-        ).into_cert(signer, &issuing_key_id)
+        ).into_cert(signer, issuing_key_id)
     }
 
     /// Make a new EE certificate under an issuing TA certificate
     /// used for signing CMS. Expects that the public key was used
     /// for a one-off signing of a CMS message.
     pub fn new_ee<S: Signer>(
-        subject_key: &PublicKey,
+        ee_key: &PublicKey,
         validity: Validity,
         issuing_key_id: &S::KeyId,
         signer: &S
@@ -100,7 +97,7 @@ impl IdCert {
             serial_number,
             validity,
             &issuing_key,
-            subject_key,
+            ee_key,
         ).into_cert(signer, issuing_key_id)
     }
 }
@@ -678,8 +675,6 @@ impl TbsIdCert {
 #[cfg(test)]
 pub mod tests {
 
-    use crate::repository::crypto::softsigner::OpenSslSigner;
-
     use super::*;
 
     #[test]
@@ -690,10 +685,24 @@ pub mod tests {
         idcert.validate_ta_at(idcert_moment).unwrap();
     }
 
+}
+
+#[cfg(all(test, feature="softkeys"))]
+mod signer_test {
+    use crate::repository::crypto::PublicKeyFormat;
+    use crate::repository::crypto::softsigner::OpenSslSigner;
+
+    use super::*;
+
     #[test]
     fn build_id_ta_cert() {
         let signer = OpenSslSigner::new();
-        let id_cert = IdCert::new_ta(15, &signer).unwrap();
-        id_cert.validate_ta().unwrap();
+        let ta_key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
+        let ta_cert = IdCert::new_ta(
+            Validity::from_secs(60),
+            &ta_key,
+            &signer
+        ).unwrap();
+        ta_cert.validate_ta().unwrap();
     }
 }

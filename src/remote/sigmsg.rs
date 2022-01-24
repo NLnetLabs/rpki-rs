@@ -1,20 +1,22 @@
 //! Signed Message CMS wrappers used in the RPKI publication (RFC 8181) and
 //! provisioning (RFC 6492) protocols.
 
-use bcder::decode;
+use bcder::encode::PrimitiveContent;
+use bcder::{decode, encode, Captured};
 use bcder::{Mode, Oid, OctetString, Tag, xerr};
 use bytes::Bytes;
 use crate::repository::crl::RevokedCertificates;
 use crate::repository::crypto::{
-    DigestAlgorithm, KeyIdentifier, Signature, SignatureAlgorithm, Signer, SigningError
+    DigestAlgorithm, KeyIdentifier, Signature, SignatureAlgorithm, Signer,
+    SigningError
 };
-use crate::repository::oid;
+use crate::repository::oid::{self, PROTOCOL_CONTENT_TYPE};
 use crate::repository::sigobj::{
     MessageDigest, SignedAttrs
 };
 use crate::repository::x509::{
     Name, Serial, SignedData, Time, ValidationError,
-    update_once
+    update_once, Validity, encode_extension
 };
 use super::idcert::IdCert;
 
@@ -110,7 +112,7 @@ impl SignedMessage {
     ) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             cons.skip_u8_if(3)?; // version -- must be 3
-
+            
             let digest_algorithm = DigestAlgorithm::take_set_from(cons)?;
 
             let (content_type, content) = {
@@ -128,7 +130,6 @@ impl SignedMessage {
             if content_type != oid::PROTOCOL_CONTENT_TYPE {
                 return xerr!(Err(decode::Malformed.into()));
             }
-
             let id_cert = Self::take_id_cert(cons)?;
             let crl = Self::take_crl(cons)?;
 
@@ -273,37 +274,112 @@ impl SignedMessage {
 impl SignedMessage {
     /// Create a new signed message under the given TA IdCert.
     pub fn create<S: Signer>(
-        _content: Bytes,
-        _issuing: &IdCert,
-        _signer: &S,
+        data: Bytes,
+        validity: Validity,
+        issuing_key_id: &S::KeyId,
+        signer: &S,
     ) -> Result<Self, SigningError<S::Error>> {
-        // // Steps:
-        // // - create content to sign
-        // // - sign content with one off key
-        // // - create and sign EE cert with one off key as subject
-        // // - create and sign new CRL
-        // // - include EE cert
-        // //
+        // Steps:
+        // - create content to sign
+        // - sign content with one off key
+        // - create and sign EE cert with one off key as subject
+        // - create and sign new CRL
+        // - include EE cert
 
-        // let digest_algorithm = DigestAlgorithm::default();
-        // let content_type = PROTOCOL_CONTENT_TYPE;
-        // let content = OctetString::new(content);
+        let digest_algorithm = DigestAlgorithm::default();
+        let content_type = Oid(PROTOCOL_CONTENT_TYPE.0.into());
+        
+        // Produce signed attributes
+        let message_digest = digest_algorithm.digest(&data).into();
+        let signing_time = Some(Time::now());
+        let binary_signing_time = None;
+        
+        let signed_attrs = SignedAttrs::new(
+            &content_type,
+            &message_digest,
+            signing_time,
+            binary_signing_time
+        );
+        
+        let (signature, ee_key) = signer.sign_one_off(
+            SignatureAlgorithm::default(), &signed_attrs.encode_verify()
+        )?;
+        let sid = ee_key.key_identifier();
+        
+        let crl = SignedMessageCrl::create(
+            &validity,
+            issuing_key_id,
+            signer
+        )?;
 
-        // Ok(SignedMessage {
-        //     digest_algorithm,
-        //     content_type,
-        //     content,
-        //     ee_cert: todo!(),
-        //     crl: todo!(),
-        //     sid: todo!(),
-        //     signed_attrs: todo!(),
-        //     signature: todo!(),
-        //     message_digest: todo!(),
-        //     _signing_time: todo!(),
-        //     _binary_signing_time: todo!(),
-        // })
-        todo!()
+        let ee_cert = IdCert::new_ee(
+            &ee_key,
+            validity,
+            issuing_key_id,
+            signer
+        )?;
+        
+        let content = OctetString::new(data);
+
+        Ok(SignedMessage {
+            digest_algorithm,
+            content_type,
+            content,
+            ee_cert,
+            crl,
+            sid,
+            signed_attrs,
+            signature,
+            message_digest,
+            _signing_time: signing_time,
+            _binary_signing_time: binary_signing_time,
+        })
     }
+
+    /// Returns a value encoder for a reference to a signed message.
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
+        encode::sequence((
+            oid::SIGNED_DATA.encode(), // outer contentType
+            encode::sequence_as(Tag::CTX_0, 
+                encode::sequence((
+                    3u8.encode(), // version
+                    self.digest_algorithm.encode_set(),
+                    encode::sequence(( // encapContentInfo
+                        self.content_type.encode_ref(),
+                        encode::sequence_as(Tag::CTX_0,
+                            self.content.encode_ref()
+                        ),
+                    )),
+                    encode::sequence_as(Tag::CTX_0, // certificates
+                        self.ee_cert.encode_ref(),
+                    ),
+                    encode::sequence_as(Tag::CTX_1, // CRL
+                        self.crl.encode_ref(),
+                    ),
+                    encode::set( // signerInfo
+                        encode::sequence(( // SignerInfo
+                            3u8.encode(), // version
+                            self.sid.encode_ref_as(Tag::CTX_0),
+                            self.digest_algorithm.encode(), // digestAlgorithm
+                            self.signed_attrs.encode_ref(), // signedAttrs
+                            self.signature.algorithm().cms_encode(),
+                                                        // signatureAlgorithm
+                            OctetString::encode_slice( // signature
+                                self.signature.value().as_ref()
+                            ),
+                            // unsignedAttrs omitted
+                        ))
+                    )
+                ))
+            )
+        ))
+    }
+
+    /// Returns a captured encoding of the certificate.
+    pub fn to_captured(&self) -> Captured {
+        Captured::from_values(Mode::Der, self.encode_ref())
+    }
+
 }
 
 //------------ SignedMessageCrl ----------------------------------------------
@@ -375,6 +451,73 @@ impl SignedMessageCrl {
     }
 }
 
+/// # Encode
+/// 
+impl SignedMessageCrl {
+    /// Creates a new, empty, CRL to be included in a new SignedMessage.
+    /// Note that this CRL is empty because in our context we will only
+    /// ever use short-lived single-use EE certificate which never need
+    /// to be revoked.
+    /// 
+    /// The CRL will use a this_update and next_update time which is aligned
+    /// with the EE certificate validity time for the signed message CMS
+    /// wrapper.
+    fn create<S: Signer>(
+        validity: &Validity,
+        issuing_key_id: &S::KeyId,
+        signer: &S,
+    ) -> Result<Self, SigningError<S::Error>> {
+        let issuing_pub_key = signer.get_key_info(issuing_key_id)?;
+        
+        let signature = SignatureAlgorithm::default();
+        let issuer = Name::from_pub_key(&issuing_pub_key);
+        
+        let this_update = validity.not_before();
+        let next_update = validity.not_after();
+        
+        let revoked_certs = RevokedCertificates::create_empty();
+        
+        let authority_key_id = Some(issuing_pub_key.key_identifier());
+        
+        // We are required to include a CRL number, even if the client
+        // will only ever have one CRL to choose from, and it will be
+        // irrelevant because it revokes nothing. We will most certainly
+        // not include a CRL that revokes the EE certificate for the
+        // CMS we are trying to make.
+        // But.. we have to be good citizens. Because the number MUST always
+        // increase and some zealous client might check, let's just use
+        // time in milliseconds. We don't sign that quickly after all..
+        let crl_number = Some(Serial::from(
+            Time::now().timestamp_millis() as u64
+        ));
+
+        let tbs = SignedMessageTbsCrl {
+            signature,
+            issuer,
+            this_update,
+            next_update,
+            revoked_certs,
+            authority_key_id,
+            crl_number,
+        };
+
+        let data = Captured::from_values(Mode::Der, tbs.encode_ref());
+        let signature = signer.sign(issuing_key_id, tbs.signature, &data)?;
+        let signed_data = SignedData::new(data, signature);
+
+        Ok(SignedMessageCrl {
+            signed_data,
+            tbs,
+        })
+    }
+
+    /// Returns a value encoder for a reference to a signed message CRL.
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
+        self.signed_data.encode_ref()
+    }
+}
+
+
 /// The payload of a SignedMessageCrl
 #[derive(Clone, Debug)]
 struct SignedMessageTbsCrl {
@@ -386,7 +529,7 @@ struct SignedMessageTbsCrl {
     /// The name of the issuer.
     ///
     /// This should match the subject of the issuing certificate.
-    _issuer: Name,
+    issuer: Name,
 
     /// The time this version of the CRL was created. Must be before now.
     this_update: Time,
@@ -403,7 +546,7 @@ struct SignedMessageTbsCrl {
     authority_key_id: Option<KeyIdentifier>,
 
     /// CRL Number, may be included but it's irrelevant in this context
-    _crl_number: Option<Serial>,
+    crl_number: Option<Serial>,
 }
 
 /// # Validation
@@ -482,12 +625,12 @@ impl SignedMessageTbsCrl {
             
             Ok(Self {
                 signature,
-                _issuer: issuer,
+                issuer,
                 this_update,
                 next_update,
                 revoked_certs,
                 authority_key_id,
-                _crl_number: crl_number
+                crl_number
             })
         })
     }
@@ -515,6 +658,39 @@ impl SignedMessageTbsCrl {
     }
 }
 
+/// # Encoding
+/// 
+impl SignedMessageTbsCrl {
+    /// Returns a value encoder for a reference to this value.
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
+        encode::sequence((
+            1.encode(), // version
+            self.signature.x509_encode(),
+            self.issuer.encode_ref(),
+            self.this_update.encode_varied(),
+            self.next_update.encode_varied(),
+            self.revoked_certs.encode_ref(),
+            encode::sequence_as(Tag::CTX_0, 
+                encode::sequence((
+                    self.authority_key_id.as_ref().map(|authority_key_id| {
+                        encode_extension(
+                            &oid::CE_AUTHORITY_KEY_IDENTIFIER, false,
+                            encode::sequence(
+                                authority_key_id.encode_ref_as(Tag::CTX_0)
+                            )
+                        )
+                    }),
+                    self.crl_number.map(|crl_number| {
+                        encode_extension(
+                            &oid::CE_CRL_NUMBER, false,
+                            crl_number.encode()
+                        )
+                    }),
+                ))
+            )
+        ))
+    }
+}
 
 //------------ Tests ---------------------------------------------------------
 
@@ -538,18 +714,44 @@ mod tests {
 
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
+    use super::*;
+
     use crate::{
         remote::idcert::IdCert,
-        repository::crypto::softsigner::OpenSslSigner
+        repository::crypto::{softsigner::OpenSslSigner, PublicKeyFormat}
     };
 
     
     #[test]
     fn encode_and_sign_signed_message() {
         let signer = OpenSslSigner::new();
-        let _ta_cert = IdCert::new_ta(1, &signer).unwrap();
 
+        let ta_key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
+        let ta_cert = IdCert::new_ta(
+            Validity::from_secs(60),
+            &ta_key,
+            &signer
+        ).unwrap();
 
+        let content = Bytes::from_static(b"euj");
+        let validity = Validity::from_secs(60);
+
+        // Create and sign message
+        let signed_message = SignedMessage::create(
+            content,
+            validity,
+            &ta_key,
+            &signer
+        ).unwrap();
+
+        // Encode to bytes
+        let bytes = signed_message.to_captured().into_bytes();
+
+        // Parse and decode again
+        let decoded = SignedMessage::decode(bytes, false).unwrap();
+
+        // Validate it
+        decoded.validate(&ta_cert).unwrap();
     }
 
 }
