@@ -64,8 +64,8 @@ impl IdCert {
     pub fn new_ta<S: Signer>(
         valid_years: i32, signer: &S
     ) -> Result<Self, SigningError<S::Error>> {
-        let key_id = signer.create_key(PublicKeyFormat::Rsa)?;
-        let pub_key = signer.get_key_info(&key_id)?;
+        let issuing_key_id = signer.create_key(PublicKeyFormat::Rsa)?;
+        let pub_key = signer.get_key_info(&issuing_key_id)?;
 
         let serial_number = Serial::from(1_u64);
         let validity = Validity::new(
@@ -80,7 +80,28 @@ impl IdCert {
             validity,
             issuing_key,
             subject_key,
-        ).into_cert(signer, &key_id)
+        ).into_cert(signer, &issuing_key_id)
+    }
+
+    /// Make a new EE certificate under an issuing TA certificate
+    /// used for signing CMS. Expects that the public key was used
+    /// for a one-off signing of a CMS message.
+    pub fn new_ee<S: Signer>(
+        subject_key: &PublicKey,
+        validity: Validity,
+        issuing_key_id: &S::KeyId,
+        signer: &S
+    ) -> Result<Self, SigningError<S::Error>> {
+
+        let serial_number = Serial::random(signer)?;
+        let issuing_key = signer.get_key_info(issuing_key_id)?;
+
+        TbsIdCert::new(
+            serial_number,
+            validity,
+            &issuing_key,
+            subject_key,
+        ).into_cert(signer, issuing_key_id)
     }
 }
 
@@ -403,8 +424,8 @@ pub struct TbsIdCert {
 ///
 impl TbsIdCert {
     /// Returns a reference to the certificate’s public key.
-    pub fn public_key(&self) -> &[u8] {
-        self.subject_public_key_info.bits()
+    pub fn public_key(&self) -> &PublicKey {
+        &self.subject_public_key_info
     }
 
     /// Returns the hex encoded SKI

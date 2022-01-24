@@ -6,7 +6,7 @@ use bcder::{Mode, Oid, OctetString, Tag, xerr};
 use bytes::Bytes;
 use crate::repository::crl::RevokedCertificates;
 use crate::repository::crypto::{
-    DigestAlgorithm, KeyIdentifier, Signature, SignatureAlgorithm
+    DigestAlgorithm, KeyIdentifier, Signature, SignatureAlgorithm, Signer, SigningError
 };
 use crate::repository::oid;
 use crate::repository::sigobj::{
@@ -47,7 +47,7 @@ pub struct  SignedMessage {
     //
     // So in our case we insist on a single embedded EE certificate which
     // is expected to be signed directly under the known TA certificate.
-    id_cert: IdCert,
+    ee_cert: IdCert,
 
     // Similarly there could be one CRL for each embedded certificate, but
     // since we just support a single EE certificate here we also expect a
@@ -164,7 +164,7 @@ impl SignedMessage {
                 digest_algorithm,
                 content_type,
                 content,
-                id_cert,
+                ee_cert: id_cert,
                 crl,
 
                 sid,
@@ -225,9 +225,9 @@ impl SignedMessage {
     ) -> Result<(), ValidationError> {
         self.verify_compliance()?;
         self.verify_signature()?;
-        self.id_cert.validate_ee_at(issuer, when)?;
+        self.ee_cert.validate_ee_at(issuer, when)?;
         self.crl.validate(issuer, when)?;
-        self.crl.validate_not_revoked(&self.id_cert)?;
+        self.crl.validate_not_revoked(&self.ee_cert)?;
         Ok(())
     }
 
@@ -242,7 +242,7 @@ impl SignedMessage {
         //
         // c. cert is an EE cert with the SubjectKeyIdentifier matching
         //    the sid field of the SignerInfo.
-        if self.sid != self.id_cert.subject_key_identifier() {
+        if self.sid != self.ee_cert.subject_key_identifier() {
             return Err(ValidationError)
         }
         Ok(())
@@ -261,13 +261,50 @@ impl SignedMessage {
             return Err(ValidationError);
         }
         let msg = self.signed_attrs.encode_verify();
-        self.id_cert
+        self.ee_cert
             .subject_public_key_info()
             .verify(&msg, &self.signature)
             .map_err(Into::into)
     }
 }
 
+/// # Creation and Encoding
+/// 
+impl SignedMessage {
+    /// Create a new signed message under the given TA IdCert.
+    pub fn create<S: Signer>(
+        _content: Bytes,
+        _issuing: &IdCert,
+        _signer: &S,
+    ) -> Result<Self, SigningError<S::Error>> {
+        // // Steps:
+        // // - create content to sign
+        // // - sign content with one off key
+        // // - create and sign EE cert with one off key as subject
+        // // - create and sign new CRL
+        // // - include EE cert
+        // //
+
+        // let digest_algorithm = DigestAlgorithm::default();
+        // let content_type = PROTOCOL_CONTENT_TYPE;
+        // let content = OctetString::new(content);
+
+        // Ok(SignedMessage {
+        //     digest_algorithm,
+        //     content_type,
+        //     content,
+        //     ee_cert: todo!(),
+        //     crl: todo!(),
+        //     sid: todo!(),
+        //     signed_attrs: todo!(),
+        //     signature: todo!(),
+        //     message_digest: todo!(),
+        //     _signing_time: todo!(),
+        //     _binary_signing_time: todo!(),
+        // })
+        todo!()
+    }
+}
 
 //------------ SignedMessageCrl ----------------------------------------------
 
@@ -478,6 +515,7 @@ impl SignedMessageTbsCrl {
     }
 }
 
+
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
@@ -486,7 +524,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn should_parse_and_validate_signed_message() {
+    fn parse_and_validate_signed_message() {
         let der = include_bytes!("../../test-data/remote/sigmsg/pdu_200.der");
         let msg = SignedMessage::decode(Bytes::from_static(der), false).unwrap();
 
@@ -494,6 +532,24 @@ mod tests {
         let id_cert = IdCert::decode(Bytes::from_static(b)).unwrap();
 
         msg.validate_at(&id_cert, Time::utc(2012, 1, 1, 0, 0, 0)).unwrap();
+    }
+
+}
+
+#[cfg(all(test, feature="softkeys"))]
+mod signer_test {
+    use crate::{
+        remote::idcert::IdCert,
+        repository::crypto::softsigner::OpenSslSigner
+    };
+
+    
+    #[test]
+    fn encode_and_sign_signed_message() {
+        let signer = OpenSslSigner::new();
+        let _ta_cert = IdCert::new_ta(1, &signer).unwrap();
+
+
     }
 
 }
