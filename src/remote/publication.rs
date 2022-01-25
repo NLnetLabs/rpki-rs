@@ -29,6 +29,7 @@ const QUERY_PDU_PUBLISH: Name = Name::qualified(NS, b"publish");
 const QUERY_PDU_WITHDRAW: Name = Name::qualified(NS, b"withdraw");
 
 const REPLY_PDU_LIST: Name = Name::qualified(NS, b"list");
+const REPLY_PDU_SUCCESS: Name = Name::qualified(NS, b"success");
 
 
 //------------ Message -------------------------------------------------------
@@ -111,12 +112,17 @@ impl Message {
                         match msg {
                             ReplyMessage::ListReply(list) => {
                                 for el in &list.elements {
-                                    content.element(REPLY_PDU_LIST
-                                        .into_unqualified()
+                                    content.element(
+                                        REPLY_PDU_LIST.into_unqualified()
                                     )?
                                     .attr("uri", &el.uri)?
                                     .attr("hash", &el.hash)?;
                                 }
+                            }
+                            ReplyMessage::Success => {
+                                content.element(
+                                    REPLY_PDU_SUCCESS.into_unqualified()
+                                )?;
                             }
                         } 
                     }
@@ -497,6 +503,7 @@ impl Withdraw {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReplyMessage {
     ListReply(ListReply),
+    Success
 }
 
 impl ReplyMessage {
@@ -550,6 +557,9 @@ impl ReplyMessage {
                     REPLY_PDU_LIST => {
                         Ok(ReplyPduType::List)
                     },
+                    REPLY_PDU_SUCCESS => {
+                        Ok(ReplyPduType::Success)
+                    }
                     _ => {
                         Err(XmlError::Malformed)
                     }
@@ -603,19 +613,32 @@ impl ReplyMessage {
 
                     pdus.push(ReplyPdu::List(ListElement { uri, hash } ));
                 }
+                ReplyPduType::Success => {
+                    if pdus.is_empty() {
+                        pdus.push(ReplyPdu::Success)
+                    } else {
+                        error!("Found success pdu in multi-element reply");
+                        return Err(Error::XmlError(XmlError::Malformed))
+                    }
+                }
             }
 
             // close the processed PDU
             pdu_element.take_end(reader)?;
         }
 
-        let mut list = ListReply::default();
-        for pdu in pdus.into_iter() {
-            if let ReplyPdu::List(el) = pdu {
-                list.elements.push(el);
+        if pdus.get(0) == Some(&ReplyPdu::Success) {
+            Ok(ReplyMessage::Success)
+        } else {
+            let mut list = ListReply::default();
+            for pdu in pdus.into_iter() {
+                if let ReplyPdu::List(el) = pdu {
+                    list.elements.push(el);
+                }
             }
+            Ok(ReplyMessage::ListReply(list))
         }
-        Ok(ReplyMessage::ListReply(list))
+
     }
 }
 
@@ -625,6 +648,7 @@ impl ReplyMessage {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReplyPduType {
     List,
+    Success,
 }
 
 
@@ -633,6 +657,7 @@ pub enum ReplyPduType {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReplyPdu {
     List(ListElement),
+    Success,
 }
 
 //------------ ListReply -----------------------------------------------------
@@ -819,6 +844,17 @@ mod tests {
     #[test]
     fn parse_and_list_reply_empty_short() {
         let xml = include_bytes!("../../test-data/remote/rfc8181/list-reply-empty-short.xml");
+        let msg = Message::decode(xml.as_ref()).unwrap();
+
+        let re_encoded = msg.to_xml_string();
+        let re_decoded = Message::decode(re_encoded.as_bytes()).unwrap();
+
+        assert_eq!(msg, re_decoded);
+    }
+
+    #[test]
+    fn parse_and_success_reply() {
+        let xml = include_bytes!("../../test-data/remote/rfc8181/success-reply.xml");
         let msg = Message::decode(xml.as_ref()).unwrap();
 
         let re_encoded = msg.to_xml_string();
