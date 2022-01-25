@@ -422,6 +422,23 @@ impl<'a> Text<'a> {
             }
         }
     }
+
+    pub fn base64_decode(&self) -> Result<Vec<u8>, Error> {
+        // The text is supposed to be xsd:base64Binary which only allows
+        // the base64 characters plus whitespace.
+        let base64 = self.to_ascii()
+            .map(|text| {
+                text.as_bytes()
+                .iter()
+                .filter(|c| **c < 128_u8) // stuff like unicode whitespace
+                .filter(|c| !b" \n\t\r\x0b\x0c=".contains(c))
+                .copied()
+                .collect::<Vec<_>>() 
+            })?;
+        
+        base64::decode_config(base64, base64::STANDARD_NO_PAD)
+            .map_err(|_| Error::Malformed)
+    }
 }
 
 

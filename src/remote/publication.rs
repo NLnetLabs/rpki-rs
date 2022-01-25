@@ -2,8 +2,16 @@
 
 use std::fmt;
 use std::io;
+use std::str::FromStr;
+use std::sync::Arc;
 use log::error;
+use serde::Deserialize;
+use serde::Deserializer;
+use serde::Serialize;
+use serde::Serializer;
 
+use crate::rrdp;
+use crate::uri;
 use crate::xml;
 use crate::xml::decode::Content;
 use crate::xml::decode::{
@@ -17,7 +25,8 @@ const NS: &[u8] = b"http://www.hactrn.net/uris/rpki/publication-spec/";
 const MSG: Name = Name::qualified(NS, b"msg");
 
 const QUERY_PDU_LIST: Name = Name::qualified(NS, b"list");
-const QUERY_PDU_LIST_UNQ: Name = Name::unqualified(b"list");
+const QUERY_PDU_PUBLISH: Name = Name::qualified(NS, b"publish");
+const QUERY_PDU_WITHDRAW: Name = Name::qualified(NS, b"withdraw");
 
 
 //------------ Message -------------------------------------------------------
@@ -50,7 +59,47 @@ impl Message {
                     Message::QueryMessage(msg) => {
                         match msg {
                             QueryMessage::ListQuery => {
-                                content.element(QUERY_PDU_LIST_UNQ)?;
+                                content.element(
+                                    QUERY_PDU_LIST.into_unqualified()
+                                )?;
+                            },
+                            QueryMessage::Delta(delta) => {
+                                for el in &delta.0 {
+                                    match el {
+                                        PublishDeltaElement::Publish(p) => {
+                                            content.element(
+                                                QUERY_PDU_PUBLISH
+                                                        .into_unqualified()
+                                            )?
+                                            .attr("tag", p.tag_for_xml())?
+                                            .attr("uri", &p.uri)?
+                                            .content(|content| {
+                                                content.raw(&p.content)
+                                            })?;
+                                        },
+                                        PublishDeltaElement::Update(u) => {
+                                            content.element(
+                                                QUERY_PDU_PUBLISH
+                                                        .into_unqualified()
+                                            )?
+                                            .attr("tag", u.tag_for_xml())?
+                                            .attr("uri", &u.uri)?
+                                            .attr("hash", &u.hash)?
+                                            .content(|content| {
+                                                content.raw(&u.content)
+                                            })?;
+                                        },
+                                        PublishDeltaElement::Withdraw(w) => {
+                                            content.element(
+                                                QUERY_PDU_WITHDRAW
+                                                        .into_unqualified()
+                                            )?
+                                            .attr("tag", w.tag_for_xml())?
+                                            .attr("uri", &w.uri)?
+                                            .attr("hash", &w.hash)?;
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -136,6 +185,7 @@ enum MessageKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum QueryMessage {
     ListQuery,
+    Delta(PublishDelta),
 }
 
 
@@ -177,16 +227,56 @@ impl QueryMessage {
             // <withdraw /> elements we will need to parse information from
             // the element attributes *before* we can use the reader and
             // inspect the content of a <publish /> element.
+
+            let mut tag: Option<String> = None;
+            let mut uri: Option<uri::Rsync> = None;
+            let mut hash: Option<rrdp::Hash> = None;
+
             let inner = content.take_opt_element(reader, |element| {
                 match element.name() {
                     QUERY_PDU_LIST => {
                         pdu_type = Some(QueryPduType::List);
                         Ok(())
                     },
+                    QUERY_PDU_PUBLISH => {
+                        pdu_type = Some(QueryPduType::Publish);
+                        Ok(())
+                    },
+                    QUERY_PDU_WITHDRAW => {
+                        pdu_type = Some(QueryPduType::Withdraw);
+                        Ok(())
+                    }
                     _ => {
                         Err(XmlError::Malformed)
                     }
-                }
+                }?;
+
+                // parse element attributes - we treat them as optional
+                // at this point so it does not matter that not all attributes
+                // are applicable to all element types.
+                element.attributes(|name, value| match name {
+                    b"tag" => {
+                        tag = Some(value.ascii_into()?);
+                        Ok(())
+                    }
+                    b"hash" => {
+                        let hex: String = value.ascii_into()?;
+                        if let Ok(hash_value) =rrdp::Hash::from_str(&hex) {
+                            hash = Some(hash_value);
+                            Ok(())
+                        } else {
+                            Err(XmlError::Malformed)
+                        }
+                    }
+                    b"uri" => {
+                        uri = Some(value.ascii_into()?);
+                        Ok(())
+                    }
+                    _ => {
+                        Err(XmlError::Malformed)
+                    }
+                })
+
             })?;
 
             // Break out of loop if we got no element, get the
@@ -195,12 +285,11 @@ impl QueryMessage {
                 Some(inner) => inner,
                 None => break
             };
-
+            
             // We had an element so we can unwrap the type.
             let pdu_type = pdu_type.unwrap(); 
 
-            inner.take_end(reader)?;
-
+            
             match pdu_type {
                 QueryPduType::List => {
                     if !pdus.is_empty() {
@@ -210,14 +299,74 @@ impl QueryMessage {
                         pdus.push(QueryPdu::List);
                         Ok(())
                     }
+                },
+                QueryPduType::Publish => {
+                    let uri = uri.ok_or(XmlError::Malformed)?;
+                    
+                    // even though we store the base64 as [`Base64`] which
+                    // uses an inner `Arc<str>`, we decode it first to ensure
+                    // that it can be parsed.
+                    let bytes = inner.take_text(reader, |text| {
+                        text.base64_decode()
+                    })?;
+                    
+                    let content = Base64::from_content(&bytes);
+                    
+                    match hash {
+                        None => {
+                            pdus.push(QueryPdu::PublishDeltaElement(
+                                PublishDeltaElement::Publish(
+                                    Publish {
+                                        tag,
+                                        uri,
+                                        content,
+                                    }
+                                )
+                            ));
+                            Ok(())
+                        },
+                        Some(hash) => {
+                            pdus.push(QueryPdu::PublishDeltaElement(
+                                PublishDeltaElement::Update(
+                                    Update {
+                                        tag,
+                                        uri,
+                                        content,
+                                        hash,
+                                    }
+                                )
+                            ));
+                            Ok(())
+                        }
+                    }
+                }
+                QueryPduType::Withdraw => {
+                    let uri = uri.ok_or(XmlError::Malformed)?;
+                    let hash = hash.ok_or(XmlError::Malformed)?;
+                    
+                    pdus.push(QueryPdu::PublishDeltaElement(
+                        PublishDeltaElement::Withdraw(
+                            Withdraw { tag, uri, hash }
+                        )
+                    ));
+                    Ok(())
                 }
             }?;
+
+            inner.take_end(reader)?;
         }
 
         if pdus.get(0) == Some(&QueryPdu::List) {
             Ok(QueryMessage::ListQuery)
         } else {
-            todo!()
+            let mut delta = PublishDelta::default();
+            for pdu in pdus.into_iter() {
+                match pdu {
+                    QueryPdu::List => {} // should be unreachable,
+                    QueryPdu::PublishDeltaElement(el) => delta.0.push(el)
+                }
+            }
+            Ok(QueryMessage::Delta(delta))
         }
     }
 }
@@ -228,6 +377,8 @@ impl QueryMessage {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum QueryPduType {
     List,
+    Publish,
+    Withdraw,
 }
 
 //------------ QueryPdu ------------------------------------------------------
@@ -235,7 +386,121 @@ pub enum QueryPduType {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum QueryPdu {
     List,
+    PublishDeltaElement(PublishDeltaElement)
 }
+
+
+//------------ PublishDelta ------------------------------------------------
+
+/// This type represents a multi element query as described in
+/// https://tools.ietf.org/html/rfc8181#section-3.7
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PublishDelta(Vec<PublishDeltaElement>);
+
+//------------ PublishDeltaElement -------------------------------------------
+
+/// Represents the available options for publish elements that can occur in
+/// a delta.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum PublishDeltaElement {
+    Publish(Publish),
+    Update(Update),
+    Withdraw(Withdraw),
+}
+
+//------------ Publish -------------------------------------------------------
+
+/// Represents a publish element, that does not update any existing object.
+/// See: https://tools.ietf.org/html/rfc8181#section-3.1
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Publish {
+    tag: Option<String>,
+    uri: uri::Rsync,
+    content: Base64,
+}
+
+impl Publish {
+    fn tag_for_xml(&self) -> &str {
+        self.tag.as_deref().unwrap_or("")
+    }
+}
+
+
+//------------ Update --------------------------------------------------------
+
+/// Represents a publish element, that replaces an existing object.
+/// See: https://tools.ietf.org/html/rfc8181#section-3.2
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Update {
+    tag: Option<String>,
+    uri: uri::Rsync,
+    content: Base64,
+    hash: rrdp::Hash,
+}
+
+impl Update {
+    fn tag_for_xml(&self) -> &str {
+        self.tag.as_deref().unwrap_or("")
+    }
+}
+
+//------------ Withdraw ------------------------------------------------------
+
+/// Represents a withdraw element that removes an object.
+/// See: https://tools.ietf.org/html/rfc8181#section-3.3
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Withdraw {
+    tag: Option<String>,
+    uri: uri::Rsync,
+    hash: rrdp::Hash,
+}
+
+impl Withdraw {
+    fn tag_for_xml(&self) -> &str {
+        self.tag.as_deref().unwrap_or("")
+    }
+}
+
+
+//------------ Base64 --------------------------------------------------------
+
+/// This type contains a base64 encoded structure. The publication protocol
+/// deals with objects in their base64 encoded form.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Base64(Arc<str>);
+
+impl Base64 {
+    pub fn from_content(content: &[u8]) -> Self {
+        Base64(base64::encode(content).into())
+    }
+}
+
+impl fmt::Display for Base64 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Serialize for Base64 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.to_string().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Base64 {
+    fn deserialize<D>(deserializer: D) -> Result<Base64, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string = String::deserialize(deserializer)?;
+        Ok(Base64(string.into()))
+    }
+}
+
+
 
 
 //------------ PublicationMessageError ---------------------------------------
@@ -280,5 +545,47 @@ mod tests {
         assert_eq!(msg, re_decoded);
     }
 
+    #[test]
+    fn parse_and_encode_publish_multi_query() {
+        let xml = include_bytes!("../../test-data/remote/rfc8181/publish-multi.xml");
+        let msg = Message::decode(xml.as_ref()).unwrap();
 
+        let re_encoded = msg.to_xml_string();
+        let re_decoded = Message::decode(re_encoded.as_bytes()).unwrap();
+
+        assert_eq!(msg, re_decoded);
+    }
+
+    #[test]
+    fn parse_and_encode_publish_single_query() {
+        let xml = include_bytes!("../../test-data/remote/rfc8181/publish-single.xml");
+        let msg = Message::decode(xml.as_ref()).unwrap();
+
+        let re_encoded = msg.to_xml_string();
+        let re_decoded = Message::decode(re_encoded.as_bytes()).unwrap();
+
+        assert_eq!(msg, re_decoded);
+    }
+
+    #[test]
+    fn parse_and_encode_publish_empty_query() {
+        let xml = include_bytes!("../../test-data/remote/rfc8181/publish-empty.xml");
+        let msg = Message::decode(xml.as_ref()).unwrap();
+
+        let re_encoded = msg.to_xml_string();
+        let re_decoded = Message::decode(re_encoded.as_bytes()).unwrap();
+
+        assert_eq!(msg, re_decoded);
+    }
+
+    #[test]
+    fn parse_and_encode_publish_empty_short_query() {
+        let xml = include_bytes!("../../test-data/remote/rfc8181/publish-empty-short.xml");
+        let msg = Message::decode(xml.as_ref()).unwrap();
+
+        let re_encoded = msg.to_xml_string();
+        let re_decoded = Message::decode(re_encoded.as_bytes()).unwrap();
+
+        assert_eq!(msg, re_decoded);
+    }
 }

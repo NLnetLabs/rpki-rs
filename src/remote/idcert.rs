@@ -24,7 +24,6 @@ use crate::repository::{
     },
 };
 use crate::xml;
-use crate::xml::decode::Error as XmlError;
 
 use super::error::IdExchangeError;
 
@@ -292,22 +291,9 @@ impl IdCert {
         reader: &mut xml::decode::Reader<R>,
         when: Time
     ) -> Result<Self, IdExchangeError> {
-        let base64 = content.take_text(reader, |text| {
-            // The text is supposed to be xsd:base64Binary which only allows
-            // the base64 characters plus whitespace.
-            text.to_ascii()
-                .map_err(|_| XmlError::Malformed)
-                .map(|text| {
-                    text.as_bytes()
-                    .iter()
-                    .filter(|c| **c < 128_u8) // strip anything above 7bit ascii.. like unicode whitespace
-                    .filter(|c| !b" \n\t\r\x0b\x0c=".contains(c))
-                    .copied()
-                    .collect::<Vec<_>>() 
-                })
+        let bytes = content.take_text(reader, |text| {
+            text.base64_decode()
         })?;
-
-        let bytes = base64::decode_config(base64, base64::STANDARD_NO_PAD)?;
 
         let id_cert = IdCert::decode(bytes.as_slice())?;
         id_cert.validate_ta_at(when)?;
