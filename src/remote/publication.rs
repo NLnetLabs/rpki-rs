@@ -28,6 +28,8 @@ const QUERY_PDU_LIST: Name = Name::qualified(NS, b"list");
 const QUERY_PDU_PUBLISH: Name = Name::qualified(NS, b"publish");
 const QUERY_PDU_WITHDRAW: Name = Name::qualified(NS, b"withdraw");
 
+const REPLY_PDU_LIST: Name = Name::qualified(NS, b"list");
+
 
 //------------ Message -------------------------------------------------------
 
@@ -35,6 +37,7 @@ const QUERY_PDU_WITHDRAW: Name = Name::qualified(NS, b"withdraw");
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Message {
     QueryMessage(QueryMessage),
+    ReplyMessage(ReplyMessage),
 }
 
 /// # Encoding to XML
@@ -47,7 +50,8 @@ impl Message {
         let mut writer = xml::encode::Writer::new(writer);
 
         let type_value = match self {
-            Message::QueryMessage(_) => "query"
+            Message::QueryMessage(_) => "query",
+            Message::ReplyMessage(_) => "reply",
         };
 
         writer.element(MSG.into_unqualified())?
@@ -103,6 +107,19 @@ impl Message {
                             }
                         }
                     }
+                    Message::ReplyMessage(msg) => {
+                        match msg {
+                            ReplyMessage::ListReply(list) => {
+                                for el in &list.elements {
+                                    content.element(REPLY_PDU_LIST
+                                        .into_unqualified()
+                                    )?
+                                    .attr("uri", &el.uri)?
+                                    .attr("hash", &el.hash)?;
+                                }
+                            }
+                        } 
+                    }
                 }
                 Ok(())
             })?;
@@ -148,6 +165,10 @@ impl Message {
                             kind = Some(MessageKind::Query);
                             Ok(())
                         }
+                        "reply" => {
+                            kind = Some(MessageKind::Reply);
+                            Ok(())
+                        }
                         _ => Err(XmlError::Malformed)
                     }
                 }
@@ -160,6 +181,9 @@ impl Message {
             MessageKind::Query => Message::QueryMessage(
                 QueryMessage::decode(&mut outer, &mut reader)?
             ),
+            MessageKind::Reply => Message::ReplyMessage(
+                ReplyMessage::decode(&mut outer, &mut reader)?
+            )
         };
 
         // Check that there is no additional stuff
@@ -177,6 +201,7 @@ impl Message {
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum MessageKind {
     Query,
+    Reply
 }
 
 //------------ QueryMessage --------------------------------------------------
@@ -217,6 +242,8 @@ impl QueryMessage {
         content: &mut Content,
         reader: &mut xml::decode::Reader<R>,
     ) -> Result<Self, Error> {
+        
+        // First parse *all* PDUs, then we can decide what query type we had
         let mut pdus: Vec<QueryPdu> = vec![];
         loop {
             let mut pdu_type = None;
@@ -228,28 +255,27 @@ impl QueryMessage {
             // the element attributes *before* we can use the reader and
             // inspect the content of a <publish /> element.
 
+            // possible attributes
             let mut tag: Option<String> = None;
             let mut uri: Option<uri::Rsync> = None;
             let mut hash: Option<rrdp::Hash> = None;
 
-            let inner = content.take_opt_element(reader, |element| {
-                match element.name() {
+            let pdu_element = content.take_opt_element(reader, |element| {
+                // Determine the PDU type
+                pdu_type = Some(match element.name() {
                     QUERY_PDU_LIST => {
-                        pdu_type = Some(QueryPduType::List);
-                        Ok(())
+                        Ok(QueryPduType::List)
                     },
                     QUERY_PDU_PUBLISH => {
-                        pdu_type = Some(QueryPduType::Publish);
-                        Ok(())
+                        Ok(QueryPduType::Publish)
                     },
                     QUERY_PDU_WITHDRAW => {
-                        pdu_type = Some(QueryPduType::Withdraw);
-                        Ok(())
+                        Ok(QueryPduType::Withdraw)
                     }
                     _ => {
                         Err(XmlError::Malformed)
                     }
-                }?;
+                }?);
 
                 // parse element attributes - we treat them as optional
                 // at this point so it does not matter that not all attributes
@@ -281,7 +307,7 @@ impl QueryMessage {
 
             // Break out of loop if we got no element, get the
             // actual element if we can.
-            let mut inner = match inner {
+            let mut pdu_element = match pdu_element {
                 Some(inner) => inner,
                 None => break
             };
@@ -306,7 +332,7 @@ impl QueryMessage {
                     // even though we store the base64 as [`Base64`] which
                     // uses an inner `Arc<str>`, we decode it first to ensure
                     // that it can be parsed.
-                    let bytes = inner.take_text(reader, |text| {
+                    let bytes = pdu_element.take_text(reader, |text| {
                         text.base64_decode()
                     })?;
                     
@@ -343,7 +369,7 @@ impl QueryMessage {
                 QueryPduType::Withdraw => {
                     let uri = uri.ok_or(XmlError::Malformed)?;
                     let hash = hash.ok_or(XmlError::Malformed)?;
-                    
+
                     pdus.push(QueryPdu::PublishDeltaElement(
                         PublishDeltaElement::Withdraw(
                             Withdraw { tag, uri, hash }
@@ -353,7 +379,7 @@ impl QueryMessage {
                 }
             }?;
 
-            inner.take_end(reader)?;
+            pdu_element.take_end(reader)?;
         }
 
         if pdus.get(0) == Some(&QueryPdu::List) {
@@ -397,6 +423,7 @@ pub enum QueryPdu {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublishDelta(Vec<PublishDeltaElement>);
 
+
 //------------ PublishDeltaElement -------------------------------------------
 
 /// Represents the available options for publish elements that can occur in
@@ -407,6 +434,7 @@ pub enum PublishDeltaElement {
     Update(Update),
     Withdraw(Withdraw),
 }
+
 
 //------------ Publish -------------------------------------------------------
 
@@ -444,6 +472,7 @@ impl Update {
     }
 }
 
+
 //------------ Withdraw ------------------------------------------------------
 
 /// Represents a withdraw element that removes an object.
@@ -460,6 +489,173 @@ impl Withdraw {
         self.tag.as_deref().unwrap_or("")
     }
 }
+
+
+//------------ ReplyMessage --------------------------------------------------
+
+/// This type represents query type Publication Messages defined in RFC8181
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReplyMessage {
+    ListReply(ListReply),
+}
+
+impl ReplyMessage {
+    /// Decoded the content of an RFC 8181 reply type message.
+    //
+    // See https://datatracker.ietf.org/doc/html/rfc8181#section-2.1
+    //
+    // The content of a 'reply' type 'msg' can be zero or more PDUs
+    // of the following types:
+    //  - <list />
+    //  - <success />
+    //  - <report_error />
+    //
+    // If this is a 'success' type reply then there MUST be one only one PDU
+    // present - of type <success />.
+    //
+    // If this is a 'report_error' type reply then there MUST be one only one
+    // PDU present - of type <report_error />.
+    //
+    // If this is a 'list' type reply then there can be zero or more <list />
+    // PDUs for each currently published object.
+    //
+    // So, in short we need to do a bit of probing of elements to figure out
+    // which kind of reply we're actually dealing with.
+    fn decode<R: io::BufRead>(
+        content: &mut Content,
+        reader: &mut xml::decode::Reader<R>,
+    ) -> Result<Self, Error> {
+        
+        // First parse *all* PDUs, then we can decide what reply type we had
+        let mut pdus: Vec<ReplyPdu> = vec![];
+        loop {
+            let mut pdu_type = None;
+
+            // We need to do a two step analysis of elements. First we need
+            // to determine which type of element we are dealing with, and
+            // then we can evaluate the content. For <list /> and
+            // <error_report /> elements we will need to parse information
+            // from the element attributes. We need to do this *before* we
+            // can use the reader to inspect the content of an element.
+
+            // possible attributes
+            let mut uri: Option<uri::Rsync> = None;
+            let mut hash: Option<rrdp::Hash> = None;
+            let mut tag: Option<String> = None;
+            let mut error_code: Option<String> = None;
+
+            let pdu_element = content.take_opt_element(reader, |element| {
+                // Determine the PDU type
+                pdu_type = Some(match element.name() {
+                    REPLY_PDU_LIST => {
+                        Ok(ReplyPduType::List)
+                    },
+                    _ => {
+                        Err(XmlError::Malformed)
+                    }
+                }?);
+
+                // parse element attributes - we treat them as optional
+                // at this point so it does not matter that not all attributes
+                // are applicable to all element types.
+                element.attributes(|name, value| match name {
+                    b"hash" => {
+                        let hex: String = value.ascii_into()?;
+                        if let Ok(hash_value) =rrdp::Hash::from_str(&hex) {
+                            hash = Some(hash_value);
+                            Ok(())
+                        } else {
+                            Err(XmlError::Malformed)
+                        }
+                    }
+                    b"uri" => {
+                        uri = Some(value.ascii_into()?);
+                        Ok(())
+                    }
+                    b"tag" => {
+                        tag = Some(value.ascii_into()?);
+                        Ok(())
+                    }
+                    b"error_code" => {
+                        error_code = Some(value.ascii_into()?);
+                        Ok(())
+                    }
+                    _ => {
+                        Err(XmlError::Malformed)
+                    }
+                })
+            })?;
+
+            // Break out of loop if we got no element, get the
+            // actual element if we can.
+            let mut pdu_element = match pdu_element {
+                Some(inner) => inner,
+                None => break
+            };
+            
+            // We had an element so we can unwrap the type.
+            let pdu_type = pdu_type.unwrap(); 
+
+            match pdu_type {
+                ReplyPduType::List => {
+                    let uri = uri.ok_or(XmlError::Malformed)?;
+                    let hash = hash.ok_or(XmlError::Malformed)?;
+
+                    pdus.push(ReplyPdu::List(ListElement { uri, hash } ));
+                }
+            }
+
+            // close the processed PDU
+            pdu_element.take_end(reader)?;
+        }
+
+        let mut list = ListReply::default();
+        for pdu in pdus.into_iter() {
+            if let ReplyPdu::List(el) = pdu {
+                list.elements.push(el);
+            }
+        }
+        Ok(ReplyMessage::ListReply(list))
+    }
+}
+
+
+//------------ ReplyPduType --------------------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReplyPduType {
+    List,
+}
+
+
+//------------ ReplyPdu ------------------------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReplyPdu {
+    List(ListElement),
+}
+
+//------------ ListReply -----------------------------------------------------
+
+/// This type represents the list reply as described in
+/// https://tools.ietf.org/html/rfc8181#section-2.3
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ListReply {
+    elements: Vec<ListElement>,
+}
+
+
+//------------ ListElement ---------------------------------------------------
+
+/// This type represents a single object that is published at a publication
+/// server.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct ListElement {
+    uri: uri::Rsync,
+    hash: rrdp::Hash,
+}
+
+
 
 
 //------------ Base64 --------------------------------------------------------
@@ -499,8 +695,6 @@ impl<'de> Deserialize<'de> for Base64 {
         Ok(Base64(string.into()))
     }
 }
-
-
 
 
 //------------ PublicationMessageError ---------------------------------------
@@ -581,6 +775,50 @@ mod tests {
     #[test]
     fn parse_and_encode_publish_empty_short_query() {
         let xml = include_bytes!("../../test-data/remote/rfc8181/publish-empty-short.xml");
+        let msg = Message::decode(xml.as_ref()).unwrap();
+
+        let re_encoded = msg.to_xml_string();
+        let re_decoded = Message::decode(re_encoded.as_bytes()).unwrap();
+
+        assert_eq!(msg, re_decoded);
+    }
+
+    #[test]
+    fn parse_and_list_reply() {
+        let xml = include_bytes!("../../test-data/remote/rfc8181/list-reply.xml");
+        let msg = Message::decode(xml.as_ref()).unwrap();
+
+        let re_encoded = msg.to_xml_string();
+        let re_decoded = Message::decode(re_encoded.as_bytes()).unwrap();
+
+        assert_eq!(msg, re_decoded);
+    }
+
+    #[test]
+    fn parse_and_list_reply_single() {
+        let xml = include_bytes!("../../test-data/remote/rfc8181/list-reply-single.xml");
+        let msg = Message::decode(xml.as_ref()).unwrap();
+
+        let re_encoded = msg.to_xml_string();
+        let re_decoded = Message::decode(re_encoded.as_bytes()).unwrap();
+
+        assert_eq!(msg, re_decoded);
+    }
+
+    #[test]
+    fn parse_and_list_reply_empty() {
+        let xml = include_bytes!("../../test-data/remote/rfc8181/list-reply-empty.xml");
+        let msg = Message::decode(xml.as_ref()).unwrap();
+
+        let re_encoded = msg.to_xml_string();
+        let re_decoded = Message::decode(re_encoded.as_bytes()).unwrap();
+
+        assert_eq!(msg, re_decoded);
+    }
+
+    #[test]
+    fn parse_and_list_reply_empty_short() {
+        let xml = include_bytes!("../../test-data/remote/rfc8181/list-reply-empty-short.xml");
         let msg = Message::decode(xml.as_ref()).unwrap();
 
         let re_encoded = msg.to_xml_string();
