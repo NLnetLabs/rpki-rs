@@ -1,4 +1,5 @@
 
+use std::str::from_utf8;
 use std::{error, fmt, io, str};
 use std::borrow::Cow;
 use bytes::Bytes;
@@ -320,6 +321,24 @@ impl Content {
                 _ => return Err(Error::Malformed)
             }
         }
+    }
+
+    /// Just read the entire content until the specified end element and
+    /// return anything found as a new string.
+    pub fn read_to_end<R, K: AsRef<[u8]>>(
+        &self,
+        end: K,
+        reader: &mut Reader<R>
+    ) -> Result<String, Error>
+    where
+        R: io::BufRead,
+    {
+        reader.buf.clear();
+        reader.reader.read_to_end(end, &mut reader.buf)?;
+
+        let s = from_utf8(&reader.buf).map_err(|_| Error::Malformed)?;
+
+        Ok(s.to_string())
     }
 }
 

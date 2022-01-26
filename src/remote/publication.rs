@@ -30,6 +30,10 @@ const QUERY_PDU_WITHDRAW: Name = Name::qualified(NS, b"withdraw");
 
 const REPLY_PDU_LIST: Name = Name::qualified(NS, b"list");
 const REPLY_PDU_SUCCESS: Name = Name::qualified(NS, b"success");
+const REPLY_PDU_ERROR: Name = Name::qualified(NS, b"report_error");
+
+const REPLY_PDU_ERROR_TEXT: Name = Name::qualified(NS, b"error_text");
+const REPLY_PDU_ERROR_PDU: Name = Name::qualified(NS, b"failed_pdu");
 
 
 //------------ Message -------------------------------------------------------
@@ -123,6 +127,24 @@ impl Message {
                                 content.element(
                                     REPLY_PDU_SUCCESS.into_unqualified()
                                 )?;
+                            }
+                            ReplyMessage::ErrorReply(errors) => {
+                                for err in &errors.errors {
+                                    content.element(
+                                        REPLY_PDU_ERROR.into_unqualified()
+                                    )?
+                                    .attr("error_code", &err.error_code)?
+                                    .attr("tag", err.tag_for_xml())?
+                                    .content(|content| {
+                                        content.element(
+                                            REPLY_PDU_ERROR_TEXT.into_unqualified()
+                                        )?
+                                        .content(|error_text_conent|
+                                            error_text_conent.raw(err.error_text_or_default())
+                                        )?;
+                                        Ok(())
+                                    })?;
+                                }
                             }
                         } 
                     }
@@ -503,7 +525,8 @@ impl Withdraw {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReplyMessage {
     ListReply(ListReply),
-    Success
+    Success,
+    ErrorReply(ErrorReply),
 }
 
 impl ReplyMessage {
@@ -520,14 +543,18 @@ impl ReplyMessage {
     // If this is a 'success' type reply then there MUST be one only one PDU
     // present - of type <success />.
     //
-    // If this is a 'report_error' type reply then there MUST be one only one
-    // PDU present - of type <report_error />.
+    // If this is a 'report_error' type reply then there MUST be one or more
+    // PDU presents - of type <report_error />. There can be no other PDU
+    // types.
     //
     // If this is a 'list' type reply then there can be zero or more <list />
-    // PDUs for each currently published object.
+    // PDUs for each currently published object. There can be no other PDU
+    // types.
     //
     // So, in short we need to do a bit of probing of elements to figure out
-    // which kind of reply we're actually dealing with.
+    // which kind of reply we're actually dealing with. We need to parse ALL
+    // PDUs and then figure out if the message was correct at all, and which
+    // type it is.
     fn decode<R: io::BufRead>(
         content: &mut Content,
         reader: &mut xml::decode::Reader<R>,
@@ -549,7 +576,7 @@ impl ReplyMessage {
             let mut uri: Option<uri::Rsync> = None;
             let mut hash: Option<rrdp::Hash> = None;
             let mut tag: Option<String> = None;
-            let mut error_code: Option<String> = None;
+            let mut error_code: Option<ReportErrorCode> = None;
 
             let pdu_element = content.take_opt_element(reader, |element| {
                 // Determine the PDU type
@@ -559,6 +586,9 @@ impl ReplyMessage {
                     },
                     REPLY_PDU_SUCCESS => {
                         Ok(ReplyPduType::Success)
+                    }
+                    REPLY_PDU_ERROR => {
+                        Ok(ReplyPduType::Error)
                     }
                     _ => {
                         Err(XmlError::Malformed)
@@ -587,6 +617,7 @@ impl ReplyMessage {
                         Ok(())
                     }
                     b"error_code" => {
+                        // let error_code_str = value.ascii_into()?;
                         error_code = Some(value.ascii_into()?);
                         Ok(())
                     }
@@ -621,24 +652,107 @@ impl ReplyMessage {
                         return Err(Error::XmlError(XmlError::Malformed))
                     }
                 }
+                ReplyPduType::Error => {
+                    if pdus.iter().any(|existing| {
+                        existing.kind() != ReplyPduType::Error
+                    }) {
+                        error!("Found error report in non-error reply");
+                        return Err(Error::XmlError(XmlError::Malformed));
+                    } else {
+                        let mut error_text: Option<String> = None;
+                        
+                        // if only we could look ahead to see if/what elements
+                        // are present then this would be easier..
+                        loop {
+                            let mut error_text_found = false;
+                            let mut failed_pdu_found = false;
+                            
+                            let error_element = pdu_element
+                            .take_opt_element(reader, |error_element| {
+                                match error_element.name() {
+                                    REPLY_PDU_ERROR_TEXT => {
+                                        error_text_found = true;
+                                        Ok(())
+                                    }
+                                    REPLY_PDU_ERROR_PDU => {
+                                        failed_pdu_found = true;
+                                        Ok(())
+                                    }
+                                    _ => {
+                                        println!("Found: {:?}", error_element.name());
+                                        Err(XmlError::Malformed)
+                                    }
+                                }
+                            })?;
+                            
+                            // get the element, break if there was none
+                            let mut el = match error_element {
+                                Some(el) => el,
+                                None => break
+                            };
+                            
+                            if error_text_found {
+                                let text = el.take_text( reader, |text| {
+                                    text.to_ascii().map(|t| t.to_string())
+                                })?;
+                                
+                                error_text = Some(text);
+                                el.take_end(reader)?;
+                            }
+                            
+                            if failed_pdu_found {
+                                // We ignore failed PDUs - there is nothing
+                                // useful we can do with them and they are
+                                // hard to parse.
+                                pdu_element.read_to_end(
+                                    REPLY_PDU_ERROR_PDU.local(), reader
+                                )?;
+                            }
+                        }
+                        
+                        let error_code = error_code.ok_or(XmlError::Malformed)?;
+
+                        pdus.push(ReplyPdu::Error(ReportError {
+                            error_code,
+                            tag,
+                            error_text,
+                        }));
+
+                        
+                    }
+                }
             }
 
             // close the processed PDU
             pdu_element.take_end(reader)?;
         }
 
-        if pdus.get(0) == Some(&ReplyPdu::Success) {
-            Ok(ReplyMessage::Success)
-        } else {
-            let mut list = ListReply::default();
-            for pdu in pdus.into_iter() {
-                if let ReplyPdu::List(el) = pdu {
-                    list.elements.push(el);
-                }
-            }
-            Ok(ReplyMessage::ListReply(list))
-        }
+        let reply_kind = match pdus.get(0) {
+            Some(el) => el.kind(),
+            None => ReplyPduType::List
+        };
 
+        match reply_kind {
+            ReplyPduType::Success => Ok(ReplyMessage::Success),
+            ReplyPduType::List => {
+                let mut list = ListReply::default();
+                for pdu in pdus.into_iter() {
+                    if let ReplyPdu::List(el) = pdu {
+                        list.elements.push(el);
+                    }
+                }
+                Ok(ReplyMessage::ListReply(list))
+            }
+            ReplyPduType::Error => {
+                let mut errors  = ErrorReply::default();
+                for pdu in pdus.into_iter() {
+                    if let ReplyPdu::Error(err) = pdu {
+                        errors.errors.push(err);
+                    }
+                }
+                Ok(ReplyMessage::ErrorReply(errors))
+            }
+        }
     }
 }
 
@@ -649,6 +763,7 @@ impl ReplyMessage {
 pub enum ReplyPduType {
     List,
     Success,
+    Error,
 }
 
 
@@ -658,7 +773,19 @@ pub enum ReplyPduType {
 pub enum ReplyPdu {
     List(ListElement),
     Success,
+    Error(ReportError),
 }
+
+impl ReplyPdu {
+    fn kind(&self) -> ReplyPduType {
+        match self {
+            ReplyPdu::List(_) => ReplyPduType::List,
+            ReplyPdu::Success => ReplyPduType::Success,
+            ReplyPdu::Error(_) => ReplyPduType::Error
+        }
+    }
+}
+
 
 //------------ ListReply -----------------------------------------------------
 
@@ -681,6 +808,104 @@ pub struct ListElement {
 }
 
 
+//------------ ErrorReply ----------------------------------------------------
+
+/// This type represents the error report as described in
+/// https://tools.ietf.org/html/rfc8181#section-3.5 and 3.6
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ErrorReply {
+    errors: Vec<ReportError>,
+}
+
+
+//------------ ReportError ---------------------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReportError {
+    error_code: ReportErrorCode,
+    tag: Option<String>,
+    error_text: Option<String>,
+    // Officially there is an option to include a failed PDU. But, we ignore
+    // it for now. It is hard to parse and there isn't anything useful that
+    // we can do with it. Krill does not include failed_pdus in errors.
+    // failed_pdu: Option<QueryPdu>,
+}
+
+impl ReportError {
+    fn tag_for_xml(&self) -> &str {
+        self.tag.as_deref().unwrap_or("")
+    }
+
+    fn error_text_or_default(&self) -> &str {
+        self.error_text.as_deref()
+                .unwrap_or_else(|| self.error_code.to_text())
+    }
+}
+
+
+//------------ ReportErrorCodes ----------------------------------------------
+
+/// The allowed error codes defined in RFC8181 section 2.5
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReportErrorCode {
+    XmlError,
+    PermissionFailure,
+    BadCmsSignature,
+    ObjectAlreadyPresent,
+    NoObjectPresent,
+    NoObjectMatchingHash,
+    ConsistencyProblem,
+    OtherError,
+}
+
+impl fmt::Display for ReportErrorCode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ReportErrorCode::XmlError => write!(f, "xml_error"),
+            ReportErrorCode::PermissionFailure => write!(f, "permission_failure"),
+            ReportErrorCode::BadCmsSignature => write!(f, "bad_cms_signature"),
+            ReportErrorCode::ObjectAlreadyPresent => write!(f, "object_already_present"),
+            ReportErrorCode::NoObjectPresent => write!(f, "no_object_present"),
+            ReportErrorCode::NoObjectMatchingHash => write!(f, "no_object_matching_hash"),
+            ReportErrorCode::ConsistencyProblem => write!(f, "consistency_problem"),
+            ReportErrorCode::OtherError => write!(f, "other_error"),
+        }
+    }
+}
+
+impl FromStr for ReportErrorCode {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "xml_error" => Ok(ReportErrorCode::XmlError),
+            "permission_failure" => Ok(ReportErrorCode::PermissionFailure),
+            "bad_cms_signature" => Ok(ReportErrorCode::BadCmsSignature),
+            "object_already_present" => Ok(ReportErrorCode::ObjectAlreadyPresent),
+            "no_object_present" => Ok(ReportErrorCode::NoObjectPresent),
+            "no_object_matching_hash" => Ok(ReportErrorCode::NoObjectMatchingHash),
+            "consistency_problem" => Ok(ReportErrorCode::ConsistencyProblem),
+            "other_error" => Ok(ReportErrorCode::OtherError),
+            _ => Err(Error::InvalidErrorCode(s.to_string())),
+        }
+    }
+}
+
+impl ReportErrorCode {
+    /// Provides default texts for error codes (taken from RFC).
+    fn to_text(&self) -> &str {
+        match self {
+            ReportErrorCode::XmlError => "Encountered an XML problem.",
+            ReportErrorCode::PermissionFailure => "Client does not have permission to update this URI.",
+            ReportErrorCode::BadCmsSignature => "Encountered bad CMS signature.",
+            ReportErrorCode::ObjectAlreadyPresent => "An object is already present at this URI, yet a \"hash\" attribute was not specified.",
+            ReportErrorCode::NoObjectPresent => "There is no object present at this URI, yet a \"hash\" attribute was specified.",
+            ReportErrorCode::NoObjectMatchingHash => "The \"hash\" attribute supplied does not match the \"hash\" attribute of the object at this URI.",
+            ReportErrorCode::ConsistencyProblem => "Server detected an update that looks like it will cause a consistency problem (e.g., an object was deleted, but the manifest was not updated).",
+            ReportErrorCode::OtherError => "Found some other issue."
+        }
+    }
+}
 
 
 //------------ Base64 --------------------------------------------------------
@@ -728,6 +953,7 @@ impl<'de> Deserialize<'de> for Base64 {
 pub enum Error {
     InvalidVersion,
     XmlError(XmlError),
+    InvalidErrorCode(String),
 }
 
 impl fmt::Display for Error {
@@ -735,6 +961,9 @@ impl fmt::Display for Error {
         match self {
             Error::InvalidVersion => write!(f, "Invalid version"),
             Error::XmlError(e) => e.fmt(f),
+            Error::InvalidErrorCode(code) => {
+                write!(f, "Invalid error code: {}", code)
+            }
         }
     }
 }
@@ -855,6 +1084,17 @@ mod tests {
     #[test]
     fn parse_and_success_reply() {
         let xml = include_bytes!("../../test-data/remote/rfc8181/success-reply.xml");
+        let msg = Message::decode(xml.as_ref()).unwrap();
+
+        let re_encoded = msg.to_xml_string();
+        let re_decoded = Message::decode(re_encoded.as_bytes()).unwrap();
+
+        assert_eq!(msg, re_decoded);
+    }
+
+    #[test]
+    fn parse_and_error_reply() {
+        let xml = include_bytes!("../../test-data/remote/rfc8181/error-reply.xml");
         let msg = Message::decode(xml.as_ref()).unwrap();
 
         let re_encoded = msg.to_xml_string();
