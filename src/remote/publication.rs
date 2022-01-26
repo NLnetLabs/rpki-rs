@@ -17,6 +17,7 @@ use crate::xml::decode::Content;
 use crate::xml::decode::{
     Error as XmlError, Name
 };
+use crate::xml::encode;
 
 // Constants for the RFC 8183 XML
 const VERSION: &str = "4";
@@ -74,79 +75,14 @@ impl Message {
                             },
                             QueryMessage::Delta(delta) => {
                                 for el in &delta.0 {
-                                    match el {
-                                        PublishDeltaElement::Publish(p) => {
-                                            content.element(
-                                                QUERY_PDU_PUBLISH
-                                                        .into_unqualified()
-                                            )?
-                                            .attr("tag", p.tag_for_xml())?
-                                            .attr("uri", &p.uri)?
-                                            .content(|content| {
-                                                content.raw(&p.content)
-                                            })?;
-                                        },
-                                        PublishDeltaElement::Update(u) => {
-                                            content.element(
-                                                QUERY_PDU_PUBLISH
-                                                        .into_unqualified()
-                                            )?
-                                            .attr("tag", u.tag_for_xml())?
-                                            .attr("uri", &u.uri)?
-                                            .attr("hash", &u.hash)?
-                                            .content(|content| {
-                                                content.raw(&u.content)
-                                            })?;
-                                        },
-                                        PublishDeltaElement::Withdraw(w) => {
-                                            content.element(
-                                                QUERY_PDU_WITHDRAW
-                                                        .into_unqualified()
-                                            )?
-                                            .attr("tag", w.tag_for_xml())?
-                                            .attr("uri", &w.uri)?
-                                            .attr("hash", &w.hash)?;
-                                        }
-                                    }
+                                    el.write_xml(content)?;
+                        
                                 }
                             }
                         }
                     }
                     Message::ReplyMessage(msg) => {
-                        match msg {
-                            ReplyMessage::ListReply(list) => {
-                                for el in &list.elements {
-                                    content.element(
-                                        REPLY_PDU_LIST.into_unqualified()
-                                    )?
-                                    .attr("uri", &el.uri)?
-                                    .attr("hash", &el.hash)?;
-                                }
-                            }
-                            ReplyMessage::Success => {
-                                content.element(
-                                    REPLY_PDU_SUCCESS.into_unqualified()
-                                )?;
-                            }
-                            ReplyMessage::ErrorReply(errors) => {
-                                for err in &errors.errors {
-                                    content.element(
-                                        REPLY_PDU_ERROR.into_unqualified()
-                                    )?
-                                    .attr("error_code", &err.error_code)?
-                                    .attr("tag", err.tag_for_xml())?
-                                    .content(|content| {
-                                        content.element(
-                                            REPLY_PDU_ERROR_TEXT.into_unqualified()
-                                        )?
-                                        .content(|error_text_conent|
-                                            error_text_conent.raw(err.error_text_or_default())
-                                        )?;
-                                        Ok(())
-                                    })?;
-                                }
-                            }
-                        } 
+                        msg.write_xml(content)?;
                     }
                 }
                 Ok(())
@@ -274,140 +210,17 @@ impl QueryMessage {
         // First parse *all* PDUs, then we can decide what query type we had
         let mut pdus: Vec<QueryPdu> = vec![];
         loop {
-            let mut pdu_type = None;
 
-            // We need to do a two step analysis of elements. First we need
-            // to determine which type of element we are dealing with, and
-            // then we can evaluate the content. For <publish /> and
-            // <withdraw /> elements we will need to parse information from
-            // the element attributes *before* we can use the reader and
-            // inspect the content of a <publish /> element.
-
-            // possible attributes
-            let mut tag: Option<String> = None;
-            let mut uri: Option<uri::Rsync> = None;
-            let mut hash: Option<rrdp::Hash> = None;
-
-            let pdu_element = content.take_opt_element(reader, |element| {
-                // Determine the PDU type
-                pdu_type = Some(match element.name() {
-                    QUERY_PDU_LIST => {
-                        Ok(QueryPduType::List)
-                    },
-                    QUERY_PDU_PUBLISH => {
-                        Ok(QueryPduType::Publish)
-                    },
-                    QUERY_PDU_WITHDRAW => {
-                        Ok(QueryPduType::Withdraw)
-                    }
-                    _ => {
-                        Err(XmlError::Malformed)
-                    }
-                }?);
-
-                // parse element attributes - we treat them as optional
-                // at this point so it does not matter that not all attributes
-                // are applicable to all element types.
-                element.attributes(|name, value| match name {
-                    b"tag" => {
-                        tag = Some(value.ascii_into()?);
-                        Ok(())
-                    }
-                    b"hash" => {
-                        let hex: String = value.ascii_into()?;
-                        if let Ok(hash_value) =rrdp::Hash::from_str(&hex) {
-                            hash = Some(hash_value);
-                            Ok(())
-                        } else {
-                            Err(XmlError::Malformed)
-                        }
-                    }
-                    b"uri" => {
-                        uri = Some(value.ascii_into()?);
-                        Ok(())
-                    }
-                    _ => {
-                        Err(XmlError::Malformed)
-                    }
-                })
-
-            })?;
-
-            // Break out of loop if we got no element, get the
-            // actual element if we can.
-            let mut pdu_element = match pdu_element {
-                Some(inner) => inner,
-                None => break
-            };
-            
-            // We had an element so we can unwrap the type.
-            let pdu_type = pdu_type.unwrap(); 
-
-            
-            match pdu_type {
-                QueryPduType::List => {
-                    if !pdus.is_empty() {
+            match QueryPdu::decode_opt(content, reader)? {
+                None => break,
+                Some(pdu) => {
+                    if !pdus.is_empty() && pdu == QueryPdu::List {
                         error!("Found list pdu in multi-element query");
-                        Err(XmlError::Malformed)
-                    } else {
-                        pdus.push(QueryPdu::List);
-                        Ok(())
+                        return Err(Error::XmlError(XmlError::Malformed));
                     }
-                },
-                QueryPduType::Publish => {
-                    let uri = uri.ok_or(XmlError::Malformed)?;
-                    
-                    // even though we store the base64 as [`Base64`] which
-                    // uses an inner `Arc<str>`, we decode it first to ensure
-                    // that it can be parsed.
-                    let bytes = pdu_element.take_text(reader, |text| {
-                        text.base64_decode()
-                    })?;
-                    
-                    let content = Base64::from_content(&bytes);
-                    
-                    match hash {
-                        None => {
-                            pdus.push(QueryPdu::PublishDeltaElement(
-                                PublishDeltaElement::Publish(
-                                    Publish {
-                                        tag,
-                                        uri,
-                                        content,
-                                    }
-                                )
-                            ));
-                            Ok(())
-                        },
-                        Some(hash) => {
-                            pdus.push(QueryPdu::PublishDeltaElement(
-                                PublishDeltaElement::Update(
-                                    Update {
-                                        tag,
-                                        uri,
-                                        content,
-                                        hash,
-                                    }
-                                )
-                            ));
-                            Ok(())
-                        }
-                    }
+                    pdus.push(pdu);
                 }
-                QueryPduType::Withdraw => {
-                    let uri = uri.ok_or(XmlError::Malformed)?;
-                    let hash = hash.ok_or(XmlError::Malformed)?;
-
-                    pdus.push(QueryPdu::PublishDeltaElement(
-                        PublishDeltaElement::Withdraw(
-                            Withdraw { tag, uri, hash }
-                        )
-                    ));
-                    Ok(())
-                }
-            }?;
-
-            pdu_element.take_end(reader)?;
+            }
         }
 
         if pdus.get(0) == Some(&QueryPdu::List) {
@@ -443,6 +256,158 @@ pub enum QueryPdu {
     PublishDeltaElement(PublishDeltaElement)
 }
 
+impl QueryPdu {
+    // Decodes an optional query PDU
+    fn decode_opt<R: io::BufRead>(
+        content: &mut Content,
+        reader: &mut xml::decode::Reader<R>,
+    ) -> Result<Option<Self>, Error> {
+        let mut pdu_type = None;
+
+        // We need to do a two step analysis of elements. First we need
+        // to determine which type of element we are dealing with, and
+        // then we can evaluate the content. For <publish /> and
+        // <withdraw /> elements we will need to parse information from
+        // the element attributes *before* we can use the reader and
+        // inspect the content of a <publish /> element.
+
+        // possible attributes
+        let mut tag: Option<String> = None;
+        let mut uri: Option<uri::Rsync> = None;
+        let mut hash: Option<rrdp::Hash> = None;
+
+        let pdu_element = content.take_opt_element(reader, |element| {
+            // Determine the PDU type
+            pdu_type = Some(match element.name() {
+                QUERY_PDU_LIST => {
+                    Ok(QueryPduType::List)
+                },
+                QUERY_PDU_PUBLISH => {
+                    Ok(QueryPduType::Publish)
+                },
+                QUERY_PDU_WITHDRAW => {
+                    Ok(QueryPduType::Withdraw)
+                }
+                _ => {
+                    Err(XmlError::Malformed)
+                }
+            }?);
+
+            // parse element attributes - we treat them as optional
+            // at this point so it does not matter that not all attributes
+            // are applicable to all element types.
+            element.attributes(|name, value| match name {
+                b"tag" => {
+                    tag = Some(value.ascii_into()?);
+                    Ok(())
+                }
+                b"hash" => {
+                    let hex: String = value.ascii_into()?;
+                    if let Ok(hash_value) =rrdp::Hash::from_str(&hex) {
+                        hash = Some(hash_value);
+                        Ok(())
+                    } else {
+                        Err(XmlError::Malformed)
+                    }
+                }
+                b"uri" => {
+                    uri = Some(value.ascii_into()?);
+                    Ok(())
+                }
+                _ => {
+                    Err(XmlError::Malformed)
+                }
+            })
+
+        })?;
+
+        // Break out of loop if we got no element, get the
+        // actual element if we can.
+        let mut pdu_element = match pdu_element {
+            Some(inner) => inner,
+            None => return Ok(None)
+        };
+        
+        // We had an element so we can unwrap the type.
+        let pdu_type = pdu_type.unwrap(); 
+
+        
+        let pdu: Result<QueryPdu, Error> = match pdu_type {
+            QueryPduType::List => {
+                Ok(QueryPdu::List)
+            },
+            QueryPduType::Publish => {
+                let uri = uri.ok_or(XmlError::Malformed)?;
+                
+                // even though we store the base64 as [`Base64`] which
+                // uses an inner `Arc<str>`, we decode it first to ensure
+                // that it can be parsed.
+                let bytes = pdu_element.take_text(reader, |text| {
+                    text.base64_decode()
+                })?;
+                
+                let content = Base64::from_content(&bytes);
+                
+                match hash {
+                    None => {
+                        Ok(QueryPdu::PublishDeltaElement(
+                            PublishDeltaElement::Publish(
+                                Publish {
+                                    tag,
+                                    uri,
+                                    content,
+                                }
+                            )
+                        ))
+                    },
+                    Some(hash) => {
+                        Ok(QueryPdu::PublishDeltaElement(
+                            PublishDeltaElement::Update(
+                                Update {
+                                    tag,
+                                    uri,
+                                    content,
+                                    hash,
+                                }
+                            )
+                        ))
+                    }
+                }
+            }
+            QueryPduType::Withdraw => {
+                let uri = uri.ok_or(XmlError::Malformed)?;
+                let hash = hash.ok_or(XmlError::Malformed)?;
+
+                Ok(QueryPdu::PublishDeltaElement(
+                    PublishDeltaElement::Withdraw(
+                        Withdraw { tag, uri, hash }
+                    )
+                ))
+            }
+        };
+
+        let pdu = pdu?;
+
+        pdu_element.take_end(reader)?;
+
+        Ok(Some(pdu))
+    }
+
+    fn write_xml<W: io::Write>(
+        &self,
+        content: &mut encode::Content<W>
+    ) -> Result<(), io::Error> {
+        match self {
+            QueryPdu::List => {
+                content.element(QUERY_PDU_LIST.into_unqualified())?;
+                Ok(())
+            }
+            QueryPdu::PublishDeltaElement(el) => el.write_xml(content)
+        }
+    }
+
+}
+
 
 //------------ PublishDelta ------------------------------------------------
 
@@ -463,6 +428,51 @@ pub enum PublishDeltaElement {
     Withdraw(Withdraw),
 }
 
+/// # Encode to XML
+/// 
+impl PublishDeltaElement {
+    fn write_xml<W: io::Write>(
+        &self,
+        content: &mut encode::Content<W>
+    ) -> Result<(), io::Error> {
+        match self {
+            PublishDeltaElement::Publish(p) => {
+                content.element(
+                    QUERY_PDU_PUBLISH
+                            .into_unqualified()
+                )?
+                .attr("tag", p.tag_for_xml())?
+                .attr("uri", &p.uri)?
+                .content(|content| {
+                    content.raw(&p.content)
+                })?;
+            },
+            PublishDeltaElement::Update(u) => {
+                content.element(
+                    QUERY_PDU_PUBLISH
+                            .into_unqualified()
+                )?
+                .attr("tag", u.tag_for_xml())?
+                .attr("uri", &u.uri)?
+                .attr("hash", &u.hash)?
+                .content(|content| {
+                    content.raw(&u.content)
+                })?;
+            },
+            PublishDeltaElement::Withdraw(w) => {
+                content.element(
+                    QUERY_PDU_WITHDRAW
+                            .into_unqualified()
+                )?
+                .attr("tag", w.tag_for_xml())?
+                .attr("uri", &w.uri)?
+                .attr("hash", &w.hash)?;
+            }
+        }
+
+        Ok(())
+    }
+}
 
 //------------ Publish -------------------------------------------------------
 
@@ -660,6 +670,7 @@ impl ReplyMessage {
                         return Err(Error::XmlError(XmlError::Malformed));
                     } else {
                         let mut error_text: Option<String> = None;
+                        let mut failed_pdu: Option<QueryPdu> = None;
                         
                         // if only we could look ahead to see if/what elements
                         // are present then this would be easier..
@@ -697,27 +708,26 @@ impl ReplyMessage {
                                 })?;
                                 
                                 error_text = Some(text);
-                                el.take_end(reader)?;
                             }
                             
                             if failed_pdu_found {
-                                // We ignore failed PDUs - there is nothing
-                                // useful we can do with them and they are
-                                // hard to parse.
-                                pdu_element.read_to_end(
-                                    REPLY_PDU_ERROR_PDU.local(), reader
+                                failed_pdu = QueryPdu::decode_opt(
+                                    &mut el, reader
                                 )?;
                             }
+
+                            // close element
+                            el.take_end(reader)?;
                         }
                         
                         let error_code = error_code.ok_or(XmlError::Malformed)?;
-
+                        
                         pdus.push(ReplyPdu::Error(ReportError {
                             error_code,
+                            failed_pdu,
                             tag,
                             error_text,
                         }));
-
                         
                     }
                 }
@@ -756,6 +766,61 @@ impl ReplyMessage {
     }
 }
 
+/// # Encode to XML
+/// 
+impl ReplyMessage {
+    fn write_xml<W: io::Write>(
+        &self,
+        content: &mut encode::Content<W>
+    ) -> Result<(), io::Error> {
+        match self {
+            ReplyMessage::ListReply(list) => {
+                for el in &list.elements {
+                    content.element(
+                        REPLY_PDU_LIST.into_unqualified()
+                    )?
+                    .attr("uri", &el.uri)?
+                    .attr("hash", &el.hash)?;
+                }
+            }
+            ReplyMessage::Success => {
+                content.element(
+                    REPLY_PDU_SUCCESS.into_unqualified()
+                )?;
+            }
+            ReplyMessage::ErrorReply(errors) => {
+                for err in &errors.errors {
+                    content.element(
+                        REPLY_PDU_ERROR.into_unqualified()
+                    )?
+                    .attr("error_code", &err.error_code)?
+                    .attr("tag", err.tag_for_xml())?
+                    .content(|content| {
+                        content.element(
+                            REPLY_PDU_ERROR_TEXT.into_unqualified()
+                        )?
+                        .content(|error_text_content|
+                            error_text_content.raw(err.error_text_or_default())
+                        )?;
+
+                        content.opt_element(
+                            err.failed_pdu.as_ref(),
+                            REPLY_PDU_ERROR_PDU.into_unqualified(),
+                            |pdu, element| {
+                                element.content(|content|
+                                    pdu.write_xml(content)
+                                )?;
+                                Ok(())
+                            }
+                        )?;
+                        Ok(())
+                    })?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
 
 //------------ ReplyPduType --------------------------------------------------
 
@@ -825,10 +890,7 @@ pub struct ReportError {
     error_code: ReportErrorCode,
     tag: Option<String>,
     error_text: Option<String>,
-    // Officially there is an option to include a failed PDU. But, we ignore
-    // it for now. It is hard to parse and there isn't anything useful that
-    // we can do with it. Krill does not include failed_pdus in errors.
-    // failed_pdu: Option<QueryPdu>,
+    failed_pdu: Option<QueryPdu>,
 }
 
 impl ReportError {
@@ -1098,6 +1160,9 @@ mod tests {
         let msg = Message::decode(xml.as_ref()).unwrap();
 
         let re_encoded = msg.to_xml_string();
+
+        println!("{}", re_encoded);
+
         let re_decoded = Message::decode(re_encoded.as_bytes()).unwrap();
 
         assert_eq!(msg, re_decoded);
