@@ -67,19 +67,7 @@ impl Message {
             .content(|content|{
                 match self {
                     Message::QueryMessage(msg) => {
-                        match msg {
-                            QueryMessage::ListQuery => {
-                                content.element(
-                                    QUERY_PDU_LIST.into_unqualified()
-                                )?;
-                            },
-                            QueryMessage::Delta(delta) => {
-                                for el in &delta.0 {
-                                    el.write_xml(content)?;
-                        
-                                }
-                            }
-                        }
+                        msg.write_xml(content)?;
                     }
                     Message::ReplyMessage(msg) => {
                         msg.write_xml(content)?;
@@ -235,6 +223,31 @@ impl QueryMessage {
             }
             Ok(QueryMessage::Delta(delta))
         }
+    }
+}
+
+
+/// # Encoding to XML
+/// 
+impl QueryMessage {
+    fn write_xml<W: io::Write>(
+        &self,
+        content: &mut encode::Content<W>
+    ) -> Result<(), io::Error> {
+        match self {
+            QueryMessage::ListQuery => {
+                content.element(
+                    QUERY_PDU_LIST.into_unqualified()
+                )?;
+            },
+            QueryMessage::Delta(delta) => {
+                for el in &delta.0 {
+                    el.write_xml(content)?;
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -437,40 +450,15 @@ impl PublishDeltaElement {
     ) -> Result<(), io::Error> {
         match self {
             PublishDeltaElement::Publish(p) => {
-                content.element(
-                    QUERY_PDU_PUBLISH
-                            .into_unqualified()
-                )?
-                .attr("tag", p.tag_for_xml())?
-                .attr("uri", &p.uri)?
-                .content(|content| {
-                    content.raw(&p.content)
-                })?;
+                p.write_xml(content)
             },
             PublishDeltaElement::Update(u) => {
-                content.element(
-                    QUERY_PDU_PUBLISH
-                            .into_unqualified()
-                )?
-                .attr("tag", u.tag_for_xml())?
-                .attr("uri", &u.uri)?
-                .attr("hash", &u.hash)?
-                .content(|content| {
-                    content.raw(&u.content)
-                })?;
+                u.write_xml(content)
             },
             PublishDeltaElement::Withdraw(w) => {
-                content.element(
-                    QUERY_PDU_WITHDRAW
-                            .into_unqualified()
-                )?
-                .attr("tag", w.tag_for_xml())?
-                .attr("uri", &w.uri)?
-                .attr("hash", &w.hash)?;
+                w.write_xml(content)
             }
         }
-
-        Ok(())
     }
 }
 
@@ -485,7 +473,22 @@ pub struct Publish {
     content: Base64,
 }
 
+/// # Encode to XML
+/// 
 impl Publish {
+    fn write_xml<W: io::Write>(
+        &self,
+        content: &mut encode::Content<W>
+    ) -> Result<(), io::Error> {
+        content
+            .element(QUERY_PDU_PUBLISH.into_unqualified())?
+            .attr("tag", self.tag_for_xml())?
+            .attr("uri", &self.uri)?
+            .content(|content| content.raw(&self.content))?;
+
+        Ok(())
+    }
+
     fn tag_for_xml(&self) -> &str {
         self.tag.as_deref().unwrap_or("")
     }
@@ -504,7 +507,23 @@ pub struct Update {
     hash: rrdp::Hash,
 }
 
+/// # Encode to XML
+/// 
 impl Update {
+    fn write_xml<W: io::Write>(
+        &self,
+        content: &mut encode::Content<W>
+    ) -> Result<(), io::Error> {
+        content
+            .element(QUERY_PDU_PUBLISH.into_unqualified())?
+            .attr("tag", self.tag_for_xml())?
+            .attr("uri", &self.uri)?
+            .attr("hash", &self.hash)?
+            .content(|content| content.raw(&self.content))?;
+
+        Ok(())
+    }
+
     fn tag_for_xml(&self) -> &str {
         self.tag.as_deref().unwrap_or("")
     }
@@ -522,7 +541,22 @@ pub struct Withdraw {
     hash: rrdp::Hash,
 }
 
+/// # Encode to XML
+/// 
 impl Withdraw {
+    fn write_xml<W: io::Write>(
+        &self,
+        content: &mut encode::Content<W>
+    ) -> Result<(), io::Error> {
+        content.element(QUERY_PDU_WITHDRAW.into_unqualified())?
+            .attr("tag", self.tag_for_xml())?
+            .attr("uri", &self.uri)?
+            .attr("hash", &self.hash)?;
+        
+        Ok(())
+    }
+
+
     fn tag_for_xml(&self) -> &str {
         self.tag.as_deref().unwrap_or("")
     }
@@ -776,11 +810,7 @@ impl ReplyMessage {
         match self {
             ReplyMessage::ListReply(list) => {
                 for el in &list.elements {
-                    content.element(
-                        REPLY_PDU_LIST.into_unqualified()
-                    )?
-                    .attr("uri", &el.uri)?
-                    .attr("hash", &el.hash)?;
+                    el.write_xml(content)?;
                 }
             }
             ReplyMessage::Success => {
@@ -790,31 +820,7 @@ impl ReplyMessage {
             }
             ReplyMessage::ErrorReply(errors) => {
                 for err in &errors.errors {
-                    content.element(
-                        REPLY_PDU_ERROR.into_unqualified()
-                    )?
-                    .attr("error_code", &err.error_code)?
-                    .attr("tag", err.tag_for_xml())?
-                    .content(|content| {
-                        content.element(
-                            REPLY_PDU_ERROR_TEXT.into_unqualified()
-                        )?
-                        .content(|error_text_content|
-                            error_text_content.raw(err.error_text_or_default())
-                        )?;
-
-                        content.opt_element(
-                            err.failed_pdu.as_ref(),
-                            REPLY_PDU_ERROR_PDU.into_unqualified(),
-                            |pdu, element| {
-                                element.content(|content|
-                                    pdu.write_xml(content)
-                                )?;
-                                Ok(())
-                            }
-                        )?;
-                        Ok(())
-                    })?;
+                    err.write_xml(content)?;
                 }
             }
         }
@@ -872,6 +878,21 @@ pub struct ListElement {
     hash: rrdp::Hash,
 }
 
+/// # Encoding to XML
+/// 
+impl ListElement {
+    fn write_xml<W: io::Write>(
+        &self,
+        content: &mut encode::Content<W>
+    ) -> Result<(), io::Error> {
+        content.element(
+            REPLY_PDU_LIST.into_unqualified()
+        )?
+        .attr("uri", &self.uri)?
+        .attr("hash", &self.hash)?;
+        Ok(())
+    }
+}
 
 //------------ ErrorReply ----------------------------------------------------
 
@@ -891,6 +912,43 @@ pub struct ReportError {
     tag: Option<String>,
     error_text: Option<String>,
     failed_pdu: Option<QueryPdu>,
+}
+
+/// # Encode to XML
+/// 
+impl ReportError {
+    fn write_xml<W: io::Write>(
+        &self,
+        content: &mut encode::Content<W>
+    ) -> Result<(), io::Error> {
+        content.element(
+            REPLY_PDU_ERROR.into_unqualified()
+        )?
+        .attr("error_code", &self.error_code)?
+        .attr("tag", self.tag_for_xml())?
+        .content(|content| {
+            content.element(
+                REPLY_PDU_ERROR_TEXT.into_unqualified()
+            )?
+            .content(|error_text_content|
+                error_text_content.raw(self.error_text_or_default())
+            )?;
+
+            content.opt_element(
+                self.failed_pdu.as_ref(),
+                REPLY_PDU_ERROR_PDU.into_unqualified(),
+                |pdu, element| {
+                    element.content(|content|
+                        pdu.write_xml(content)
+                    )?;
+                    Ok(())
+                }
+            )?;
+            Ok(())
+        })?;
+
+        Ok(())
+    }
 }
 
 impl ReportError {
