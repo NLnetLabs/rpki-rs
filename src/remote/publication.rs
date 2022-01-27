@@ -671,66 +671,14 @@ impl ReplyMessage {
                         error!("Found error report in non-error reply");
                         return Err(Error::XmlError(XmlError::Malformed));
                     } else {
-                        let mut error_text: Option<String> = None;
-                        let mut failed_pdu: Option<QueryPdu> = None;
-                        
-                        // if only we could look ahead to see if/what elements
-                        // are present then this would be easier..
-                        loop {
-                            let mut error_text_found = false;
-                            let mut failed_pdu_found = false;
-                            
-                            let error_element = pdu_element
-                            .take_opt_element(reader, |error_element| {
-                                match error_element.name() {
-                                    REPLY_PDU_ERROR_TEXT => {
-                                        error_text_found = true;
-                                        Ok(())
-                                    }
-                                    REPLY_PDU_ERROR_PDU => {
-                                        failed_pdu_found = true;
-                                        Ok(())
-                                    }
-                                    _ => {
-                                        println!("Found: {:?}", error_element.name());
-                                        Err(XmlError::Malformed)
-                                    }
-                                }
-                            })?;
-                            
-                            // get the element, break if there was none
-                            let mut el = match error_element {
-                                Some(el) => el,
-                                None => break
-                            };
-                            
-                            if error_text_found {
-                                let text = el.take_text( reader, |text| {
-                                    text.to_ascii().map(|t| t.to_string())
-                                })?;
-                                
-                                error_text = Some(text);
-                            }
-                            
-                            if failed_pdu_found {
-                                failed_pdu = QueryPdu::decode_opt(
-                                    &mut el, reader
-                                )?;
-                            }
-
-                            // close element
-                            el.take_end(reader)?;
-                        }
-                        
-                        let error_code = error_code.ok_or(XmlError::Malformed)?;
-                        
-                        pdus.push(ReplyPdu::Error(ReportError {
-                            error_code,
-                            failed_pdu,
+                        let error = ReportError::decode_inner(
+                            error_code.ok_or(XmlError::Malformed)?,
                             tag,
-                            error_text,
-                        }));
+                            &mut pdu_element,
+                            reader
+                        )?;
                         
+                        pdus.push(ReplyPdu::Error(error));
                     }
                 }
             }
@@ -913,9 +861,7 @@ impl ReportError {
 
         Ok(())
     }
-}
 
-impl ReportError {
     fn tag_for_xml(&self) -> &str {
         self.tag.as_deref().unwrap_or("")
     }
@@ -926,6 +872,73 @@ impl ReportError {
     }
 }
 
+/// Decode from XML support
+/// 
+impl ReportError {
+    /// Decodes the inner elements nested inside <report_error>.
+    // 
+    // Expects the error_code and tag to be supplied because those are
+    // attributes on the <report_error> element.
+    fn decode_inner<R: io::BufRead>(
+        error_code: ReportErrorCode,
+        tag: Option<String>,
+        report_error_element: &mut Content,
+        reader: &mut xml::decode::Reader<R>,
+    ) -> Result<Self, Error> {
+        let mut error_text: Option<String> = None;
+        let mut failed_pdu: Option<QueryPdu> = None;
+        
+        // if only we could look ahead to see if/what elements
+        // are present then this would be easier..
+        loop {
+            let mut error_text_found = false;
+            let mut failed_pdu_found = false;
+            
+            let error_element = report_error_element.take_opt_element(
+                reader,
+                |error_element| {
+                    match error_element.name() {
+                        REPLY_PDU_ERROR_TEXT => {
+                            error_text_found = true;
+                            Ok(())
+                        }
+                        REPLY_PDU_ERROR_PDU => {
+                            failed_pdu_found = true;
+                            Ok(())
+                        }
+                        _ => {
+                            println!("Found: {:?}", error_element.name());
+                            Err(XmlError::Malformed)
+                        }
+                    }
+                }
+            )?;
+            
+            // get the element, break if there was none
+            let mut el = match error_element {
+                Some(el) => el,
+                None => break
+            };
+            
+            if error_text_found {
+                let text = el.take_text( reader, |text| {
+                    text.to_ascii().map(|t| t.to_string())
+                })?;
+                
+                error_text = Some(text);
+            }
+            
+            if failed_pdu_found {
+                failed_pdu = QueryPdu::decode_opt(&mut el, reader)?;
+            }
+
+            // close element
+            el.take_end(reader)?;
+        }
+
+        Ok(ReportError { error_code, tag, error_text, failed_pdu })
+    }
+}
 
 //------------ ReportErrorCodes ----------------------------------------------
 
