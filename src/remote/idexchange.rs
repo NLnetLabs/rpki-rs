@@ -136,7 +136,7 @@ impl Serialize for Handle {
     where
         S: Serializer,
     {
-        self.to_string().serialize(serializer)
+        self.as_str().serialize(serializer)
     }
 }
 
