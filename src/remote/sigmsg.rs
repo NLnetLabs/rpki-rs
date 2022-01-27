@@ -65,8 +65,6 @@ pub struct  SignedMessage {
     //--- SignedAttributes
     //
     message_digest: MessageDigest,
-    _signing_time: Option<Time>,
-    _binary_signing_time: Option<u64>,
 }
 
 /// # Data Access
@@ -173,8 +171,6 @@ impl SignedMessage {
                 signature,
 
                 message_digest: attrs.1,
-                _signing_time: attrs.3,
-                _binary_signing_time: attrs.4
             })
         })
     }
@@ -331,8 +327,6 @@ impl SignedMessage {
             signed_attrs,
             signature,
             message_digest,
-            _signing_time: signing_time,
-            _binary_signing_time: binary_signing_time,
         })
     }
 
