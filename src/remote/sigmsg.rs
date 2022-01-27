@@ -469,7 +469,7 @@ impl SignedMessageCrl {
         let this_update = validity.not_before();
         let next_update = validity.not_after();
         
-        let revoked_certs = RevokedCertificates::create_empty();
+        let revoked_certs = RevokedCertificates::empty();
         
         let authority_key_id = Some(issuing_pub_key.key_identifier());
         
