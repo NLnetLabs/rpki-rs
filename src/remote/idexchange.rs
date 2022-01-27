@@ -174,6 +174,16 @@ pub enum ServiceUri {
     Http(String),
 }
 
+impl ServiceUri {
+    pub fn as_str(&self) -> &str {
+        match self {
+            ServiceUri::Http(http) => http,
+            ServiceUri::Https(https) => https.as_str()
+        }
+    }
+}
+
+
 impl TryFrom<String> for ServiceUri {
     type Error = IdExchangeError;
 
@@ -208,7 +218,7 @@ impl Serialize for ServiceUri {
     where
         S: Serializer,
     {
-        self.to_string().serialize(serializer)
+        self.as_str().serialize(serializer)
     }
 }
 
@@ -219,6 +229,12 @@ impl<'de> Deserialize<'de> for ServiceUri {
     {
         let string = String::deserialize(deserializer)?;
         ServiceUri::try_from(string).map_err(serde::de::Error::custom)
+    }
+}
+
+impl AsRef<str> for ServiceUri {
+    fn as_ref(&self) -> &str {
+        self.as_str()
     }
 }
 
