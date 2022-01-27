@@ -282,18 +282,10 @@ impl QueryPdu {
         let pdu_element = content.take_opt_element(reader, |element| {
             // Determine the PDU type
             pdu_type = Some(match element.name() {
-                QUERY_PDU_LIST => {
-                    Ok(QueryPduType::List)
-                },
-                QUERY_PDU_PUBLISH => {
-                    Ok(QueryPduType::Publish)
-                },
-                QUERY_PDU_WITHDRAW => {
-                    Ok(QueryPduType::Withdraw)
-                }
-                _ => {
-                    Err(XmlError::Malformed)
-                }
+                QUERY_PDU_LIST => Ok(QueryPduType::List),
+                QUERY_PDU_PUBLISH => Ok(QueryPduType::Publish),
+                QUERY_PDU_WITHDRAW => Ok(QueryPduType::Withdraw),
+                _ => Err(XmlError::Malformed)
             }?);
 
             // parse element attributes - we treat them as optional
@@ -609,18 +601,10 @@ impl ReplyMessage {
             let pdu_element = content.take_opt_element(reader, |element| {
                 // Determine the PDU type
                 pdu_type = Some(match element.name() {
-                    REPLY_PDU_LIST => {
-                        Ok(ReplyPduType::List)
-                    },
-                    REPLY_PDU_SUCCESS => {
-                        Ok(ReplyPduType::Success)
-                    }
-                    REPLY_PDU_ERROR => {
-                        Ok(ReplyPduType::Error)
-                    }
-                    _ => {
-                        Err(XmlError::Malformed)
-                    }
+                    REPLY_PDU_LIST => Ok(ReplyPduType::List),
+                    REPLY_PDU_SUCCESS => Ok(ReplyPduType::Success),
+                    REPLY_PDU_ERROR => Ok(ReplyPduType::Error),
+                    _ => Err(XmlError::Malformed)
                 }?);
 
                 // parse element attributes - we treat them as optional
@@ -798,9 +782,7 @@ impl ReplyMessage {
                 }
             }
             ReplyMessage::Success => {
-                content.element(
-                    REPLY_PDU_SUCCESS.into_unqualified()
-                )?;
+                content.element(REPLY_PDU_SUCCESS.into_unqualified())?;
             }
             ReplyMessage::ErrorReply(errors) => {
                 for err in &errors.errors {
@@ -869,11 +851,11 @@ impl ListElement {
         &self,
         content: &mut encode::Content<W>
     ) -> Result<(), io::Error> {
-        content.element(
-            REPLY_PDU_LIST.into_unqualified()
-        )?
-        .attr("uri", &self.uri)?
-        .attr("hash", &self.hash)?;
+        content
+            .element(REPLY_PDU_LIST.into_unqualified())?
+            .attr("uri", &self.uri)?
+            .attr("hash", &self.hash)?;
+
         Ok(())
     }
 }
@@ -905,31 +887,29 @@ impl ReportError {
         &self,
         content: &mut encode::Content<W>
     ) -> Result<(), io::Error> {
-        content.element(
-            REPLY_PDU_ERROR.into_unqualified()
-        )?
-        .attr("error_code", &self.error_code)?
-        .attr("tag", self.tag_for_xml())?
-        .content(|content| {
-            content.element(
-                REPLY_PDU_ERROR_TEXT.into_unqualified()
-            )?
-            .content(|error_text_content|
-                error_text_content.raw(self.error_text_or_default())
-            )?;
-
-            content.opt_element(
-                self.failed_pdu.as_ref(),
-                REPLY_PDU_ERROR_PDU.into_unqualified(),
-                |pdu, element| {
-                    element.content(|content|
-                        pdu.write_xml(content)
+        content
+            .element(REPLY_PDU_ERROR.into_unqualified())?
+            .attr("error_code", &self.error_code)?
+            .attr("tag", self.tag_for_xml())?
+            .content(|content| {
+                content
+                    .element(REPLY_PDU_ERROR_TEXT.into_unqualified())?
+                    .content(|error_text_content|
+                        error_text_content.raw(self.error_text_or_default())
                     )?;
-                    Ok(())
-                }
-            )?;
-            Ok(())
-        })?;
+
+                content
+                    .opt_element(
+                        self.failed_pdu.as_ref(),
+                        REPLY_PDU_ERROR_PDU.into_unqualified(),
+                        |pdu, el| {
+                            el.content(|content| pdu.write_xml(content))?;
+                            Ok(())
+                        }
+                    )?;
+                
+                Ok(())
+            })?;
 
         Ok(())
     }
