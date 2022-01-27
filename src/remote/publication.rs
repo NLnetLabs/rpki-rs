@@ -29,9 +29,12 @@ const QUERY_PDU_LIST: Name = Name::qualified(NS, b"list");
 const QUERY_PDU_PUBLISH: Name = Name::qualified(NS, b"publish");
 const QUERY_PDU_WITHDRAW: Name = Name::qualified(NS, b"withdraw");
 
-const REPLY_PDU_LIST: Name = Name::qualified(NS, b"list");
-const REPLY_PDU_SUCCESS: Name = Name::qualified(NS, b"success");
-const REPLY_PDU_ERROR: Name = Name::qualified(NS, b"report_error");
+const LIST_LOCAL: &[u8] = b"list";
+const LIST: Name = Name::qualified(NS, LIST_LOCAL);
+const SUCCESS_LOCAL: &[u8] = b"success";
+const SUCCESS: Name = Name::qualified(NS, SUCCESS_LOCAL);
+const REPORT_ERROR_LOCAL: &[u8] = b"report_error";
+const REPORT_ERROR: Name = Name::qualified(NS, REPORT_ERROR_LOCAL);
 
 const REPLY_PDU_ERROR_TEXT: Name = Name::qualified(NS, b"error_text");
 const REPLY_PDU_ERROR_PDU: Name = Name::qualified(NS, b"failed_pdu");
@@ -600,10 +603,10 @@ impl ReplyMessage {
 
             let pdu_element = content.take_opt_element(reader, |element| {
                 // Determine the PDU type
-                pdu_type = Some(match element.name() {
-                    REPLY_PDU_LIST => Ok(ReplyPduType::List),
-                    REPLY_PDU_SUCCESS => Ok(ReplyPduType::Success),
-                    REPLY_PDU_ERROR => Ok(ReplyPduType::Error),
+                pdu_type = Some(match element.name().local() {
+                    LIST_LOCAL => Ok(ReplyPduType::List),
+                    SUCCESS_LOCAL => Ok(ReplyPduType::Success),
+                    REPORT_ERROR_LOCAL => Ok(ReplyPduType::Error),
                     _ => Err(XmlError::Malformed)
                 }?);
 
@@ -730,7 +733,7 @@ impl ReplyMessage {
                 }
             }
             ReplyMessage::Success => {
-                content.element(REPLY_PDU_SUCCESS.into_unqualified())?;
+                content.element(SUCCESS.into_unqualified())?;
             }
             ReplyMessage::ErrorReply(errors) => {
                 for err in &errors.errors {
@@ -800,7 +803,7 @@ impl ListElement {
         content: &mut encode::Content<W>
     ) -> Result<(), io::Error> {
         content
-            .element(REPLY_PDU_LIST.into_unqualified())?
+            .element(LIST.into_unqualified())?
             .attr("uri", &self.uri)?
             .attr("hash", &self.hash)?;
 
@@ -836,7 +839,7 @@ impl ReportError {
         content: &mut encode::Content<W>
     ) -> Result<(), io::Error> {
         content
-            .element(REPLY_PDU_ERROR.into_unqualified())?
+            .element(REPORT_ERROR.into_unqualified())?
             .attr("error_code", &self.error_code)?
             .attr("tag", self.tag_for_xml())?
             .content(|content| {
