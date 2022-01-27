@@ -397,6 +397,18 @@ impl<'n, 'l> fmt::Debug for Name<'n, 'l> {
     }
 }
 
+impl<'n, 'l> From<&'l [u8]> for Name<'n, 'l> {
+    fn from(local: &'l [u8]) -> Self {
+        Name::unqualified(local)
+    }
+}
+
+impl<'n, 'l> From<(&'n [u8], &'l [u8])> for Name<'n, 'l> {
+    fn from((namespace, local): (&'n [u8], &'l [u8])) -> Self {
+        Name::qualified(namespace, local)
+    }
+}
+
 
 //------------ AttrValue -----------------------------------------------------
 

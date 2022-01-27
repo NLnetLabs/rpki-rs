@@ -15,7 +15,7 @@ use crate::uri;
 use crate::xml;
 use crate::xml::decode::Content;
 use crate::xml::decode::{
-    Error as XmlError, Name
+    Error as XmlError
 };
 use crate::xml::encode;
 
@@ -23,21 +23,14 @@ use crate::xml::encode;
 const VERSION: &str = "4";
 const NS: &[u8] = b"http://www.hactrn.net/uris/rpki/publication-spec/";
 
-const MSG: Name = Name::qualified(NS, b"msg");
-
-const QUERY_PDU_LIST: Name = Name::qualified(NS, b"list");
-const QUERY_PDU_PUBLISH: Name = Name::qualified(NS, b"publish");
-const QUERY_PDU_WITHDRAW: Name = Name::qualified(NS, b"withdraw");
-
-const LIST_LOCAL: &[u8] = b"list";
-const LIST: Name = Name::qualified(NS, LIST_LOCAL);
-const SUCCESS_LOCAL: &[u8] = b"success";
-const SUCCESS: Name = Name::qualified(NS, SUCCESS_LOCAL);
-const REPORT_ERROR_LOCAL: &[u8] = b"report_error";
-const REPORT_ERROR: Name = Name::qualified(NS, REPORT_ERROR_LOCAL);
-
-const REPLY_PDU_ERROR_TEXT: Name = Name::qualified(NS, b"error_text");
-const REPLY_PDU_ERROR_PDU: Name = Name::qualified(NS, b"failed_pdu");
+const MSG: &[u8] = b"msg";
+const LIST: &[u8] = b"list";
+const SUCCESS: &[u8] = b"success";
+const PUBLISH: &[u8] = b"publish";
+const WITHDRAW: &[u8] = b"withdraw";
+const REPORT_ERROR: &[u8] = b"report_error";
+const ERROR_TEXT: &[u8] = b"error_text";
+const FAILED_PDU: &[u8] = b"failed_pdu";
 
 
 //------------ Message -------------------------------------------------------
@@ -63,7 +56,7 @@ impl Message {
             Message::ReplyMessage(_) => "reply",
         };
 
-        writer.element(MSG.into_unqualified())?
+        writer.element(MSG.into())?
             .attr("xmlns", NS)?
             .attr("version", VERSION)?
             .attr("type", type_value)?
@@ -98,7 +91,7 @@ impl Message {
         let mut kind: Option<MessageKind> = None;
 
         let mut outer = reader.start(|element| {
-            if element.name() != MSG {
+            if element.name().local() != MSG {
                 return Err(XmlError::Malformed)
             }
             
@@ -229,9 +222,7 @@ impl QueryMessage {
     ) -> Result<(), io::Error> {
         match self {
             QueryMessage::ListQuery => {
-                content.element(
-                    QUERY_PDU_LIST.into_unqualified()
-                )?;
+                content.element(LIST.into())?;
             },
             QueryMessage::Delta(delta) => {
                 for el in &delta.0 {
@@ -284,10 +275,10 @@ impl QueryPdu {
 
         let pdu_element = content.take_opt_element(reader, |element| {
             // Determine the PDU type
-            pdu_type = Some(match element.name() {
-                QUERY_PDU_LIST => Ok(QueryPduType::List),
-                QUERY_PDU_PUBLISH => Ok(QueryPduType::Publish),
-                QUERY_PDU_WITHDRAW => Ok(QueryPduType::Withdraw),
+            pdu_type = Some(match element.name().local() {
+                LIST => Ok(QueryPduType::List),
+                PUBLISH => Ok(QueryPduType::Publish),
+                WITHDRAW => Ok(QueryPduType::Withdraw),
                 _ => Err(XmlError::Malformed)
             }?);
 
@@ -397,7 +388,7 @@ impl QueryPdu {
     ) -> Result<(), io::Error> {
         match self {
             QueryPdu::List => {
-                content.element(QUERY_PDU_LIST.into_unqualified())?;
+                content.element(LIST.into())?;
                 Ok(())
             }
             QueryPdu::PublishDeltaElement(el) => el.write_xml(content)
@@ -460,7 +451,7 @@ impl Publish {
         content: &mut encode::Content<W>
     ) -> Result<(), io::Error> {
         content
-            .element(QUERY_PDU_PUBLISH.into_unqualified())?
+            .element(PUBLISH.into())?
             .attr("tag", self.tag_for_xml())?
             .attr("uri", &self.uri)?
             .content(|content| content.raw(&self.content))?;
@@ -494,7 +485,7 @@ impl Update {
         content: &mut encode::Content<W>
     ) -> Result<(), io::Error> {
         content
-            .element(QUERY_PDU_PUBLISH.into_unqualified())?
+            .element(PUBLISH.into())?
             .attr("tag", self.tag_for_xml())?
             .attr("uri", &self.uri)?
             .attr("hash", &self.hash)?
@@ -527,7 +518,7 @@ impl Withdraw {
         &self,
         content: &mut encode::Content<W>
     ) -> Result<(), io::Error> {
-        content.element(QUERY_PDU_WITHDRAW.into_unqualified())?
+        content.element(WITHDRAW.into())?
             .attr("tag", self.tag_for_xml())?
             .attr("uri", &self.uri)?
             .attr("hash", &self.hash)?;
@@ -604,9 +595,9 @@ impl ReplyMessage {
             let pdu_element = content.take_opt_element(reader, |element| {
                 // Determine the PDU type
                 pdu_type = Some(match element.name().local() {
-                    LIST_LOCAL => Ok(ReplyPduType::List),
-                    SUCCESS_LOCAL => Ok(ReplyPduType::Success),
-                    REPORT_ERROR_LOCAL => Ok(ReplyPduType::Error),
+                    LIST => Ok(ReplyPduType::List),
+                    SUCCESS => Ok(ReplyPduType::Success),
+                    REPORT_ERROR => Ok(ReplyPduType::Error),
                     _ => Err(XmlError::Malformed)
                 }?);
 
@@ -733,7 +724,7 @@ impl ReplyMessage {
                 }
             }
             ReplyMessage::Success => {
-                content.element(SUCCESS.into_unqualified())?;
+                content.element(SUCCESS.into())?;
             }
             ReplyMessage::ErrorReply(errors) => {
                 for err in &errors.errors {
@@ -803,7 +794,7 @@ impl ListElement {
         content: &mut encode::Content<W>
     ) -> Result<(), io::Error> {
         content
-            .element(LIST.into_unqualified())?
+            .element(LIST.into())?
             .attr("uri", &self.uri)?
             .attr("hash", &self.hash)?;
 
@@ -839,12 +830,12 @@ impl ReportError {
         content: &mut encode::Content<W>
     ) -> Result<(), io::Error> {
         content
-            .element(REPORT_ERROR.into_unqualified())?
+            .element(REPORT_ERROR.into())?
             .attr("error_code", &self.error_code)?
             .attr("tag", self.tag_for_xml())?
             .content(|content| {
                 content
-                    .element(REPLY_PDU_ERROR_TEXT.into_unqualified())?
+                    .element(ERROR_TEXT.into())?
                     .content(|error_text_content|
                         error_text_content.raw(self.error_text_or_default())
                     )?;
@@ -852,7 +843,7 @@ impl ReportError {
                 content
                     .opt_element(
                         self.failed_pdu.as_ref(),
-                        REPLY_PDU_ERROR_PDU.into_unqualified(),
+                        FAILED_PDU.into(),
                         |pdu, el| {
                             el.content(|content| pdu.write_xml(content))?;
                             Ok(())
@@ -900,12 +891,12 @@ impl ReportError {
             let error_element = report_error_element.take_opt_element(
                 reader,
                 |error_element| {
-                    match error_element.name() {
-                        REPLY_PDU_ERROR_TEXT => {
+                    match error_element.name().local() {
+                        ERROR_TEXT => {
                             error_text_found = true;
                             Ok(())
                         }
-                        REPLY_PDU_ERROR_PDU => {
+                        FAILED_PDU => {
                             failed_pdu_found = true;
                             Ok(())
                         }
