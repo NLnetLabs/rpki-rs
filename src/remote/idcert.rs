@@ -286,7 +286,7 @@ impl IdCert {
     /// valid on the given time. Normally the 'time' would be
     /// 'now' - but we need to allow overriding this to support
     /// testing.
-    pub fn parse_and_validate_xml<R: io::BufRead>(
+    pub fn validate_xml_at<R: io::BufRead>(
         content: &mut xml::decode::Content,
         reader: &mut xml::decode::Reader<R>,
         when: Time

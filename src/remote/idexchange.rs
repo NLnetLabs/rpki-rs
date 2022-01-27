@@ -352,7 +352,7 @@ impl ChildRequest {
             }
         })?;
 
-        let id_cert = IdCert::parse_and_validate_xml(
+        let id_cert = IdCert::validate_xml_at(
             &mut content,
             &mut reader,
             when
@@ -559,7 +559,7 @@ impl ParentResponse {
             
             if bpki_ta_element_found {
                 // parse inner text as the ID certificate
-                id_cert = Some(IdCert::parse_and_validate_xml(
+                id_cert = Some(IdCert::validate_xml_at(
                     &mut inner,
                     &mut reader,
                     when
@@ -733,7 +733,7 @@ impl PublisherRequest {
             }
         })?;
 
-        let id_cert = IdCert::parse_and_validate_xml(
+        let id_cert = IdCert::validate_xml_at(
             &mut content,
             &mut reader,
             when
@@ -933,7 +933,7 @@ impl RepositoryResponse {
             }
         })?;
 
-        let id_cert = IdCert::parse_and_validate_xml(
+        let id_cert = IdCert::validate_xml_at(
             &mut content,
             &mut reader,
             when
