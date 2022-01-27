@@ -66,14 +66,9 @@ impl Message {
             .attr("type", type_value)?
             .content(|content|{
                 match self {
-                    Message::QueryMessage(msg) => {
-                        msg.write_xml(content)?;
-                    }
-                    Message::ReplyMessage(msg) => {
-                        msg.write_xml(content)?;
-                    }
+                    Message::QueryMessage(msg) => msg.write_xml(content),
+                    Message::ReplyMessage(msg) => msg.write_xml(content)
                 }
-                Ok(())
             })?;
         writer.done()
     }
@@ -112,17 +107,12 @@ impl Message {
                     Ok(())
                 }
                 b"type" => {
-                    match value.ascii_into::<String>()?.as_str() {
-                        "query" => {
-                            kind = Some(MessageKind::Query);
-                            Ok(())
-                        }
-                        "reply" => {
-                            kind = Some(MessageKind::Reply);
-                            Ok(())
-                        }
+                    kind = Some(match value.ascii_into::<String>()?.as_str() {
+                        "query" => Ok(MessageKind::Query),
+                        "reply" => Ok(MessageKind::Reply),
                         _ => Err(XmlError::Malformed)
-                    }
+                    }?);
+                    Ok(())
                 }
                 _ => Err(XmlError::Malformed)
             })
@@ -449,15 +439,9 @@ impl PublishDeltaElement {
         content: &mut encode::Content<W>
     ) -> Result<(), io::Error> {
         match self {
-            PublishDeltaElement::Publish(p) => {
-                p.write_xml(content)
-            },
-            PublishDeltaElement::Update(u) => {
-                u.write_xml(content)
-            },
-            PublishDeltaElement::Withdraw(w) => {
-                w.write_xml(content)
-            }
+            PublishDeltaElement::Publish(p) => p.write_xml(content),
+            PublishDeltaElement::Update(u) => u.write_xml(content),
+            PublishDeltaElement::Withdraw(w) => w.write_xml(content)
         }
     }
 }
