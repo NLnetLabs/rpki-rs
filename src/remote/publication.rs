@@ -69,8 +69,8 @@ impl Message {
         writer.done()
     }
 
-    #[cfg(test)]
-    fn to_xml_string(&self) -> String {
+    /// Writes the Message's XML representation to a new String.
+    pub  fn to_xml_string(&self) -> String {
         use std::str::from_utf8;
 
         let mut vec = vec![];

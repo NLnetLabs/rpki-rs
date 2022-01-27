@@ -320,8 +320,8 @@ impl ChildRequest {
         writer.done()
     }
 
-    #[cfg(test)]
-    fn to_xml_string(&self) -> String {
+    /// Writes the ChildRequest's XML representation to a new String.
+    pub fn to_xml_string(&self) -> String {
         let mut vec = vec![];
         self.write_xml(&mut vec).unwrap(); // safe
         let xml = from_utf8(vec.as_slice()).unwrap(); // safe
@@ -604,8 +604,8 @@ impl ParentResponse {
         })
     }
 
-    #[cfg(test)]
-    fn to_xml_string(&self) -> String {
+    /// Writes the ParentResponse's XML representation to a new String.
+    pub fn to_xml_string(&self) -> String {
         let mut vec = vec![];
         self.write_xml(&mut vec).unwrap(); // safe
         let xml = from_utf8(vec.as_slice()).unwrap(); // safe
@@ -701,8 +701,8 @@ impl PublisherRequest {
         writer.done()
     }
 
-    #[cfg(test)]
-    fn to_xml_string(&self) -> String {
+    /// Writes the PublisherRequest's XML representation to a new String.
+    pub fn to_xml_string(&self) -> String {
         let mut vec = vec![];
         self.write_xml(&mut vec).unwrap(); // safe
         let xml = from_utf8(vec.as_slice()).unwrap(); // safe
@@ -859,7 +859,7 @@ impl RepositoryResponse {
         Self::validate_at(reader, Time::now())
     }
 
-    /// Writes the ParentResponse's XML representation.
+    /// Writes the RepositoryResponse's XML representation.
     pub fn write_xml(
         &self, writer: &mut impl io::Write
     ) -> Result<(), io::Error> {
@@ -976,8 +976,8 @@ impl RepositoryResponse {
         })
     }
 
-    #[cfg(test)]
-    fn to_xml_string(&self) -> String {
+    /// Writes the RepositoryResponse's XML representation to a new String.
+    pub fn to_xml_string(&self) -> String {
         let mut vec = vec![];
         self.write_xml(&mut vec).unwrap(); // safe
         let xml = from_utf8(vec.as_slice()).unwrap(); // safe
