@@ -1010,6 +1010,10 @@ impl Base64 {
     pub fn from_content(content: &[u8]) -> Self {
         Base64(base64::encode(content).into())
     }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_ref()
+    }
 }
 
 impl fmt::Display for Base64 {
@@ -1023,7 +1027,7 @@ impl Serialize for Base64 {
     where
         S: Serializer,
     {
-        self.to_string().serialize(serializer)
+        self.as_str().serialize(serializer)
     }
 }
 
