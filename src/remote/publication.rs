@@ -13,9 +13,8 @@ use serde::Serializer;
 use crate::rrdp;
 use crate::uri;
 use crate::xml;
-use crate::xml::decode::Content;
 use crate::xml::decode::{
-    Error as XmlError
+    Content, Error as XmlError
 };
 use crate::xml::encode;
 
