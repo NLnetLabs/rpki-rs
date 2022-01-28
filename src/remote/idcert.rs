@@ -16,7 +16,6 @@ use crate::repository::cert::TbsCert;
 use crate::repository::{
     crypto::{
         KeyIdentifier, PublicKey, SignatureAlgorithm, Signer, SigningError,
-        PublicKeyFormat
     },
     oid,
     x509::{
@@ -25,7 +24,6 @@ use crate::repository::{
     },
 };
 use crate::xml;
-use crate::xml::decode::Error as XmlError;
 
 use super::error::IdExchangeError;
 
@@ -62,16 +60,14 @@ pub struct IdCert {
 impl IdCert {
     /// Make a new TA ID certificate
     pub fn new_ta<S: Signer>(
-        valid_years: i32, signer: &S
+        validity: Validity,
+        issuing_key_id: &S::KeyId,
+        signer: &S
     ) -> Result<Self, SigningError<S::Error>> {
-        let key_id = signer.create_key(PublicKeyFormat::Rsa)?;
-        let pub_key = signer.get_key_info(&key_id)?;
+        let pub_key = signer.get_key_info(issuing_key_id)?;
 
         let serial_number = Serial::from(1_u64);
-        let validity = Validity::new(
-            Time::five_minutes_ago(),
-            Time::years_from_now(valid_years)
-        );
+        
         let issuing_key = &pub_key;
         let subject_key = &pub_key;
         
@@ -80,7 +76,28 @@ impl IdCert {
             validity,
             issuing_key,
             subject_key,
-        ).into_cert(signer, &key_id)
+        ).into_cert(signer, issuing_key_id)
+    }
+
+    /// Make a new EE certificate under an issuing TA certificate
+    /// used for signing CMS. Expects that the public key was used
+    /// for a one-off signing of a CMS message.
+    pub fn new_ee<S: Signer>(
+        ee_key: &PublicKey,
+        validity: Validity,
+        issuing_key_id: &S::KeyId,
+        signer: &S
+    ) -> Result<Self, SigningError<S::Error>> {
+
+        let serial_number = Serial::random(signer)?;
+        let issuing_key = signer.get_key_info(issuing_key_id)?;
+
+        TbsIdCert::new(
+            serial_number,
+            validity,
+            &issuing_key,
+            ee_key,
+        ).into_cert(signer, issuing_key_id)
     }
 }
 
@@ -269,27 +286,14 @@ impl IdCert {
     /// valid on the given time. Normally the 'time' would be
     /// 'now' - but we need to allow overriding this to support
     /// testing.
-    pub fn parse_and_validate_xml<R: io::BufRead>(
+    pub fn validate_xml_at<R: io::BufRead>(
         content: &mut xml::decode::Content,
         reader: &mut xml::decode::Reader<R>,
         when: Time
     ) -> Result<Self, IdExchangeError> {
-        let base64 = content.take_text(reader, |text| {
-            // The text is supposed to be xsd:base64Binary which only allows
-            // the base64 characters plus whitespace.
-            text.to_ascii()
-                .map_err(|_| XmlError::Malformed)
-                .map(|text| {
-                    text.as_bytes()
-                    .iter()
-                    .filter(|c| **c < 128_u8) // strip anything above 7bit ascii.. like unicode whitespace
-                    .filter(|c| !b" \n\t\r\x0b\x0c=".contains(c))
-                    .copied()
-                    .collect::<Vec<_>>() 
-                })
+        let bytes = content.take_text(reader, |text| {
+            text.base64_decode()
         })?;
-
-        let bytes = base64::decode_config(base64, base64::STANDARD_NO_PAD)?;
 
         let id_cert = IdCert::decode(bytes.as_slice())?;
         id_cert.validate_ta_at(when)?;
@@ -403,8 +407,8 @@ pub struct TbsIdCert {
 ///
 impl TbsIdCert {
     /// Returns a reference to the certificate’s public key.
-    pub fn public_key(&self) -> &[u8] {
-        self.subject_public_key_info.bits()
+    pub fn public_key(&self) -> &PublicKey {
+        &self.subject_public_key_info
     }
 
     /// Returns the hex encoded SKI
@@ -417,17 +421,26 @@ impl TbsIdCert {
         &self.subject_public_key_info
     }
 
+    /// Returns the public key's key identifier
+    pub fn subject_key_identifier(&self) -> KeyIdentifier {
+        self.subject_key_id
+    }
+
     /// Returns a reference to the certificate’s serial number.
     pub fn serial_number(&self) -> Serial {
         self.serial_number
     }
 
-    pub fn subject_key_id(&self) -> &KeyIdentifier {
-        &self.subject_key_id
+    pub fn subject_key_id(&self) -> KeyIdentifier {
+        self.subject_key_id
     }
 
-    pub fn authority_key_id(&self) -> Option<&KeyIdentifier> {
-        self.authority_key_id.as_ref()
+    pub fn authority_key_id(&self) -> Option<KeyIdentifier> {
+        self.authority_key_id
+    }
+
+    pub fn subject(&self) -> &Name {
+        &self.subject
     }
 }
 
@@ -648,8 +661,6 @@ impl TbsIdCert {
 #[cfg(test)]
 pub mod tests {
 
-    use crate::repository::crypto::softsigner::OpenSslSigner;
-
     use super::*;
 
     #[test]
@@ -660,10 +671,24 @@ pub mod tests {
         idcert.validate_ta_at(idcert_moment).unwrap();
     }
 
+}
+
+#[cfg(all(test, feature="softkeys"))]
+mod signer_test {
+    use crate::repository::crypto::PublicKeyFormat;
+    use crate::repository::crypto::softsigner::OpenSslSigner;
+
+    use super::*;
+
     #[test]
     fn build_id_ta_cert() {
         let signer = OpenSslSigner::new();
-        let id_cert = IdCert::new_ta(15, &signer).unwrap();
-        id_cert.validate_ta().unwrap();
+        let ta_key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
+        let ta_cert = IdCert::new_ta(
+            Validity::from_secs(60),
+            &ta_key,
+            &signer
+        ).unwrap();
+        ta_cert.validate_ta().unwrap();
     }
 }

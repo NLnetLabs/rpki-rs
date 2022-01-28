@@ -1,4 +1,5 @@
 
+use std::str::from_utf8;
 use std::{error, fmt, io, str};
 use std::borrow::Cow;
 use bytes::Bytes;
@@ -321,6 +322,24 @@ impl Content {
             }
         }
     }
+
+    /// Just read the entire content until the specified end element and
+    /// return anything found as a new string.
+    pub fn read_to_end<R, K: AsRef<[u8]>>(
+        &self,
+        end: K,
+        reader: &mut Reader<R>
+    ) -> Result<String, Error>
+    where
+        R: io::BufRead,
+    {
+        reader.buf.clear();
+        reader.reader.read_to_end(end, &mut reader.buf)?;
+
+        let s = from_utf8(&reader.buf).map_err(|_| Error::Malformed)?;
+
+        Ok(s.to_string())
+    }
 }
 
 
@@ -378,6 +397,18 @@ impl<'n, 'l> fmt::Debug for Name<'n, 'l> {
     }
 }
 
+impl<'n, 'l> From<&'l [u8]> for Name<'n, 'l> {
+    fn from(local: &'l [u8]) -> Self {
+        Name::unqualified(local)
+    }
+}
+
+impl<'n, 'l> From<(&'n [u8], &'l [u8])> for Name<'n, 'l> {
+    fn from((namespace, local): (&'n [u8], &'l [u8])) -> Self {
+        Name::qualified(namespace, local)
+    }
+}
+
 
 //------------ AttrValue -----------------------------------------------------
 
@@ -421,6 +452,23 @@ impl<'a> Text<'a> {
                 Ok(Cow::Owned(unsafe { String::from_utf8_unchecked(s) }))
             }
         }
+    }
+
+    pub fn base64_decode(&self) -> Result<Vec<u8>, Error> {
+        // The text is supposed to be xsd:base64Binary which only allows
+        // the base64 characters plus whitespace.
+        let base64 = self.to_ascii()
+            .map(|text| {
+                text.as_bytes()
+                .iter()
+                .filter(|c| **c < 128_u8) // stuff like unicode whitespace
+                .filter(|c| !b" \n\t\r\x0b\x0c=".contains(c))
+                .copied()
+                .collect::<Vec<_>>() 
+            })?;
+        
+        base64::decode_config(base64, base64::STANDARD_NO_PAD)
+            .map_err(|_| Error::Malformed)
     }
 }
 

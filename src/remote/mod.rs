@@ -19,3 +19,5 @@
 pub mod error;
 pub mod idcert;
 pub mod idexchange;
+pub mod publication;
+pub mod sigmsg;

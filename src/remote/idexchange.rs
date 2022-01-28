@@ -56,7 +56,8 @@ pub type RepositoryHandle = Handle;
 /// following - taken from the RELAX NG schema in RFC 8183:
 /// 
 /// handle  = xsd:string { maxLength="255" pattern="[\-_A-Za-z0-9/]*" }
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq)]
+#[serde(try_from = "String")]
 pub struct Handle {
     name: Arc<str>,
 }
@@ -73,6 +74,21 @@ impl Handle {
         let s = s.replace("/", "+");
         let s = s.replace("\\", "=");
         PathBuf::from(s)
+    }
+
+    fn verify_name(s: &str) -> Result<(), InvalidHandle> {
+        if s.bytes()
+            .all(|b| {
+                b.is_ascii_alphanumeric() || b == b'-' || b == b'_' ||
+                b == b'/' || b == b'\\'
+            })
+            && !s.is_empty()
+            && s.len() < 256
+        {
+            Ok(())
+        } else {
+            Err(InvalidHandle)
+        }
     }
 }
 
@@ -98,18 +114,17 @@ impl FromStr for Handle {
     /// See Appendix A of RFC8183.
     ///
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.bytes()
-            .all(|b| {
-                b.is_ascii_alphanumeric() || b == b'-' || b == b'_' ||
-                b == b'/' || b == b'\\'
-            })
-            && !s.is_empty()
-            && s.len() < 256
-        {
-            Ok(Handle { name: s.into() })
-        } else {
-            Err(InvalidHandle)
-        }
+        Self::verify_name(s)?;
+        Ok(Handle { name: s.into() })
+    }
+}
+
+impl TryFrom<String> for Handle {
+    type Error = InvalidHandle;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::verify_name(&value)?;
+        Ok(Handle { name: value.into() })
     }
 }
 
@@ -136,17 +151,7 @@ impl Serialize for Handle {
     where
         S: Serializer,
     {
-        self.to_string().serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for Handle {
-    fn deserialize<D>(deserializer: D) -> Result<Handle, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let string = String::deserialize(deserializer)?;
-        Handle::from_str(&string).map_err(serde::de::Error::custom)
+        self.as_str().serialize(serializer)
     }
 }
 
@@ -168,6 +173,16 @@ pub enum ServiceUri {
     Https(uri::Https),
     Http(String),
 }
+
+impl ServiceUri {
+    pub fn as_str(&self) -> &str {
+        match self {
+            ServiceUri::Http(http) => http,
+            ServiceUri::Https(https) => https.as_str()
+        }
+    }
+}
+
 
 impl TryFrom<String> for ServiceUri {
     type Error = IdExchangeError;
@@ -203,7 +218,7 @@ impl Serialize for ServiceUri {
     where
         S: Serializer,
     {
-        self.to_string().serialize(serializer)
+        self.as_str().serialize(serializer)
     }
 }
 
@@ -214,6 +229,12 @@ impl<'de> Deserialize<'de> for ServiceUri {
     {
         let string = String::deserialize(deserializer)?;
         ServiceUri::try_from(string).map_err(serde::de::Error::custom)
+    }
+}
+
+impl AsRef<str> for ServiceUri {
+    fn as_ref(&self) -> &str {
+        self.as_str()
     }
 }
 
@@ -299,8 +320,8 @@ impl ChildRequest {
         writer.done()
     }
 
-    #[cfg(test)]
-    fn to_xml_string(&self) -> String {
+    /// Writes the ChildRequest's XML representation to a new String.
+    pub fn to_xml_string(&self) -> String {
         let mut vec = vec![];
         self.write_xml(&mut vec).unwrap(); // safe
         let xml = from_utf8(vec.as_slice()).unwrap(); // safe
@@ -352,7 +373,7 @@ impl ChildRequest {
             }
         })?;
 
-        let id_cert = IdCert::parse_and_validate_xml(
+        let id_cert = IdCert::validate_xml_at(
             &mut content,
             &mut reader,
             when
@@ -559,7 +580,7 @@ impl ParentResponse {
             
             if bpki_ta_element_found {
                 // parse inner text as the ID certificate
-                id_cert = Some(IdCert::parse_and_validate_xml(
+                id_cert = Some(IdCert::validate_xml_at(
                     &mut inner,
                     &mut reader,
                     when
@@ -583,8 +604,8 @@ impl ParentResponse {
         })
     }
 
-    #[cfg(test)]
-    fn to_xml_string(&self) -> String {
+    /// Writes the ParentResponse's XML representation to a new String.
+    pub fn to_xml_string(&self) -> String {
         let mut vec = vec![];
         self.write_xml(&mut vec).unwrap(); // safe
         let xml = from_utf8(vec.as_slice()).unwrap(); // safe
@@ -680,8 +701,8 @@ impl PublisherRequest {
         writer.done()
     }
 
-    #[cfg(test)]
-    fn to_xml_string(&self) -> String {
+    /// Writes the PublisherRequest's XML representation to a new String.
+    pub fn to_xml_string(&self) -> String {
         let mut vec = vec![];
         self.write_xml(&mut vec).unwrap(); // safe
         let xml = from_utf8(vec.as_slice()).unwrap(); // safe
@@ -733,7 +754,7 @@ impl PublisherRequest {
             }
         })?;
 
-        let id_cert = IdCert::parse_and_validate_xml(
+        let id_cert = IdCert::validate_xml_at(
             &mut content,
             &mut reader,
             when
@@ -838,7 +859,7 @@ impl RepositoryResponse {
         Self::validate_at(reader, Time::now())
     }
 
-    /// Writes the ParentResponse's XML representation.
+    /// Writes the RepositoryResponse's XML representation.
     pub fn write_xml(
         &self, writer: &mut impl io::Write
     ) -> Result<(), io::Error> {
@@ -933,7 +954,7 @@ impl RepositoryResponse {
             }
         })?;
 
-        let id_cert = IdCert::parse_and_validate_xml(
+        let id_cert = IdCert::validate_xml_at(
             &mut content,
             &mut reader,
             when
@@ -955,8 +976,8 @@ impl RepositoryResponse {
         })
     }
 
-    #[cfg(test)]
-    fn to_xml_string(&self) -> String {
+    /// Writes the RepositoryResponse's XML representation to a new String.
+    pub fn to_xml_string(&self) -> String {
         let mut vec = vec![];
         self.write_xml(&mut vec).unwrap(); // safe
         let xml = from_utf8(vec.as_slice()).unwrap(); // safe

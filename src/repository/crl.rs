@@ -544,6 +544,14 @@ impl RevokedCertificates {
             )
         ))
     }
+
+    /// Create an empty RevokedCertificates for use in SignedMessage
+    /// CMS objects - where we typically need to include a CRL, but
+    /// never need to actually revoke anything.
+    pub fn empty() -> Self {
+        let entries: Vec<CrlEntry> = vec![];
+        Self::from_iter(entries)
+    }
 }
 
 
