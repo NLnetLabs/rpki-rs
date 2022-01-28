@@ -191,6 +191,16 @@ impl<'a, W: io::Write> Element<'a, W> {
         Ok(self)
     }
 
+    /// Write an optional attribute.
+    pub fn opt_attr(
+        self, name: &str, value: Option<&(impl Text + ?Sized)>,
+    ) -> Result<Self, io::Error> {
+        match value {
+            None => Ok(self),
+            Some(value) => self.attr(name, value)
+        }
+    }
+
     /// Write the content of the element.
     ///
     /// The actual content is written by the closure passed in.
