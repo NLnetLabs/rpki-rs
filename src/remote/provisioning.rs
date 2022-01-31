@@ -1,5 +1,6 @@
 //! Support RFC 6492 Provisioning Protocol (aka up-down)
 
+use std::convert::TryFrom;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::{io, fmt};
@@ -8,6 +9,7 @@ use serde::{
 };
 
 use crate::repository::Csr;
+use crate::repository::crypto::KeyIdentifier;
 use crate::repository::resources::{AsBlocks, IpBlocks};
 use crate::{xml, uri};
 use crate::xml::decode::{
@@ -28,9 +30,11 @@ const NS: &[u8] = b"http://www.apnic.net/specs/rescerts/up-down/";
 
 const MESSAGE: &[u8] = b"message";
 const REQUEST: &[u8] = b"request";
+const KEY: &[u8] = b"key";
 
 const PAYLOAD_TYPE_LIST: &str = "list";
 const PAYLOAD_TYPE_ISSUE: &str = "issue";
+const PAYLOAD_TYPE_REVOKE: &str = "revoke";
 
 
 // Content-type for HTTP(s) exchanges
@@ -150,7 +154,8 @@ impl Message {
 #[allow(clippy::large_enum_variant)]
 pub enum Payload {
     List,
-    Issue(IssuanceRequest)
+    Issue(IssuanceRequest),
+    Revoke(RevocationRequest),
 }
 
 /// # Decoding from XML
@@ -167,8 +172,12 @@ impl Payload {
         match payload_type.as_str() {
             PAYLOAD_TYPE_LIST => Ok(Payload::List),
             PAYLOAD_TYPE_ISSUE => {
-                let req = IssuanceRequest::decode(content, reader)?;
-                Ok(Payload::Issue(req))
+                IssuanceRequest::decode(content, reader)
+                                        .map(Payload::Issue)
+            }
+            PAYLOAD_TYPE_REVOKE => {
+                RevocationRequest::decode(content, reader)
+                                        .map(Payload::Revoke)
             }
             _ => Err(Error::InvalidPayloadType(payload_type))
         }
@@ -182,7 +191,8 @@ impl Payload {
     fn payload_type(&self) -> &str {
         match self {
             Payload::List => PAYLOAD_TYPE_LIST,
-            Payload::Issue(_) => PAYLOAD_TYPE_ISSUE
+            Payload::Issue(_) => PAYLOAD_TYPE_ISSUE,
+            Payload::Revoke(_) => PAYLOAD_TYPE_REVOKE,
         }
     }
 
@@ -193,7 +203,8 @@ impl Payload {
     ) -> Result<(), io::Error> {
         match self {
             Payload::List => Ok(()), // nothing to write
-            Payload::Issue(issue) => issue.write_xml(content)
+            Payload::Issue(issue) => issue.write_xml(content),
+            Payload::Revoke(revoke) => revoke.write_xml(content),
         }
     }
 }
@@ -491,6 +502,114 @@ impl fmt::Display for RequestResourceLimit {
 }
 
 
+//------------ RevocationRequest ---------------------------------------------
+
+/// This type represents a Certificate Revocation Request as
+/// defined in section 3.5.1 of RFC6492.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RevocationRequest {
+    class_name: ResourceClassName,
+    key: KeyIdentifier,
+}
+
+impl fmt::Display for RevocationRequest {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "class name '{}' key '{}'", self.class_name, self.key)
+    }
+}
+
+impl RevocationRequest {
+    pub fn new(class_name: ResourceClassName, key: KeyIdentifier) -> Self {
+        RevocationRequest { class_name, key }
+    }
+
+    pub fn class_name(&self) -> &ResourceClassName {
+        &self.class_name
+    }
+    pub fn key(&self) -> &KeyIdentifier {
+        &self.key
+    }
+
+    pub fn unpack(self) -> (ResourceClassName, KeyIdentifier) {
+        (self.class_name, self.key)
+    }
+}
+
+/// # Decode from XML
+///
+impl RevocationRequest {
+    /// Decodes an RFC 6492 section 3.5.1 certificate revocation request.
+    ///
+    /// Requests have the following format:
+    /// <key class_name="class name"
+    ///      ski="[encoded hash of the subject public key]" />
+    fn decode<R: io::BufRead>(
+        content: &mut Content,
+        reader: &mut xml::decode::Reader<R>,
+    ) -> Result<Self, Error> {
+        let mut class_name = None;
+        let mut key = None;
+
+        content.take_element(reader, |element|{
+            if element.name().local() != KEY {
+                return Err(XmlError::Malformed);
+            }
+
+            element.attributes(|name, value| match name {
+                b"class_name" => {
+                    class_name = Some(value.ascii_into()?);
+                    Ok(())
+                }
+                b"ski" => {
+                    let base64_str: String = value.ascii_into()?;
+                    let bytes = base64::decode_config(
+                        base64_str,
+                        base64::URL_SAFE_NO_PAD
+                    ).map_err(|_| XmlError::Malformed)?;
+                    
+                    let ski = KeyIdentifier::try_from(
+                        bytes.as_slice()
+                    ).map_err(|_| XmlError::Malformed)?;
+
+                    key = Some(ski);
+                    Ok(())
+                }
+                _ => {
+                    Err(XmlError::Malformed)
+                }
+            })
+        })?;
+
+        let class_name = class_name.ok_or(XmlError::Malformed)?;
+        let key = key.ok_or(XmlError::Malformed)?;
+
+        Ok(RevocationRequest { class_name, key })
+    }
+}
+
+
+/// # Encode to XML
+/// 
+impl RevocationRequest {
+    fn write_xml<W: io::Write>(
+        &self,
+        content: &mut encode::Content<W>
+    ) -> Result<(), io::Error> {
+        let ski = base64::encode_config(
+            self.key().as_slice(),
+            // it's not 100% clear from the RFC whether padding is used.
+            // using no-pad makes this most likely to be accepted.
+            base64::URL_SAFE_NO_PAD
+        );
+        content
+            .element(KEY.into())?
+            .attr("class_name", self.class_name())?
+            .attr("ski", &ski)?;
+
+        Ok(())
+    }
+}
+
 //------------ ResourceClassName ---------------------------------------------
 
 /// This type represents a resource class name, as used in RFC6492.
@@ -643,5 +762,12 @@ mod tests {
         let xml = extract_xml(include_bytes!("../../test-data/remote/rfc6492/rpkid-rfc6492-issue.der"));
         let issue = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(issue);
+    }
+
+    #[test]
+    fn parse_and_encode_revoke() {
+        let xml = include_str!("../../test-data/remote/rfc6492/revoke-req.xml");
+        let revoke = Message::decode(xml.as_bytes()).unwrap();
+        assert_re_encode_equals(revoke);
     }
 }
