@@ -16,6 +16,7 @@ use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, OctetString, Tag, xerr};
 use bcder::encode::{Nothing, PrimitiveContent};
+use serde::{Deserialize, Serialize};
 use super::super::cert::Overclaim;
 use super::super::roa::RoaIpAddress;
 use super::super::x509::{encode_extension, ValidationError};
@@ -579,6 +580,53 @@ impl FromStr for IpBlocks {
 impl FromIterator<IpBlock> for IpBlocks {
     fn from_iter<I: IntoIterator<Item = IpBlock>>(iter: I) -> Self {
         Self(SharedChain::from_iter(iter))
+    }
+}
+
+
+/// # AddressFamily specific Serialize and Deserialize support
+/// 
+impl IpBlocks {
+    /// Serializes IPv4 blocks to a string representation.
+    pub fn serialize_v4<S: serde::Serializer>(
+        blocks: &IpBlocks, serializer: S
+    ) -> Result<S::Ok, S::Error> {
+        blocks.as_v4().to_string().serialize(serializer)
+    }
+
+    /// Serializes IPv6 blocks to a string representation.
+    pub fn serialize_v6<S: serde::Serializer>(
+        blocks: &IpBlocks, serializer: S
+    ) -> Result<S::Ok, S::Error> {
+        blocks.as_v6().to_string().serialize(serializer)
+    }
+
+    /// Deserializes a string representation as IPv4 blocks. This will return
+    /// an error in case the input contains any IPv6 blocks.
+    pub fn deserialize_v4<'de, D: serde::Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<IpBlocks, D::Error> {
+        let string = String::deserialize(deserializer)?;
+
+        if string.contains(':') {
+            Err(serde::de::Error::custom("IPv6 found in IPv4 blocks"))
+        } else {
+            IpBlocks::from_str(&string).map_err(serde::de::Error::custom)
+        }
+    }
+
+    /// Deserializes a string representation as IPv6 blocks. This will return
+    /// an error in case the input contains any IPv4 blocks.
+    pub fn deserialize_v6<'de, D: serde::Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<IpBlocks, D::Error> {
+        let string = String::deserialize(deserializer)?;
+
+        if string.contains('.') {
+            Err(serde::de::Error::custom("IPv4 found in IPv6 blocks"))
+        } else {
+            IpBlocks::from_str(&string).map_err(serde::de::Error::custom)
+        }
     }
 }
 

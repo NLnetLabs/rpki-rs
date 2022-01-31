@@ -5,10 +5,9 @@ use std::io;
 use std::str::FromStr;
 use std::sync::Arc;
 use log::error;
-use serde::Deserialize;
-use serde::Deserializer;
-use serde::Serialize;
-use serde::Serializer;
+use serde::{
+    Deserialize, Deserializer, Serialize, Serializer
+};
 
 use crate::rrdp;
 use crate::uri;
