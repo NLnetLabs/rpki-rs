@@ -7,7 +7,7 @@
 //! value is not used for an address family, the set of addresses must be
 //! non-empty.
 
-use std::{error, fmt, io, iter, str};
+use std::{error, fmt, io, iter, ops, str};
 use std::fmt::Display;
 use std::iter::FromIterator;
 use std::net::{AddrParseError, IpAddr, Ipv4Addr, Ipv6Addr};
@@ -541,92 +541,18 @@ impl FromStr for IpBlocks {
     /// and single addresses). This will throw an error if the
     /// input contains a mix of AddressFamily.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-
-        let family = if s.contains('.') {
-            AddressFamily::Ipv4
+        if s.contains('.') {
+            // Parse as IPv4, returns error in case IPv6 is mixed in
+            Ipv4Blocks::from_str(s).map(|v4| v4.0)
         } else {
-            AddressFamily::Ipv6
-        };
-
-        let mut builder = IpBlocksBuilder::default();
-
-        for el in s.split(',') {
-            let s = el.trim();
-            if s.is_empty() {
-                continue
-            }
-            match family {
-                AddressFamily::Ipv4 => {
-                    if let Ok(block) = IpBlock::from_v4_str(s) {
-                        builder.push(block)
-                    } else {
-                        return Err(FromStrError::FamilyMismatch)
-                    }
-                },
-                AddressFamily::Ipv6 => {
-                    if let Ok(block) = IpBlock::from_v6_str(s) {
-                        builder.push(block)
-                    } else {
-                        return Err(FromStrError::FamilyMismatch)
-                    }
-                }
-            }
+            Ipv6Blocks::from_str(s).map(|v6| v6.0)
         }
-
-        Ok(builder.finalize())
     }
 }
 
 impl FromIterator<IpBlock> for IpBlocks {
     fn from_iter<I: IntoIterator<Item = IpBlock>>(iter: I) -> Self {
         Self(SharedChain::from_iter(iter))
-    }
-}
-
-
-/// # AddressFamily specific Serialize and Deserialize support
-/// 
-impl IpBlocks {
-    /// Serializes IPv4 blocks to a string representation.
-    pub fn serialize_v4<S: serde::Serializer>(
-        blocks: &IpBlocks, serializer: S
-    ) -> Result<S::Ok, S::Error> {
-        blocks.as_v4().to_string().serialize(serializer)
-    }
-
-    /// Serializes IPv6 blocks to a string representation.
-    pub fn serialize_v6<S: serde::Serializer>(
-        blocks: &IpBlocks, serializer: S
-    ) -> Result<S::Ok, S::Error> {
-        blocks.as_v6().to_string().serialize(serializer)
-    }
-
-    /// Deserializes a string representation as IPv4 blocks. This will return
-    /// an error in case the input contains any IPv6 blocks.
-    pub fn deserialize_v4<'de, D: serde::Deserializer<'de>>(
-        deserializer: D
-    ) -> Result<IpBlocks, D::Error> {
-        let string = String::deserialize(deserializer)?;
-
-        if string.contains(':') {
-            Err(serde::de::Error::custom("IPv6 found in IPv4 blocks"))
-        } else {
-            IpBlocks::from_str(&string).map_err(serde::de::Error::custom)
-        }
-    }
-
-    /// Deserializes a string representation as IPv6 blocks. This will return
-    /// an error in case the input contains any IPv4 blocks.
-    pub fn deserialize_v6<'de, D: serde::Deserializer<'de>>(
-        deserializer: D
-    ) -> Result<IpBlocks, D::Error> {
-        let string = String::deserialize(deserializer)?;
-
-        if string.contains('.') {
-            Err(serde::de::Error::custom("IPv4 found in IPv6 blocks"))
-        } else {
-            IpBlocks::from_str(&string).map_err(serde::de::Error::custom)
-        }
     }
 }
 
@@ -1658,6 +1584,158 @@ impl AddressFamily {
             AddressFamily::Ipv4 => 32,
             AddressFamily::Ipv6 => 128
         }
+    }
+}
+
+
+//------------ Ipv4Blocks ----------------------------------------------------
+
+/// Contains IPv4 resources. This type is a thin wrapper around the underlying
+/// [`IpBlocks`] type intended to help with serializing/deserializing and
+/// formatting using IPv4 syntax.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Ipv4Blocks(IpBlocks);
+
+impl Ipv4Blocks {
+    pub fn empty() -> Self {
+        Ipv4Blocks(IpBlocks::empty())
+    }
+}
+
+//--- Display
+
+impl fmt::Display for Ipv4Blocks {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.as_v4().fmt(f)
+    }
+}
+
+//--- FromStr
+
+impl FromStr for Ipv4Blocks {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut builder = IpBlocksBuilder::default();
+
+        for el in s.split(',') {
+            let s = el.trim();
+            if s.is_empty() {
+                continue
+            } else if s.contains(':') {
+                // smells like IPv6
+                return Err(FromStrError::FamilyMismatch);
+            } else {
+                builder.push(IpBlock::from_v4_str(s)?);
+            }
+        }
+
+        Ok(Ipv4Blocks(builder.finalize()))
+    }
+}
+
+//--- Serialize and Deserialize
+
+#[cfg(feature = "serde")]
+impl Serialize for Ipv4Blocks {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: serde::Serializer {
+        self.to_string().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for Ipv4Blocks {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: serde::Deserializer<'de> {
+        let string = String::deserialize(deserializer)?;
+        Ipv4Blocks::from_str(&string).map_err(serde::de::Error::custom)
+    }
+}
+
+//--- Deref
+
+impl ops::Deref for Ipv4Blocks {
+    type Target = IpBlocks;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+
+//------------ Ipv6Blocks ----------------------------------------------------
+
+/// Contains IPv6 resources. This type is a thin wrapper around the underlying
+/// [`IpBlocks`] type intended to help with serializing/deserializing and
+/// formatting using IPv6 syntax.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Ipv6Blocks(IpBlocks);
+
+impl Ipv6Blocks {
+    pub fn empty() -> Self {
+        Ipv6Blocks(IpBlocks::empty())
+    }
+}
+
+//--- Display
+
+impl fmt::Display for Ipv6Blocks {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.as_v6().fmt(f)
+    }
+}
+
+//--- FromStr
+
+impl FromStr for Ipv6Blocks {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut builder = IpBlocksBuilder::default();
+
+        for el in s.split(',') {
+            let s = el.trim();
+            if s.is_empty() {
+                continue
+            } else if s.contains('.') {
+                // smells like IPv4
+                return Err(FromStrError::FamilyMismatch);
+            } else {
+                builder.push(IpBlock::from_v6_str(s)?);
+            }
+        }
+
+        Ok(Ipv6Blocks(builder.finalize()))
+    }
+}
+
+//--- Serialize and Deserialize
+
+#[cfg(feature = "serde")]
+impl Serialize for Ipv6Blocks {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: serde::Serializer {
+        self.to_string().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for Ipv6Blocks {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: serde::Deserializer<'de> {
+        let string = String::deserialize(deserializer)?;
+        Ipv6Blocks::from_str(&string).map_err(serde::de::Error::custom)
+    }
+}
+
+//--- Deref
+
+impl ops::Deref for Ipv6Blocks {
+    type Target = IpBlocks;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 

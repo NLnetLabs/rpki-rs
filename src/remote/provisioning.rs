@@ -4,13 +4,15 @@ use std::convert::TryFrom;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::{io, fmt};
+use chrono::{DateTime, Utc, SecondsFormat};
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer
 };
 
-use crate::repository::Csr;
+use crate::repository::x509::Time;
+use crate::repository::{Csr, Cert};
 use crate::repository::crypto::KeyIdentifier;
-use crate::repository::resources::{AsBlocks, IpBlocks};
+use crate::repository::resources::{AsBlocks, Ipv4Blocks, Ipv6Blocks};
 use crate::{xml, uri};
 use crate::xml::decode::{
     Content, Error as XmlError
@@ -31,10 +33,15 @@ const NS: &[u8] = b"http://www.apnic.net/specs/rescerts/up-down/";
 const MESSAGE: &[u8] = b"message";
 const REQUEST: &[u8] = b"request";
 const KEY: &[u8] = b"key";
+const CLASS: &[u8] = b"class";
+const CERTIFICATE: &[u8] = b"certificate";
+const ISSUER: &[u8] = b"issuer";
 
 const PAYLOAD_TYPE_LIST: &str = "list";
 const PAYLOAD_TYPE_ISSUE: &str = "issue";
 const PAYLOAD_TYPE_REVOKE: &str = "revoke";
+
+const PAYLOAD_TYPE_LIST_RESPONSE: &str = "list_response";
 
 
 // Content-type for HTTP(s) exchanges
@@ -156,6 +163,7 @@ pub enum Payload {
     List,
     Issue(IssuanceRequest),
     Revoke(RevocationRequest),
+    ListResponse(ResourceClassListResponse),
 }
 
 /// # Decoding from XML
@@ -179,6 +187,10 @@ impl Payload {
                 RevocationRequest::decode(content, reader)
                                         .map(Payload::Revoke)
             }
+            PAYLOAD_TYPE_LIST_RESPONSE => {
+                ResourceClassListResponse::decode(content, reader)
+                                        .map(Payload::ListResponse)
+            }
             _ => Err(Error::InvalidPayloadType(payload_type))
         }
     }
@@ -193,6 +205,7 @@ impl Payload {
             Payload::List => PAYLOAD_TYPE_LIST,
             Payload::Issue(_) => PAYLOAD_TYPE_ISSUE,
             Payload::Revoke(_) => PAYLOAD_TYPE_REVOKE,
+            Payload::ListResponse(_) => PAYLOAD_TYPE_LIST_RESPONSE,
         }
     }
 
@@ -205,6 +218,7 @@ impl Payload {
             Payload::List => Ok(()), // nothing to write
             Payload::Issue(issue) => issue.write_xml(content),
             Payload::Revoke(revoke) => revoke.write_xml(content),
+            Payload::ListResponse(list) => list.write_xml(content),
         }
     }
 }
@@ -218,7 +232,7 @@ impl Payload {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct IssuanceRequest {
     class_name: ResourceClassName,
-    limit: RequestResourceLimit,
+    limit: ResourceSet,
     csr: Csr,
 }
 
@@ -227,20 +241,20 @@ pub struct IssuanceRequest {
 impl IssuanceRequest {
     pub fn new(
         class_name: ResourceClassName,
-        limit: RequestResourceLimit,
+        limit: ResourceSet,
         csr: Csr
     ) -> Self {
         IssuanceRequest { class_name, limit, csr }
     }
 
-    pub fn unpack(self) -> (ResourceClassName, RequestResourceLimit, Csr) {
+    pub fn unpack(self) -> (ResourceClassName, ResourceSet, Csr) {
         (self.class_name, self.limit, self.csr)
     }
 
     pub fn class_name(&self) -> &ResourceClassName {
         &self.class_name
     }
-    pub fn limit(&self) -> &RequestResourceLimit {
+    pub fn limit(&self) -> &ResourceSet {
         &self.limit
     }
     pub fn csr(&self) -> &Csr {
@@ -269,7 +283,7 @@ impl IssuanceRequest {
     ) -> Result<Self, Error> {
 
         let mut class_name: Option<ResourceClassName> = None;
-        let mut limit = RequestResourceLimit::default();
+        let mut limit = ResourceSet::default();
 
         let mut request_el = content.take_element(reader, |element| {
             if element.name().local() != REQUEST {
@@ -306,7 +320,7 @@ impl IssuanceRequest {
         })?;
 
         let csr = Csr::decode(csr_bytes.as_ref())
-                        .map_err(|e| Error::InvalidCsr(e.to_string()))?;
+                        .map_err(|e| Error::InvalidCsrSyntax(e.to_string()))?;
 
         request_el.take_end(reader)?;
 
@@ -325,28 +339,19 @@ impl IssuanceRequest {
             .element(REQUEST.into())?
             .attr("class_name", self.class_name())?
             .opt_attr("req_resource_set_as", self.limit().asn_opt())?
-            .opt_attr(
-                "req_resource_set_ipv4",
-                self.limit().v4_opt().map(|blocks| blocks.as_v4()).as_ref()
-            )?
-            .opt_attr(
-                "req_resource_set_ipv6",
-                self.limit().v6_opt().map(|blocks| blocks.as_v6()).as_ref()
-            )?
-            .content(|content| content.base64(
-                self.csr().to_captured().as_slice()
-            ))?;
+            .opt_attr("req_resource_set_ipv4", self.limit().ipv4_opt())?
+            .opt_attr("req_resource_set_ipv6", self.limit().ipv6_opt())?
+            .content(|c| c.base64(self.csr().to_captured().as_slice()))?;
 
         Ok(())
     }
 }
 
 impl PartialEq for IssuanceRequest {
-    fn eq(&self, other: &IssuanceRequest) -> bool {
-        self.class_name == other.class_name
-            && self.limit == other.limit
-            && self.csr.to_captured().as_slice() == 
-                                            other.csr.to_captured().as_slice()
+    fn eq(&self, oth: &IssuanceRequest) -> bool {
+        self.class_name == oth.class_name &&
+        self.limit == oth.limit &&
+        self.csr.to_captured().as_slice() == oth.csr.to_captured().as_slice()
     }
 }
 
@@ -380,67 +385,56 @@ impl fmt::Display for IssuanceRequest {
     }
 }
 
-//------------ RequestResourceLimit ------------------------------------------
+//------------ ResourceSet ---------------------------------------------------
 
-/// The scope of resources that a child CA wants to have certified. By default
-/// there are no limits, i.e. all the child wants all resources the parent is
-/// willing to give. Only if some values are specified for certain resource
-/// types will the scope be limited for that type only. Note that asking for
-/// more than you are entitled to as a child, will anger a parent. In this case
-/// the IssuanceRequest will be rejected.
-///
-/// See: https://tools.ietf.org/html/rfc6492#section-3.4.1
+/// A set of ASN, IPv4 and IPv6 resources. In the context of resource
+/// certificates this type can be used to include all resources found on the
+/// certificate. In the context of an [`IssuanceRequest`] this type represents
+/// the set of (optional) limits when requesting a certificate - where an
+/// empty set of any resource type means that ALL eligible resources are
+/// wanted. In the context of [`ResourceClassEntitlements`] this type
+/// represents the full set of resource entitlements.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RequestResourceLimit {
+pub struct ResourceSet {
     asn: AsBlocks,
-    
-    #[serde(
-        deserialize_with = "IpBlocks::deserialize_v4",
-        serialize_with = "IpBlocks::serialize_v4"
-    )]
-    v4: IpBlocks,
-
-    #[serde(
-        deserialize_with = "IpBlocks::deserialize_v6",
-        serialize_with = "IpBlocks::serialize_v6"
-    )]
-    v6: IpBlocks,
+    ipv4: Ipv4Blocks,
+    ipv6: Ipv6Blocks,
 }
 
-impl RequestResourceLimit {
-    pub fn new() -> RequestResourceLimit {
+impl ResourceSet {
+    pub fn new() -> ResourceSet {
         Self::default()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.asn.is_empty() && self.v4.is_empty() && self.v6.is_empty()
+        self.asn.is_empty() && self.ipv4.is_empty() && self.ipv6.is_empty()
     }
 
     pub fn set_asn(&mut self, asn: AsBlocks) {
         self.asn = asn;
     }
 
-    pub fn set_ipv4(&mut self, ipv4: IpBlocks) {
-        self.v4 = ipv4;
+    pub fn set_ipv4(&mut self, ipv4: Ipv4Blocks) {
+        self.ipv4 = ipv4;
     }
 
-    pub fn set_ipv6(&mut self, ipv6: IpBlocks) {
-        self.v6 = ipv6;
+    pub fn set_ipv6(&mut self, ipv6: Ipv6Blocks) {
+        self.ipv6 = ipv6;
     }
 
     pub fn asn(&self) -> &AsBlocks {
         &self.asn
     }
     
-    pub fn v4(&self) -> &IpBlocks {
-        &self.v4
+    pub fn ipv4(&self) -> &Ipv4Blocks {
+        &self.ipv4
     }
     
-    pub fn v6(&self) -> &IpBlocks {
-        &self.v6
+    pub fn ipv6(&self) -> &Ipv6Blocks {
+        &self.ipv6
     }
 
-    /// Returns None if the limit is empty.
+    /// Returns None if there are no ASNs in this ResourceSet.
     pub fn asn_opt(&self) -> Option<&AsBlocks> {
         if self.asn.is_empty() {
             None
@@ -449,31 +443,31 @@ impl RequestResourceLimit {
         }
     }
 
-    /// Returns None if the limit is empty.
-    pub fn v4_opt(&self) -> Option<&IpBlocks> {
-        if self.v4.is_empty() {
+    /// Returns None if there is no IPv4 in this ResourceSet.
+    pub fn ipv4_opt(&self) -> Option<&Ipv4Blocks> {
+        if self.ipv4.is_empty() {
             None
         } else {
-            Some(&self.v4)
+            Some(&self.ipv4)
         }
     }
 
-    /// Returns None if the limit is empty.
-    pub fn v6_opt(&self) -> Option<&IpBlocks> {
-        if self.v6.is_empty() {
+    /// Returns None if there is no IPv6 in this ResourceSet.
+    pub fn ipv6_opt(&self) -> Option<&Ipv6Blocks> {
+        if self.ipv6.is_empty() {
             None
         } else {
-            Some(&self.v6)
+            Some(&self.ipv6)
         }
     }
 }
 
-impl Default for RequestResourceLimit {
+impl Default for ResourceSet {
     fn default() -> Self {
-        RequestResourceLimit {
+        ResourceSet {
             asn: AsBlocks::empty(),
-            v4: IpBlocks::empty(),
-            v6: IpBlocks::empty(),
+            ipv4: Ipv4Blocks::empty(),
+            ipv6: Ipv6Blocks::empty(),
         }
     }
 }
@@ -481,19 +475,28 @@ impl Default for RequestResourceLimit {
 
 //--- Display
 
-impl fmt::Display for RequestResourceLimit {
+impl fmt::Display for ResourceSet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.is_empty() {
             write!(f, "none")
         } else {
+            let mut space_needed = false;
             if !self.asn.is_empty() {
-                write!(f, "asn: {} ", self.asn)?;
+                write!(f, "asn: {}", self.asn)?;
+                space_needed = true;
             }
-            if !self.v4.is_empty() {
-                write!(f, "ipv4: {} ", self.v4.as_v4())?;
+            if !self.ipv4.is_empty() {
+                if space_needed {
+                    write!(f, " ")?;
+                }
+                write!(f, "ipv4: {}", self.ipv4)?;
+                space_needed = true;
             }
-            if !self.v6.is_empty() {
-                write!(f, "ipv6: {} ", self.v6.as_v6())?;
+            if !self.ipv6.is_empty() {
+                if space_needed {
+                    write!(f, " ")?;
+                }
+                write!(f, "ipv6: {}", self.ipv6)?;
             }
 
             Ok(())
@@ -610,6 +613,344 @@ impl RevocationRequest {
     }
 }
 
+
+//------------ ResourceClassListResponse -------------------------------------
+
+/// This structure is what is called the "Resource Class List Response"
+/// in section 3.3.2 of RFC6492.
+/// 
+/// This response can have 0 or more <class /> elements containing the
+/// entitlements for 0 or more corresponding resource classes, which we will
+/// call [`Entitlement`]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ResourceClassListResponse {
+    classes: Vec<ResourceClassEntitlements>,
+}
+
+/// # Decode from XML
+/// 
+impl ResourceClassListResponse {
+    fn decode<R: io::BufRead>(
+        content: &mut Content,
+        reader: &mut xml::decode::Reader<R>,
+    ) -> Result<Self, Error> {
+        let mut classes = vec![];
+        
+        while let Some(entitlement) = ResourceClassEntitlements::decode_opt(
+            content,
+            reader
+        )? {
+            classes.push(entitlement);
+        }
+        
+        Ok(ResourceClassListResponse { classes })
+    }
+}
+
+/// # Encode to XML
+/// 
+impl ResourceClassListResponse {
+    fn write_xml<W: io::Write>(
+        &self,
+        content: &mut encode::Content<W>
+    ) -> Result<(), io::Error> {
+        for class in &self.classes {
+            class.write_xml(content)?;
+        }
+        Ok(())
+    }
+}
+
+//------------ ResourceClassEntitlements -------------------------------------
+
+/// The entitlements for one of possibly multiple resource classes included in
+/// an RFC 6492 "Resource Class List Response".
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ResourceClassEntitlements {
+    class_name: ResourceClassName,
+    url: uri::Rsync,
+    resources: ResourceSet,
+    not_after: Time,
+    certificates: Vec<IssuedCert>,
+    issuer: Cert
+}
+
+/// # Decode from XML
+/// 
+impl ResourceClassEntitlements {
+    /// Decodes an optional nested <class /> element.
+    // 
+    // Schema defined in section 3.3.2 of RFC 6492:
+    //
+    // <class class_name="class name"
+    //        cert_url="url"
+    //        resource_set_as="as resource set"
+    //        resource_set_ipv4="ipv4 resource set"
+    //        resource_set_ipv6="ipv6 resource set"
+    //        resource_set_notafter="datetime"
+    //
+    //        suggested_sia_head="[directory uri]" >
+    //
+    //             ^^^^^ this is optional and replaced by sia_base in RFC8183
+    //                   it is unused and can simply be skipped when parsing
+    // 
+    //    <certificate cert_url="url"
+    //                 req_resource_set_as="as resource set"
+    //                 req_resource_set_ipv4="ipv4 resource set"
+    //                 req_resource_set_ipv6="ipv6 resource set" >
+    //
+    //       [base64 encoded certificate]
+    //
+    //    </certificate>
+    //    ...
+    // 
+    //    (repeated for each current certificate where the client
+    //     is the certificate's subject)
+    // 
+    //    <issuer>[issuer's certificate]</issuer>
+    // </class>
+    fn decode_opt<R: io::BufRead>(
+        content: &mut Content,
+        reader: &mut xml::decode::Reader<R>,
+    ) -> Result<Option<Self>, Error> {
+
+        // The following values are found as attributes
+        let mut class_name: Option<ResourceClassName> = None;
+        let mut url: Option<uri::Rsync> = None;
+        let mut resources = ResourceSet::default();
+        let mut not_after: Option<Time> = None;
+
+        let class_element = content.take_opt_element(reader, |element| {
+            if element.name().local() != CLASS {
+                return Err(XmlError::Malformed)
+            }
+
+            element.attributes(|name, value| match name {
+                b"class_name" => {
+                    class_name = Some(value.ascii_into()?);
+                    Ok(())
+                },
+                b"cert_url" => {
+                    url = Some(value.ascii_into()?);
+                    Ok(())
+                },
+                b"resource_set_as" => {
+                    resources.set_asn(value.ascii_into()?);
+                    Ok(())
+                }
+                b"resource_set_ipv4" => {
+                    resources.set_ipv4(value.ascii_into()?);
+                    Ok(())
+                }
+                b"resource_set_ipv6" => {
+                    resources.set_ipv6(value.ascii_into()?);
+                    Ok(())
+                }
+                b"resource_set_notafter" => {
+                    let date_time: DateTime::<Utc> = value.ascii_into()?;
+                    not_after = Some(Time::new(date_time));
+                    Ok(())
+                }
+                b"suggested_sia_head" => {
+                    // safe to ignore - optional and replaced by 'sia_base'
+                    // in the RFC 8183 Repository Response.
+                    Ok(())
+                }
+                _ => {
+                    Err(XmlError::Malformed)
+                }
+            })
+        })?;
+
+        let mut class_element = match class_element {
+            None => return Ok(None),
+            Some(inner) => inner
+        };
+
+        // Make sure all required attributes were set
+        let class_name = class_name.ok_or(XmlError::Malformed)?;
+        let url = url.ok_or(XmlError::Malformed)?;
+        let not_after = not_after.ok_or(XmlError::Malformed)?;
+
+        let mut certificates: Vec<IssuedCert> = vec![];
+        let mut issuer: Option<Cert> = None;
+
+        // We should find zero or more received (issued) certificates and
+        // exactly one issuer CA certificates nested in this response.
+        //
+        // Since we will need to parse the element attributes, the content,
+        // and close each element, and the order may or may not obey the
+        // RFC XML schema (issuer should be last) - it's best that we do a
+        // careful loop now, parse what we find and break if there are no
+        // more elements.
+        loop {
+            let mut was_issuer = false; // can only be certificate OR issuer
+
+            let mut url: Option<uri::Rsync> = None;
+            let mut req_limit = ResourceSet::default();
+
+            let cert_el = class_element.take_opt_element(reader, |el| {
+                match el.name().local() {
+                    CERTIFICATE => {
+                        el.attributes(|name, value| match name {
+                            b"cert_url" => {
+                                url = Some(value.ascii_into()?);
+                                Ok(())
+                            },
+                            b"req_resource_set_as" => {
+                                req_limit.set_asn(value.ascii_into()?);
+                                Ok(())
+                            }
+                            b"req_resource_set_ipv4" => {
+                                req_limit.set_ipv4(value.ascii_into()?);
+                                Ok(())
+                            }
+                            b"req_resource_set_ipv6" => {
+                                req_limit.set_ipv6(value.ascii_into()?);
+                                Ok(())
+                            }
+                            _ => Err(XmlError::Malformed)
+                        })
+                    },
+                    ISSUER => {
+                        was_issuer = true;
+                        Ok(())
+                    }
+                    _ => Err(XmlError::Malformed)
+                }
+            })?;
+
+            let mut cert_el = match cert_el {
+                None => break,
+                Some(inner) => inner
+            };
+
+            // no matter whether this was an issued *received* certificate or
+            // the signing 'issuer' certificate.. we expect a base64 encoded
+            // certificate inside this element.
+            let bytes = cert_el.take_text(reader, |txt| txt.base64_decode())?;
+            let cert = Cert::decode(bytes.as_ref())
+                              .map_err(|e| Error::CertSyntax(e.to_string()))?;
+
+            if was_issuer {
+                issuer = Some(cert);
+            } else {
+                let url = url.ok_or(XmlError::Malformed)?;
+
+                certificates.push(
+                    IssuedCert { url, req_limit, cert }
+                );
+            }
+
+            cert_el.take_end(reader)?;
+        }
+
+
+        let issuer = issuer.ok_or(XmlError::Malformed)?;
+
+        class_element.take_end(reader)?;
+
+        Ok(Some(ResourceClassEntitlements {
+            class_name, url, resources, not_after, certificates, issuer
+        }))
+    }
+}
+    
+/// # Encode to XML
+/// 
+impl ResourceClassEntitlements {
+    fn write_xml<W: io::Write>(
+        &self,
+        content: &mut encode::Content<W>
+    ) -> Result<(), io::Error> {
+
+        let not_after = self.not_after
+                                .to_rfc3339_opts(SecondsFormat::Secs, true);
+
+        content
+            .element(CLASS.into())?
+            .attr("class_name", &self.class_name)?
+            .attr("cert_url", &self.url)?
+            .opt_attr("resource_set_as", self.resources.asn_opt())?
+            .opt_attr("resource_set_ipv4", self.resources.ipv4_opt())?
+            .opt_attr("resource_set_ipv6", self.resources.ipv6_opt())?
+            .attr("resource_set_notafter", &not_after)?
+            .content(|nested|{
+                for issued in &self.certificates {
+                    issued.write_xml(nested)?;
+                }
+                
+                nested
+                    .element(ISSUER.into())?
+                    .content(|inner| {
+                        inner.base64(self.issuer.to_captured().as_slice())}
+                    )?;
+
+                Ok(())
+            })?;
+
+        Ok(())
+    }
+}
+
+//--- PartialEq and Eq
+
+impl PartialEq for ResourceClassEntitlements {
+    fn eq(&self, other: &Self) -> bool {
+        self.class_name == other.class_name &&
+        self.url == other.url &&
+        self.resources == other.resources &&
+        self.certificates == other.certificates &&
+        self.issuer.to_captured().as_slice() == 
+                                        other.issuer.to_captured().as_slice()
+    }
+}
+
+impl Eq for ResourceClassEntitlements {}
+
+//------------ IssuedCert ----------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct IssuedCert {
+    url: uri::Rsync,
+    req_limit: ResourceSet,
+    cert: Cert
+}
+
+/// # Encode to XML
+/// 
+impl IssuedCert {
+    fn write_xml<W: io::Write>(
+        &self,
+        content: &mut encode::Content<W>
+    ) -> Result<(), io::Error> {
+        content
+            .element(CERTIFICATE.into())?
+            .attr("cert_url", &self.url)?
+            .opt_attr("req_resource_set_as", self.req_limit.asn_opt())?
+            .opt_attr("req_resource_set_ipv4", self.req_limit.ipv4_opt())?
+            .opt_attr("req_resource_set_ipv6", self.req_limit.ipv6_opt())?
+            .content(|inside| {
+                inside.base64(self.cert.to_captured().as_slice())
+            })?;
+
+        Ok(())
+    }
+}
+
+//--- PartialEq and Eq
+
+impl PartialEq for IssuedCert {
+    fn eq(&self, other: &Self) -> bool {
+        self.url == other.url &&
+        self.req_limit == other.req_limit &&
+        self.cert.to_captured().as_slice() == other.cert.to_captured().as_slice()
+    }
+}
+
+impl Eq for IssuedCert {}
+
+
 //------------ ResourceClassName ---------------------------------------------
 
 /// This type represents a resource class name, as used in RFC6492.
@@ -695,7 +1036,8 @@ pub enum Error {
     XmlError(XmlError),
     InvalidErrorCode(String),
     InvalidPayloadType(String),
-    InvalidCsr(String),
+    InvalidCsrSyntax(String),
+    CertSyntax(String),
 }
 
 impl fmt::Display for Error {
@@ -709,8 +1051,11 @@ impl fmt::Display for Error {
             Error::InvalidPayloadType(payload_type) => {
                 write!(f, "Invalid payload type: {}", payload_type)
             }
-            Error::InvalidCsr(msg) => {
-                write!(f, "Could not decoded CSR: {}", msg)
+            Error::InvalidCsrSyntax(msg) => {
+                write!(f, "Could not decode CSR: {}", msg)
+            }
+            Error::CertSyntax(msg) => {
+                write!(f, "Could not decode certificate: {}", msg)
             }
         }
     }
@@ -752,14 +1097,14 @@ mod tests {
 
     #[test]
     fn parse_and_encode_list() {
-        let xml = extract_xml(include_bytes!("../../test-data/remote/rfc6492/rpkid-rfc6492-list.der"));
+        let xml = extract_xml(include_bytes!("../../test-data/remote/rfc6492/list.der"));
         let list = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(list);
     }
 
     #[test]
     fn parse_and_encode_issue() {
-        let xml = extract_xml(include_bytes!("../../test-data/remote/rfc6492/rpkid-rfc6492-issue.der"));
+        let xml = extract_xml(include_bytes!("../../test-data/remote/rfc6492/issue.der"));
         let issue = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(issue);
     }
@@ -770,4 +1115,12 @@ mod tests {
         let revoke = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(revoke);
     }
+
+    #[test]
+    fn parse_and_encode_list_response() {
+        let xml = extract_xml(include_bytes!("../../test-data/remote/rfc6492/list-response.ber"));
+        let list_response = Message::decode(xml.as_bytes()).unwrap();
+        assert_re_encode_equals(list_response);
+    }
+
 }
