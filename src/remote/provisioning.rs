@@ -665,14 +665,13 @@ impl ResourceClassListResponse {
 
 /// The entitlements for one of possibly multiple resource classes included in
 /// an RFC 6492 "Resource Class List Response".
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ResourceClassEntitlements {
     class_name: ResourceClassName,
-    url: uri::Rsync,
     resources: ResourceSet,
     not_after: Time,
-    certificates: Vec<IssuedCert>,
-    issuer: Cert
+    issued_certs: Vec<IssuedCert>,
+    signing_cert: SigningCert,
 }
 
 /// # Decode from XML
@@ -772,7 +771,7 @@ impl ResourceClassEntitlements {
         let url = url.ok_or(XmlError::Malformed)?;
         let not_after = not_after.ok_or(XmlError::Malformed)?;
 
-        let mut certificates: Vec<IssuedCert> = vec![];
+        let mut issued_certs: Vec<IssuedCert> = vec![];
         let mut issuer: Option<Cert> = None;
 
         // We should find zero or more received (issued) certificates and
@@ -837,7 +836,7 @@ impl ResourceClassEntitlements {
             } else {
                 let url = url.ok_or(XmlError::Malformed)?;
 
-                certificates.push(
+                issued_certs.push(
                     IssuedCert { url, req_limit, cert }
                 );
             }
@@ -848,10 +847,12 @@ impl ResourceClassEntitlements {
 
         let issuer = issuer.ok_or(XmlError::Malformed)?;
 
+        let signing_cert = SigningCert { cert: issuer, url };
+
         class_element.take_end(reader)?;
 
         Ok(Some(ResourceClassEntitlements {
-            class_name, url, resources, not_after, certificates, issuer
+            class_name, resources, not_after, issued_certs, signing_cert
         }))
     }
 }
@@ -870,20 +871,22 @@ impl ResourceClassEntitlements {
         content
             .element(CLASS.into())?
             .attr("class_name", &self.class_name)?
-            .attr("cert_url", &self.url)?
+            .attr("cert_url", &self.signing_cert.url)?
             .opt_attr("resource_set_as", self.resources.asn_opt())?
             .opt_attr("resource_set_ipv4", self.resources.ipv4_opt())?
             .opt_attr("resource_set_ipv6", self.resources.ipv6_opt())?
             .attr("resource_set_notafter", &not_after)?
             .content(|nested|{
-                for issued in &self.certificates {
+                for issued in &self.issued_certs {
                     issued.write_xml(nested)?;
                 }
                 
                 nested
                     .element(ISSUER.into())?
                     .content(|inner| {
-                        inner.base64(self.issuer.to_captured().as_slice())}
+                        inner.base64(
+                            self.signing_cert.cert.to_captured().as_slice()
+                        )}
                     )?;
 
                 Ok(())
@@ -893,23 +896,10 @@ impl ResourceClassEntitlements {
     }
 }
 
-//--- PartialEq and Eq
-
-impl PartialEq for ResourceClassEntitlements {
-    fn eq(&self, other: &Self) -> bool {
-        self.class_name == other.class_name &&
-        self.url == other.url &&
-        self.resources == other.resources &&
-        self.certificates == other.certificates &&
-        self.issuer.to_captured().as_slice() == 
-                                        other.issuer.to_captured().as_slice()
-    }
-}
-
-impl Eq for ResourceClassEntitlements {}
 
 //------------ IssuedCert ----------------------------------------------------
 
+/// Represents an existing certificate issued to a child.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct IssuedCert {
     url: uri::Rsync,
@@ -941,14 +931,36 @@ impl IssuedCert {
 //--- PartialEq and Eq
 
 impl PartialEq for IssuedCert {
-    fn eq(&self, other: &Self) -> bool {
-        self.url == other.url &&
-        self.req_limit == other.req_limit &&
-        self.cert.to_captured().as_slice() == other.cert.to_captured().as_slice()
+    fn eq(&self, o: &Self) -> bool {
+        self.url == o.url &&
+        self.req_limit == o.req_limit &&
+        self.cert.to_captured().as_slice() == o.cert.to_captured().as_slice()
     }
 }
 
 impl Eq for IssuedCert {}
+
+
+//------------ SigningCert ---------------------------------------------------
+
+/// Represents the parent CA certificate used to sign child certificates in
+/// a given resource class.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SigningCert {
+    url: uri::Rsync,
+    cert: Cert,
+}
+
+//--- PartialEq and Eq
+
+impl PartialEq for SigningCert {
+    fn eq(&self, o: &Self) -> bool {
+        self.url == o.url &&
+        self.cert.to_captured().as_slice() == o.cert.to_captured().as_slice()
+    }
+}
+
+impl Eq for SigningCert {}
 
 
 //------------ ResourceClassName ---------------------------------------------
