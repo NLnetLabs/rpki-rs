@@ -42,6 +42,7 @@ const PAYLOAD_TYPE_ISSUE: &str = "issue";
 const PAYLOAD_TYPE_REVOKE: &str = "revoke";
 
 const PAYLOAD_TYPE_LIST_RESPONSE: &str = "list_response";
+const PAYLOAD_TYPE_ISSUE_RESPONSE: &str = "issue_response";
 
 
 // Content-type for HTTP(s) exchanges
@@ -164,6 +165,7 @@ pub enum Payload {
     Issue(IssuanceRequest),
     Revoke(RevocationRequest),
     ListResponse(ResourceClassListResponse),
+    IssueResponse(IssuanceResponse),
 }
 
 /// # Decoding from XML
@@ -191,6 +193,10 @@ impl Payload {
                 ResourceClassListResponse::decode(content, reader)
                                         .map(Payload::ListResponse)
             }
+            PAYLOAD_TYPE_ISSUE_RESPONSE => {
+                IssuanceResponse::decode(content, reader)
+                                        .map(Payload::IssueResponse)
+            }
             _ => Err(Error::InvalidPayloadType(payload_type))
         }
     }
@@ -206,6 +212,7 @@ impl Payload {
             Payload::Issue(_) => PAYLOAD_TYPE_ISSUE,
             Payload::Revoke(_) => PAYLOAD_TYPE_REVOKE,
             Payload::ListResponse(_) => PAYLOAD_TYPE_LIST_RESPONSE,
+            Payload::IssueResponse(_) => PAYLOAD_TYPE_ISSUE_RESPONSE,
         }
     }
 
@@ -219,6 +226,7 @@ impl Payload {
             Payload::Issue(issue) => issue.write_xml(content),
             Payload::Revoke(revoke) => revoke.write_xml(content),
             Payload::ListResponse(list) => list.write_xml(content),
+            Payload::IssueResponse(response) => response.write_xml(content),
         }
     }
 }
@@ -384,6 +392,52 @@ impl fmt::Display for IssuanceRequest {
         )
     }
 }
+
+
+//------------ IssuanceResponse ----------------------------------------------
+
+/// A Certificate Issuance Response equivalent to the one defined in
+/// section 3.4.2 of RFC6492.
+///
+/// Note that this is like a single [`ResourceClassEntitlements`] found in the
+/// section 3.4.1 Resource Class List Response, except that it MUsT include
+/// the ONE certificate which has just been issued only. So we can wrap here
+/// and add some guards.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct IssuanceResponse(ResourceClassEntitlements);
+
+/// # Encode to XML
+/// 
+impl IssuanceResponse {
+    fn write_xml<W: io::Write>(
+        &self,
+        content: &mut encode::Content<W>
+    ) -> Result<(), io::Error> {
+        self.0.write_xml(content)
+    }
+}
+
+/// # Decode from XML
+/// 
+impl IssuanceResponse {
+    /// Decodes an RFC 6492 section 3.4.2 issuance response.
+    fn decode<R: io::BufRead>(
+        content: &mut Content,
+        reader: &mut xml::decode::Reader<R>,
+    ) -> Result<Self, Error> {
+        let entitlements = ResourceClassEntitlements::decode_opt(
+            content, reader
+        )?
+        .ok_or(XmlError::Malformed)?; // We MUST have 1
+
+        if entitlements.issued_certs.len() != 1 {
+            Err(Error::XmlError(XmlError::Malformed))
+        } else {
+            Ok(IssuanceResponse(entitlements))
+        }
+    }
+}
+
 
 //------------ ResourceSet ---------------------------------------------------
 
@@ -668,7 +722,7 @@ impl ResourceClassListResponse {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ResourceClassEntitlements {
     class_name: ResourceClassName,
-    resources: ResourceSet,
+    resource_set: ResourceSet,
     not_after: Time,
     issued_certs: Vec<IssuedCert>,
     signing_cert: SigningCert,
@@ -715,7 +769,7 @@ impl ResourceClassEntitlements {
 
         // The following values are found as attributes
         let mut class_name: Option<ResourceClassName> = None;
-        let mut url: Option<uri::Rsync> = None;
+        let mut cert_url: Option<uri::Rsync> = None;
         let mut resources = ResourceSet::default();
         let mut not_after: Option<Time> = None;
 
@@ -730,7 +784,7 @@ impl ResourceClassEntitlements {
                     Ok(())
                 },
                 b"cert_url" => {
-                    url = Some(value.ascii_into()?);
+                    cert_url = Some(value.ascii_into()?);
                     Ok(())
                 },
                 b"resource_set_as" => {
@@ -768,7 +822,7 @@ impl ResourceClassEntitlements {
 
         // Make sure all required attributes were set
         let class_name = class_name.ok_or(XmlError::Malformed)?;
-        let url = url.ok_or(XmlError::Malformed)?;
+        let issuer_url = cert_url.ok_or(XmlError::Malformed)?;
         let not_after = not_after.ok_or(XmlError::Malformed)?;
 
         let mut issued_certs: Vec<IssuedCert> = vec![];
@@ -847,12 +901,12 @@ impl ResourceClassEntitlements {
 
         let issuer = issuer.ok_or(XmlError::Malformed)?;
 
-        let signing_cert = SigningCert { cert: issuer, url };
+        let signing_cert = SigningCert { cert: issuer, url: issuer_url };
 
         class_element.take_end(reader)?;
 
         Ok(Some(ResourceClassEntitlements {
-            class_name, resources, not_after, issued_certs, signing_cert
+            class_name, resource_set: resources, not_after, issued_certs, signing_cert
         }))
     }
 }
@@ -872,9 +926,9 @@ impl ResourceClassEntitlements {
             .element(CLASS.into())?
             .attr("class_name", &self.class_name)?
             .attr("cert_url", &self.signing_cert.url)?
-            .opt_attr("resource_set_as", self.resources.asn_opt())?
-            .opt_attr("resource_set_ipv4", self.resources.ipv4_opt())?
-            .opt_attr("resource_set_ipv6", self.resources.ipv6_opt())?
+            .opt_attr("resource_set_as", self.resource_set.asn_opt())?
+            .opt_attr("resource_set_ipv4", self.resource_set.ipv4_opt())?
+            .opt_attr("resource_set_ipv6", self.resource_set.ipv6_opt())?
             .attr("resource_set_notafter", &not_after)?
             .content(|nested|{
                 for issued in &self.issued_certs {
@@ -1119,6 +1173,13 @@ mod tests {
         let xml = extract_xml(include_bytes!("../../test-data/remote/rfc6492/issue.der"));
         let issue = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(issue);
+    }
+
+    #[test]
+    fn parse_and_encode_issue_response() {
+        let xml = extract_xml(include_bytes!("../../test-data/remote/rfc6492/issue-response.der"));
+        let issue_response = Message::decode(xml.as_bytes()).unwrap();
+        assert_re_encode_equals(issue_response);
     }
 
     #[test]
