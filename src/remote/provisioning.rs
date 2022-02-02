@@ -1,6 +1,7 @@
 //! Support RFC 6492 Provisioning Protocol (aka up-down)
 
 use std::convert::TryFrom;
+use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::{io, fmt};
@@ -43,6 +44,7 @@ const PAYLOAD_TYPE_REVOKE: &str = "revoke";
 
 const PAYLOAD_TYPE_LIST_RESPONSE: &str = "list_response";
 const PAYLOAD_TYPE_ISSUE_RESPONSE: &str = "issue_response";
+const PAYLOAD_TYPE_REVOKE_RESPONSE: &str = "revoke_response";
 
 
 // Content-type for HTTP(s) exchanges
@@ -166,6 +168,7 @@ pub enum Payload {
     Revoke(RevocationRequest),
     ListResponse(ResourceClassListResponse),
     IssueResponse(IssuanceResponse),
+    RevokeResponse(RevocationResponse),
 }
 
 /// # Decoding from XML
@@ -197,6 +200,10 @@ impl Payload {
                 IssuanceResponse::decode(content, reader)
                                         .map(Payload::IssueResponse)
             }
+            PAYLOAD_TYPE_REVOKE_RESPONSE => {
+                RevocationResponse::decode(content, reader)
+                                        .map(Payload::RevokeResponse)   
+            }
             _ => Err(Error::InvalidPayloadType(payload_type))
         }
     }
@@ -209,10 +216,11 @@ impl Payload {
     fn payload_type(&self) -> &str {
         match self {
             Payload::List => PAYLOAD_TYPE_LIST,
-            Payload::Issue(_) => PAYLOAD_TYPE_ISSUE,
-            Payload::Revoke(_) => PAYLOAD_TYPE_REVOKE,
             Payload::ListResponse(_) => PAYLOAD_TYPE_LIST_RESPONSE,
+            Payload::Issue(_) => PAYLOAD_TYPE_ISSUE,
             Payload::IssueResponse(_) => PAYLOAD_TYPE_ISSUE_RESPONSE,
+            Payload::Revoke(_) => PAYLOAD_TYPE_REVOKE,
+            Payload::RevokeResponse(_) => PAYLOAD_TYPE_REVOKE_RESPONSE,
         }
     }
 
@@ -223,10 +231,11 @@ impl Payload {
     ) -> Result<(), io::Error> {
         match self {
             Payload::List => Ok(()), // nothing to write
-            Payload::Issue(issue) => issue.write_xml(content),
-            Payload::Revoke(revoke) => revoke.write_xml(content),
             Payload::ListResponse(list) => list.write_xml(content),
+            Payload::Issue(issue) => issue.write_xml(content),
             Payload::IssueResponse(response) => response.write_xml(content),
+            Payload::Revoke(revoke) => revoke.write_xml(content),
+            Payload::RevokeResponse(response) => response.write_xml(content),
         }
     }
 }
@@ -564,37 +573,90 @@ impl fmt::Display for ResourceSet {
 /// This type represents a Certificate Revocation Request as
 /// defined in section 3.5.1 of RFC6492.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RevocationRequest {
+pub struct RevocationRequest(KeyElement);
+
+impl RevocationRequest {
+    pub fn new(class_name: ResourceClassName, key: KeyIdentifier) -> Self {
+        RevocationRequest(KeyElement { class_name, key })
+    } 
+
+    pub fn unpack(self) -> (ResourceClassName, KeyIdentifier) {
+        (self.0.class_name, self.0.key)
+    }
+}
+
+/// # XML Support
+/// 
+impl RevocationRequest {
+    fn decode<R: io::BufRead>(
+        content: &mut Content,
+        reader: &mut xml::decode::Reader<R>,
+    ) -> Result<Self, Error> {
+        KeyElement::decode(content, reader).map(RevocationRequest)
+    }
+}
+
+impl Deref for RevocationRequest {
+    type Target = KeyElement;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+
+//------------ RevocationResponse --------------------------------------------
+
+/// This type represents a Certificate Revocation Response as
+/// defined in section 3.5.2 of RFC6492.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RevocationResponse(KeyElement);
+
+/// # XML Support
+/// 
+impl RevocationResponse {
+    fn decode<R: io::BufRead>(
+        content: &mut Content,
+        reader: &mut xml::decode::Reader<R>,
+    ) -> Result<Self, Error> {
+        KeyElement::decode(content, reader).map(RevocationResponse)
+    }
+}
+
+impl Deref for RevocationResponse {
+    type Target = KeyElement;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+
+//------------ KeyElement ----------------------------------------------------
+
+/// This type represents a <key /> element as used in both the Certificate
+/// Revocation Request and Response, sections 3.5.1 and 3.5.2 respectively,
+/// of RFC6492.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct KeyElement {
     class_name: ResourceClassName,
     key: KeyIdentifier,
 }
 
-impl fmt::Display for RevocationRequest {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "class name '{}' key '{}'", self.class_name, self.key)
-    }
-}
-
-impl RevocationRequest {
-    pub fn new(class_name: ResourceClassName, key: KeyIdentifier) -> Self {
-        RevocationRequest { class_name, key }
-    }
-
+/// # Data Access
+/// 
+impl KeyElement {
     pub fn class_name(&self) -> &ResourceClassName {
         &self.class_name
     }
     pub fn key(&self) -> &KeyIdentifier {
         &self.key
     }
-
-    pub fn unpack(self) -> (ResourceClassName, KeyIdentifier) {
-        (self.class_name, self.key)
-    }
 }
 
 /// # Decode from XML
 ///
-impl RevocationRequest {
+impl KeyElement {
     /// Decodes an RFC 6492 section 3.5.1 certificate revocation request.
     ///
     /// Requests have the following format:
@@ -640,14 +702,14 @@ impl RevocationRequest {
         let class_name = class_name.ok_or(XmlError::Malformed)?;
         let key = key.ok_or(XmlError::Malformed)?;
 
-        Ok(RevocationRequest { class_name, key })
+        Ok(KeyElement { class_name, key })
     }
 }
 
 
 /// # Encode to XML
 /// 
-impl RevocationRequest {
+impl KeyElement {
     fn write_xml<W: io::Write>(
         &self,
         content: &mut encode::Content<W>
@@ -664,6 +726,13 @@ impl RevocationRequest {
             .attr("ski", &ski)?;
 
         Ok(())
+    }
+}
+
+
+impl fmt::Display for KeyElement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "class name '{}' key '{}'", self.class_name, self.key)
     }
 }
 
@@ -1169,6 +1238,13 @@ mod tests {
     }
 
     #[test]
+    fn parse_and_encode_list_response() {
+        let xml = extract_xml(include_bytes!("../../test-data/remote/rfc6492/list-response.ber"));
+        let list_response = Message::decode(xml.as_bytes()).unwrap();
+        assert_re_encode_equals(list_response);
+    }
+
+    #[test]
     fn parse_and_encode_issue() {
         let xml = extract_xml(include_bytes!("../../test-data/remote/rfc6492/issue.der"));
         let issue = Message::decode(xml.as_bytes()).unwrap();
@@ -1190,10 +1266,10 @@ mod tests {
     }
 
     #[test]
-    fn parse_and_encode_list_response() {
-        let xml = extract_xml(include_bytes!("../../test-data/remote/rfc6492/list-response.ber"));
-        let list_response = Message::decode(xml.as_bytes()).unwrap();
-        assert_re_encode_equals(list_response);
+    fn parse_and_encode_revoke_response() {
+        let xml = include_str!("../../test-data/remote/rfc6492/revoke-response.xml");
+        let revoke_response = Message::decode(xml.as_bytes()).unwrap();
+        assert_re_encode_equals(revoke_response);
     }
 
 }
