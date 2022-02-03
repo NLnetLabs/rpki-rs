@@ -31,12 +31,15 @@ pub type Recipient = Handle;
 const VERSION: &str = "1";
 const NS: &[u8] = b"http://www.apnic.net/specs/rescerts/up-down/";
 
+// XML Element names
 const MESSAGE: &[u8] = b"message";
 const REQUEST: &[u8] = b"request";
 const KEY: &[u8] = b"key";
 const CLASS: &[u8] = b"class";
 const CERTIFICATE: &[u8] = b"certificate";
 const ISSUER: &[u8] = b"issuer";
+const STATUS: &[u8] = b"status";
+const DESCRIPTION: &[u8] = b"description";
 
 const PAYLOAD_TYPE_LIST: &str = "list";
 const PAYLOAD_TYPE_ISSUE: &str = "issue";
@@ -45,6 +48,7 @@ const PAYLOAD_TYPE_REVOKE: &str = "revoke";
 const PAYLOAD_TYPE_LIST_RESPONSE: &str = "list_response";
 const PAYLOAD_TYPE_ISSUE_RESPONSE: &str = "issue_response";
 const PAYLOAD_TYPE_REVOKE_RESPONSE: &str = "revoke_response";
+const PAYLOAD_TYPE_ERROR_RESPONSE: &str = "error_response";
 
 
 // Content-type for HTTP(s) exchanges
@@ -164,11 +168,12 @@ impl Message {
 #[allow(clippy::large_enum_variant)]
 pub enum Payload {
     List,
-    Issue(IssuanceRequest),
-    Revoke(RevocationRequest),
     ListResponse(ResourceClassListResponse),
+    Issue(IssuanceRequest),
     IssueResponse(IssuanceResponse),
+    Revoke(RevocationRequest),
     RevokeResponse(RevocationResponse),
+    NotPerformedResponse(NotPerformedResponse),
 }
 
 /// # Decoding from XML
@@ -204,6 +209,10 @@ impl Payload {
                 RevocationResponse::decode(content, reader)
                                         .map(Payload::RevokeResponse)   
             }
+            PAYLOAD_TYPE_ERROR_RESPONSE => {
+                NotPerformedResponse::decode(content, reader)
+                                        .map(Payload::NotPerformedResponse)
+            }
             _ => Err(Error::InvalidPayloadType(payload_type))
         }
     }
@@ -221,6 +230,7 @@ impl Payload {
             Payload::IssueResponse(_) => PAYLOAD_TYPE_ISSUE_RESPONSE,
             Payload::Revoke(_) => PAYLOAD_TYPE_REVOKE,
             Payload::RevokeResponse(_) => PAYLOAD_TYPE_REVOKE_RESPONSE,
+            Payload::NotPerformedResponse(_) => PAYLOAD_TYPE_ERROR_RESPONSE,
         }
     }
 
@@ -236,6 +246,7 @@ impl Payload {
             Payload::IssueResponse(response) => response.write_xml(content),
             Payload::Revoke(revoke) => revoke.write_xml(content),
             Payload::RevokeResponse(response) => response.write_xml(content),
+            Payload::NotPerformedResponse(res) => res.write_xml(content)
         }
     }
 }
@@ -1020,6 +1031,167 @@ impl ResourceClassEntitlements {
 }
 
 
+//------------ NotPerformedResponse ------------------------------------------
+
+/// This type describes the Not-performed responses defined in section 3.6
+/// of RFC 6492.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NotPerformedResponse {
+    status: u64,
+    description: Option<String>,
+}
+
+impl NotPerformedResponse {
+    pub fn status(&self) -> u64 {
+        self.status
+    }
+
+    /// Creates a response for a status value defined in RFC6492. Also adds
+    /// the description defined in the RFC.
+    pub fn from_code(code: &str) -> Result<Self, Error> {
+        match code {
+            "1101" => Ok((1101, "already processing request")),
+            "1102" => Ok((1102, "version number error")),
+            "1103" => Ok((1103, "unrecognized request type")),
+            "1104" => Ok((1104, "request scheduled for processing")),
+
+            "1201" => Ok((1201, "request - no such resource class")),
+            "1202" => Ok((1202, "request - no resources allocated in resource class")),
+            "1203" => Ok((1203, "request - badly formed certificate request")),
+            "1204" => Ok((1204, "request - already used key in request")),
+
+            "1301" => Ok((1301, "revoke - no such resource class")),
+            "1302" => Ok((1302, "revoke - no such key")),
+
+            "2001" => Ok((2001, "Internal Server Error - Request not performed")),
+
+            _ => Err(Error::InvalidErrorCode(code.to_string())),
+        }.map(|(status, description)| {
+            let description = Some(description.to_string());
+            NotPerformedResponse { status, description }
+        })
+    }
+
+    pub fn _1101() -> Self {
+        Self::from_code("1101").unwrap()
+    }
+    pub fn _1102() -> Self {
+        Self::from_code("1102").unwrap()
+    }
+    pub fn _1103() -> Self {
+        Self::from_code("1103").unwrap()
+    }
+    pub fn _1104() -> Self {
+        Self::from_code("1104").unwrap()
+    }
+
+    pub fn _1201() -> Self {
+        Self::from_code("1201").unwrap()
+    }
+    pub fn _1202() -> Self {
+        Self::from_code("1202").unwrap()
+    }
+    pub fn _1203() -> Self {
+        Self::from_code("1203").unwrap()
+    }
+    pub fn _1204() -> Self {
+        Self::from_code("1204").unwrap()
+    }
+
+    pub fn _1301() -> Self {
+        Self::from_code("1301").unwrap()
+    }
+    pub fn _1302() -> Self {
+        Self::from_code("1302").unwrap()
+    }
+
+    pub fn _2001() -> Self {
+        Self::from_code("2001").unwrap()
+    }
+}
+
+/// XML Support
+/// 
+impl NotPerformedResponse {
+    /// Decodes an RFC 6492 section 3.6 Request-Not-Performed-Response.
+    /// 
+    /// XML format of the content is:
+    ///   <status>[Code]</status>
+    ///   <description xml:lang="en-US">[Readable text]</description>
+    /// 
+    /// Note that 'xml:lang="en-US"' MUST be present if the optional
+    /// <description /> element is present and cannot have any other
+    /// value.
+    fn decode<R: io::BufRead>(
+        content: &mut Content,
+        reader: &mut xml::decode::Reader<R>,
+    ) -> Result<Self, Error> {
+        
+        let mut status_element = content.take_element(reader, |element|
+            if element.name().local() != STATUS {
+                Err(XmlError::Malformed)
+            } else {
+                Ok(())
+            }
+        )?;
+        
+        let status = status_element.take_text(reader, |text|
+            u64::from_str(&text.to_ascii()?).map_err(|_| XmlError::Malformed)
+        )?;
+        
+        status_element.take_end(reader)?;
+        
+        let mut description = None;
+        if let Some(mut element) = content.take_opt_element(reader, |element| {
+            if element.name().local() != DESCRIPTION {
+                Err(XmlError::Malformed)
+            } else {
+                Ok(())
+            }
+        })? {
+            description = Some(
+                element.take_text(reader, |text| {
+                    text.to_ascii().map(|d| d.to_string())
+                })?
+            );
+
+            element.take_end(reader)?;
+        }
+        
+        Ok(NotPerformedResponse { status, description})
+    }
+
+    fn write_xml<W: io::Write>(
+        &self,
+        content: &mut encode::Content<W>
+    ) -> Result<(), io::Error> {
+        content
+            .element(STATUS.into())?
+            .content(|status| status.raw(&self.status.to_string()))?;
+
+        content
+            .opt_element(
+                self.description.as_ref(),
+                DESCRIPTION.into(),
+                |description, el| {
+                    el.content(|content| content.raw(description))?;
+                    Ok(())
+                }
+        )
+    }
+}
+
+impl fmt::Display for NotPerformedResponse {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.description {
+            None => write!(f, "{}", self.status),
+            Some(d) => write!(f, "{} - {}", self.status, d),
+        }
+        
+    }
+}
+
+
 //------------ IssuedCert ----------------------------------------------------
 
 /// Represents an existing certificate issued to a child.
@@ -1272,4 +1444,10 @@ mod tests {
         assert_re_encode_equals(revoke_response);
     }
 
+    #[test]
+    fn parse_and_encode_not_performed_response() {
+        let xml = include_str!("../../test-data/remote/rfc6492/not-performed-response.xml");
+        let not_performed_response = Message::decode(xml.as_bytes()).unwrap();
+        assert_re_encode_equals(not_performed_response);
+    }
 }
