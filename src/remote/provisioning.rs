@@ -50,6 +50,19 @@ const PAYLOAD_TYPE_ISSUE_RESPONSE: &str = "issue_response";
 const PAYLOAD_TYPE_REVOKE_RESPONSE: &str = "revoke_response";
 const PAYLOAD_TYPE_ERROR_RESPONSE: &str = "error_response";
 
+// Error Response codes and messages
+const ERR_1101: &str = "already processing request";
+const ERR_1102: &str = "version number error";
+const ERR_1103: &str = "unrecognized request type";
+const ERR_1104: &str = "request scheduled for processing";
+const ERR_1201: &str = "request - no such resource class";
+const ERR_1202: &str = "request - no resources allocated in resource class";
+const ERR_1203: &str = "request - badly formed certificate request";
+const ERR_1204: &str = "request - already used key in request";
+const ERR_1301: &str = "revoke - no such resource class";
+const ERR_1302: &str = "revoke - no such key";
+const ERR_2001: &str = "Internal Server Error - Request not performed";
+
 
 // Content-type for HTTP(s) exchanges
 pub const CONTENT_TYPE: &str = "application/rpki-updown";
@@ -1046,68 +1059,42 @@ impl NotPerformedResponse {
         self.status
     }
 
-    /// Creates a response for a status value defined in RFC6492. Also adds
-    /// the description defined in the RFC.
-    pub fn from_code(code: &str) -> Result<Self, Error> {
-        match code {
-            "1101" => Ok((1101, "already processing request")),
-            "1102" => Ok((1102, "version number error")),
-            "1103" => Ok((1103, "unrecognized request type")),
-            "1104" => Ok((1104, "request scheduled for processing")),
-
-            "1201" => Ok((1201, "request - no such resource class")),
-            "1202" => Ok((1202, "request - no resources allocated in resource class")),
-            "1203" => Ok((1203, "request - badly formed certificate request")),
-            "1204" => Ok((1204, "request - already used key in request")),
-
-            "1301" => Ok((1301, "revoke - no such resource class")),
-            "1302" => Ok((1302, "revoke - no such key")),
-
-            "2001" => Ok((2001, "Internal Server Error - Request not performed")),
-
-            _ => Err(Error::InvalidErrorCode(code.to_string())),
-        }.map(|(status, description)| {
-            let description = Some(description.to_string());
-            NotPerformedResponse { status, description }
-        })
+    fn from_tuple(status: u64, txt: &str) -> Self {
+        NotPerformedResponse { status, description: Some(txt.to_string())}
     }
 
-    pub fn _1101() -> Self {
-        Self::from_code("1101").unwrap()
-    }
-    pub fn _1102() -> Self {
-        Self::from_code("1102").unwrap()
-    }
-    pub fn _1103() -> Self {
-        Self::from_code("1103").unwrap()
-    }
-    pub fn _1104() -> Self {
-        Self::from_code("1104").unwrap()
-    }
+    /// Already processing 
+    pub fn err_1101() -> Self { Self::from_tuple(1101, ERR_1101) }
 
-    pub fn _1201() -> Self {
-        Self::from_code("1201").unwrap()
-    }
-    pub fn _1202() -> Self {
-        Self::from_code("1202").unwrap()
-    }
-    pub fn _1203() -> Self {
-        Self::from_code("1203").unwrap()
-    }
-    pub fn _1204() -> Self {
-        Self::from_code("1204").unwrap()
-    }
+    /// Version number error
+    pub fn err_1102() -> Self { Self::from_tuple(1102, ERR_1102) }
 
-    pub fn _1301() -> Self {
-        Self::from_code("1301").unwrap()
-    }
-    pub fn _1302() -> Self {
-        Self::from_code("1302").unwrap()
-    }
+    /// Unrecognised request type
+    pub fn err_1103() -> Self { Self::from_tuple(1103, ERR_1103) }
 
-    pub fn _2001() -> Self {
-        Self::from_code("2001").unwrap()
-    }
+    /// Request scheduled for processing
+    pub fn err_1104() -> Self { Self::from_tuple(1104, ERR_1104) }
+
+    /// No such resource class
+    pub fn err_1201() -> Self { Self::from_tuple(1201, ERR_1201) }
+
+    /// No resources in resource class
+    pub fn err_1202() -> Self { Self::from_tuple(1202, ERR_1202) }
+
+    /// Badly formed certificate request
+    pub fn err_1203() -> Self { Self::from_tuple(1203, ERR_1203) }
+
+    /// Key re-use detected
+    pub fn err_1204() -> Self { Self::from_tuple(1204, ERR_1204) }
+
+    /// No such resource class
+    pub fn err_1301() -> Self { Self::from_tuple(1301, ERR_1301) }
+
+    /// No such key
+    pub fn err_1302() -> Self { Self::from_tuple(1302, ERR_1302) }
+
+    /// Internal server error
+    pub fn err_2001() -> Self { Self::from_tuple(2001, ERR_2001) }
 }
 
 /// XML Support
@@ -1341,7 +1328,6 @@ impl<'de> Deserialize<'de> for ResourceClassName {
 pub enum Error {
     InvalidVersion,
     XmlError(XmlError),
-    InvalidErrorCode(String),
     InvalidPayloadType(String),
     InvalidCsrSyntax(String),
     CertSyntax(String),
@@ -1352,9 +1338,6 @@ impl fmt::Display for Error {
         match self {
             Error::InvalidVersion => write!(f, "Invalid version"),
             Error::XmlError(e) => e.fmt(f),
-            Error::InvalidErrorCode(code) => {
-                write!(f, "Invalid error code: {}", code)
-            }
             Error::InvalidPayloadType(payload_type) => {
                 write!(f, "Invalid payload type: {}", payload_type)
             }
