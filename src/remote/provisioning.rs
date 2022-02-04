@@ -41,20 +41,6 @@ const ISSUER: &[u8] = b"issuer";
 const STATUS: &[u8] = b"status";
 const DESCRIPTION: &[u8] = b"description";
 
-// Error Response codes and messages
-const ERR_1101: &str = "already processing request";
-const ERR_1102: &str = "version number error";
-const ERR_1103: &str = "unrecognized request type";
-const ERR_1104: &str = "request scheduled for processing";
-const ERR_1201: &str = "request - no such resource class";
-const ERR_1202: &str = "request - no resources allocated in resource class";
-const ERR_1203: &str = "request - badly formed certificate request";
-const ERR_1204: &str = "request - already used key in request";
-const ERR_1301: &str = "revoke - no such resource class";
-const ERR_1302: &str = "revoke - no such key";
-const ERR_2001: &str = "Internal Server Error - Request not performed";
-
-
 // Content-type for HTTP(s) exchanges
 pub const CONTENT_TYPE: &str = "application/rpki-updown";
 
@@ -1103,42 +1089,69 @@ impl NotPerformedResponse {
         self.status
     }
 
-    fn from_tuple(status: u64, txt: &str) -> Self {
+    pub fn description(&self) -> Option<&String> {
+        self.description.as_ref()
+    }
+
+    /// Private.. use the public err_* functions instead!
+    fn new(status: u64, txt: &str) -> Self {
         NotPerformedResponse { status, description: Some(txt.to_string())}
     }
 
     /// Already processing 
-    pub fn err_1101() -> Self { Self::from_tuple(1101, ERR_1101) }
+    pub fn err_1101() -> Self {
+        Self::new(1101, "already processing request")
+    }
 
     /// Version number error
-    pub fn err_1102() -> Self { Self::from_tuple(1102, ERR_1102) }
+    pub fn err_1102() -> Self { 
+        Self::new(1102, "version number error")
+    }
 
     /// Unrecognised request type
-    pub fn err_1103() -> Self { Self::from_tuple(1103, ERR_1103) }
+    pub fn err_1103() -> Self {
+        Self::new( 1103, "unrecognized request type")
+    }
 
     /// Request scheduled for processing
-    pub fn err_1104() -> Self { Self::from_tuple(1104, ERR_1104) }
+    pub fn err_1104() -> Self {
+        Self::new(1104, "request scheduled for processing")
+    }
 
     /// No such resource class
-    pub fn err_1201() -> Self { Self::from_tuple(1201, ERR_1201) }
+    pub fn err_1201() -> Self {
+        Self::new( 1201, "request - no such resource class")
+    }
 
     /// No resources in resource class
-    pub fn err_1202() -> Self { Self::from_tuple(1202, ERR_1202) }
+    pub fn err_1202() -> Self {
+        Self::new(1202, "request - no resources allocated in resource class")
+    }
 
     /// Badly formed certificate request
-    pub fn err_1203() -> Self { Self::from_tuple(1203, ERR_1203) }
+    pub fn err_1203() -> Self {
+        Self::new(1203, "request - badly formed certificate request")
+    }
 
     /// Key re-use detected
-    pub fn err_1204() -> Self { Self::from_tuple(1204, ERR_1204) }
+    pub fn err_1204() -> Self {
+        Self::new(1204, "request - already used key in request")
+    }
 
     /// No such resource class
-    pub fn err_1301() -> Self { Self::from_tuple(1301, ERR_1301) }
+    pub fn err_1301() -> Self {
+        Self::new(1301, "revoke - no such resource class")
+    }
 
     /// No such key
-    pub fn err_1302() -> Self { Self::from_tuple(1302, ERR_1302) }
+    pub fn err_1302() -> Self {
+        Self::new(1302, "revoke - no such key")
+    }
 
     /// Internal server error
-    pub fn err_2001() -> Self { Self::from_tuple(2001, ERR_2001) }
+    pub fn err_2001() -> Self {
+        Self::new(2001, "Internal Server Error - Request not performed")
+    }
 }
 
 /// XML Support
