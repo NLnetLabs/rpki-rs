@@ -41,15 +41,6 @@ const ISSUER: &[u8] = b"issuer";
 const STATUS: &[u8] = b"status";
 const DESCRIPTION: &[u8] = b"description";
 
-const PAYLOAD_TYPE_LIST: &str = "list";
-const PAYLOAD_TYPE_ISSUE: &str = "issue";
-const PAYLOAD_TYPE_REVOKE: &str = "revoke";
-
-const PAYLOAD_TYPE_LIST_RESPONSE: &str = "list_response";
-const PAYLOAD_TYPE_ISSUE_RESPONSE: &str = "issue_response";
-const PAYLOAD_TYPE_REVOKE_RESPONSE: &str = "revoke_response";
-const PAYLOAD_TYPE_ERROR_RESPONSE: &str = "error_response";
-
 // Error Response codes and messages
 const ERR_1101: &str = "already processing request";
 const ERR_1102: &str = "version number error";
@@ -91,7 +82,7 @@ impl Message {
             .attr("version", VERSION)?
             .attr("sender", &self.sender)?
             .attr("recipient", &self.recipient)?
-            .attr("type", self.payload.payload_type())?
+            .attr("type", self.payload.payload_type().as_ref())?
             .content(|content| self.payload.write_xml(content) )?;
 
         writer.done()
@@ -119,7 +110,7 @@ impl Message {
 
         let mut sender: Option<Sender> = None;
         let mut recipient: Option<Recipient> = None;
-        let mut payload_type: Option<String> = None;
+        let mut payload_type: Option<PayloadType> = None;
 
         let mut outer = reader.start(|element| {
             if element.name().local() != MESSAGE {
@@ -186,7 +177,7 @@ pub enum Payload {
     IssueResponse(IssuanceResponse),
     Revoke(RevocationRequest),
     RevokeResponse(RevocationResponse),
-    NotPerformedResponse(NotPerformedResponse),
+    ErrorResponse(NotPerformedResponse),
 }
 
 /// # Decoding from XML
@@ -196,37 +187,36 @@ impl Payload {
     /// attribute from the outer <message /> element so it can delegate to the
     /// proper enclosed payload variant.
     fn decode<R: io::BufRead>(
-        payload_type: String,
+        payload_type: PayloadType,
         content: &mut Content,
         reader: &mut xml::decode::Reader<R>,
     ) -> Result<Self, Error> {
-        match payload_type.as_str() {
-            PAYLOAD_TYPE_LIST => Ok(Payload::List),
-            PAYLOAD_TYPE_ISSUE => {
-                IssuanceRequest::decode(content, reader)
-                                        .map(Payload::Issue)
-            }
-            PAYLOAD_TYPE_REVOKE => {
-                RevocationRequest::decode(content, reader)
-                                        .map(Payload::Revoke)
-            }
-            PAYLOAD_TYPE_LIST_RESPONSE => {
+        match payload_type {
+            PayloadType::List => Ok(Payload::List),
+            PayloadType::ListResponse => {
                 ResourceClassListResponse::decode(content, reader)
                                         .map(Payload::ListResponse)
             }
-            PAYLOAD_TYPE_ISSUE_RESPONSE => {
+            PayloadType::Issue => {
+                IssuanceRequest::decode(content, reader)
+                                        .map(Payload::Issue)
+            }
+            PayloadType::IssueResponse => {
                 IssuanceResponse::decode(content, reader)
                                         .map(Payload::IssueResponse)
             }
-            PAYLOAD_TYPE_REVOKE_RESPONSE => {
+            PayloadType::Revoke => {
+                RevocationRequest::decode(content, reader)
+                                        .map(Payload::Revoke)
+            }
+            PayloadType::RevokeResponse => {
                 RevocationResponse::decode(content, reader)
                                         .map(Payload::RevokeResponse)   
             }
-            PAYLOAD_TYPE_ERROR_RESPONSE => {
+            PayloadType::ErrorResponse => {
                 NotPerformedResponse::decode(content, reader)
-                                        .map(Payload::NotPerformedResponse)
+                                        .map(Payload::ErrorResponse)
             }
-            _ => Err(Error::InvalidPayloadType(payload_type))
         }
     }
 }
@@ -235,15 +225,15 @@ impl Payload {
 /// 
 impl Payload {
     /// Value for the type attribute in the <message /> element.
-    fn payload_type(&self) -> &str {
+    fn payload_type(&self) -> PayloadType {
         match self {
-            Payload::List => PAYLOAD_TYPE_LIST,
-            Payload::ListResponse(_) => PAYLOAD_TYPE_LIST_RESPONSE,
-            Payload::Issue(_) => PAYLOAD_TYPE_ISSUE,
-            Payload::IssueResponse(_) => PAYLOAD_TYPE_ISSUE_RESPONSE,
-            Payload::Revoke(_) => PAYLOAD_TYPE_REVOKE,
-            Payload::RevokeResponse(_) => PAYLOAD_TYPE_REVOKE_RESPONSE,
-            Payload::NotPerformedResponse(_) => PAYLOAD_TYPE_ERROR_RESPONSE,
+            Payload::List => PayloadType::List,
+            Payload::ListResponse(_) => PayloadType::ListResponse,
+            Payload::Issue(_) => PayloadType::Issue,
+            Payload::IssueResponse(_) => PayloadType::IssueResponse,
+            Payload::Revoke(_) => PayloadType::Revoke,
+            Payload::RevokeResponse(_) => PayloadType::RevokeResponse,
+            Payload::ErrorResponse(_) => PayloadType::ErrorResponse,
         }
     }
 
@@ -259,12 +249,66 @@ impl Payload {
             Payload::IssueResponse(response) => response.write_xml(content),
             Payload::Revoke(revoke) => revoke.write_xml(content),
             Payload::RevokeResponse(response) => response.write_xml(content),
-            Payload::NotPerformedResponse(res) => res.write_xml(content)
+            Payload::ErrorResponse(res) => res.write_xml(content)
         }
     }
 }
 
 
+//------------ PayloadType ---------------------------------------------------
+
+/// Tracks the type of payload so that we can use matches and reduce
+/// allocations.
+enum PayloadType {
+    List,
+    ListResponse,
+    Issue,
+    IssueResponse,
+    Revoke,
+    RevokeResponse,
+    ErrorResponse
+}
+
+impl AsRef<str> for PayloadType {
+    fn as_ref(&self) -> &str {
+        match self {
+            PayloadType::List => "list",
+            PayloadType::ListResponse => "list_response",
+            PayloadType::Issue => "issue",
+            PayloadType::IssueResponse => "issue_response",
+            PayloadType::Revoke => "revoke",
+            PayloadType::RevokeResponse => "revoke_response",
+            PayloadType::ErrorResponse => "error_response",
+        }
+    }
+}
+
+impl FromStr for PayloadType {
+    type Err = PayloadTypeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "list" => Ok(PayloadType::List),
+            "list_response" => Ok(PayloadType::ListResponse),
+            "issue" => Ok(PayloadType::Issue),
+            "issue_response" => Ok(PayloadType::IssueResponse),
+            "revoke" => Ok(PayloadType::Revoke),
+            "revoke_response" => Ok(PayloadType::RevokeResponse),
+            "error_response" => Ok(PayloadType::ErrorResponse),
+            _ => Err(PayloadTypeError(s.to_string()))
+        }
+    }
+}
+
+
+#[derive(Debug)]
+pub struct PayloadTypeError(String);
+
+impl fmt::Display for PayloadTypeError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Invalid payload type: {}", self.0)
+    }
+}
 
 //------------ IssuanceRequest -----------------------------------------------
 
@@ -1328,7 +1372,7 @@ impl<'de> Deserialize<'de> for ResourceClassName {
 pub enum Error {
     InvalidVersion,
     XmlError(XmlError),
-    InvalidPayloadType(String),
+    InvalidPayloadType(PayloadTypeError),
     InvalidCsrSyntax(String),
     CertSyntax(String),
 }
@@ -1338,9 +1382,7 @@ impl fmt::Display for Error {
         match self {
             Error::InvalidVersion => write!(f, "Invalid version"),
             Error::XmlError(e) => e.fmt(f),
-            Error::InvalidPayloadType(payload_type) => {
-                write!(f, "Invalid payload type: {}", payload_type)
-            }
+            Error::InvalidPayloadType(e) => e.fmt(f),
             Error::InvalidCsrSyntax(msg) => {
                 write!(f, "Could not decode CSR: {}", msg)
             }
@@ -1354,6 +1396,12 @@ impl fmt::Display for Error {
 impl From<XmlError> for Error {
     fn from(e: XmlError) -> Self {
         Error::XmlError(e)
+    }
+}
+
+impl From<PayloadTypeError> for Error {
+    fn from(e: PayloadTypeError) -> Self {
+        Error::InvalidPayloadType(e)
     }
 }
 
