@@ -893,7 +893,7 @@ impl ResourceClassEntitlements {
         // The following values are found as attributes
         let mut class_name: Option<ResourceClassName> = None;
         let mut cert_url: Option<uri::Rsync> = None;
-        let mut resources = ResourceSet::default();
+        let mut resource_set = ResourceSet::default();
         let mut not_after: Option<Time> = None;
 
         let class_element = content.take_opt_element(reader, |element| {
@@ -911,15 +911,15 @@ impl ResourceClassEntitlements {
                     Ok(())
                 },
                 b"resource_set_as" => {
-                    resources.set_asn(value.ascii_into()?);
+                    resource_set.set_asn(value.ascii_into()?);
                     Ok(())
                 }
                 b"resource_set_ipv4" => {
-                    resources.set_ipv4(value.ascii_into()?);
+                    resource_set.set_ipv4(value.ascii_into()?);
                     Ok(())
                 }
                 b"resource_set_ipv6" => {
-                    resources.set_ipv6(value.ascii_into()?);
+                    resource_set.set_ipv6(value.ascii_into()?);
                     Ok(())
                 }
                 b"resource_set_notafter" => {
@@ -1029,7 +1029,7 @@ impl ResourceClassEntitlements {
         class_element.take_end(reader)?;
 
         Ok(Some(ResourceClassEntitlements {
-            class_name, resource_set: resources, not_after, issued_certs, signing_cert
+            class_name, resource_set, not_after, issued_certs, signing_cert
         }))
     }
 }
