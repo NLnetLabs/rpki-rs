@@ -32,14 +32,14 @@ const VERSION: &str = "1";
 const NS: &[u8] = b"http://www.apnic.net/specs/rescerts/up-down/";
 
 // XML Element names
-const MESSAGE: &[u8] = b"message";
-const REQUEST: &[u8] = b"request";
-const KEY: &[u8] = b"key";
-const CLASS: &[u8] = b"class";
-const CERTIFICATE: &[u8] = b"certificate";
-const ISSUER: &[u8] = b"issuer";
-const STATUS: &[u8] = b"status";
-const DESCRIPTION: &[u8] = b"description";
+// const MESSAGE: &[u8] = b"message";
+// const REQUEST: &[u8] = b"request";
+// const KEY: &[u8] = b"key";
+// const CLASS: &[u8] = b"class";
+// const CERTIFICATE: &[u8] = b"certificate";
+// const ISSUER: &[u8] = b"issuer";
+// const STATUS: &[u8] = b"status";
+// const DESCRIPTION: &[u8] = b"description";
 
 // Content-type for HTTP(s) exchanges
 pub const CONTENT_TYPE: &str = "application/rpki-updown";
@@ -63,7 +63,7 @@ impl Message {
     ) -> Result<(), io::Error> {
         let mut writer = xml::encode::Writer::new(writer);
 
-        writer.element(MESSAGE.into())?
+        writer.element("message".into())?
             .attr("xmlns", NS)?
             .attr("version", VERSION)?
             .attr("sender", &self.sender)?
@@ -99,7 +99,7 @@ impl Message {
         let mut payload_type: Option<PayloadType> = None;
 
         let mut outer = reader.start(|element| {
-            if element.name().local() != MESSAGE {
+            if element.name().local() != b"message" {
                 return Err(XmlError::Malformed)
             }
             
@@ -357,7 +357,7 @@ impl IssuanceRequest {
         let mut limit = ResourceSet::default();
 
         let mut request_el = content.take_element(reader, |element| {
-            if element.name().local() != REQUEST {
+            if element.name().local() != b"request" {
                 return Err(XmlError::Malformed);
             }
 
@@ -407,7 +407,7 @@ impl IssuanceRequest {
         content: &mut encode::Content<W>
     ) -> Result<(), io::Error> {
         content
-            .element(REQUEST.into())?
+            .element("request".into())?
             .attr("class_name", self.class_name())?
             .opt_attr("req_resource_set_as", self.limit().asn_opt())?
             .opt_attr("req_resource_set_ipv4", self.limit().ipv4_opt())?
@@ -724,7 +724,7 @@ impl KeyElement {
         let mut key = None;
 
         content.take_element(reader, |element|{
-            if element.name().local() != KEY {
+            if element.name().local() != b"key" {
                 return Err(XmlError::Malformed);
             }
 
@@ -775,7 +775,7 @@ impl KeyElement {
             base64::URL_SAFE_NO_PAD
         );
         content
-            .element(KEY.into())?
+            .element("key".into())?
             .attr("class_name", self.class_name())?
             .attr("ski", &ski)?;
 
@@ -897,7 +897,7 @@ impl ResourceClassEntitlements {
         let mut not_after: Option<Time> = None;
 
         let class_element = content.take_opt_element(reader, |element| {
-            if element.name().local() != CLASS {
+            if element.name().local() != b"class" {
                 return Err(XmlError::Malformed)
             }
 
@@ -967,7 +967,7 @@ impl ResourceClassEntitlements {
 
             let cert_el = class_element.take_opt_element(reader, |el| {
                 match el.name().local() {
-                    CERTIFICATE => {
+                    b"certificate" => {
                         el.attributes(|name, value| match name {
                             b"cert_url" => {
                                 url = Some(value.ascii_into()?);
@@ -988,7 +988,7 @@ impl ResourceClassEntitlements {
                             _ => Err(XmlError::Malformed)
                         })
                     },
-                    ISSUER => {
+                    b"issuer" => {
                         was_issuer = true;
                         Ok(())
                     }
@@ -1046,7 +1046,7 @@ impl ResourceClassEntitlements {
                                 .to_rfc3339_opts(SecondsFormat::Secs, true);
 
         content
-            .element(CLASS.into())?
+            .element("class".into())?
             .attr("class_name", &self.class_name)?
             .attr("cert_url", &self.signing_cert.url)?
             .opt_attr("resource_set_as", self.resource_set.asn_opt())?
@@ -1059,7 +1059,7 @@ impl ResourceClassEntitlements {
                 }
                 
                 nested
-                    .element(ISSUER.into())?
+                    .element("issuer".into())?
                     .content(|inner| {
                         inner.base64(
                             self.signing_cert.cert.to_captured().as_slice()
@@ -1172,7 +1172,7 @@ impl NotPerformedResponse {
     ) -> Result<Self, Error> {
         
         let mut status_element = content.take_element(reader, |element|
-            if element.name().local() != STATUS {
+            if element.name().local() != b"status" {
                 Err(XmlError::Malformed)
             } else {
                 Ok(())
@@ -1187,7 +1187,7 @@ impl NotPerformedResponse {
         
         let mut description = None;
         if let Some(mut element) = content.take_opt_element(reader, |element| {
-            if element.name().local() != DESCRIPTION {
+            if element.name().local() != b"description" {
                 Err(XmlError::Malformed)
             } else {
                 Ok(())
@@ -1210,13 +1210,13 @@ impl NotPerformedResponse {
         content: &mut encode::Content<W>
     ) -> Result<(), io::Error> {
         content
-            .element(STATUS.into())?
+            .element("status".into())?
             .content(|status| status.raw(&self.status.to_string()))?;
 
         content
             .opt_element(
                 self.description.as_ref(),
-                DESCRIPTION.into(),
+                "description".into(),
                 |description, el| {
                     el.content(|content| content.raw(description))?;
                     Ok(())
@@ -1254,7 +1254,7 @@ impl IssuedCert {
         content: &mut encode::Content<W>
     ) -> Result<(), io::Error> {
         content
-            .element(CERTIFICATE.into())?
+            .element("certificate".into())?
             .attr("cert_url", &self.url)?
             .opt_attr("req_resource_set_as", self.req_limit.asn_opt())?
             .opt_attr("req_resource_set_ipv4", self.req_limit.ipv4_opt())?
