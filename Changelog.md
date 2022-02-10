@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased next version
+## 0.14.2
 
-Breaking Changes
+Released 2022-02-10.
 
 New
 
@@ -27,8 +27,6 @@ Bug Fixes
   to filter out duplicates in RTR where max len is always given. ([#195])
 * The RTR client and server now flush their sockets before waiting. This
   is necessary for TLS support where data is buffered. ([#196])
-
-Other Changes
 
 [#187]: https://github.com/NLnetLabs/rpki-rs/pull/187
 [#188]: https://github.com/NLnetLabs/rpki-rs/pull/188
