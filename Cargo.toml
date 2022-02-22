@@ -1,6 +1,6 @@
 [package]
 name = "rpki"
-version = "0.13.1"
+version = "0.13.2-dev"
 edition = "2018"
 authors = ["The NLnet Labs RPKI Team <rpki@nlnetlabs.nl>"]
 description = "A library for validating and creating RPKI data."
@@ -50,6 +50,11 @@ xml = [ "quick-xml" ]
 # Extra features provided.
 softkeys = [ "repository", "openssl" ]
 extra-debug = [ "bcder/extra-debug" ]
+
+# Temporary feature that provides compatibility with object written by the
+# library in earlier versions but rejected now. You should probably only
+# enable this in order to read those older objects.
+compat = [ ]
 
 # Dummy features for Windows CI runs where we don’t want to have to deal
 # with OpenSSL

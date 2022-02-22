@@ -1025,10 +1025,10 @@ impl AddressRange {
     fn parse_content<S: decode::Source>(
         content: &mut decode::Content<S>
     ) -> Result<Self, S::Err> {
-        let mut cons = content.as_constructed()?;
+        let cons = content.as_constructed()?;
         Ok(AddressRange {
-            min: Prefix::take_from(&mut cons)?.min(),
-            max: Prefix::take_from(&mut cons)?.max(),
+            min: Prefix::take_from(cons)?.min(),
+            max: Prefix::take_from(cons)?.max(),
         })
     }
 
@@ -1036,18 +1036,33 @@ impl AddressRange {
         content: &mut decode::Content<S>,
         family: AddressFamily,
     ) -> Result<Self, S::Err> {
-        let mut cons = content.as_constructed()?;
-        let min = Prefix::take_from(&mut cons)?;
-        let max = Prefix::take_from(&mut cons)?;
-        if min.addr_len() > family.max_addr_len()
-            || max.addr_len() > family.max_addr_len()
-        {
-            return Err(decode::Malformed.into())
-        }
+        let cons = content.as_constructed()?;
+        let min = Self::check_len(Prefix::take_from(cons)?, family)?;
+        let max = Self::check_len(Prefix::take_from(cons)?, family)?;
         Ok(AddressRange {
             min: min.min(),
             max: max.max(),
         })
+    }
+
+    #[cfg(not(feature = "compat"))]
+    fn check_len(
+        addr: Prefix, family: AddressFamily
+    ) -> Result<Prefix, decode::Error> {
+        if addr.addr_len() > family.max_addr_len() {
+            Err(decode::Malformed)
+        }
+        else {
+            Ok(addr)
+        }
+    }
+
+    #[cfg(feature = "compat")]
+    fn check_len(
+        mut addr: Prefix, family: AddressFamily
+    ) -> Result<Prefix, decode::Error> {
+        addr.len = std::cmp::min(addr.len, family.max_addr_len());
+        Ok(addr)
     }
 
     /*
@@ -1430,6 +1445,7 @@ impl Addr {
     }
 
     /// Returns a byte array for the address.
+    #[allow(clippy::transmute_num_to_bytes)]
     pub fn to_bytes(self) -> [u8; 16] {
         unsafe { mem::transmute(self.0.to_be()) }
     }
