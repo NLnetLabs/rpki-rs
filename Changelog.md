@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased future version (0.13 series)
+
+New
+
+* Introduced the `compat` feature that ensures the library reads RPKI
+  repository objects created with earlier version. In particular, it
+  will cause the certificate decoder to accept overly long prefixes in
+  IP address resources. ([#200])
+
+[#200]: https://github.com/NLnetLabs/rpki-rs/pull/200
+
+
 ## 0.13.1
 
 Released 2021-11-17.
