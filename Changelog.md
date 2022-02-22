@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased future version (0.13 series)
+## 0.13.2
+
+Released 2022-02-22.
 
 New
 
