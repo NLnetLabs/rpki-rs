@@ -414,7 +414,7 @@ impl<Sock: Socket, Source: PayloadSource> Connection<Sock, Source> {
         }
     }
 
-    /// Sends out a sesponse to a reset query.
+    /// Sends out a response to a reset query.
     ///
     /// Responds accordingly based on whether or not the source is ready.
     /// Only returns an error if writing to the socket fails.
