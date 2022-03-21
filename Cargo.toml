@@ -16,7 +16,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-base64          = { version = "0.13.0", optional = true }
+base64          = "0.13.0"
 bcder           = { version = "0.6.1", optional = true }
 bytes           = "1.0"
 futures-util    = { version = "0.3", optional = true }
@@ -42,10 +42,10 @@ tokio           = { version="1.0", features=["net", "macros"]}
 default = []
 
 # Main components of the crate.
-repository = [ "base64", "bcder", "ring", "untrusted", "routecore/bcder" ]
-rrdp       = [ "xml", "base64", "ring" ]
+repository = [ "bcder", "ring", "untrusted", "routecore/bcder" ]
+rrdp       = [ "xml", "ring" ]
 rtr        = [ "futures-util", "tokio", "tokio-stream" ]
-slurm      = [ "base64", "serde-support", "serde_json" ]
+slurm      = [ "serde-support", "serde_json" ]
 
 # Dependent components of the crate.
 xml = [ "quick-xml" ]
