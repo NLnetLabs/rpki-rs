@@ -1390,7 +1390,7 @@ impl<'a> ObjectReader<'a> {
                     if b.is_ascii_whitespace() { None }
                     else { Some(*b) }
             }).collect::<Vec<_>>())
-        })?.unwrap_or_else(Vec::new);
+        })?.unwrap_or_default();
         let mut data_b64 = data_b64.as_slice();
         op(
             &mut ObjectReader(base64::read::DecoderReader::new(
