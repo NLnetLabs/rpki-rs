@@ -101,7 +101,7 @@ impl<'b, 'n> Element<'b, 'n> {
     {
         for attr in self.start.attributes() {
             let attr = attr.map_err(Into::into)?;
-            if attr.key == b"xmlns" {
+            if attr.key == b"xmlns" || attr.key.starts_with(b"xmlns:") {
                 continue
             }
             op(attr.key, AttrValue(attr))?;
@@ -278,6 +278,38 @@ impl Content {
             }
         }
     }
+
+    /// Skips an optional text element inside the reader.
+    pub fn skip_opt_text<R>(
+        &mut self,
+        reader: &mut Reader<R>
+    ) -> Result<(), Error>
+    where
+        R: io::BufRead,
+    {
+        if self.empty {
+            return Ok(())
+        }
+
+        loop {
+            reader.buf.clear();
+            let event = reader.reader.read_event(
+                &mut reader.buf
+            )?;
+            match event {
+                Event::Text(_text) => {
+                    self.take_end(reader)?;
+                    return Ok(())
+                }
+                Event::End(_) => {
+                    self.empty = true;
+                    return Ok(())
+                }
+                Event::Comment(_) => { }
+                _ => return Err(Error::Malformed)
+            }
+        }
+    }
 }
 
 
@@ -378,6 +410,23 @@ impl<'a> Text<'a> {
                 Ok(Cow::Owned(unsafe { String::from_utf8_unchecked(s) }))
             }
         }
+    }
+
+    pub fn base64_decode(&self) -> Result<Vec<u8>, Error> {
+        // The text is supposed to be xsd:base64Binary which only allows
+        // the base64 characters plus whitespace.
+        let base64 = self.to_ascii()
+            .map(|text| {
+                text.as_bytes()
+                .iter()
+                .filter(|c| **c < 128_u8) // stuff like unicode whitespace
+                .filter(|c| !b" \n\t\r\x0b\x0c=".contains(c))
+                .copied()
+                .collect::<Vec<_>>() 
+            })?;
+        
+        base64::decode_config(base64, base64::STANDARD_NO_PAD)
+            .map_err(|_| Error::Malformed)
     }
 }
 

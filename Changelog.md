@@ -6,6 +6,9 @@ Breaking Changes
 
 New
 
+* Added support for RFC 8183 out-of-band XML exchanges between CAs, their
+  parents and their publication server.
+
 Bug Fixes
 
 Other Changes

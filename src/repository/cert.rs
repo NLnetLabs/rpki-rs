@@ -1480,7 +1480,7 @@ impl TbsCert {
     /// the value of the DER-encoded bit string of the subject public key.
     ///
     /// Conforming CAs MUST mark this extension as non-critical.
-    fn take_subject_key_identifier<S: decode::Source>(
+    pub fn take_subject_key_identifier<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         subject_key_id: &mut Option<KeyIdentifier>,
     ) -> Result<(), S::Err> {
@@ -1499,7 +1499,7 @@ impl TbsCert {
     /// Must be present except in self-signed CA certificates where it is
     /// optional. The keyIdentifier field must be present, the other must not
     /// be.
-    fn take_authority_key_identifier<S: decode::Source>(
+    pub fn take_authority_key_identifier<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         authority_key_id: &mut Option<KeyIdentifier>,
     ) -> Result<(), S::Err> {
