@@ -203,7 +203,7 @@ impl SignedMessage {
 /// # Validation
 /// 
 impl SignedMessage {
-/// Validates the signed message.
+    /// Validates the signed message.
     ///
     /// The requirements for an object to be valid are given in section 3
     /// of [RFC 6488].

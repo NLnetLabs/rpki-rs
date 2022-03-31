@@ -622,6 +622,10 @@ impl Time {
         Self::now() - Duration::minutes(5)
     }
 
+    pub fn five_minutes_from_now() -> Self {
+        Self::now() + Duration::minutes(5)
+    }
+
     pub fn tomorrow() -> Self {
         Self::now() + Duration::days(1)
     }

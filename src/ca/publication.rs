@@ -4,11 +4,17 @@ use std::fmt;
 use std::io;
 use std::str::FromStr;
 use std::sync::Arc;
+use bytes::Bytes;
 use log::error;
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer
 };
 
+use crate::repository::crypto::Signer;
+use crate::repository::crypto::SigningError;
+use crate::repository::x509::Time;
+use crate::repository::x509::ValidationError;
+use crate::repository::x509::Validity;
 use crate::rrdp;
 use crate::uri;
 use crate::xml;
@@ -16,6 +22,9 @@ use crate::xml::decode::{
     Content, Error as XmlError
 };
 use crate::xml::encode;
+
+use super::idcert::IdCert;
+use super::sigmsg::SignedMessage;
 
 // Constants for the RFC 8183 XML
 const VERSION: &str = "4";
@@ -31,6 +40,77 @@ const ERROR_TEXT: &[u8] = b"error_text";
 const FAILED_PDU: &[u8] = b"failed_pdu";
 
 
+//------------ PublicationCms ------------------------------------------------
+
+// This type represents a created, or parsed, RFC 8181 CMS object.
+#[derive(Clone, Debug)]
+pub struct PublicationCms {
+    signed_msg: SignedMessage,
+    message: Message,
+}
+
+impl PublicationCms {
+    /// Creates a publication CMS for the given content and signing (ID) key.
+    /// This will use a validity time of five minutes before and after 'now'
+    /// in order to allow for some NTP drift as well as processing delay
+    /// between generating this CMS, sending it, and letting the receiver
+    /// validate it.
+    pub fn create<S: Signer>(
+        message: Message,
+        issuing_key_id: &S::KeyId,
+        signer: &S,
+    ) -> Result<Self, SigningError<S::Error>> {
+        let data = message.to_xml_bytes();
+        let validity = Validity::new(
+            Time::five_minutes_ago(),
+            Time::five_minutes_from_now()
+        );
+
+        let signed_msg = SignedMessage::create(
+            data,
+            validity,
+            issuing_key_id,
+            signer
+        )?;
+
+        Ok(PublicationCms { signed_msg, message})
+    }
+
+    /// Unpack into its SignedMessage and Message
+    pub fn unpack(self) -> (SignedMessage, Message) {
+        (self.signed_msg, self.message)
+    }
+
+    /// Encode this to Bytes
+    pub fn to_bytes(&self) -> Bytes {
+        self.signed_msg.to_captured().into_bytes()
+    }
+
+    /// Decodes the CMS and enclosed publication Message from the source.
+    pub fn decode(
+        bytes: &[u8]
+    ) -> Result<Self, Error> {
+        let signed_msg = SignedMessage::decode(bytes, false)
+            .map_err(|e| Error::CmsDecode(e.to_string()))?;
+
+        let content = signed_msg.content().to_bytes();
+        let message = Message::decode(content.as_ref())?;
+
+        Ok(PublicationCms { signed_msg, message })
+    }
+
+    pub fn validate(&self, issuer: &IdCert) -> Result<(), Error> {
+        self.signed_msg.validate(issuer).map_err(|e| e.into())
+    }
+
+    pub fn validate_at(
+        &self, issuer: &IdCert, when: Time
+    ) -> Result<(), Error> {
+        self.signed_msg.validate_at(issuer, when).map_err(|e| e.into())
+    }
+}
+
+
 //------------ Message -------------------------------------------------------
 
 /// This type represents all Publication Messages defined in RFC8181
@@ -38,6 +118,26 @@ const FAILED_PDU: &[u8] = b"failed_pdu";
 pub enum Message {
     QueryMessage(QueryMessage),
     ReplyMessage(ReplyMessage),
+}
+
+/// Constructing
+///
+impl Message {
+    pub fn list_reply(reply: ListReply) -> Self {
+        Message::ReplyMessage(ReplyMessage::ListReply(reply))
+    }
+
+    pub fn success_reply() -> Self {
+        Message::ReplyMessage(ReplyMessage::Success)
+    }
+
+    pub fn publish_delta_query(delta: PublishDelta) -> Self {
+        Message::QueryMessage(QueryMessage::Delta(delta))
+    }
+
+    pub fn list_query() -> Self {
+        Message::QueryMessage(QueryMessage::ListQuery)
+    }
 }
 
 /// # Encoding to XML
@@ -68,15 +168,21 @@ impl Message {
     }
 
     /// Writes the Message's XML representation to a new String.
-    pub  fn to_xml_string(&self) -> String {
-        use std::str::from_utf8;
+    pub fn to_xml_string(&self) -> String {
+        let bytes = self.to_xml_bytes();
+        
+        std::str::from_utf8(&bytes)
+            .unwrap() // safe
+            .to_string()
+    }
 
+    /// Writes the Message's XML representation to a new Bytes
+    pub fn to_xml_bytes(&self) -> Bytes {
         let mut vec = vec![];
         self.write_xml(&mut vec).unwrap(); // safe
-        let xml = from_utf8(vec.as_slice()).unwrap(); // safe
-
-        xml.to_string()
-    }   
+        
+        Bytes::from(vec)
+    }
 }
 
 /// # Decoding from XML
@@ -1046,6 +1152,8 @@ pub enum Error {
     InvalidVersion,
     XmlError(XmlError),
     InvalidErrorCode(String),
+    CmsDecode(String),
+    Validation(ValidationError)
 }
 
 impl fmt::Display for Error {
@@ -1055,6 +1163,12 @@ impl fmt::Display for Error {
             Error::XmlError(e) => e.fmt(f),
             Error::InvalidErrorCode(code) => {
                 write!(f, "Invalid error code: {}", code)
+            }
+            Error::CmsDecode(msg) => {
+                write!(f, "Could not decode CMS: {}", msg)
+            }
+            Error::Validation(e) => {
+                write!(f, "CMS is not valid: {}", e)
             }
         }
     }
@@ -1066,6 +1180,11 @@ impl From<XmlError> for Error {
     }
 }
 
+impl From<ValidationError> for Error {
+    fn from(e: ValidationError) -> Self {
+        Error::Validation(e)
+    }
+}
 
 //------------ Tests ---------------------------------------------------------
 
@@ -1193,5 +1312,46 @@ mod tests {
         let re_decoded = Message::decode(re_encoded.as_bytes()).unwrap();
 
         assert_eq!(msg, re_decoded);
+    }
+}
+
+
+#[cfg(all(test, feature="softkeys"))]
+mod signer_test {
+
+    use super::*;
+
+    use crate::{
+        ca::idcert::IdCert,
+        repository::crypto::{softsigner::OpenSslSigner, PublicKeyFormat}
+    };
+
+    #[test]
+    fn sign_and_validate_list_query() {
+        let signer = OpenSslSigner::new();
+
+        let ta_key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
+        let ta_cert = IdCert::new_ta(
+            Validity::from_secs(60),
+            &ta_key,
+            &signer
+        ).unwrap();
+
+        let list_query = Message::list_query();
+
+        let list_query_cms = PublicationCms::create(
+            list_query.clone(),
+            &ta_key,
+            &signer
+        ).unwrap();
+
+        let bytes = list_query_cms.to_bytes();
+
+        let decoded = PublicationCms::decode(&bytes).unwrap();
+        decoded.validate(&ta_cert).unwrap();
+
+        let (_, decoded_message) = decoded.unpack();
+
+        assert_eq!(list_query, decoded_message);
     }
 }
