@@ -81,6 +81,10 @@ impl PublicationCms {
         (self.signed_msg, self.message)
     }
 
+    pub fn into_message(self) -> Message {
+        self.message
+    }
+
     /// Encode this to Bytes
     pub fn to_bytes(&self) -> Bytes {
         self.signed_msg.to_captured().into_bytes()
@@ -123,21 +127,26 @@ pub enum Message {
 /// Constructing
 ///
 impl Message {
+    pub fn list_query() -> Self {
+        Message::QueryMessage(QueryMessage::ListQuery)
+    }
+
     pub fn list_reply(reply: ListReply) -> Self {
         Message::ReplyMessage(ReplyMessage::ListReply(reply))
     }
 
-    pub fn success_reply() -> Self {
-        Message::ReplyMessage(ReplyMessage::Success)
-    }
-
-    pub fn publish_delta_query(delta: PublishDelta) -> Self {
+    pub fn delta(delta: PublishDelta) -> Self {
         Message::QueryMessage(QueryMessage::Delta(delta))
     }
 
-    pub fn list_query() -> Self {
-        Message::QueryMessage(QueryMessage::ListQuery)
+    pub fn success() -> Self {
+        Message::ReplyMessage(ReplyMessage::Success)
     }
+
+    pub fn error(error: ErrorReply) -> Self {
+        Message::ReplyMessage(ReplyMessage::ErrorReply(error))
+    }
+
 }
 
 /// # Encoding to XML
@@ -509,6 +518,46 @@ impl QueryPdu {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublishDelta(Vec<PublishDeltaElement>);
 
+impl PublishDelta {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn add_publish(&mut self, publish: Publish) {
+        self.0.push(PublishDeltaElement::Publish(publish));
+    }
+
+    pub fn add_update(&mut self, update: Update) {
+        self.0.push(PublishDeltaElement::Update(update));
+    }
+
+    pub fn add_withdraw(&mut self, withdraw: Withdraw) {
+        self.0.push(PublishDeltaElement::Withdraw(withdraw));
+    }
+
+    pub fn into_elements(self) -> Vec<PublishDeltaElement> {
+        self.0
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+    
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl std::ops::Add for PublishDelta {
+    
+    type Output = PublishDelta;
+
+    fn add(mut self, mut other: Self) -> Self::Output {
+        self.0.append(&mut other.0);
+        self
+    }
+}
+
 
 //------------ PublishDeltaElement -------------------------------------------
 
@@ -547,6 +596,39 @@ pub struct Publish {
     content: Base64,
 }
 
+/// # Data and Access
+/// 
+impl Publish {
+    pub fn new(
+        tag: Option<String>,
+        uri: uri::Rsync,
+        content: Base64
+    ) -> Self {
+        Publish { tag, uri, content }
+    }
+
+    pub fn with_hash_tag(uri: uri::Rsync, content: Base64) -> Self {
+        let tag = Some(content.to_hash().to_string());
+        Publish { tag, uri, content }
+    }
+
+    pub fn tag(&self) -> Option<&String> {
+        self.tag.as_ref()
+    }
+
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+
+    pub fn content(&self) -> &Base64 {
+        &self.content
+    }
+
+    pub fn unpack(self) -> (Option<String>, uri::Rsync, Base64) {
+        (self.tag, self.uri, self.content)
+    }
+}
+
 /// # Encode to XML
 /// 
 impl Publish {
@@ -581,6 +663,58 @@ pub struct Update {
     hash: rrdp::Hash,
 }
 
+/// # Data and Access
+/// 
+impl Update {
+    pub fn new(
+        tag: Option<String>,
+        uri: uri::Rsync,
+        content: Base64,
+        old_hash: rrdp::Hash
+    ) -> Self {
+        Update {
+            tag,
+            uri,
+            content,
+            hash: old_hash,
+        }
+    }
+
+    pub fn with_hash_tag(
+        uri: uri::Rsync,
+        content: Base64,
+        old_hash: rrdp::Hash
+    ) -> Self {
+        let tag = Some(content.to_hash().to_string());
+        Update {
+            tag,
+            uri,
+            content,
+            hash: old_hash,
+        }
+    }
+
+    pub fn tag(&self) -> Option<&String> {
+        self.tag.as_ref()
+    }
+
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+
+    pub fn content(&self) -> &Base64 {
+        &self.content
+    }
+
+    pub fn hash(&self) -> &rrdp::Hash {
+        &self.hash
+    }
+
+    pub fn unpack(self) -> (Option<String>, uri::Rsync, Base64, rrdp::Hash) {
+        (self.tag, self.uri, self.content, self.hash)
+    }
+}
+
 /// # Encode to XML
 /// 
 impl Update {
@@ -613,6 +747,36 @@ pub struct Withdraw {
     tag: Option<String>,
     uri: uri::Rsync,
     hash: rrdp::Hash,
+}
+
+/// # Data and Access
+/// 
+impl Withdraw {
+    pub fn new(tag: Option<String>, uri: uri::Rsync, hash: rrdp::Hash) -> Self {
+        Withdraw { tag, uri, hash }
+    }
+
+    pub fn with_hash_tag(uri: uri::Rsync, hash: rrdp::Hash) -> Self {
+        let tag = Some(hash.to_string());
+        Withdraw { tag, uri, hash }
+    }
+
+    pub fn tag(&self) -> Option<&String> {
+        self.tag.as_ref()
+
+    }
+    
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+
+    pub fn hash(&self) -> &rrdp::Hash {
+        &self.hash
+    }
+
+    pub fn unpack(self) -> (Option<String>, uri::Rsync, rrdp::Hash) {
+        (self.tag, self.uri, self.hash)
+    }
 }
 
 /// # Encode to XML
@@ -879,6 +1043,41 @@ pub struct ListReply {
     elements: Vec<ListElement>,
 }
 
+impl ListReply {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn new(elements: Vec<ListElement>) -> Self {
+        ListReply { elements }
+    }
+
+    pub fn add_element(&mut self, element: ListElement) {
+        self.elements.push(element);
+    }
+
+    pub fn elements(&self) -> &Vec<ListElement> {
+        &self.elements
+    }
+
+    pub fn into_elements(self) -> Vec<ListElement> {
+        self.elements
+    }
+
+    pub fn into_withdraw_delta(self) -> PublishDelta {
+        let mut delta = PublishDelta::empty();
+
+        for el in self.elements.into_iter() {
+            let (uri, hash) = el.unpack();
+            let withdraw = Withdraw::with_hash_tag(uri, hash);
+            delta.add_withdraw(withdraw);
+
+        }
+
+        delta
+    }
+}
+
 
 //------------ ListElement ---------------------------------------------------
 
@@ -888,6 +1087,21 @@ pub struct ListReply {
 pub struct ListElement {
     uri: uri::Rsync,
     hash: rrdp::Hash,
+}
+
+/// # Data and Access
+/// 
+impl ListElement {
+    pub fn new(
+        uri: uri::Rsync,
+        hash: rrdp::Hash
+    ) -> Self {
+        ListElement { uri, hash }
+    }
+
+    pub fn unpack(self) -> (uri::Rsync, rrdp::Hash) {
+        (self.uri, self.hash)
+    }
 }
 
 /// # Encoding to XML
@@ -915,6 +1129,25 @@ pub struct ErrorReply {
     errors: Vec<ReportError>,
 }
 
+/// # Data and Access
+/// 
+impl ErrorReply {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn for_error(error: ReportError) -> Self {
+        ErrorReply { errors: vec![error] }
+    }
+
+    pub fn add_error(&mut self, error: ReportError) {
+        self.errors.push(error)
+    }
+
+    pub fn errors(&self) -> &Vec<ReportError> {
+        &self.errors
+    }
+}
 
 //------------ ReportError ---------------------------------------------------
 
@@ -924,6 +1157,25 @@ pub struct ReportError {
     tag: Option<String>,
     error_text: Option<String>,
     failed_pdu: Option<QueryPdu>,
+}
+
+/// # Construct
+/// 
+impl ReportError {
+
+    /// Creates an entry to include in an ErrorReply.
+    pub fn with_code(
+        error_code: ReportErrorCode,
+    ) -> Self {
+        let error_text = Some(error_code.to_text().to_string());
+
+        ReportError {
+            error_code,
+            tag: None,
+            error_text,
+            failed_pdu: None,
+        }
+    }
 }
 
 /// # Encode to XML
@@ -936,7 +1188,7 @@ impl ReportError {
         content
             .element(REPORT_ERROR.into())?
             .attr("error_code", &self.error_code)?
-            .attr("tag", self.tag_for_xml())?
+            .attr_opt("tag", self.tag.as_ref())?
             .content(|content| {
                 content
                     .element(ERROR_TEXT.into())?
@@ -958,10 +1210,6 @@ impl ReportError {
             })?;
 
         Ok(())
-    }
-
-    fn tag_for_xml(&self) -> &str {
-        self.tag.as_deref().unwrap_or("")
     }
 
     fn error_text_or_default(&self) -> &str {
@@ -1112,6 +1360,16 @@ pub struct Base64(Arc<str>);
 impl Base64 {
     pub fn from_content(content: &[u8]) -> Self {
         Base64(base64::encode(content).into())
+    }
+
+    /// Decodes into bytes (e.g. for saving to disk for rsync)
+    pub fn to_bytes(&self) -> Bytes {
+        Bytes::from(base64::decode(self.0.as_bytes()).unwrap())
+    }
+
+    /// Generates the rrdp::Hash for the base64 encoded content
+    pub fn to_hash(&self) -> rrdp::Hash {
+        rrdp::Hash::from_data(self.to_bytes().as_ref())
     }
 
     pub fn as_str(&self) -> &str {
@@ -1323,35 +1581,91 @@ mod signer_test {
 
     use crate::{
         ca::idcert::IdCert,
-        repository::crypto::{softsigner::OpenSslSigner, PublicKeyFormat}
+        repository::crypto::{softsigner::{OpenSslSigner, KeyId}, PublicKeyFormat}
     };
 
-    #[test]
-    fn sign_and_validate_list_query() {
-        let signer = OpenSslSigner::new();
-
-        let ta_key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
-        let ta_cert = IdCert::new_ta(
-            Validity::from_secs(60),
+    fn sign_and_validate_msg(
+        signer: &OpenSslSigner,
+        ta_key: KeyId,
+        ta_cert: &IdCert,
+        message: Message
+    ) {
+        let cms = PublicationCms::create(
+            message.clone(),
             &ta_key,
-            &signer
+            signer
         ).unwrap();
 
-        let list_query = Message::list_query();
-
-        let list_query_cms = PublicationCms::create(
-            list_query.clone(),
-            &ta_key,
-            &signer
-        ).unwrap();
-
-        let bytes = list_query_cms.to_bytes();
+        let bytes = cms.to_bytes();
 
         let decoded = PublicationCms::decode(&bytes).unwrap();
-        decoded.validate(&ta_cert).unwrap();
+        decoded.validate(ta_cert).unwrap();
 
-        let (_, decoded_message) = decoded.unpack();
+        let decoded_message = decoded.into_message();
 
-        assert_eq!(list_query, decoded_message);
+        assert_eq!(message, decoded_message);
+    }
+
+    fn element(uri: &str, content: &[u8]) -> ListElement {
+        let uri = uri::Rsync::from_str(uri).unwrap();
+        let hash = Base64::from_content(content).to_hash();
+
+        ListElement::new(uri, hash)
+    }
+
+    fn publish(uri: &str, content: &[u8]) -> Publish {
+        let uri = uri::Rsync::from_str(uri).unwrap();
+        let content = Base64::from_content(content);
+
+        Publish::with_hash_tag(uri, content)
+    }
+
+    fn update(uri: &str, content: &[u8], old_content: &[u8]) -> Update {
+        let uri = uri::Rsync::from_str(uri).unwrap();
+        let content = Base64::from_content(content);
+
+        let hash = Base64::from_content(old_content).to_hash();
+
+        Update::with_hash_tag(uri, content, hash)
+    }
+
+    fn withdraw(uri: &str, content: &[u8]) -> Withdraw {
+        let uri = uri::Rsync::from_str(uri).unwrap();
+        let hash = Base64::from_content(content).to_hash();
+
+        Withdraw::with_hash_tag(uri, hash)
+    }
+
+    #[test]
+    fn sign_and_validate() {
+        let signer = OpenSslSigner::new();
+
+        let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
+        let cert = IdCert::new_ta(
+            Validity::from_secs(60),
+            &key,
+            &signer
+        ).unwrap();
+
+        sign_and_validate_msg(&signer, key, &cert, Message::list_query());
+
+        let mut rpl = ListReply::empty();
+        rpl.add_element(element("rsync://localhost/ca/f1.txt", b"a"));
+        rpl.add_element(element("rsync://localhost/ca/f2.txt", b"b"));
+        rpl.add_element(element("rsync://localhost/ca/f3.txt", b"c"));
+        sign_and_validate_msg(&signer, key, &cert, Message::list_reply(rpl));
+
+        let mut delta = PublishDelta::empty();
+        delta.add_publish(publish("rsync://localhost/ca/f1.txt", b"a"));
+        delta.add_update(update("rsync://localhost/ca/f2.txt", b"b", b"c"));
+        delta.add_withdraw(withdraw("rsync://localhost/ca/f3.txt", b"d"));
+        sign_and_validate_msg(&signer, key, &cert, Message::delta(delta));
+
+        sign_and_validate_msg(&signer, key, &cert, Message::success());
+
+        let mut error_reply = ErrorReply::empty();
+        let error = ReportError::with_code(ReportErrorCode::PermissionFailure);
+        error_reply.add_error(error);
+        sign_and_validate_msg(&signer, key, &cert, Message::error(error_reply));
     }
 }
