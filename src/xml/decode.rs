@@ -367,6 +367,30 @@ impl<'n, 'l> fmt::Debug for Name<'n, 'l> {
     }
 }
 
+impl<'n, 'l> From<&'l [u8]> for Name<'n, 'l> {
+    fn from(local: &'l [u8]) -> Self {
+        Name::unqualified(local)
+    }
+}
+
+impl<'n, 'l> From<&'l str> for Name<'n, 'l> {
+    fn from(local: &'l str) -> Self {
+        Name::unqualified(local.as_bytes())
+    }
+}
+
+impl<'n, 'l> From<(&'n [u8], &'l [u8])> for Name<'n, 'l> {
+    fn from((namespace, local): (&'n [u8], &'l [u8])) -> Self {
+        Name::qualified(namespace, local)
+    }
+}
+
+impl<'n, 'l> From<(&'n str, &'l str)> for Name<'n, 'l> {
+    fn from((namespace, local): (&'n str, &'l str)) -> Self {
+        Name::qualified(namespace.as_bytes(), local.as_bytes())
+    }
+}
+
 
 //------------ AttrValue -----------------------------------------------------
 

@@ -14,3 +14,7 @@
 //
 pub mod idcert;
 pub mod idexchange;
+
+pub mod sigmsg;
+
+pub mod publication;

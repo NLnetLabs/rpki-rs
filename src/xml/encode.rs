@@ -275,6 +275,22 @@ impl<'a, W: io::Write> Content<'a, W> {
         Element::start(self.writer, tag, self.inline)
     }
 
+    /// Add an optional element with the given tag if the given option
+    /// is some.
+    pub fn element_opt<'s, T>(
+        &'s mut self,
+        option: Option<&T>,
+        tag: Name<'static, 'static>,
+        op: impl FnOnce(&T, Element<'s, W>) -> Result<(), io::Error>
+    ) -> Result<(), io::Error> {
+        if let Some(opt) = option {
+            let element = self.element(tag)?;
+            op(opt, element)
+        } else {
+            Ok(())
+        }
+    }
+
     /// Write some PCDATA text.
     ///
     /// The text will be correctly escaped while it is being written.

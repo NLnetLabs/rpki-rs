@@ -488,6 +488,15 @@ where
 pub struct RevokedCertificates(Captured);
 
 impl RevokedCertificates {
+    /// Create an empty RevokedCertificates for use in SignedMessage
+    /// CMS objects - where we typically need to include a CRL, but
+    /// never need to actually revoke anything because we use one-time-use
+    /// keys and short lived EE certificates.
+    pub fn empty() -> Self {
+        let entries: Vec<CrlEntry> = vec![];
+        Self::from_iter(entries)
+    }
+
     /// Takes a revoked certificates list from the beginning of a value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
