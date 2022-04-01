@@ -5,7 +5,7 @@
 //! 
 //! Relevant RFCs:
 //! RFC 8183 out-of-band ID exchanges
-//! RFC 8181 publication protocol                [todo]
+//! RFC 8181 publication protocol
 //! RFC 6492 provisioning protocol (up/down)     [todo]
 
 #![cfg(feature = "ca")]
