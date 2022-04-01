@@ -1614,6 +1614,158 @@ impl AddressFamily {
 }
 
 
+//------------ Ipv4Blocks ----------------------------------------------------
+
+/// Contains IPv4 resources. This type is a thin wrapper around the underlying
+/// [`IpBlocks`] type intended to help with serializing/deserializing and
+/// formatting using IPv4 syntax.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Ipv4Blocks(IpBlocks);
+
+impl Ipv4Blocks {
+    pub fn empty() -> Self {
+        Ipv4Blocks(IpBlocks::empty())
+    }
+}
+
+//--- Display
+
+impl fmt::Display for Ipv4Blocks {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.as_v4().fmt(f)
+    }
+}
+
+//--- FromStr
+
+impl FromStr for Ipv4Blocks {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut builder = IpBlocksBuilder::default();
+
+        for el in s.split(',') {
+            let s = el.trim();
+            if s.is_empty() {
+                continue
+            } else if s.contains(':') {
+                // smells like IPv6
+                return Err(FromStrError::FamilyMismatch);
+            } else {
+                builder.push(IpBlock::from_v4_str(s)?);
+            }
+        }
+
+        Ok(Ipv4Blocks(builder.finalize()))
+    }
+}
+
+//--- Serialize and Deserialize
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for Ipv4Blocks {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: serde::Serializer {
+        self.to_string().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Ipv4Blocks {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: serde::Deserializer<'de> {
+        let string = String::deserialize(deserializer)?;
+        Ipv4Blocks::from_str(&string).map_err(serde::de::Error::custom)
+    }
+}
+
+//--- Deref
+
+impl std::ops::Deref for Ipv4Blocks {
+    type Target = IpBlocks;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+
+//------------ Ipv6Blocks ----------------------------------------------------
+
+/// Contains IPv6 resources. This type is a thin wrapper around the underlying
+/// [`IpBlocks`] type intended to help with serializing/deserializing and
+/// formatting using IPv6 syntax.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Ipv6Blocks(IpBlocks);
+
+impl Ipv6Blocks {
+    pub fn empty() -> Self {
+        Ipv6Blocks(IpBlocks::empty())
+    }
+}
+
+//--- Display
+
+impl fmt::Display for Ipv6Blocks {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.as_v6().fmt(f)
+    }
+}
+
+//--- FromStr
+
+impl FromStr for Ipv6Blocks {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut builder = IpBlocksBuilder::default();
+
+        for el in s.split(',') {
+            let s = el.trim();
+            if s.is_empty() {
+                continue
+            } else if s.contains('.') {
+                // smells like IPv4
+                return Err(FromStrError::FamilyMismatch);
+            } else {
+                builder.push(IpBlock::from_v6_str(s)?);
+            }
+        }
+
+        Ok(Ipv6Blocks(builder.finalize()))
+    }
+}
+
+//--- Serialize and Deserialize
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for Ipv6Blocks {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: serde::Serializer {
+        self.to_string().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Ipv6Blocks {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: serde::Deserializer<'de> {
+        let string = String::deserialize(deserializer)?;
+        Ipv6Blocks::from_str(&string).map_err(serde::de::Error::custom)
+    }
+}
+
+//--- Deref
+
+impl std::ops::Deref for Ipv6Blocks {
+    type Target = IpBlocks;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+
 //------------ FromStrError --------------------------------------------------
 
 #[derive(Clone, Debug, Eq, PartialEq)]

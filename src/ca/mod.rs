@@ -17,4 +17,5 @@ pub mod idexchange;
 
 pub mod sigmsg;
 
+pub mod provisioning;
 pub mod publication;
