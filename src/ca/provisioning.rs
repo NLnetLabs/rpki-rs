@@ -5,22 +5,34 @@ use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::{io, fmt};
+
+use bytes::Bytes;
 use chrono::{DateTime, Utc, SecondsFormat};
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer
 };
 
-use crate::repository::x509::Time;
 use crate::repository::{Csr, Cert};
 use crate::repository::crypto::KeyIdentifier;
-use crate::repository::resources::{AsBlocks, Ipv4Blocks, Ipv6Blocks};
-use crate::{xml, uri};
+use crate::repository::crypto::PublicKey;
+use crate::repository::crypto::Signer;
+use crate::repository::crypto::SigningError;
+use crate::repository::resources::{
+    AsBlocks, Ipv4Blocks, Ipv6Blocks
+};
+use crate::repository::x509::Time;
+use crate::repository::x509::ValidationError;
+use crate::repository::x509::Validity;
+use crate::uri;
+use crate::xml;
 use crate::xml::decode::{
     Content, Error as XmlError
 };
 use crate::xml::encode;
 
 use super::idexchange::Handle;
+use super::idcert::IdCert;
+use super::sigmsg::SignedMessage;
 
 
 // Some type aliases that help make the context of Handles more explicit.
@@ -31,18 +43,83 @@ pub type Recipient = Handle;
 const VERSION: &str = "1";
 const NS: &[u8] = b"http://www.apnic.net/specs/rescerts/up-down/";
 
-// XML Element names
-// const MESSAGE: &[u8] = b"message";
-// const REQUEST: &[u8] = b"request";
-// const KEY: &[u8] = b"key";
-// const CLASS: &[u8] = b"class";
-// const CERTIFICATE: &[u8] = b"certificate";
-// const ISSUER: &[u8] = b"issuer";
-// const STATUS: &[u8] = b"status";
-// const DESCRIPTION: &[u8] = b"description";
-
 // Content-type for HTTP(s) exchanges
 pub const CONTENT_TYPE: &str = "application/rpki-updown";
+
+
+//------------ ProvisioningCms -----------------------------------------------
+
+// This type represents a created, or parsed, RFC 6492 CMS object.
+#[derive(Clone, Debug)]
+pub struct ProvisioningCms {
+    signed_msg: SignedMessage,
+    message: Message,
+}
+
+impl ProvisioningCms {
+    /// Creates a publication CMS for the given content and signing (ID) key.
+    /// This will use a validity time of five minutes before and after 'now'
+    /// in order to allow for some NTP drift as well as processing delay
+    /// between generating this CMS, sending it, and letting the receiver
+    /// validate it.
+    pub fn create<S: Signer>(
+        message: Message,
+        issuing_key_id: &S::KeyId,
+        signer: &S,
+    ) -> Result<Self, SigningError<S::Error>> {
+        let data = message.to_xml_bytes();
+        let validity = Validity::new(
+            Time::five_minutes_ago(),
+            Time::five_minutes_from_now()
+        );
+
+        let signed_msg = SignedMessage::create(
+            data,
+            validity,
+            issuing_key_id,
+            signer
+        )?;
+
+        Ok(ProvisioningCms { signed_msg, message})
+    }
+
+    /// Unpack into its SignedMessage and Message
+    pub fn unpack(self) -> (SignedMessage, Message) {
+        (self.signed_msg, self.message)
+    }
+
+    pub fn into_message(self) -> Message {
+        self.message
+    }
+
+    /// Encode this to Bytes
+    pub fn to_bytes(&self) -> Bytes {
+        self.signed_msg.to_captured().into_bytes()
+    }
+
+    /// Decodes the CMS and enclosed publication Message from the source.
+    pub fn decode(
+        bytes: &[u8]
+    ) -> Result<Self, Error> {
+        let signed_msg = SignedMessage::decode(bytes, false)
+            .map_err(|e| Error::CmsDecode(e.to_string()))?;
+
+        let content = signed_msg.content().to_bytes();
+        let message = Message::decode(content.as_ref())?;
+
+        Ok(ProvisioningCms { signed_msg, message })
+    }
+
+    pub fn validate(&self, issuer: &IdCert) -> Result<(), Error> {
+        self.signed_msg.validate(issuer).map_err(|e| e.into())
+    }
+
+    pub fn validate_at(
+        &self, issuer: &IdCert, when: Time
+    ) -> Result<(), Error> {
+        self.signed_msg.validate_at(issuer, when).map_err(|e| e.into())
+    }
+}
 
 //------------ Message -------------------------------------------------------
 
@@ -53,6 +130,116 @@ pub struct Message {
     recipient: Recipient,
     payload: Payload,
 }
+
+/// # Data Access
+///
+impl Message {
+    pub fn unpack(self) -> (Sender, Recipient, Payload) {
+        (self.sender, self.recipient, self.payload)
+    }
+
+    pub fn sender(&self) -> &Handle {
+        &self.sender
+    }
+
+    pub fn recipient(&self) -> &Handle {
+        &self.recipient
+    }
+
+    pub fn payload(&self) -> &Payload {
+        &self.payload
+    }
+
+    pub fn is_list_response(&self) -> bool {
+        matches!(&self.payload, Payload::ListResponse(_))
+    }
+}
+
+
+/// # Constructing
+///
+impl Message {
+    pub fn list(sender: Sender, recipient: Recipient) -> Self {
+        Message {
+            sender,
+            recipient,
+            payload: Payload::List
+        }
+    }
+
+    pub fn list_response(
+        sender: Sender,
+        recipient: Recipient,
+        resource_class_list_response: ResourceClassListResponse
+    ) -> Self {
+        Message {
+            sender,
+            recipient,
+            payload: Payload::ListResponse(resource_class_list_response),
+        }
+    }
+
+    pub fn issue(
+        sender: Sender,
+        recipient: Recipient,
+        issuance_request: IssuanceRequest
+    ) -> Self {
+        Message {
+            sender,
+            recipient,
+            payload: Payload::Issue(issuance_request),
+        }
+    }
+
+    pub fn issue_response(
+        sender: Sender,
+        recipient: Recipient,
+        issuance_response: IssuanceResponse
+    ) -> Self {
+        Message {
+            sender,
+            recipient,
+            payload: Payload::IssueResponse(issuance_response),
+        }
+    }
+
+    pub fn revoke(
+        sender: Sender,
+        recipient: Recipient,
+        revocation_request: RevocationRequest
+    ) -> Self {
+        Message {
+            sender,
+            recipient,
+            payload: Payload::Revoke(revocation_request),
+        }
+    }
+
+    pub fn revoke_response(
+        sender: Sender,
+        recipient: Recipient,
+        revocation_response: RevocationResponse
+    ) -> Self {
+        Message {
+            sender,
+            recipient,
+            payload: Payload::RevokeResponse(revocation_response),
+        }
+    }
+
+    pub fn not_performed_response(
+        sender: Sender,
+        recipient: Recipient,
+        not_performed_response: NotPerformedResponse,
+    ) -> Result<Self, Error> {
+        Ok(Message {
+            sender,
+            recipient,
+            payload: Payload::ErrorResponse(not_performed_response),
+        })
+    }
+}
+
 
 /// # Encoding to XML
 /// 
@@ -75,14 +262,20 @@ impl Message {
     }
 
     /// Writes the Message's XML representation to a new String.
-    pub  fn to_xml_string(&self) -> String {
-        use std::str::from_utf8;
+    pub fn to_xml_string(&self) -> String {
+        let bytes = self.to_xml_bytes();
+        
+        std::str::from_utf8(&bytes)
+            .unwrap() // safe
+            .to_string()
+    }
 
+    /// Writes the Message's XML representation to a new Bytes
+    pub fn to_xml_bytes(&self) -> Bytes {
         let mut vec = vec![];
         self.write_xml(&mut vec).unwrap(); // safe
-        let xml = from_utf8(vec.as_slice()).unwrap(); // safe
-
-        xml.to_string()
+        
+        Bytes::from(vec)
     }
 }
 
@@ -462,11 +655,38 @@ impl fmt::Display for IssuanceRequest {
 /// section 3.4.2 of RFC6492.
 ///
 /// Note that this is like a single [`ResourceClassEntitlements`] found in the
-/// section 3.4.1 Resource Class List Response, except that it MUsT include
+/// section 3.4.1 Resource Class List Response, except that it MUST include
 /// the ONE certificate which has just been issued only. So we can wrap here
 /// and add some guards.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct IssuanceResponse(ResourceClassEntitlements);
+pub struct IssuanceResponse {
+    class_name: ResourceClassName,
+    resource_set: ResourceSet,
+    not_after: Time,
+    issued_cert: IssuedCert,
+    signing_cert: SigningCert
+}
+
+/// # Data and Access
+/// 
+impl IssuanceResponse {
+    pub fn new(
+        class_name: ResourceClassName,
+        resource_set: ResourceSet,
+        not_after: Time,
+        issued_cert: IssuedCert,
+        signing_cert: SigningCert
+    ) -> Self {
+        IssuanceResponse {
+            class_name,
+            resource_set,
+            not_after,
+            issued_cert,
+            signing_cert,
+        }
+    }
+}
+
 
 /// # Encode to XML
 /// 
@@ -475,7 +695,15 @@ impl IssuanceResponse {
         &self,
         content: &mut encode::Content<W>
     ) -> Result<(), io::Error> {
-        self.0.write_xml(content)
+        // Some cloning, but.. it saves us re-implementing the XML
+        // writing here.
+        ResourceClassEntitlements::new(
+            self.class_name.clone(),
+            self.resource_set.clone(),
+            self.not_after,
+            vec![self.issued_cert.clone()],
+            self.signing_cert.clone()
+        ).write_xml(content)
     }
 }
 
@@ -487,7 +715,7 @@ impl IssuanceResponse {
         content: &mut Content,
         reader: &mut xml::decode::Reader<R>,
     ) -> Result<Self, Error> {
-        let entitlements = ResourceClassEntitlements::decode_opt(
+        let mut entitlements = ResourceClassEntitlements::decode_opt(
             content, reader
         )?
         .ok_or(XmlError::Malformed)?; // We MUST have 1
@@ -495,7 +723,13 @@ impl IssuanceResponse {
         if entitlements.issued_certs.len() != 1 {
             Err(Error::XmlError(XmlError::Malformed))
         } else {
-            Ok(IssuanceResponse(entitlements))
+            Ok(IssuanceResponse { 
+                class_name: entitlements.class_name,
+                resource_set: entitlements.resource_set,
+                not_after: entitlements.not_after,
+                issued_cert: entitlements.issued_certs.pop().unwrap(),
+                signing_cert: entitlements.signing_cert
+            })
         }
     }
 }
@@ -930,6 +1164,78 @@ pub struct ResourceClassEntitlements {
     signing_cert: SigningCert,
 }
 
+/// # Data and Access
+/// 
+impl ResourceClassEntitlements {
+    pub fn new(
+        class_name: ResourceClassName,
+        resource_set: ResourceSet,
+        not_after: Time,
+        issued_certs: Vec<IssuedCert>,
+        signing_cert: SigningCert,
+    ) -> Self {
+        ResourceClassEntitlements { 
+            class_name, resource_set, not_after, issued_certs, signing_cert
+        }
+    }
+
+    pub fn class_name(&self) -> &ResourceClassName {
+        &self.class_name
+    }
+
+    pub fn resource_set(&self) -> &ResourceSet {
+        &self.resource_set
+    }
+
+    pub fn not_after(&self) -> Time {
+        self.not_after
+    }
+
+    pub fn issued_certs(&self) -> &Vec<IssuedCert> {
+        &self.issued_certs
+    }
+
+    pub fn signing_cert(&self) -> &SigningCert {
+        &self.signing_cert
+    }
+
+    /// Converts this into an IssuanceResponse for the given key. I.e. includes
+    /// the issued certificate matching the given public key only. Returns a
+    /// None if no match is found.
+    pub fn into_issuance_response(
+        self,
+        key: &PublicKey
+    ) -> Option<IssuanceResponse> {
+        let (
+            class_name,
+            resource_set,
+            not_after,
+            issued_certs,
+            signing_cert
+        ) = (
+            self.class_name,
+            self.resource_set,
+            self.not_after,
+            self.issued_certs,
+            self.signing_cert
+        );
+
+        issued_certs
+            .into_iter()
+            .find(|issued| issued.cert().subject_public_key_info() == key)
+            .map(|issued| IssuanceResponse::new(
+                class_name,
+                resource_set,
+                not_after,
+                issued,
+                signing_cert
+            ))
+    }
+
+
+
+}
+
 /// # Decode from XML
 /// 
 impl ResourceClassEntitlements {
@@ -1093,7 +1399,7 @@ impl ResourceClassEntitlements {
                 let url = url.ok_or(XmlError::Malformed)?;
 
                 issued_certs.push(
-                    IssuedCert { url, req_limit, cert }
+                    IssuedCert { uri: url, req_limit, cert }
                 );
             }
 
@@ -1316,9 +1622,37 @@ impl fmt::Display for NotPerformedResponse {
 /// Represents an existing certificate issued to a child.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct IssuedCert {
-    url: uri::Rsync,
+    uri: uri::Rsync,
     req_limit: ResourceSet,
     cert: Cert,
+}
+
+/// # Data and Access
+/// 
+impl IssuedCert {
+    pub fn new(
+        uri: uri::Rsync,
+        req_limit: ResourceSet,
+        cert: Cert,
+    ) -> Self {
+        IssuedCert { uri, req_limit, cert }
+    }
+
+    pub fn unpack(self) -> (uri::Rsync, ResourceSet, Cert) {
+        (self.uri, self.req_limit, self.cert)
+    }
+
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+    
+    pub fn req_limit(&self) -> &ResourceSet {
+        &self.req_limit
+    }
+    
+    pub fn cert(&self) -> &Cert {
+        &self.cert
+    }
 }
 
 /// # Encode to XML
@@ -1330,7 +1664,7 @@ impl IssuedCert {
     ) -> Result<(), io::Error> {
         content
             .element("certificate".into())?
-            .attr("cert_url", &self.url)?
+            .attr("cert_url", &self.uri)?
             .attr_opt("req_resource_set_as", self.req_limit.asn_opt())?
             .attr_opt("req_resource_set_ipv4", self.req_limit.ipv4_opt())?
             .attr_opt("req_resource_set_ipv6", self.req_limit.ipv6_opt())?
@@ -1346,7 +1680,7 @@ impl IssuedCert {
 
 impl PartialEq for IssuedCert {
     fn eq(&self, o: &Self) -> bool {
-        self.url == o.url &&
+        self.uri == o.uri &&
         self.req_limit == o.req_limit &&
         self.cert.to_captured().as_slice() == o.cert.to_captured().as_slice()
     }
@@ -1460,6 +1794,8 @@ pub enum Error {
     InvalidPayloadType(PayloadTypeError),
     InvalidCsrSyntax(String),
     CertSyntax(String),
+    CmsDecode(String),
+    Validation(ValidationError)
 }
 
 impl fmt::Display for Error {
@@ -1473,6 +1809,12 @@ impl fmt::Display for Error {
             }
             Error::CertSyntax(msg) => {
                 write!(f, "Could not decode certificate: {}", msg)
+            }
+            Error::CmsDecode(msg) => {
+                write!(f, "Could not decode CMS: {}", msg)
+            }
+            Error::Validation(e) => {
+                write!(f, "CMS is not valid: {}", e)
             }
         }
     }
@@ -1489,6 +1831,13 @@ impl From<PayloadTypeError> for Error {
         Error::InvalidPayloadType(e)
     }
 }
+
+impl From<ValidationError> for Error {
+    fn from(e: ValidationError) -> Self {
+        Error::Validation(e)
+    }
+}
+
 
 //------------ Tests ---------------------------------------------------------
 
@@ -1564,5 +1913,61 @@ mod tests {
         let xml = include_str!("../../test-data/ca/rfc6492/not-performed-response.xml");
         let not_performed_response = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(not_performed_response);
+    }
+}
+
+
+#[cfg(all(test, feature="softkeys"))]
+mod signer_test {
+
+    use super::*;
+
+    use crate::{
+        ca::idcert::IdCert,
+        repository::crypto::{softsigner::{OpenSslSigner, KeyId}, PublicKeyFormat}
+    };
+
+    fn sign_and_validate_msg(
+        signer: &OpenSslSigner,
+        ta_key: KeyId,
+        ta_cert: &IdCert,
+        message: Message
+    ) {
+        let cms = ProvisioningCms::create(
+            message.clone(),
+            &ta_key,
+            signer
+        ).unwrap();
+
+        let bytes = cms.to_bytes();
+
+        let decoded = ProvisioningCms::decode(&bytes).unwrap();
+        decoded.validate(ta_cert).unwrap();
+
+        let decoded_message = decoded.into_message();
+
+        assert_eq!(message, decoded_message);
+    }
+
+    
+    #[test]
+    fn sign_and_validate() {
+        let signer = OpenSslSigner::new();
+
+        let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
+        let cert = IdCert::new_ta(
+            Validity::from_secs(60),
+            &key,
+            &signer
+        ).unwrap();
+
+        let child = Sender::from_str("child").unwrap();
+        let parent = Sender::from_str("parent").unwrap();
+
+        let list = Message::list(child, parent);
+
+
+
+        sign_and_validate_msg(&signer, key, &cert, list);
     }
 }
