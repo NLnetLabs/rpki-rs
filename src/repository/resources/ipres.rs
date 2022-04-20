@@ -1626,6 +1626,10 @@ impl Ipv4Blocks {
     pub fn empty() -> Self {
         Ipv4Blocks(IpBlocks::empty())
     }
+
+    pub fn to_ip_resources(&self) -> IpResources {
+        IpResources::blocks(self.0.clone())
+    }
 }
 
 //--- Display
@@ -1679,6 +1683,12 @@ impl<'de> serde::Deserialize<'de> for Ipv4Blocks {
     }
 }
 
+impl From<IpBlocks> for Ipv4Blocks {
+    fn from(blocks: IpBlocks) -> Self {
+        Ipv4Blocks(blocks)
+    }
+}
+
 //--- Deref
 
 impl std::ops::Deref for Ipv4Blocks {
@@ -1701,6 +1711,10 @@ pub struct Ipv6Blocks(IpBlocks);
 impl Ipv6Blocks {
     pub fn empty() -> Self {
         Ipv6Blocks(IpBlocks::empty())
+    }
+
+    pub fn to_ip_resources(&self) -> IpResources {
+        IpResources::blocks(self.0.clone())
     }
 }
 
@@ -1752,6 +1766,12 @@ impl<'de> serde::Deserialize<'de> for Ipv6Blocks {
     where D: serde::Deserializer<'de> {
         let string = String::deserialize(deserializer)?;
         Ipv6Blocks::from_str(&string).map_err(serde::de::Error::custom)
+    }
+}
+
+impl From<IpBlocks> for Ipv6Blocks {
+    fn from(blocks: IpBlocks) -> Self {
+        Ipv6Blocks(blocks)
     }
 }
 
