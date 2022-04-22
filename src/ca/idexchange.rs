@@ -4,26 +4,20 @@
 //! used to exchange identity and configuration between CAs and their
 //! parent CA and/or RPKI Publication Servers.
 
-use std::fmt;
-use std::io;
-use std::convert::TryFrom;
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::str::from_utf8;
-use std::sync::Arc;
-use log::debug;
-use serde::{
-    Deserialize, Serialize, Serializer, Deserializer
-};
-use crate::repository::x509::{
-    Time, ValidationError
-};
+use super::idcert::IdCert;
+use crate::repository::x509::{Time, ValidationError};
 use crate::uri;
 use crate::xml;
-use crate::xml::decode::{
-    Error as XmlError, Name
-};
-use super::idcert::IdCert;
+use crate::xml::decode::{Error as XmlError, Name};
+use log::debug;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::convert::TryFrom;
+use std::fmt;
+use std::io;
+use std::path::PathBuf;
+use std::str::from_utf8;
+use std::str::FromStr;
+use std::sync::Arc;
 
 // Constants for the RFC 8183 XML
 const VERSION: &str = "1";
@@ -43,7 +37,6 @@ const PARENT_OFFER: Name = Name::qualified(NS, b"offer");
 const REPOSITORY_RESPONSE: Name = Name::qualified(NS, b"repository_response");
 const REPOSITORY_BPKI_TA: Name = Name::qualified(NS, b"repository_bpki_ta");
 
-
 //------------ Handle --------------------------------------------------------
 
 // Some type aliases that help make the context of Handles more explicit.
@@ -55,7 +48,7 @@ pub type RepositoryHandle = Handle;
 /// This type represents the identifying 'handles' as used between RPKI
 /// entities. Handles are like strings, but they are restricted to the
 /// following - taken from the RELAX NG schema in RFC 8183:
-/// 
+///
 /// handle  = xsd:string { maxLength="255" pattern="[\-_A-Za-z0-9/]*" }
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq)]
 #[serde(try_from = "String")]
@@ -79,10 +72,7 @@ impl Handle {
 
     fn verify_name(s: &str) -> Result<(), InvalidHandle> {
         if s.bytes()
-            .all(|b| {
-                b.is_ascii_alphanumeric() || b == b'-' || b == b'_' ||
-                b == b'/' || b == b'\\'
-            })
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'/' || b == b'\\')
             && !s.is_empty()
             && s.len() < 256
         {
@@ -165,7 +155,6 @@ impl fmt::Display for InvalidHandle {
     }
 }
 
-
 //------------ ServiceUri ----------------------------------------------------
 
 /// The service URI where a child or publisher needs to send its
@@ -179,11 +168,10 @@ impl ServiceUri {
     pub fn as_str(&self) -> &str {
         match self {
             ServiceUri::Http(http) => http,
-            ServiceUri::Https(https) => https.as_str()
+            ServiceUri::Https(https) => https.as_str(),
         }
     }
 }
-
 
 impl TryFrom<String> for ServiceUri {
     type Error = Error;
@@ -239,7 +227,6 @@ impl AsRef<str> for ServiceUri {
     }
 }
 
-
 //------------ ChildRequest --------------------------------------------------
 
 /// Type representing a <child_request /> defined in section 5.2.1 of
@@ -257,7 +244,6 @@ pub struct ChildRequest {
     tag: Option<String>,
 }
 
-
 /// # Data Access
 ///
 impl ChildRequest {
@@ -272,7 +258,7 @@ impl ChildRequest {
     pub fn unpack(self) -> (IdCert, ChildHandle, Option<String>) {
         (self.id_cert, self.child_handle, self.tag)
     }
-    
+
     pub fn id_cert(&self) -> &IdCert {
         &self.id_cert
     }
@@ -286,25 +272,21 @@ impl ChildRequest {
     }
 }
 
-
 /// # XML Support
 ///
 impl ChildRequest {
     /// Parses a <child_request /> message, and validates the
     /// embedded certificate. MUST be a validly signed TA cert.
-    pub fn validate<R: io::BufRead>(
-        reader: R
-    ) -> Result<Self, Error> {
+    pub fn validate<R: io::BufRead>(reader: R) -> Result<Self, Error> {
         Self::validate_at(reader, Time::now())
     }
 
     /// Writes the ChildRequest's XML representation.
-    pub fn write_xml(
-        &self, writer: &mut impl io::Write
-    ) -> Result<(), io::Error> {
+    pub fn write_xml(&self, writer: &mut impl io::Write) -> Result<(), io::Error> {
         let mut writer = xml::encode::Writer::new(writer);
 
-        writer.element(CHILD_REQUEST.into_unqualified())?
+        writer
+            .element(CHILD_REQUEST.into_unqualified())?
             .attr("xmlns", NS)?
             .attr("version", VERSION)?
             .attr("child_handle", self.child_handle())?
@@ -312,42 +294,44 @@ impl ChildRequest {
             .content(|content| {
                 content
                     .element(CHILD_BPKI_TA.into_unqualified())?
-                    .content(|content| {
-                        content.base64(self.id_cert.to_captured().as_slice())
-                    })?;
+                    .content(|content| content.base64(self.id_cert.to_captured().as_slice()))?;
                 Ok(())
             })?;
 
         writer.done()
     }
 
-    /// Writes the ChildRequest's XML representation to a new String.
-    pub fn to_xml_string(&self) -> String {
+    /// Writes the ChildRequest's XML representation to a new Vec<u8>.
+    pub fn to_xml_vec(&self) -> Vec<u8> {
         let mut vec = vec![];
         self.write_xml(&mut vec).unwrap(); // safe
+        vec
+    }
+
+    /// Writes the ChildRequest's XML representation to a new String.
+    pub fn to_xml_string(&self) -> String {
+        let vec = self.to_xml_vec();
         let xml = from_utf8(vec.as_slice()).unwrap(); // safe
 
         xml.to_string()
     }
 
     /// Parses a <child_request /> message.
-    fn validate_at<R: io::BufRead>(
-        reader: R, when: Time
-    ) -> Result<Self, Error> {
+    fn validate_at<R: io::BufRead>(reader: R, when: Time) -> Result<Self, Error> {
         let mut reader = xml::decode::Reader::new(reader);
-        
+
         let mut child_handle: Option<ChildHandle> = None;
         let mut tag: Option<String> = None;
-        
+
         let mut outer = reader.start(|element| {
             if element.name() != CHILD_REQUEST {
-                return Err(XmlError::Malformed)
+                return Err(XmlError::Malformed);
             }
-            
+
             element.attributes(|name, value| match name {
                 b"version" => {
                     if value.ascii_into::<String>()? != VERSION {
-                        return Err(XmlError::Malformed)
+                        return Err(XmlError::Malformed);
                     }
                     Ok(())
                 }
@@ -359,7 +343,7 @@ impl ChildRequest {
                     tag = Some(value.ascii_into()?);
                     Ok(())
                 }
-                _ => Err(XmlError::Malformed)
+                _ => Err(XmlError::Malformed),
             })
         })?;
 
@@ -367,24 +351,22 @@ impl ChildRequest {
 
         // We expect a single element 'child_bpki_ta' to be present which
         // will contain the child id_cert.
-        let mut content = outer.take_element(&mut reader, |element| {
-            match element.name() {
-                CHILD_BPKI_TA => Ok(()),
-                _ => Err(XmlError::Malformed)
-            }
+        let mut content = outer.take_element(&mut reader, |element| match element.name() {
+            CHILD_BPKI_TA => Ok(()),
+            _ => Err(XmlError::Malformed),
         })?;
-        
-        let id_cert = validate_idcert_xml_at(
-            &mut content,
-            &mut reader,
-            when
-        )?;
-        
+
+        let id_cert = validate_idcert_xml_at(&mut content, &mut reader, when)?;
+
         content.take_end(&mut reader)?;
         outer.take_end(&mut reader)?;
         reader.end()?;
 
-        Ok(ChildRequest { tag, child_handle, id_cert })
+        Ok(ChildRequest {
+            tag,
+            child_handle,
+            id_cert,
+        })
     }
 }
 
@@ -404,14 +386,14 @@ impl fmt::Display for ChildRequest {
 pub struct ParentResponse {
     /// The parent CA's IdCert
     id_cert: IdCert,
-    
+
     /// The handle of the parent CA.
     parent_handle: ParentHandle,
-    
+
     /// The handle chosen for the child CA. Note that this may not be the
     /// same as the handle the CA asked for.
     child_handle: ChildHandle,
-    
+
     /// The URI where the CA needs to send its RFC6492 messages
     service_uri: ServiceUri,
 
@@ -460,62 +442,53 @@ impl ParentResponse {
 }
 
 /// # XML Support
-/// 
+///
 impl ParentResponse {
     /// Parses a <parent_response /> message, and validates the
     /// embedded certificate. MUST be a validly signed TA cert.
-    pub fn validate<R: io::BufRead>(
-        reader: R
-    ) -> Result<Self, Error> {
+    pub fn validate<R: io::BufRead>(reader: R) -> Result<Self, Error> {
         Self::validate_at(reader, Time::now())
     }
 
-
     /// Writes the ParentResponse's XML representation.
-    pub fn write_xml(
-        &self, writer: &mut impl io::Write
-    ) -> Result<(), io::Error> {
+    pub fn write_xml(&self, writer: &mut impl io::Write) -> Result<(), io::Error> {
         let mut writer = xml::encode::Writer::new(writer);
 
-        writer.element(PARENT_RESPONSE.into_unqualified())?
+        writer
+            .element(PARENT_RESPONSE.into_unqualified())?
             .attr("xmlns", NS)?
             .attr("version", VERSION)?
             .attr("parent_handle", self.parent_handle())?
             .attr("child_handle", self.child_handle())?
             .attr("service_uri", self.service_uri())?
             .attr_opt("tag", self.tag())?
-            .content(|content|{
+            .content(|content| {
                 content
                     .element(PARENT_BPKI_TA.into_unqualified())?
-                    .content(|content| {
-                        content.base64(self.id_cert.to_captured().as_slice())
-                    })?;
+                    .content(|content| content.base64(self.id_cert.to_captured().as_slice()))?;
                 Ok(())
             })?;
         writer.done()
     }
 
-
     /// Parses a <parent_response /> message.
-    fn validate_at<R: io::BufRead>(
-        reader: R, when: Time
-    ) -> Result<Self, Error> {
+    fn validate_at<R: io::BufRead>(reader: R, when: Time) -> Result<Self, Error> {
         let mut reader = xml::decode::Reader::new(reader);
 
         let mut child_handle: Option<ChildHandle> = None;
         let mut parent_handle: Option<ParentHandle> = None;
         let mut service_uri: Option<ServiceUri> = None;
         let mut tag: Option<String> = None;
-        
+
         let mut outer = reader.start(|element| {
             if element.name() != PARENT_RESPONSE {
-                return Err(XmlError::Malformed)
+                return Err(XmlError::Malformed);
             }
-            
+
             element.attributes(|name, value| match name {
                 b"version" => {
                     if value.ascii_into::<String>()? != VERSION {
-                        return Err(XmlError::Malformed)
+                        return Err(XmlError::Malformed);
                     }
                     Ok(())
                 }
@@ -562,40 +535,30 @@ impl ParentResponse {
 
         loop {
             let mut bpki_ta_element_found = false;
-            let inner = outer.take_opt_element(&mut reader, |element|{
-                match element.name() {
-                    PARENT_BPKI_TA => {
-                        bpki_ta_element_found = true;
-                        Ok(())
-                    },
-                    PARENT_OFFER | PARENT_REFERRAL => {
-                        Ok(())
-                    },
-                    _ => {
-                        Err(XmlError::Malformed)
-                    }
+            let inner = outer.take_opt_element(&mut reader, |element| match element.name() {
+                PARENT_BPKI_TA => {
+                    bpki_ta_element_found = true;
+                    Ok(())
                 }
+                PARENT_OFFER | PARENT_REFERRAL => Ok(()),
+                _ => Err(XmlError::Malformed),
             })?;
-            
+
             // Break out of loop if we got no element, get the
             // actual element if we can.
             let mut inner = match inner {
                 Some(inner) => inner,
-                None => break
+                None => break,
             };
-            
+
             if bpki_ta_element_found {
                 // parse inner text as the ID certificate
-                id_cert = Some(validate_idcert_xml_at(
-                    &mut inner,
-                    &mut reader,
-                    when
-                )?);
+                id_cert = Some(validate_idcert_xml_at(&mut inner, &mut reader, when)?);
             } else {
                 // skip inner text if there is any (offer does not have any)
                 inner.skip_opt_text(&mut reader)?;
             }
-            
+
             inner.take_end(&mut reader)?;
         }
 
@@ -605,19 +568,29 @@ impl ParentResponse {
 
         reader.end()?;
 
-        Ok(ParentResponse { 
-            tag, id_cert, parent_handle, child_handle, service_uri 
+        Ok(ParentResponse {
+            tag,
+            id_cert,
+            parent_handle,
+            child_handle,
+            service_uri,
         })
+    }
+
+    /// Writes the ParentResponse's XML representation to a new Vec<u8>.
+    pub fn to_xml_vec(&self) -> Vec<u8> {
+        let mut vec = vec![];
+        self.write_xml(&mut vec).unwrap(); // safe
+        vec
     }
 
     /// Writes the ParentResponse's XML representation to a new String.
     pub fn to_xml_string(&self) -> String {
-        let mut vec = vec![];
-        self.write_xml(&mut vec).unwrap(); // safe
+        let vec = self.to_xml_vec();
         let xml = from_utf8(vec.as_slice()).unwrap(); // safe
 
         xml.to_string()
-    }    
+    }
 }
 
 //--- Display
@@ -651,11 +624,7 @@ pub struct PublisherRequest {
 /// # Construct and Data Access
 ///
 impl PublisherRequest {
-    pub fn new(
-        id_cert: IdCert,
-        publisher_handle: PublisherHandle,
-        tag: Option<String>
-    ) -> Self {
+    pub fn new(id_cert: IdCert, publisher_handle: PublisherHandle, tag: Option<String>) -> Self {
         PublisherRequest {
             id_cert,
             publisher_handle,
@@ -666,7 +635,7 @@ impl PublisherRequest {
     pub fn unpack(self) -> (IdCert, PublisherHandle, Option<String>) {
         (self.id_cert, self.publisher_handle, self.tag)
     }
-    
+
     pub fn id_cert(&self) -> &IdCert {
         &self.id_cert
     }
@@ -681,23 +650,20 @@ impl PublisherRequest {
 }
 
 /// # XML Support
-/// 
+///
 impl PublisherRequest {
     /// Parses a <publisher_request /> message, and validates the
     /// embedded certificate. MUST be a validly signed TA cert.
-    pub fn validate<R: io::BufRead>(
-        reader: R
-    ) -> Result<Self, Error> {
+    pub fn validate<R: io::BufRead>(reader: R) -> Result<Self, Error> {
         Self::validate_at(reader, Time::now())
     }
 
     /// Writes the PublisherRequest's XML representation.
-    pub fn write_xml(
-        &self, writer: &mut impl io::Write
-    ) -> Result<(), io::Error> {
+    pub fn write_xml(&self, writer: &mut impl io::Write) -> Result<(), io::Error> {
         let mut writer = xml::encode::Writer::new(writer);
 
-        writer.element(PUBLISHER_REQUEST.into_unqualified())?
+        writer
+            .element(PUBLISHER_REQUEST.into_unqualified())?
             .attr("xmlns", NS)?
             .attr("version", VERSION)?
             .attr("publisher_handle", self.publisher_handle())?
@@ -705,42 +671,44 @@ impl PublisherRequest {
             .content(|content| {
                 content
                     .element(PUBLISHER_BPKI_TA.into_unqualified())?
-                    .content(|content| {
-                        content.base64(self.id_cert.to_captured().as_slice())
-                    })?;
+                    .content(|content| content.base64(self.id_cert.to_captured().as_slice()))?;
                 Ok(())
             })?;
 
         writer.done()
     }
 
-    /// Writes the PublisherRequest's XML representation to a new String.
-    pub fn to_xml_string(&self) -> String {
+    /// Writes the PublisherRequest's XML representation to a new Vec<u8>.
+    pub fn to_xml_vec(&self) -> Vec<u8> {
         let mut vec = vec![];
         self.write_xml(&mut vec).unwrap(); // safe
+        vec
+    }
+
+    /// Writes the PublisherRequest's XML representation to a new String.
+    pub fn to_xml_string(&self) -> String {
+        let vec = self.to_xml_vec();
         let xml = from_utf8(vec.as_slice()).unwrap(); // safe
 
         xml.to_string()
     }
 
     /// Parses a <publisher_request /> message.
-    fn validate_at<R: io::BufRead>(
-        reader: R, when: Time
-    ) -> Result<Self, Error> {
+    fn validate_at<R: io::BufRead>(reader: R, when: Time) -> Result<Self, Error> {
         let mut reader = xml::decode::Reader::new(reader);
 
         let mut publisher_handle: Option<PublisherHandle> = None;
         let mut tag: Option<String> = None;
-        
+
         let mut outer = reader.start(|element| {
             if element.name() != PUBLISHER_REQUEST {
-                return Err(XmlError::Malformed)
+                return Err(XmlError::Malformed);
             }
-            
+
             element.attributes(|name, value| match name {
                 b"version" => {
                     if value.ascii_into::<String>()? != VERSION {
-                        return Err(XmlError::Malformed)
+                        return Err(XmlError::Malformed);
                     }
                     Ok(())
                 }
@@ -752,7 +720,7 @@ impl PublisherRequest {
                     tag = Some(value.ascii_into()?);
                     Ok(())
                 }
-                _ => Err(XmlError::Malformed)
+                _ => Err(XmlError::Malformed),
             })
         })?;
 
@@ -760,18 +728,12 @@ impl PublisherRequest {
 
         // We expect a single element 'child_bpki_ta' to be present which
         // will contain the child id_cert.
-        let mut content = outer.take_element(&mut reader, |element| {
-            match element.name() {
-                PUBLISHER_BPKI_TA => Ok(()),
-                _ => Err(XmlError::Malformed)
-            }
+        let mut content = outer.take_element(&mut reader, |element| match element.name() {
+            PUBLISHER_BPKI_TA => Ok(()),
+            _ => Err(XmlError::Malformed),
         })?;
 
-        let id_cert = validate_idcert_xml_at(
-            &mut content,
-            &mut reader,
-            when
-        )?;
+        let id_cert = validate_idcert_xml_at(&mut content, &mut reader, when)?;
 
         content.take_end(&mut reader)?;
 
@@ -779,7 +741,11 @@ impl PublisherRequest {
 
         reader.end()?;
 
-        Ok(PublisherRequest { tag, publisher_handle, id_cert })
+        Ok(PublisherRequest {
+            tag,
+            publisher_handle,
+            id_cert,
+        })
     }
 }
 
@@ -803,17 +769,17 @@ impl fmt::Display for PublisherRequest {
 pub struct RepositoryResponse {
     /// The Publication Server Identity Certificate
     id_cert: IdCert,
-    
+
     /// The name the publication server decided to call the CA by.
     /// Note that this may not be the same as the handle the CA asked for.
     publisher_handle: PublisherHandle,
-    
+
     /// The URI where the CA needs to send its RFC8181 messages
     service_uri: ServiceUri,
-    
+
     /// Contains the rsync base (sia_base)
     sia_base: uri::Rsync,
-    
+
     /// Contains the RRDP (RFC8182) notification xml uri
     rrdp_notification_uri: Option<uri::Https>,
 
@@ -839,26 +805,26 @@ impl RepositoryResponse {
             service_uri,
             sia_base,
             rrdp_notification_uri,
-            tag
+            tag,
         }
     }
 
     pub fn id_cert(&self) -> &IdCert {
         &self.id_cert
     }
-    
+
     pub fn publisher_handle(&self) -> &Handle {
         &self.publisher_handle
     }
-    
+
     pub fn service_uri(&self) -> &ServiceUri {
         &self.service_uri
     }
-    
+
     pub fn sia_base(&self) -> &uri::Rsync {
         &self.sia_base
     }
-    
+
     pub fn rrdp_notification_uri(&self) -> Option<&uri::Https> {
         self.rrdp_notification_uri.as_ref()
     }
@@ -873,19 +839,16 @@ impl RepositoryResponse {
 impl RepositoryResponse {
     /// Parses a <repository_response /> message, and validates the
     /// embedded certificate. MUST be a validly signed TA cert.
-    pub fn validate<R: io::BufRead>(
-        reader: R
-    ) -> Result<Self, Error> {
+    pub fn validate<R: io::BufRead>(reader: R) -> Result<Self, Error> {
         Self::validate_at(reader, Time::now())
     }
 
     /// Writes the RepositoryResponse's XML representation.
-    pub fn write_xml(
-        &self, writer: &mut impl io::Write
-    ) -> Result<(), io::Error> {
+    pub fn write_xml(&self, writer: &mut impl io::Write) -> Result<(), io::Error> {
         let mut writer = xml::encode::Writer::new(writer);
 
-        writer.element(REPOSITORY_RESPONSE.into_unqualified())?
+        writer
+            .element(REPOSITORY_RESPONSE.into_unqualified())?
             .attr("xmlns", NS)?
             .attr("version", VERSION)?
             .attr("publisher_handle", self.publisher_handle())?
@@ -893,40 +856,35 @@ impl RepositoryResponse {
             .attr("sia_base", self.sia_base())?
             .attr_opt("rrdp_notification_uri", self.rrdp_notification_uri())?
             .attr_opt("tag", self.tag())?
-            .content(|content|{
+            .content(|content| {
                 content
                     .element(REPOSITORY_BPKI_TA.into_unqualified())?
-                    .content(|content| {
-                        content.base64(self.id_cert.to_captured().as_slice())
-                    })?;
+                    .content(|content| content.base64(self.id_cert.to_captured().as_slice()))?;
                 Ok(())
             })?;
         writer.done()
     }
 
-
     /// Parses a <repository_response /> message.
-    fn validate_at<R: io::BufRead>(
-        reader: R, when: Time
-    ) -> Result<Self, Error> {
+    fn validate_at<R: io::BufRead>(reader: R, when: Time) -> Result<Self, Error> {
         let mut reader = xml::decode::Reader::new(reader);
 
         let mut tag: Option<String> = None;
         let mut publisher_handle: Option<PublisherHandle> = None;
         let mut service_uri: Option<ServiceUri> = None;
 
-        let mut sia_base: Option<uri::Rsync>  = None;
+        let mut sia_base: Option<uri::Rsync> = None;
         let mut rrdp_notification_uri: Option<uri::Https> = None;
 
         let mut outer = reader.start(|element| {
             if element.name() != REPOSITORY_RESPONSE {
-                return Err(XmlError::Malformed)
+                return Err(XmlError::Malformed);
             }
-            
+
             element.attributes(|name, value| match name {
                 b"version" => {
                     if value.ascii_into::<String>()? != VERSION {
-                        return Err(XmlError::Malformed)
+                        return Err(XmlError::Malformed);
                     }
                     Ok(())
                 }
@@ -967,18 +925,12 @@ impl RepositoryResponse {
 
         // We expect a single element 'child_bpki_ta' to be present which
         // will contain the child id_cert.
-        let mut content = outer.take_element(&mut reader, |element| {
-            match element.name() {
-                REPOSITORY_BPKI_TA => Ok(()),
-                _ => Err(XmlError::Malformed)
-            }
+        let mut content = outer.take_element(&mut reader, |element| match element.name() {
+            REPOSITORY_BPKI_TA => Ok(()),
+            _ => Err(XmlError::Malformed),
         })?;
 
-        let id_cert = validate_idcert_xml_at(
-            &mut content,
-            &mut reader,
-            when
-        )?;
+        let id_cert = validate_idcert_xml_at(&mut content, &mut reader, when)?;
 
         content.take_end(&mut reader)?;
 
@@ -986,20 +938,26 @@ impl RepositoryResponse {
 
         reader.end()?;
 
-        Ok(RepositoryResponse { 
+        Ok(RepositoryResponse {
             tag,
             publisher_handle,
             id_cert,
             service_uri,
             sia_base,
-            rrdp_notification_uri 
+            rrdp_notification_uri,
         })
+    }
+
+    /// Writes the RepositoryResponse's XML representation to a new Vec<u8>.
+    pub fn to_xml_vec(&self) -> Vec<u8> {
+        let mut vec = vec![];
+        self.write_xml(&mut vec).unwrap(); // safe
+        vec
     }
 
     /// Writes the RepositoryResponse's XML representation to a new String.
     pub fn to_xml_string(&self) -> String {
-        let mut vec = vec![];
-        self.write_xml(&mut vec).unwrap(); // safe
+        let vec = self.to_xml_vec();
         let xml = from_utf8(vec.as_slice()).unwrap(); // safe
 
         xml.to_string()
@@ -1014,7 +972,6 @@ impl fmt::Display for RepositoryResponse {
     }
 }
 
-
 //------------ IdCert XML parsing --------------------------------------------
 
 /// Parses an IdCert for the given XML element name
@@ -1025,18 +982,15 @@ impl fmt::Display for RepositoryResponse {
 pub fn validate_idcert_xml_at<R: io::BufRead>(
     content: &mut xml::decode::Content,
     reader: &mut xml::decode::Reader<R>,
-    when: Time
+    when: Time,
 ) -> Result<IdCert, Error> {
-    let bytes = content.take_text(reader, |text| {
-        text.base64_decode()
-    })?;
+    let bytes = content.take_text(reader, |text| text.base64_decode())?;
 
     let id_cert = IdCert::decode(bytes.as_slice())?;
     id_cert.validate_ta_at(when)?;
 
     Ok(id_cert)
 }
-
 
 //------------ Error ---------------------------------------------------------
 
@@ -1060,7 +1014,7 @@ impl fmt::Display for Error {
             Error::InvalidTaBase64(e) => e.fmt(f),
             Error::InvalidTaCertEncoding(e) => {
                 write!(f, "Cannot decode TA cert: {}", e)
-            },
+            }
             Error::InvalidTaCert => write!(f, "Invalid TA cert"),
             &Error::InvalidUri(e) => e.fmt(f),
         }
@@ -1097,15 +1051,13 @@ impl From<uri::Error> for Error {
     }
 }
 
-
-
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
-    
+
     use super::*;
-    
+
     fn rpkid_time() -> Time {
         Time::utc(2012, 1, 1, 0, 0, 0)
     }
@@ -1117,18 +1069,14 @@ mod tests {
     #[test]
     fn child_request_codec() {
         let xml = include_str!("../../test-data/ca/rfc8183/rpkid-child-id.xml");
-        let req = ChildRequest::validate_at(
-            xml.as_bytes(), rpkid_time()
-        ).unwrap();
+        let req = ChildRequest::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
 
         assert_eq!(&Handle::from_str("Carol").unwrap(), req.child_handle());
         assert_eq!(None, req.tag());
 
         let re_encoded_xml = req.to_xml_string();
-        let re_decoded = ChildRequest::validate_at(
-            re_encoded_xml.as_bytes(),
-            rpkid_time()
-        ).unwrap();
+        let re_decoded =
+            ChildRequest::validate_at(re_encoded_xml.as_bytes(), rpkid_time()).unwrap();
 
         assert_eq!(req, re_decoded);
     }
@@ -1136,15 +1084,11 @@ mod tests {
     #[test]
     fn parent_response_codec() {
         let xml = include_str!("../../test-data/ca/rfc8183/apnic-parent-response.xml");
-        let req = ParentResponse::validate_at(
-            xml.as_bytes(), apnic_time()
-        ).unwrap();
-        
+        let req = ParentResponse::validate_at(xml.as_bytes(), apnic_time()).unwrap();
+
         let re_encoded_xml = req.to_xml_string();
-        let re_decoded = ParentResponse::validate_at(
-            re_encoded_xml.as_bytes(),
-            apnic_time()
-        ).unwrap();
+        let re_decoded =
+            ParentResponse::validate_at(re_encoded_xml.as_bytes(), apnic_time()).unwrap();
 
         assert_eq!(req, re_decoded);
     }
@@ -1152,47 +1096,35 @@ mod tests {
     #[test]
     fn parent_response_parse_rpkid_referral() {
         let xml = include_str!("../../test-data/ca/rfc8183/rpkid-parent-response-referral.xml");
-        let _req = ParentResponse::validate_at(
-            xml.as_bytes(), rpkid_time()
-        ).unwrap();
+        let _req = ParentResponse::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
     }
 
     #[test]
     fn parent_response_parse_rpkid_offer() {
         let xml = include_str!("../../test-data/ca/rfc8183/rpkid-parent-response-offer.xml");
-        let _req = ParentResponse::validate_at(
-            xml.as_bytes(), rpkid_time()
-        ).unwrap();
+        let _req = ParentResponse::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
     }
-    
+
     #[test]
     fn publisher_request_codec() {
         let xml = include_str!("../../test-data/ca/rfc8183/rpkid-publisher-request.xml");
-        let req = PublisherRequest::validate_at(
-            xml.as_bytes(), rpkid_time()
-        ).unwrap();
+        let req = PublisherRequest::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
 
         let re_encoded_xml = req.to_xml_string();
-        let re_decoded = PublisherRequest::validate_at(
-            re_encoded_xml.as_bytes(),
-            rpkid_time()
-        ).unwrap();
+        let re_decoded =
+            PublisherRequest::validate_at(re_encoded_xml.as_bytes(), rpkid_time()).unwrap();
 
         assert_eq!(req, re_decoded);
     }
-    
+
     #[test]
     fn repository_response_codec() {
         let xml = include_str!("../../test-data/ca/rfc8183/apnic-repository-response.xml");
-        let req = RepositoryResponse::validate_at(
-            xml.as_bytes(), apnic_time()
-        ).unwrap();
+        let req = RepositoryResponse::validate_at(xml.as_bytes(), apnic_time()).unwrap();
 
         let re_encoded_xml = req.to_xml_string();
-        let re_decoded = RepositoryResponse::validate_at(
-            re_encoded_xml.as_bytes(),
-            apnic_time()
-        ).unwrap();
+        let re_decoded =
+            RepositoryResponse::validate_at(re_encoded_xml.as_bytes(), apnic_time()).unwrap();
 
         assert_eq!(req, re_decoded);
     }

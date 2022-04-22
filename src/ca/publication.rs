@@ -11,6 +11,11 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer
 };
 
+use crate::repository::Cert;
+use crate::repository::Crl;
+use crate::repository::Manifest;
+use crate::repository::Roa;
+use crate::repository::aspa::Aspa;
 use crate::repository::crypto::Signer;
 use crate::repository::crypto::SigningError;
 use crate::repository::x509::Time;
@@ -40,6 +45,8 @@ const REPORT_ERROR: &[u8] = b"report_error";
 const ERROR_TEXT: &[u8] = b"error_text";
 const FAILED_PDU: &[u8] = b"failed_pdu";
 
+// Content-type for HTTP(s) exchanges
+pub const CONTENT_TYPE: &str = "application/rpki-publication";
 
 //------------ PublicationCms ------------------------------------------------
 
@@ -147,7 +154,24 @@ impl Message {
     pub fn error(error: ErrorReply) -> Self {
         Message::ReplyMessage(ReplyMessage::ErrorReply(error))
     }
+}
 
+/// # Access
+/// 
+impl Message {
+    pub fn as_reply(self) -> Result<ReplyMessage, Error> {
+        match self {
+            Message::QueryMessage(_) => Err(Error::NotReply),
+            Message::ReplyMessage(reply) => Ok(reply)
+        }
+    }
+
+    pub fn as_query(self) -> Result<QueryMessage, Error> {
+        match self {
+            Message::QueryMessage(query) => Ok(query),
+            Message::ReplyMessage(_) => Err(Error::NotQuery),
+        }
+    }
 }
 
 /// # Encoding to XML
@@ -1100,6 +1124,14 @@ impl ListElement {
         ListElement { uri, hash }
     }
 
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+
+    pub fn hash(&self) -> &rrdp::Hash {
+        &self.hash
+    }
+
     pub fn unpack(self) -> (uri::Rsync, rrdp::Hash) {
         (self.uri, self.hash)
     }
@@ -1147,6 +1179,19 @@ impl ErrorReply {
 
     pub fn errors(&self) -> &Vec<ReportError> {
         &self.errors
+    }
+}
+
+impl fmt::Display for ErrorReply {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "error reply including: ")?;
+        for err in &self.errors {
+            match &err.error_text {
+                None => write!(f, "error code: {} ", err.error_code)?,
+                Some(text) => write!(f, "error code: {}, text: {} ", err.error_code, text)?,
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1403,6 +1448,35 @@ impl<'de> Deserialize<'de> for Base64 {
     }
 }
 
+impl From<&Cert> for Base64 {
+    fn from(cert: &Cert) -> Self {
+        Base64::from_content(&cert.to_captured().into_bytes())
+    }
+}
+
+impl From<&Roa> for Base64 {
+    fn from(roa: &Roa) -> Self {
+        Base64::from_content(&roa.to_captured().into_bytes())
+    }
+}
+
+impl From<&Aspa> for Base64 {
+    fn from(aspa: &Aspa) -> Self {
+        Base64::from_content(&aspa.to_captured().into_bytes())
+    }
+}
+
+impl From<&Manifest> for Base64 {
+    fn from(mft: &Manifest) -> Self {
+        Base64::from_content(&mft.to_captured().into_bytes())
+    }
+}
+
+impl From<&Crl> for Base64 {
+    fn from(crl: &Crl) -> Self {
+        Base64::from_content(&crl.to_captured().into_bytes())
+    }
+}
 
 //------------ PublicationMessageError ---------------------------------------
 
@@ -1412,7 +1486,9 @@ pub enum Error {
     XmlError(XmlError),
     InvalidErrorCode(String),
     CmsDecode(String),
-    Validation(ValidationError)
+    Validation(ValidationError),
+    NotQuery,
+    NotReply
 }
 
 impl fmt::Display for Error {
@@ -1428,6 +1504,12 @@ impl fmt::Display for Error {
             }
             Error::Validation(e) => {
                 write!(f, "CMS is not valid: {}", e)
+            }
+            Error::NotQuery => {
+                write!(f, "was not a query message")
+            }
+            Error::NotReply => {
+                write!(f, "was not a reply message")
             }
         }
     }

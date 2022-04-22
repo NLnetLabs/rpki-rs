@@ -19,3 +19,5 @@ pub mod sigmsg;
 
 pub mod provisioning;
 pub mod publication;
+
+pub mod resourceset;
