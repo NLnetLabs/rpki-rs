@@ -777,11 +777,9 @@ pub struct RepositoryResponse {
     /// The URI where the CA needs to send its RFC8181 messages
     service_uri: ServiceUri,
 
-    /// Contains the rsync base (sia_base)
-    sia_base: uri::Rsync,
-
-    /// Contains the RRDP (RFC8182) notification xml uri
-    rrdp_notification_uri: Option<uri::Https>,
+    /// Contains the rsync base (sia_base) and optional RRDP (RFC8182)
+    /// notification xml uri
+    repo_info: RepoInfo,
 
     /// The optional 'tag' identifier used like a session identifier
     tag: Option<String>,
@@ -799,12 +797,13 @@ impl RepositoryResponse {
         rrdp_notification_uri: Option<uri::Https>,
         tag: Option<String>,
     ) -> Self {
+        let repo_info = RepoInfo::new(sia_base, rrdp_notification_uri);
+        
         RepositoryResponse {
             id_cert,
             publisher_handle,
             service_uri,
-            sia_base,
-            rrdp_notification_uri,
+            repo_info,
             tag,
         }
     }
@@ -821,12 +820,16 @@ impl RepositoryResponse {
         &self.service_uri
     }
 
+    pub fn repo_info(&self) -> &RepoInfo {
+        &self.repo_info
+    }
+
     pub fn sia_base(&self) -> &uri::Rsync {
-        &self.sia_base
+        &self.repo_info.sia_base
     }
 
     pub fn rrdp_notification_uri(&self) -> Option<&uri::Https> {
-        self.rrdp_notification_uri.as_ref()
+        self.repo_info.rrdp_notification_uri.as_ref()
     }
 
     pub fn tag(&self) -> Option<&String> {
@@ -938,13 +941,14 @@ impl RepositoryResponse {
 
         reader.end()?;
 
+        let repo_info = RepoInfo::new(sia_base, rrdp_notification_uri);
+
         Ok(RepositoryResponse {
             tag,
             publisher_handle,
             id_cert,
             service_uri,
-            sia_base,
-            rrdp_notification_uri,
+            repo_info
         })
     }
 
@@ -971,6 +975,54 @@ impl fmt::Display for RepositoryResponse {
         write!(f, "{}", self.to_xml_string())
     }
 }
+
+//------------ RepoInfo ------------------------------------------------------
+
+/// Contains the rsync and RRDP base URIs for a repository,
+/// or publisher inside a repository.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RepoInfo {
+    #[serde(alias = "base_uri")]
+    sia_base: uri::Rsync,
+
+    #[serde(alias = "rpki_notify")]
+    rrdp_notification_uri: Option<uri::Https>,
+}
+
+impl RepoInfo {
+    pub fn new(sia_base: uri::Rsync, rrdp_notification_uri: Option<uri::Https>) -> Self {
+        RepoInfo { sia_base, rrdp_notification_uri }
+    }
+
+    pub fn base_uri(&self) -> &uri::Rsync {
+        &self.sia_base
+    }
+
+    /// Returns the ca repository uri for this RepoInfo and a given namespace.
+    /// If the namespace is an empty str, it is omitted from the path.
+    pub fn ca_repository(&self, name_space: &str) -> uri::Rsync {
+        match name_space {
+            "" => self.sia_base.clone(),
+            _ => self.sia_base.join(name_space.as_ref()).unwrap(),
+        }
+    }
+
+    /// Returns the rpki notify uri if set.
+    ///
+    /// Note:
+    /// - Krill will always include this, but some publication servers may not
+    /// - This is the same for all namespaces
+    pub fn rpki_notify(&self) -> Option<&uri::Https> {
+        self.rrdp_notification_uri.as_ref()
+    }
+
+    /// Resolves the specific rsync URI for a given filename and namespace
+    /// under the sia_base.
+    pub fn resolve(&self, name_space: &str, file_name: &str) -> uri::Rsync {
+        self.ca_repository(name_space).join(file_name.as_ref()).unwrap()
+    }
+}
+
 
 //------------ IdCert XML parsing --------------------------------------------
 

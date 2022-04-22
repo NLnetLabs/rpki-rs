@@ -1780,7 +1780,7 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::InvalidVersion => write!(f, "Invalid version"),
+            Error::InvalidVersion => write!(f, "Invalid protocol"),
             Error::XmlError(e) => e.fmt(f),
             Error::InvalidPayloadType(e) => e.fmt(f),
             Error::InvalidCsrSyntax(msg) => {
