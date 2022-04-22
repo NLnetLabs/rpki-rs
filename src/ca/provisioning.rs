@@ -795,7 +795,7 @@ impl RequestResourceLimit {
                     if set.asn().contains(asn) {
                         asn.clone()
                     } else {
-                        return Err(Error::limit(set, &self));
+                        return Err(Error::limit(set, self));
                     }
                 }
             }
@@ -808,7 +808,7 @@ impl RequestResourceLimit {
                     if set.ipv4().contains(ipv4) {
                         ipv4.clone()
                     } else {
-                        return Err(Error::limit(set, &self));
+                        return Err(Error::limit(set, self));
                     }
                 }
             }
@@ -821,7 +821,7 @@ impl RequestResourceLimit {
                     if set.ipv6().contains(ipv6) {
                         ipv6.clone()
                     } else {
-                        return Err(Error::limit(set, &self));
+                        return Err(Error::limit(set, self));
                     }
                 }
             }
