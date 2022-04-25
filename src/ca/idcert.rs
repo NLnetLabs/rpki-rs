@@ -330,7 +330,8 @@ impl<'de> serde::Deserialize<'de> for IdCert {
 
 impl PartialEq for IdCert {
     fn eq(&self, other: &Self) -> bool {
-        self.to_captured().into_bytes().eq(&other.to_captured().into_bytes())
+        self.signed_data.data().as_slice() == 
+            other.signed_data.data().as_slice()
     }
 }
 
