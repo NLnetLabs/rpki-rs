@@ -373,12 +373,11 @@ impl SignedMessage {
 
 //------------ SignedMessageCrl ----------------------------------------------
 
-/// An RPKI certificate revocation list used in RFC6492 and RFC8181 protocol
-/// signed messages. Unfortunately.. it is not very clearly defined what
-/// extensions are to be included - so we cannot re-use the CRL definition
-/// from RFC 6487. That would be too easy..
+/// A CRL used in RFC6492 and RFC8181 CMS.
 /// 
-/// For example the RFC 6487 CRLs will include an authority key identifier,
+/// Unfortunately.. it is not very clearly defined what extensions are to be
+/// included - so we cannot re-use the CRL definition from RFC 6487. For
+/// example the RFC 6487 CRLs will include an authority key identifier,
 /// which may be omitted here.
 #[derive(Clone, Debug)]
 struct SignedMessageCrl {
