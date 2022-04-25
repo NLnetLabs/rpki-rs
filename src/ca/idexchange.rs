@@ -177,7 +177,9 @@ impl std::error::Error for InvalidHandle { }
 
 //------------ ServiceUri ----------------------------------------------------
 
-/// The service URI where a child or publisher needs to send its
+/// The RFC 8183 service URI for use with RFC 6492 or RFC 8181
+/// 
+/// Can be an HTTPS or HTTP URI.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ServiceUri {
     Https(uri::Https),
