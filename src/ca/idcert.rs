@@ -386,11 +386,6 @@ impl TbsIdCert {
         &self.subject_public_key_info
     }
 
-    /// Returns the hex encoded SKI
-    pub fn ski_hex(&self) -> String {
-        self.subject_public_key_info.key_identifier().to_string()
-    }
-
     /// Returns a reference to the entire public key information structure.
     pub fn subject_public_key_info(&self) -> &PublicKey {
         &self.subject_public_key_info
