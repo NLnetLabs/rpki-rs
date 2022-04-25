@@ -172,6 +172,8 @@ impl fmt::Display for InvalidHandle {
     }
 }
 
+impl std::error::Error for InvalidHandle { }
+
 
 //------------ ServiceUri ----------------------------------------------------
 
