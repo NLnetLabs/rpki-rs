@@ -4,6 +4,7 @@
 //! used to exchange identity and configuration between CAs and their
 //! parent CA and/or RPKI Publication Servers.
 
+use std::borrow;
 use std::fmt;
 use std::io;
 use std::convert::TryFrom;
@@ -132,6 +133,12 @@ impl TryFrom<String> for Handle {
 impl AsRef<str> for Handle {
     fn as_ref(&self) -> &str {
         &self.name
+    }
+}
+
+impl borrow::Borrow<str> for Handle {
+    fn borrow(&self) -> &str {
+        self.as_ref()
     }
 }
 
