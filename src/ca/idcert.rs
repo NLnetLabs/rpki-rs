@@ -43,7 +43,7 @@ use crate::repository::{
 /// matches the issuer's SKI. Maybe we should take this out... and just care
 /// that things are validly signed, or only check AKI/SKI if it's version 3,
 /// but skip this for lower versions.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct IdCert {
     /// The outer structure of the certificate.
     signed_data: SignedData,
@@ -297,6 +297,18 @@ impl AsRef<TbsIdCert> for IdCert {
         &self.tbs
     }
 }
+
+//--- PartialEq and Eq
+
+impl PartialEq for IdCert {
+    fn eq(&self, other: &Self) -> bool {
+        // We only compare signed_data, because the TbsIdCert is
+        // just a parsed representation of the same data.
+        self.signed_data == other.signed_data
+    }
+}
+
+impl Eq for IdCert { }
 
 
 //--- Deserialize and Serialize
