@@ -4,13 +4,7 @@
 //! used to exchange identity and configuration between CAs and their
 //! parent CA and/or RPKI Publication Servers.
 
-use super::idcert::IdCert;
-use crate::repository::x509::{Time, ValidationError};
-use crate::uri;
-use crate::xml;
-use crate::xml::decode::{Error as XmlError, Name};
-use log::debug;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::borrow;
 use std::convert::TryFrom;
 use std::fmt;
 use std::io;
@@ -18,6 +12,15 @@ use std::path::PathBuf;
 use std::str::from_utf8;
 use std::str::FromStr;
 use std::sync::Arc;
+
+use log::debug;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+use crate::ca::idcert::IdCert;
+use crate::repository::x509::{Time, ValidationError};
+use crate::uri;
+use crate::xml;
+use crate::xml::decode::{Error as XmlError, Name};
 
 // Constants for the RFC 8183 XML
 const VERSION: &str = "1";
@@ -125,6 +128,12 @@ impl AsRef<str> for Handle {
     }
 }
 
+impl borrow::Borrow<str> for Handle {
+    fn borrow(&self) -> &str {
+        self.as_ref()
+    }
+}
+
 impl AsRef<[u8]> for Handle {
     fn as_ref(&self) -> &[u8] {
         self.name.as_bytes()
@@ -155,9 +164,14 @@ impl fmt::Display for InvalidHandle {
     }
 }
 
+impl std::error::Error for InvalidHandle { }
+
+
 //------------ ServiceUri ----------------------------------------------------
 
-/// The service URI where a child or publisher needs to send its
+/// The RFC 8183 service URI for use with RFC 6492 or RFC 8181
+/// 
+/// Can be an HTTPS or HTTP URI.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ServiceUri {
     Https(uri::Https),

@@ -128,48 +128,48 @@ impl PublicationCms {
 /// This type represents all Publication Messages defined in RFC8181
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Message {
-    QueryMessage(QueryMessage),
-    ReplyMessage(ReplyMessage),
+    Query(Query),
+    Reply(Reply),
 }
 
 /// Constructing
 ///
 impl Message {
     pub fn list_query() -> Self {
-        Message::QueryMessage(QueryMessage::ListQuery)
+        Message::Query(Query::List)
     }
 
     pub fn list_reply(reply: ListReply) -> Self {
-        Message::ReplyMessage(ReplyMessage::ListReply(reply))
+        Message::Reply(Reply::List(reply))
     }
 
     pub fn delta(delta: PublishDelta) -> Self {
-        Message::QueryMessage(QueryMessage::Delta(delta))
+        Message::Query(Query::Delta(delta))
     }
 
     pub fn success() -> Self {
-        Message::ReplyMessage(ReplyMessage::Success)
+        Message::Reply(Reply::Success)
     }
 
     pub fn error(error: ErrorReply) -> Self {
-        Message::ReplyMessage(ReplyMessage::ErrorReply(error))
+        Message::Reply(Reply::ErrorReply(error))
     }
 }
 
 /// # Access
 /// 
 impl Message {
-    pub fn as_reply(self) -> Result<ReplyMessage, Error> {
+    pub fn as_reply(self) -> Result<Reply, Error> {
         match self {
-            Message::QueryMessage(_) => Err(Error::NotReply),
-            Message::ReplyMessage(reply) => Ok(reply)
+            Message::Query(_) => Err(Error::NotReply),
+            Message::Reply(reply) => Ok(reply)
         }
     }
 
-    pub fn as_query(self) -> Result<QueryMessage, Error> {
+    pub fn as_query(self) -> Result<Query, Error> {
         match self {
-            Message::QueryMessage(query) => Ok(query),
-            Message::ReplyMessage(_) => Err(Error::NotQuery),
+            Message::Query(query) => Ok(query),
+            Message::Reply(_) => Err(Error::NotQuery),
         }
     }
 }
@@ -184,8 +184,8 @@ impl Message {
         let mut writer = xml::encode::Writer::new(writer);
 
         let type_value = match self {
-            Message::QueryMessage(_) => "query",
-            Message::ReplyMessage(_) => "reply",
+            Message::Query(_) => "query",
+            Message::Reply(_) => "reply",
         };
 
         writer.element(MSG.into())?
@@ -194,8 +194,8 @@ impl Message {
             .attr("type", type_value)?
             .content(|content|{
                 match self {
-                    Message::QueryMessage(msg) => msg.write_xml(content),
-                    Message::ReplyMessage(msg) => msg.write_xml(content)
+                    Message::Query(msg) => msg.write_xml(content),
+                    Message::Reply(msg) => msg.write_xml(content)
                 }
             })?;
         writer.done()
@@ -254,11 +254,11 @@ impl Message {
 
         // Dispatch to message kind for content parsing
         let msg = match kind.ok_or(XmlError::Malformed)? {
-            MessageKind::Query => Message::QueryMessage(
-                QueryMessage::decode(&mut outer, &mut reader)?
+            MessageKind::Query => Message::Query(
+                Query::decode(&mut outer, &mut reader)?
             ),
-            MessageKind::Reply => Message::ReplyMessage(
-                ReplyMessage::decode(&mut outer, &mut reader)?
+            MessageKind::Reply => Message::Reply(
+                Reply::decode(&mut outer, &mut reader)?
             )
         };
 
@@ -284,15 +284,15 @@ enum MessageKind {
 
 /// This type represents query type Publication Messages defined in RFC8181
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum QueryMessage {
-    ListQuery,
+pub enum Query {
+    List,
     Delta(PublishDelta),
 }
 
 
 /// # Decoding from XML
 /// 
-impl QueryMessage {
+impl Query {
     /// Decodes the content of an RFC 8181 query type message
     //
     // See https://datatracker.ietf.org/doc/html/rfc8181#section-2.1
@@ -336,7 +336,7 @@ impl QueryMessage {
         }
 
         if pdus.get(0) == Some(&QueryPdu::List) {
-            Ok(QueryMessage::ListQuery)
+            Ok(Query::List)
         } else {
             let mut delta = PublishDelta::default();
             for pdu in pdus.into_iter() {
@@ -345,7 +345,7 @@ impl QueryMessage {
                     QueryPdu::PublishDeltaElement(el) => delta.0.push(el)
                 }
             }
-            Ok(QueryMessage::Delta(delta))
+            Ok(Query::Delta(delta))
         }
     }
 }
@@ -353,16 +353,16 @@ impl QueryMessage {
 
 /// # Encoding to XML
 /// 
-impl QueryMessage {
+impl Query {
     fn write_xml<W: io::Write>(
         &self,
         content: &mut encode::Content<W>
     ) -> Result<(), io::Error> {
         match self {
-            QueryMessage::ListQuery => {
+            Query::List => {
                 content.element(LIST.into())?;
             },
-            QueryMessage::Delta(delta) => {
+            Query::Delta(delta) => {
                 for el in &delta.0 {
                     el.write_xml(content)?;
                 }
@@ -830,13 +830,13 @@ impl Withdraw {
 
 /// This type represents query type Publication Messages defined in RFC8181
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ReplyMessage {
-    ListReply(ListReply),
+pub enum Reply {
+    List(ListReply),
     Success,
     ErrorReply(ErrorReply),
 }
 
-impl ReplyMessage {
+impl Reply {
     /// Decoded the content of an RFC 8181 reply type message.
     //
     // See https://datatracker.ietf.org/doc/html/rfc8181#section-2.1
@@ -980,7 +980,7 @@ impl ReplyMessage {
         };
 
         match reply_kind {
-            ReplyPduType::Success => Ok(ReplyMessage::Success),
+            ReplyPduType::Success => Ok(Reply::Success),
             ReplyPduType::List => {
                 let mut list = ListReply::default();
                 for pdu in pdus.into_iter() {
@@ -988,7 +988,7 @@ impl ReplyMessage {
                         list.elements.push(el);
                     }
                 }
-                Ok(ReplyMessage::ListReply(list))
+                Ok(Reply::List(list))
             }
             ReplyPduType::Error => {
                 let mut errors  = ErrorReply::default();
@@ -997,7 +997,7 @@ impl ReplyMessage {
                         errors.errors.push(err);
                     }
                 }
-                Ok(ReplyMessage::ErrorReply(errors))
+                Ok(Reply::ErrorReply(errors))
             }
         }
     }
@@ -1005,21 +1005,21 @@ impl ReplyMessage {
 
 /// # Encode to XML
 /// 
-impl ReplyMessage {
+impl Reply {
     fn write_xml<W: io::Write>(
         &self,
         content: &mut encode::Content<W>
     ) -> Result<(), io::Error> {
         match self {
-            ReplyMessage::ListReply(list) => {
+            Reply::List(list) => {
                 for el in &list.elements {
                     el.write_xml(content)?;
                 }
             }
-            ReplyMessage::Success => {
+            Reply::Success => {
                 content.element(SUCCESS.into())?;
             }
-            ReplyMessage::ErrorReply(errors) => {
+            Reply::ErrorReply(errors) => {
                 for err in &errors.errors {
                     err.write_xml(content)?;
                 }

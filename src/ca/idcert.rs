@@ -278,6 +278,19 @@ impl AsRef<TbsIdCert> for IdCert {
     }
 }
 
+//--- PartialEq and Eq
+
+impl PartialEq for IdCert {
+    fn eq(&self, other: &Self) -> bool {
+        // We only compare signed_data, because the TbsIdCert is
+        // just a parsed representation of the same data.
+        self.signed_data == other.signed_data
+    }
+}
+
+impl Eq for IdCert { }
+
+
 //--- Deserialize and Serialize
 
 #[cfg(feature = "serde")]
@@ -301,22 +314,11 @@ impl<'de> serde::Deserialize<'de> for IdCert {
     }
 }
 
-//--- PartialEq and Eq
-
-impl PartialEq for IdCert {
-    fn eq(&self, other: &Self) -> bool {
-        self.to_captured()
-            .into_bytes()
-            .eq(&other.to_captured().into_bytes())
-    }
-}
-
-impl Eq for IdCert {}
 
 //------------ TbsIdCert -------------------------------------------------------
 
 /// The data of an identity certificate.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TbsIdCert {
     /// The serial number.
     serial_number: Serial,
@@ -358,11 +360,6 @@ impl TbsIdCert {
     /// Returns a reference to the certificate’s public key.
     pub fn public_key(&self) -> &PublicKey {
         &self.subject_public_key_info
-    }
-
-    /// Returns the hex encoded SKI
-    pub fn ski_hex(&self) -> String {
-        self.subject_public_key_info.key_identifier().to_string()
     }
 
     /// Returns a reference to the entire public key information structure.

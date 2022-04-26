@@ -246,6 +246,16 @@ impl Name {
     }
 }
 
+//--- PartialEq and Eq
+
+impl PartialEq for Name {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.as_slice() == other.0.as_slice()
+    }
+}
+
+impl Eq for Name {}
+
 
 //------------ Serial --------------------------------------------------------
 
@@ -580,6 +590,17 @@ impl SignedData {
         ))
     }
 }
+
+//--- PartialEq and Eq
+
+impl PartialEq for SignedData {
+    fn eq(&self, other: &Self) -> bool {
+        self.data.as_slice() == other.data.as_slice() &&
+            self.signature == other.signature
+    }
+}
+
+impl Eq for SignedData {}
 
 
 #[derive(Clone, Copy, Debug)]

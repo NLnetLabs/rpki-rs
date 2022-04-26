@@ -157,7 +157,7 @@ impl Default for SignatureAlgorithm {
 
 //------------ Signature -----------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Signature {
     algorithm: SignatureAlgorithm,
     value: Bytes
@@ -180,4 +180,3 @@ impl Signature {
         (self.algorithm, self.value)
     }
 }
-
