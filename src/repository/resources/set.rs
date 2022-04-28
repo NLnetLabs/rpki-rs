@@ -32,10 +32,10 @@ impl ResourceSet {
         ResourceSet { asn, ipv4, ipv6 }
     }
 
-    pub fn from_strs(asn: &str, ipv4: &str, ipv6: &str) -> Result<Self, Error> {
-        let asn = AsBlocks::from_str(asn).map_err(Error::new)?;
-        let ipv4 = Ipv4Blocks::from_str(ipv4).map_err(Error::new)?;
-        let ipv6 = Ipv6Blocks::from_str(ipv6).map_err(Error::new)?;
+    pub fn from_strs(asn: &str, ipv4: &str, ipv6: &str) -> Result<Self, FromStrError> {
+        let asn = AsBlocks::from_str(asn).map_err(FromStrError::asn)?;
+        let ipv4 = Ipv4Blocks::from_str(ipv4).map_err(FromStrError::ipv4)?;
+        let ipv6 = Ipv6Blocks::from_str(ipv6).map_err(FromStrError::ipv6)?;
 
         Ok(ResourceSet { asn, ipv4, ipv6 })
     }
@@ -161,7 +161,7 @@ impl ResourceSet {
     }
 
     /// Returns the difference from another ResourceSet towards `self`.
-    pub fn difference(&self, other: &ResourceSet) -> ResourceSetDiff {
+    pub fn difference(&self, other: &ResourceSet) -> ResourceDiff {
         let added = ResourceSet {
             asn: self.asn.difference(&other.asn),
             ipv4: self.ipv4.difference(&other.ipv4).into(),
@@ -172,7 +172,7 @@ impl ResourceSet {
             ipv4: other.ipv4.difference(&self.ipv4).into(),
             ipv6: other.ipv6.difference(&self.ipv6).into(),
         };
-        ResourceSetDiff { added, removed }
+        ResourceDiff { added, removed }
     }
 }
 
@@ -201,23 +201,23 @@ impl fmt::Display for ResourceSet {
 }
 
 impl TryFrom<&Cert> for ResourceSet {
-    type Error = Error;
+    type Error = InheritError;
 
     fn try_from(cert: &Cert) -> Result<Self, Self::Error> {
         let asn = match cert.as_resources().to_blocks() {
             Ok(as_blocks) => as_blocks,
-            Err(_) => return Err(Error::derive_inherit()),
+            Err(_) => return Err(InheritError),
         };
 
         let ipv4 = match cert.v4_resources().to_blocks() {
             Ok(blocks) => blocks,
-            Err(_) => return Err(Error::derive_inherit()),
+            Err(_) => return Err(InheritError),
         }
         .into();
 
         let ipv6 = match cert.v6_resources().to_blocks() {
             Ok(blocks) => blocks,
-            Err(_) => return Err(Error::derive_inherit()),
+            Err(_) => return Err(InheritError),
         }
         .into();
 
@@ -225,46 +225,22 @@ impl TryFrom<&Cert> for ResourceSet {
     }
 }
 
-//------------ ResourceSetError ----------------------------------------------
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Error(String);
-
-impl Error {
-    pub fn new(s: impl fmt::Display) -> Self {
-        Error(s.to_string())
-    }
-
-    pub fn parse() -> Self {
-        Error::new("cannot parse resource set")
-    }
-
-    pub fn derive_inherit() -> Self {
-        Error::new("cannot derive resource set from inherited certificate")
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-//------------ ResourceSetDiff -----------------------------------------------
+//------------ ResourceDiff --------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ResourceSetDiff {
+pub struct ResourceDiff {
     added: ResourceSet,
     removed: ResourceSet,
 }
 
-impl ResourceSetDiff {
+impl ResourceDiff {
     pub fn is_empty(&self) -> bool {
         self.added.is_empty() && self.removed.is_empty()
     }
 }
 
-impl fmt::Display for ResourceSetDiff {
+impl fmt::Display for ResourceDiff {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.is_empty() {
             write!(f, "<no changes in resources>")?;
@@ -303,6 +279,59 @@ impl fmt::Display for ResourceSetDiff {
     }
 }
 
+//------------ InheritError --------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct InheritError;
+
+impl fmt::Display for InheritError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "cannot determine resources for certificate using inherit")
+    }
+}
+
+impl std::error::Error for InheritError {}
+
+
+//------------ FromStrError --------------------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FromStrError {
+    Asn(String),
+    Ipv4(String),
+    Ipv6(String)
+}
+
+impl FromStrError {
+    fn asn(e: super::asres::FromStrError) -> Self {
+        FromStrError::Asn(e.to_string())
+    }
+    
+    fn ipv4(e: super::ipres::FromStrError) -> Self {
+        FromStrError::Ipv4(e.to_string())
+    }
+    
+    fn ipv6(e: super::ipres::FromStrError) -> Self {
+        FromStrError::Ipv6(e.to_string())
+    }
+}
+
+impl fmt::Display for FromStrError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            FromStrError::Asn(e)
+                => write!(f, "cannot parse ASN resources: {}", e),
+            FromStrError::Ipv4(e)
+                => write!(f, "cannot parse IPv4 resources: {}", e),
+            FromStrError::Ipv6(e)
+                => write!(f, "cannot parse IPv6 resources: {}", e),
+        }
+    }
+}
+
+impl std::error::Error for FromStrError {}
+
+
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
@@ -340,7 +369,7 @@ mod tests {
 
         let diff = set1.difference(&set2);
 
-        let expected_diff = ResourceSetDiff {
+        let expected_diff = ResourceDiff {
             added: ResourceSet::from_strs(asn_added, "", ipv6_added).unwrap(),
             removed: ResourceSet::from_strs("", ipv4_removed, "").unwrap(),
         };

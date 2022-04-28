@@ -15,7 +15,9 @@ use crate::repository::crypto::KeyIdentifier;
 use crate::repository::crypto::PublicKey;
 use crate::repository::crypto::Signer;
 use crate::repository::crypto::SigningError;
-use crate::repository::resources::{AsBlocks, Ipv4Blocks, Ipv6Blocks};
+use crate::repository::resources::{
+    AsBlocks, Ipv4Blocks, Ipv6Blocks, ResourceSet
+};
 use crate::repository::x509::Time;
 use crate::repository::x509::ValidationError;
 use crate::repository::x509::Validity;
@@ -27,7 +29,6 @@ use crate::xml::encode;
 
 use super::idcert::IdCert;
 use super::idexchange::Handle;
-use super::resourceset::ResourceSet;
 use super::sigmsg::SignedMessage;
 
 // Some type aliases that help make the context of Handles more explicit.

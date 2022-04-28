@@ -23,9 +23,13 @@ pub use self::ipres::{
     IpBlocksBuilder, IpBlocksForFamily, IpResources, IpResourcesBuilder,
     Prefix
 };
+pub use self::set::{
+    ResourceDiff, ResourceSet
+};
 
 mod asres;
 mod chain;
 mod choice;
 mod ipres;
+mod set;
 
