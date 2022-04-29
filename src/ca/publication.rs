@@ -1776,10 +1776,10 @@ mod signer_test {
             Vec::from(&bytes[0..size])
         }
 
-        let sizes = [0, 10, 16, 256, 1024, 1025, 12322];
+        let sizes = &[0, 10, 16, 256, 1024, 1025, 12322];
 
         for size in sizes {
-            let buf = random_bytes(size);
+            let buf = random_bytes(*size);
             let base64 = Base64::from_content(&buf);
 
             assert!(base64.size_approx() - buf.len() < 4);
