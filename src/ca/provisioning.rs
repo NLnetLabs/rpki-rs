@@ -28,12 +28,9 @@ use crate::xml::decode::{Content, Error as XmlError};
 use crate::xml::encode;
 
 use super::idcert::IdCert;
-use super::idexchange::Handle;
+use super::idexchange::RecipientHandle;
+use super::idexchange::SenderHandle;
 use super::sigmsg::SignedMessage;
-
-// Some type aliases that help make the context of Handles more explicit.
-pub type Sender = Handle;
-pub type Recipient = Handle;
 
 // Constants for the RFC 6492 XML
 const VERSION: &str = "1";
@@ -121,23 +118,23 @@ impl ProvisioningCms {
 /// This type represents all Provisioning Messages defined in RFC 6492.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Message {
-    sender: Sender,
-    recipient: Recipient,
+    sender: SenderHandle,
+    recipient: RecipientHandle,
     payload: Payload,
 }
 
 /// # Data Access
 ///
 impl Message {
-    pub fn unpack(self) -> (Sender, Recipient, Payload) {
+    pub fn unpack(self) -> (SenderHandle, RecipientHandle, Payload) {
         (self.sender, self.recipient, self.payload)
     }
 
-    pub fn sender(&self) -> &Handle {
+    pub fn sender(&self) -> &SenderHandle {
         &self.sender
     }
 
-    pub fn recipient(&self) -> &Handle {
+    pub fn recipient(&self) -> &RecipientHandle {
         &self.recipient
     }
 
@@ -157,7 +154,7 @@ impl Message {
 /// # Constructing
 ///
 impl Message {
-    pub fn list(sender: Sender, recipient: Recipient) -> Self {
+    pub fn list(sender: SenderHandle, recipient: RecipientHandle) -> Self {
         Message {
             sender,
             recipient,
@@ -166,8 +163,8 @@ impl Message {
     }
 
     pub fn list_response(
-        sender: Sender,
-        recipient: Recipient,
+        sender: SenderHandle,
+        recipient: RecipientHandle,
         resource_class_list_response: ResourceClassListResponse,
     ) -> Self {
         Message {
@@ -177,7 +174,7 @@ impl Message {
         }
     }
 
-    pub fn issue(sender: Sender, recipient: Recipient, issuance_request: IssuanceRequest) -> Self {
+    pub fn issue(sender: SenderHandle, recipient: RecipientHandle, issuance_request: IssuanceRequest) -> Self {
         Message {
             sender,
             recipient,
@@ -186,8 +183,8 @@ impl Message {
     }
 
     pub fn issue_response(
-        sender: Sender,
-        recipient: Recipient,
+        sender: SenderHandle,
+        recipient: RecipientHandle,
         issuance_response: IssuanceResponse,
     ) -> Self {
         Message {
@@ -198,8 +195,8 @@ impl Message {
     }
 
     pub fn revoke(
-        sender: Sender,
-        recipient: Recipient,
+        sender: SenderHandle,
+        recipient: RecipientHandle,
         revocation_request: RevocationRequest,
     ) -> Self {
         Message {
@@ -210,8 +207,8 @@ impl Message {
     }
 
     pub fn revoke_response(
-        sender: Sender,
-        recipient: Recipient,
+        sender: SenderHandle,
+        recipient: RecipientHandle,
         revocation_response: RevocationResponse,
     ) -> Self {
         Message {
@@ -222,8 +219,8 @@ impl Message {
     }
 
     pub fn not_performed_response(
-        sender: Sender,
-        recipient: Recipient,
+        sender: SenderHandle,
+        recipient: RecipientHandle,
         not_performed_response: NotPerformedResponse,
     ) -> Result<Self, Error> {
         Ok(Message {
@@ -278,8 +275,8 @@ impl Message {
     pub fn decode<R: io::BufRead>(reader: R) -> Result<Self, Error> {
         let mut reader = xml::decode::Reader::new(reader);
 
-        let mut sender: Option<Sender> = None;
-        let mut recipient: Option<Recipient> = None;
+        let mut sender: Option<SenderHandle> = None;
+        let mut recipient: Option<RecipientHandle> = None;
         let mut payload_type: Option<PayloadType> = None;
 
         let mut outer = reader.start(|element| {
@@ -1944,8 +1941,8 @@ mod signer_test {
         let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
         let cert = IdCert::new_ta(Validity::from_secs(60), &key, &signer).unwrap();
 
-        let child = Sender::from_str("child").unwrap();
-        let parent = Sender::from_str("parent").unwrap();
+        let child = SenderHandle::from_str("child").unwrap();
+        let parent = RecipientHandle::from_str("parent").unwrap();
 
         let list = Message::list(child, parent);
 

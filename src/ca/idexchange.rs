@@ -42,11 +42,52 @@ const REPOSITORY_BPKI_TA: Name = Name::qualified(NS, b"repository_bpki_ta");
 
 //------------ Handle --------------------------------------------------------
 
-// Some type aliases that help make the context of Handles more explicit.
-pub type ParentHandle = Handle;
-pub type ChildHandle = Handle;
-pub type PublisherHandle = Handle;
-pub type RepositoryHandle = Handle;
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Myself;
+
+/// A handle for an entity on its own, i.e. not in relation to others.
+pub type MyHandle = Handle<Myself>;
+
+/// A handle for a CA on its own, i.e. not in relation to others.
+pub type CaHandle = Handle<Myself>;
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Parent;
+
+/// A handle for a parent of a CA
+pub type ParentHandle = Handle<Parent>;
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Child;
+
+/// A handle for the child of a CA
+pub type ChildHandle = Handle<Child>;
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Publisher;
+
+/// A handle for the publisher in a repository (i.e. a CA)
+pub type PublisherHandle = Handle<Publisher>;
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Repository;
+
+/// A handle for the repository used by a publisher
+pub type RepositoryHandle = Handle<Repository>;
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Sender;
+
+/// A handle referring to the sender of a message
+pub type SenderHandle = Handle<Sender>;
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Recipient;
+
+/// A handle referring to the recipient of a message
+pub type RecipientHandle = Handle<Recipient>;
+
+//------------ Handle --------------------------------------------------------
 
 /// This type represents the identifying 'handles' as used between RPKI
 /// entities. Handles are like strings, but they are restricted to the
@@ -55,13 +96,36 @@ pub type RepositoryHandle = Handle;
 /// handle  = xsd:string { maxLength="255" pattern="[\-_A-Za-z0-9/]*" }
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq)]
 #[serde(try_from = "String")]
-pub struct Handle {
+pub struct Handle<T> {
     name: Arc<str>,
+    marker: std::marker::PhantomData<T>
 }
 
-impl Handle {
+impl<T> Handle<T> {
+    pub fn new(name: Arc<str>) -> Self {
+        Handle { name, marker: std::marker::PhantomData }
+    }
+
+    pub fn name(&self) -> &Arc<str> {
+        &self.name
+    }
+
+    pub fn into_name(self) -> Arc<str> {
+        self.name
+    }
+
     pub fn as_str(&self) -> &str {
         self.as_ref()
+    }
+
+    /// Creates a new handle of another type from this.
+    pub fn convert<Y>(&self) -> Handle<Y> {
+        Handle::new(self.name.clone())
+    }
+
+    /// Converts this handle into a handle of another type.
+    pub fn into_converted<Y>(self) -> Handle<Y> {
+        Handle::new(self.name)
     }
 
     /// We replace "/" with "+" and "\" with "=" to make file system
@@ -86,7 +150,7 @@ impl Handle {
     }
 }
 
-impl TryFrom<&PathBuf> for Handle {
+impl<T> TryFrom<&PathBuf> for Handle<T> {
     type Error = InvalidHandle;
 
     fn try_from(path: &PathBuf) -> Result<Self, Self::Error> {
@@ -101,7 +165,7 @@ impl TryFrom<&PathBuf> for Handle {
     }
 }
 
-impl FromStr for Handle {
+impl<T> FromStr for Handle<T> {
     type Err = InvalidHandle;
 
     /// Accepted pattern: [-_A-Za-z0-9/]{1,255}
@@ -109,44 +173,50 @@ impl FromStr for Handle {
     ///
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::verify_name(s)?;
-        Ok(Handle { name: s.into() })
+        Ok(Handle::new(s.into()))
     }
 }
 
-impl TryFrom<String> for Handle {
+impl<T> TryFrom<String> for Handle<T> {
     type Error = InvalidHandle;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Self::verify_name(&value)?;
-        Ok(Handle { name: value.into() })
+        Ok(Handle::new(value.into()))
     }
 }
 
-impl AsRef<str> for Handle {
+impl<T> From<&Arc<str>> for Handle<T> {
+    fn from(arc: &Arc<str>) -> Self {
+        Self::new(arc.clone())
+    }
+}
+
+impl<T> AsRef<str> for Handle<T> {
     fn as_ref(&self) -> &str {
         &self.name
     }
 }
 
-impl borrow::Borrow<str> for Handle {
+impl<T> borrow::Borrow<str> for Handle<T> {
     fn borrow(&self) -> &str {
         self.as_ref()
     }
 }
 
-impl AsRef<[u8]> for Handle {
+impl<T> AsRef<[u8]> for Handle<T> {
     fn as_ref(&self) -> &[u8] {
         self.name.as_bytes()
     }
 }
 
-impl fmt::Display for Handle {
+impl<T> fmt::Display for Handle<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.as_str())
     }
 }
 
-impl Serialize for Handle {
+impl<T> Serialize for Handle<T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -261,7 +331,7 @@ pub struct ChildRequest {
 /// # Data Access
 ///
 impl ChildRequest {
-    pub fn new(id_cert: IdCert, child_handle: Handle) -> Self {
+    pub fn new(id_cert: IdCert, child_handle: ChildHandle) -> Self {
         ChildRequest {
             id_cert,
             child_handle,
@@ -277,7 +347,7 @@ impl ChildRequest {
         &self.id_cert
     }
 
-    pub fn child_handle(&self) -> &Handle {
+    pub fn child_handle(&self) -> &ChildHandle {
         &self.child_handle
     }
 
@@ -654,7 +724,7 @@ impl PublisherRequest {
         &self.id_cert
     }
 
-    pub fn publisher_handle(&self) -> &Handle {
+    pub fn publisher_handle(&self) -> &PublisherHandle {
         &self.publisher_handle
     }
 
@@ -805,7 +875,7 @@ impl RepositoryResponse {
     /// Creates a new response.
     pub fn new(
         id_cert: IdCert,
-        publisher_handle: Handle,
+        publisher_handle: PublisherHandle,
         service_uri: ServiceUri,
         sia_base: uri::Rsync,
         rrdp_notification_uri: Option<uri::Https>,
@@ -826,7 +896,7 @@ impl RepositoryResponse {
         &self.id_cert
     }
 
-    pub fn publisher_handle(&self) -> &Handle {
+    pub fn publisher_handle(&self) -> &PublisherHandle {
         &self.publisher_handle
     }
 
