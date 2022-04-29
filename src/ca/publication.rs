@@ -1427,12 +1427,14 @@ impl Base64 {
     /// To get the exact number of bytes we would have to decode first,
     /// and this is possibly costly. We should not be far off though..
     pub fn size_approx(&self) -> usize {
-        let nr_chars = self.as_str().len();
-        // Each char represents 6 bits, so total bits:
-        let total_bits = nr_chars * 6;
-        // which in bytes would be..
-        total_bits / 8
-        // we might be one off because of padding.
+        // Each char represents 6 bits, which are use to make 8 bit bytes:
+        // - multiply by 6 and divide by 8; or
+        // - divide by 8 and multiply by 6; or
+        // - divide by 4 and multiply by 3; or
+        // - right shift 2 and multiply by 3
+        //
+        // We can be off by up to 3 bytes this way.
+        (self.as_str().len() >> 2) * 3
     }
 }
 
@@ -1763,5 +1765,25 @@ mod signer_test {
         let error = ReportError::with_code(ReportErrorCode::PermissionFailure);
         error_reply.add_error(error);
         sign_and_validate_msg(&signer, key, &cert, Message::error(error_reply));
+    }
+
+    #[test]
+    fn base_64_size() {
+
+        fn random_bytes(size: usize) -> Vec<u8> {
+            let mut bytes = [0; 65535];
+            openssl::rand::rand_bytes(&mut bytes).unwrap();
+            Vec::from(&bytes[0..size])
+        }
+
+        let sizes = [0, 10, 16, 256, 1024, 1025, 12322];
+
+        for size in sizes {
+            let buf = random_bytes(size);
+            let base64 = Base64::from_content(&buf);
+
+            assert!(base64.size_approx() - buf.len() < 4);
+        }
+
     }
 }
