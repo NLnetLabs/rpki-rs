@@ -1421,6 +1421,19 @@ impl Base64 {
     pub fn as_str(&self) -> &str {
         self.0.as_ref()
     }
+
+    /// An approximation of the of the size of the encoded bytes.
+    /// 
+    /// To get the exact number of bytes we would have to decode first,
+    /// and this is possibly costly. We should not be far off though..
+    pub fn size_approx(&self) -> usize {
+        let nr_chars = self.as_str().len();
+        // Each char represents 6 bits, so total bits:
+        let total_bits = nr_chars * 6;
+        // which in bytes would be..
+        total_bits / 8
+        // we might be one off because of padding.
+    }
 }
 
 impl fmt::Display for Base64 {
