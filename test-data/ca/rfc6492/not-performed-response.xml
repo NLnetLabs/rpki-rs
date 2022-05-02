@@ -1,0 +1,4 @@
+<message xmlns="http://www.apnic.net/specs/rescerts/up-down/" version="1" sender="child" recipient="parent" type="error_response">
+  <status>1101</status>
+  <description xml:lang="en-US">already processing request</description>
+</message>

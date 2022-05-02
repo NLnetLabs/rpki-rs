@@ -1,0 +1,3 @@
+<message xmlns="http://www.apnic.net/specs/rescerts/up-down/" version="1" sender="child" recipient="parent" type="revoke_response">
+  <key class_name="0" ski="5EU4LcY-NgqftXX8EkcOZnhbsn4" />
+</message>

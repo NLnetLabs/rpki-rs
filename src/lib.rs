@@ -30,6 +30,7 @@
 #![allow(renamed_and_removed_lints)]
 #![allow(clippy::unknown_clippy_lints)]
 
+pub mod ca;
 pub mod repository;
 pub mod rrdp;
 pub mod rtr;

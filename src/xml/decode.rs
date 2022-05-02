@@ -101,7 +101,7 @@ impl<'b, 'n> Element<'b, 'n> {
     {
         for attr in self.start.attributes() {
             let attr = attr.map_err(Into::into)?;
-            if attr.key == b"xmlns" {
+            if attr.key == b"xmlns" || attr.key.starts_with(b"xmlns:") {
                 continue
             }
             op(attr.key, AttrValue(attr))?;
@@ -278,6 +278,38 @@ impl Content {
             }
         }
     }
+
+    /// Skips an optional text element inside the reader.
+    pub fn skip_opt_text<R>(
+        &mut self,
+        reader: &mut Reader<R>
+    ) -> Result<(), Error>
+    where
+        R: io::BufRead,
+    {
+        if self.empty {
+            return Ok(())
+        }
+
+        loop {
+            reader.buf.clear();
+            let event = reader.reader.read_event(
+                &mut reader.buf
+            )?;
+            match event {
+                Event::Text(_text) => {
+                    self.take_end(reader)?;
+                    return Ok(())
+                }
+                Event::End(_) => {
+                    self.empty = true;
+                    return Ok(())
+                }
+                Event::Comment(_) => { }
+                _ => return Err(Error::Malformed)
+            }
+        }
+    }
 }
 
 
@@ -335,6 +367,30 @@ impl<'n, 'l> fmt::Debug for Name<'n, 'l> {
     }
 }
 
+impl<'n, 'l> From<&'l [u8]> for Name<'n, 'l> {
+    fn from(local: &'l [u8]) -> Self {
+        Name::unqualified(local)
+    }
+}
+
+impl<'n, 'l> From<&'l str> for Name<'n, 'l> {
+    fn from(local: &'l str) -> Self {
+        Name::unqualified(local.as_bytes())
+    }
+}
+
+impl<'n, 'l> From<(&'n [u8], &'l [u8])> for Name<'n, 'l> {
+    fn from((namespace, local): (&'n [u8], &'l [u8])) -> Self {
+        Name::qualified(namespace, local)
+    }
+}
+
+impl<'n, 'l> From<(&'n str, &'l str)> for Name<'n, 'l> {
+    fn from((namespace, local): (&'n str, &'l str)) -> Self {
+        Name::qualified(namespace.as_bytes(), local.as_bytes())
+    }
+}
+
 
 //------------ AttrValue -----------------------------------------------------
 
@@ -378,6 +434,23 @@ impl<'a> Text<'a> {
                 Ok(Cow::Owned(unsafe { String::from_utf8_unchecked(s) }))
             }
         }
+    }
+
+    pub fn base64_decode(&self) -> Result<Vec<u8>, Error> {
+        // The text is supposed to be xsd:base64Binary which only allows
+        // the base64 characters plus whitespace.
+        let base64 = self.to_ascii()
+            .map(|text| {
+                text.as_bytes()
+                .iter()
+                .filter(|c| **c < 128_u8) // stuff like unicode whitespace
+                .filter(|c| !b" \n\t\r\x0b\x0c=".contains(c))
+                .copied()
+                .collect::<Vec<_>>() 
+            })?;
+        
+        base64::decode_config(base64, base64::STANDARD_NO_PAD)
+            .map_err(|_| Error::Malformed)
     }
 }
 

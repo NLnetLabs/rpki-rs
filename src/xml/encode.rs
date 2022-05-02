@@ -191,6 +191,16 @@ impl<'a, W: io::Write> Element<'a, W> {
         Ok(self)
     }
 
+    /// Write an optional attribute.
+    pub fn attr_opt(
+        self, name: &str, value: Option<&(impl Text + ?Sized)>,
+    ) -> Result<Self, io::Error> {
+        match value {
+            None => Ok(self),
+            Some(value) => self.attr(name, value)
+        }
+    }
+
     /// Write the content of the element.
     ///
     /// The actual content is written by the closure passed in.
@@ -263,6 +273,22 @@ impl<'a, W: io::Write> Content<'a, W> {
         &'s mut self, tag: Name<'static, 'static>
     ) -> Result<Element<'s, W>, io::Error> {
         Element::start(self.writer, tag, self.inline)
+    }
+
+    /// Add an optional element with the given tag if the given option
+    /// is some.
+    pub fn element_opt<'s, T>(
+        &'s mut self,
+        option: Option<&T>,
+        tag: Name<'static, 'static>,
+        op: impl FnOnce(&T, Element<'s, W>) -> Result<(), io::Error>
+    ) -> Result<(), io::Error> {
+        if let Some(opt) = option {
+            let element = self.element(tag)?;
+            op(opt, element)
+        } else {
+            Ok(())
+        }
     }
 
     /// Write some PCDATA text.

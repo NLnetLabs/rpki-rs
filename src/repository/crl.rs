@@ -488,6 +488,12 @@ where
 pub struct RevokedCertificates(Captured);
 
 impl RevokedCertificates {
+    /// Create an empty RevokedCertificates.
+    pub fn empty() -> Self {
+        let entries: Vec<CrlEntry> = vec![];
+        Self::from_iter(entries)
+    }
+
     /// Takes a revoked certificates list from the beginning of a value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
