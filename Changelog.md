@@ -7,12 +7,17 @@ Breaking Changes
 New
 
 * Added support for RFC 8183 out-of-band XML exchanges between CAs, their
-  parents and their publication server.
-* Added support for RFC 8181 Publication Protocol exchanges.
+  parents, and their publication server. ([#208])
+* Added support for RFC 8181 Publication Protocol exchanges. ([#208])
+* Added support for RFC 6492 exchanges between issuer and subject of
+  resources. ([#208])
 
 Bug Fixes
 
 Other Changes
+
+[#208]: https://github.com/NLnetLabs/rpki-rs/pull/208
+
 
 
 ## 0.14.2
