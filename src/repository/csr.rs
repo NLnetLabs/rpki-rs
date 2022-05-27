@@ -384,6 +384,14 @@ mod test {
     }
 
     #[test]
+    fn parse_bgpsec_csr() {
+        let bytes = include_bytes!("../../test-data/bgpsec-csr.der");
+        let csr = Csr::decode(bytes.as_ref()).unwrap();
+
+        csr.validate().unwrap();
+    }
+
+    #[test]
     #[cfg(all(test, feature="softkeys"))]
     fn build_csr() {
 
