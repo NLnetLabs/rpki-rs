@@ -21,12 +21,13 @@ use crate::repository::resources::{
 use crate::repository::x509::Time;
 use crate::repository::x509::ValidationError;
 use crate::repository::x509::Validity;
-use crate::repository::{Cert, Csr};
+use crate::repository::Cert;
 use crate::uri;
 use crate::xml;
 use crate::xml::decode::{Content, Error as XmlError};
 use crate::xml::encode;
 
+use super::csr::Csr;
 use super::idcert::IdCert;
 use super::idexchange::RecipientHandle;
 use super::idexchange::SenderHandle;

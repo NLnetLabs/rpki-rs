@@ -23,11 +23,11 @@ use bcder::{decode, encode, xerr};
 use bcder::{BitString, Captured, Mode, OctetString, Oid, Tag};
 use bcder::encode::{PrimitiveContent, Constructed};
 use crate::uri;
-use super::oid;
-use super::cert::{CertBuilder, KeyUsage, Sia, TbsCert};
-use super::crypto::{SignatureAlgorithm, PublicKey};
-use super::crypto::signer::{Signer, SigningError};
-use super::x509::{Name, SignedData, ValidationError};
+use crate::repository::oid;
+use crate::repository::cert::{CertBuilder, KeyUsage, Sia, TbsCert};
+use crate::repository::crypto::{SignatureAlgorithm, PublicKey};
+use crate::repository::crypto::signer::{Signer, SigningError};
+use crate::repository::x509::{Name, SignedData, ValidationError};
 
 
 //------------ Csr -----------------------------------------------------------
