@@ -1037,17 +1037,46 @@ impl AddressRange {
         family: AddressFamily,
     ) -> Result<Self, S::Err> {
         let cons = content.as_constructed()?;
-        let min = Prefix::take_from(cons)?;
-        let max = Prefix::take_from(cons)?;
-        if min.addr_len() > family.max_addr_len()
-            || max.addr_len() > family.max_addr_len()
-        {
-            return Err(decode::Malformed.into())
-        }
+        
+        let min = Self::check_len(Prefix::take_from(cons)?, family)?;
+        let max = Self::check_len(Prefix::take_from(cons)?, family)?;
+
         Ok(AddressRange {
             min: min.min(),
             max: max.max(),
         })
+    }
+
+    #[cfg(not(feature = "compat"))]
+    /// Checks the length of the prefix for the given address family.
+    /// Returns an error if the prefix length exceeds the maximum length
+    /// for the address family.
+    fn check_len(
+        addr: Prefix, family: AddressFamily
+     ) -> Result<Prefix, decode::Error> {
+        if addr.addr_len() > family.max_addr_len() {
+            Err(decode::Malformed)
+        }
+        else {
+            Ok(addr)
+        }
+    }
+
+    #[cfg(feature = "compat")]
+    /// Checks the length of the prefix for the given address family.
+    /// This implementation under the [`compat`] feature is meant to
+    /// support parsing [`Cert`] instances which were generated with
+    /// an early version of this library, and which used incorrect prefix
+    /// lengths.
+    /// 
+    /// This has issue has long been fixed, but such certificates can
+    /// still be found in the history of Krill instances with history
+    /// going back to Krill version 0.3.0.
+    fn check_len(
+        mut addr: Prefix, family: AddressFamily
+    ) -> Result<Prefix, decode::Error> {
+        addr.len = std::cmp::min(addr.len, family.max_addr_len());
+        Ok(addr)
     }
 
     /*
@@ -2219,5 +2248,18 @@ mod test {
             Addr(0x1234_5678_1234_5678_1234_5678_1234_5678).to_max(11).0,
             0x123f_ffff_ffff_ffff_ffff_ffff_ffff_ffff
         );
+    }
+}
+
+#[cfg(all(test, feature="compat"))]
+mod compat_test {
+
+    #[test]
+    fn compat_incorrect_prefix_in_early_cert() {
+        use bytes::Bytes;
+        use crate::repository::cert::Cert;
+
+        let der = include_bytes!("../../../test-data/compat/res_incorrect.cer");
+        Cert::decode(Bytes::from_static(der)).unwrap();
     }
 }

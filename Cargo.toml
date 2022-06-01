@@ -48,6 +48,10 @@ rrdp       = [ "xml", "ring" ]
 rtr        = [ "futures-util", "tokio", "tokio-stream" ]
 slurm      = [ "serde-support", "serde_json" ]
 
+# Feature that provides compatibility with (technically incorrect) objects
+# produced by earlier versions of this library, which are rejected now.
+compat = [ ]
+
 # Dependent components of the crate.
 xml = [ "quick-xml" ]
 
