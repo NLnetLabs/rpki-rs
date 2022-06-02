@@ -4,7 +4,7 @@
 //! in this crate in one central place. They are public so you can refer to
 //! them should that ever become necessary.
 
-#[cfg(feature = "bcder")]
+#![cfg(feature = "bcder")]
 
 use bcder::{ConstOid, Oid};
 
