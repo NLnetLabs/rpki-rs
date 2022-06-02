@@ -27,11 +27,11 @@ use bcder::{
     BitString, Captured, ConstOid, Ia5String, Mode, OctetString, Oid, Tag
 };
 use bytes::Bytes;
-use crate::uri;
-use super::crypto::{
-    KeyIdentifier, PublicKey, SignatureAlgorithm, Signer, SigningError
+use crate::{oid, uri};
+use crate::crypto::{
+    KeyIdentifier, PublicKey, RpkiSignatureAlgorithm, SignatureAlgorithm,
+    Signer, SigningError,
 };
-use super::oid;
 use super::resources::{
     AsBlock, AsBlocks, AsBlocksBuilder, AsResources, AsResourcesBuilder,
     IpBlock, IpBlocks, IpBlocksBuilder, IpResources, IpResourcesBuilder
@@ -409,7 +409,7 @@ impl Cert {
         //
         // However, RFC 5280 demands that the two mentions of the signature
         // algorithm are the same. So we do that here.
-        if self.signature != self.signed_data.signature().algorithm() {
+        if self.signature != *self.signed_data.signature().algorithm() {
             return Err(ValidationError)
         }
 
@@ -450,7 +450,10 @@ impl Cert {
         // 4.8.5. Extended Key Usage.
         //
         // Must be present and contain at least the kp-bgpsec-router OID.
-        self.inspect_router_eku(strict)?;
+        match self.extended_key_usage().as_ref() {
+            Some(eku) => eku.inspect_router()?,
+            None => return Err(ValidationError),
+        }
 
         // 4.8.6. CRL Distribution Points. There must be one.
         if self.crl_uri().is_none() {
@@ -587,7 +590,7 @@ impl Cert {
         //
         // However, RFC 5280 demands that the two mentions of the signature
         // algorithm are the same. So we do that here.
-        if self.signature != self.signed_data.signature().algorithm() {
+        if self.signature != *self.signed_data.signature().algorithm() {
             return Err(ValidationError)
         }
 
@@ -684,29 +687,6 @@ impl Cert {
         }
 
         Ok(())
-    }
-
-    /// Inspects a router certificate’s extended key usage.
-    fn inspect_router_eku(
-        &self, _strict: bool
-    ) -> Result<(), ValidationError> {
-        match self.extended_key_usage() {
-            Some(captured) => {
-                // We already know that the content is a sequence of OIDs
-                // (that has been tested in take_extended_key_usage). So we
-                // can return successfully as soon as we find our OID.
-                let mut captured = captured.clone();
-                while let Some(oid) = captured.decode_partial(|cons| {
-                    Oid::take_opt_from(cons)
-                })? {
-                    if oid == oid::KP_BGPSEC_ROUTER {
-                        return Ok(())
-                    }
-                }
-                Err(ValidationError)
-            }
-            None => Err(ValidationError)
-        }
     }
 
     /// Verifies that the certificate claims to have been issued by `issuer`.
@@ -855,7 +835,7 @@ pub struct TbsCert {
     serial_number: Serial,
 
     /// The algorithm used for signing the certificate.
-    signature: SignatureAlgorithm,
+    signature: RpkiSignatureAlgorithm,
 
     /// The name of the issuer.
     ///
@@ -893,7 +873,7 @@ pub struct TbsCert {
     ///
     /// The value is the content of the DER-encoded sequence of object
     /// identifiers.
-    extended_key_usage: Option<Captured>,
+    extended_key_usage: Option<ExtendedKeyUsage>,
 
     // The following fields are lists of URIs. Each has to have at least one
     // rsync or HTTPS URI but may contain more. We only support those primary
@@ -954,7 +934,7 @@ impl TbsCert {
     ) -> Self {
         Self {
             serial_number,
-            signature: SignatureAlgorithm::default(),
+            signature: RpkiSignatureAlgorithm::default(),
             issuer,
             validity,
             subject: {
@@ -1105,7 +1085,7 @@ impl TbsCert {
     ///
     /// Since this field isn’t allowed in any certificate used for RPKI
     /// objects directly, we do not currently support setting this field.
-    pub fn extended_key_usage(&self) -> Option<&Captured> {
+    pub fn extended_key_usage(&self) -> Option<&ExtendedKeyUsage> {
         self.extended_key_usage.as_ref()
     }
 
@@ -1300,7 +1280,7 @@ impl TbsCert {
             cons.take_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(2))?;
 
             let serial_number = Serial::take_from(cons)?;
-            let signature = SignatureAlgorithm::x509_take_from(cons)?;
+            let signature = RpkiSignatureAlgorithm::x509_take_from(cons)?;
             let issuer = Name::take_from(cons)?;
             let validity = Validity::take_from(cons)?;
             let subject = Name::take_from(cons)?;
@@ -1556,15 +1536,10 @@ impl TbsCert {
     /// May only be present in EE certificates issued to devices.
     pub(crate) fn take_extended_key_usage<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
-        extended_key_usage: &mut Option<Captured>
+        extended_key_usage: &mut Option<ExtendedKeyUsage>
     ) -> Result<(), S::Err> {
         update_once(extended_key_usage, || {
-            let res = cons.take_sequence(|c| c.capture_all())?;
-            res.clone().decode(|cons| {
-                Oid::skip_in(cons)?;
-                while Oid::skip_opt_in(cons)?.is_some() { }
-                Ok(res)
-            }).map_err(Into::into)
+            ExtendedKeyUsage::take_from(cons)
         })
     }
 
@@ -1823,10 +1798,10 @@ impl TbsCert {
                 ),
 
                 // Extended Key Usage
-                self.extended_key_usage.as_ref().map(|captured| {
+                self.extended_key_usage.as_ref().map(|eku| {
                     encode_extension(
                         &oid::CE_EXTENDED_KEY_USAGE, false,
-                        encode::sequence(captured)
+                        encode::sequence(eku.encode_ref())
                     )
                 }),
 
@@ -2251,7 +2226,7 @@ impl CertBuilder {
         self,
         signer: &S,
         key: &S::KeyId,
-        alg: SignatureAlgorithm,
+        alg: RpkiSignatureAlgorithm,
         public_key: &PublicKey,
     ) -> Result<impl encode::Values, SigningError<S::Error>> {
         let tbs_cert = self.encode_tbs_cert(alg, public_key);
@@ -2265,7 +2240,7 @@ impl CertBuilder {
 
     fn encode_tbs_cert(
         mut self,
-        alg: SignatureAlgorithm,
+        alg: RpkiSignatureAlgorithm,
         public_key: &PublicKey,
     ) -> Captured {
         if self.subject.is_none() {
@@ -2533,6 +2508,42 @@ impl KeyUsage {
 }
 
 
+//------------ ExtendedKeyUsage ----------------------------------------------
+
+/// The allowed key usages (extended version) of a resource certificate.
+#[derive(Clone, Debug)]
+pub struct ExtendedKeyUsage(Captured);
+
+impl ExtendedKeyUsage {
+    fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        let res = cons.take_sequence(|c| c.capture_all())?;
+        res.clone().decode(|cons| {
+            Oid::skip_in(cons)?;
+            while Oid::skip_opt_in(cons)?.is_some() { }
+            Ok(res)
+        }).map(ExtendedKeyUsage).map_err(Into::into)
+    }
+
+    fn encode_ref(&self) -> impl encode::Values + '_ {
+        &self.0
+    }
+
+    pub fn inspect_router(&self) -> Result<(), ValidationError> {
+        let mut captured = self.0.clone();
+        while let Some(oid) = captured.decode_partial(|cons| {
+            Oid::take_opt_from(cons)
+        })? {
+            if oid == oid::KP_BGPSEC_ROUTER {
+                return Ok(())
+            }
+        }
+        Err(ValidationError)
+    }
+}
+
+
 //------------ Overclaim -----------------------------------------------------
 
 /// The overclaim mode for resource validation.
@@ -2695,8 +2706,8 @@ mod test {
 mod signer_test {
     use std::str::FromStr;
     use crate::repository::cert::Cert;
-    use crate::repository::crypto::PublicKeyFormat;
-    use crate::repository::crypto::softsigner::OpenSslSigner;
+    use crate::crypto::PublicKeyFormat;
+    use crate::crypto::softsigner::OpenSslSigner;
     use crate::repository::resources::{Asn, Prefix};
     use crate::repository::tal::TalInfo;
     use super::*;

@@ -16,8 +16,8 @@ use crate::repository::Crl;
 use crate::repository::Manifest;
 use crate::repository::Roa;
 use crate::repository::aspa::Aspa;
-use crate::repository::crypto::Signer;
-use crate::repository::crypto::SigningError;
+use crate::crypto::Signer;
+use crate::crypto::SigningError;
 use crate::repository::x509::Time;
 use crate::repository::x509::ValidationError;
 use crate::repository::x509::Validity;
@@ -1679,7 +1679,7 @@ mod signer_test {
 
     use crate::{
         ca::idcert::IdCert,
-        repository::crypto::{softsigner::{OpenSslSigner, KeyId}, PublicKeyFormat}
+        crypto::{softsigner::{OpenSslSigner, KeyId}, PublicKeyFormat}
     };
 
     fn sign_and_validate_msg(

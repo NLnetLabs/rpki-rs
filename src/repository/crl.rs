@@ -20,10 +20,10 @@ use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Oid, Tag, xerr};
 use bcder::encode::PrimitiveContent;
-use crate::uri;
-use super::oid;
-use super::crypto::{
-    KeyIdentifier, PublicKey, SignatureAlgorithm, Signer, SigningError
+use crate::{oid, uri};
+use crate::crypto::{
+    KeyIdentifier, PublicKey, RpkiSignatureAlgorithm, SignatureAlgorithm,
+    Signer, SigningError,
 };
 use super::x509::{
     Name, RepresentationError, Serial, SignedData, Time, ValidationError,
@@ -124,7 +124,7 @@ impl Crl {
         &self,
         public_key: &PublicKey
     ) -> Result<(), ValidationError> {
-        if self.tbs.signature != self.signed_data.signature().algorithm() {
+        if self.tbs.signature != *self.signed_data.signature().algorithm() {
             return Err(ValidationError)
         }
         self.signed_data.verify_signature(public_key)
@@ -194,7 +194,7 @@ impl<'de> serde::Deserialize<'de> for Crl {
 #[derive(Clone, Debug)]
 pub struct TbsCertList<C> {
     /// The algorithm used for signing the certificate.
-    signature: SignatureAlgorithm,
+    signature: RpkiSignatureAlgorithm,
 
     /// The name of the issuer.
     ///
@@ -222,7 +222,7 @@ pub struct TbsCertList<C> {
 impl<C> TbsCertList<C> {
     /// Creates a new value from the necessary data.
     pub fn new(
-        signature: SignatureAlgorithm,
+        signature: RpkiSignatureAlgorithm,
         issuer: Name,
         this_update: Time,
         next_update: Time,
@@ -266,12 +266,12 @@ impl<C> TbsCertList<C> {
 ///
 impl<C> TbsCertList<C> {
     /// Returns the algorithm used by the issuer to sign the CRL.
-    pub fn signature(&self) -> SignatureAlgorithm {
+    pub fn signature(&self) -> RpkiSignatureAlgorithm {
         self.signature
     }
 
     /// Sets the signature algorithm.
-    pub fn set_signature(&mut self, signature: SignatureAlgorithm) {
+    pub fn set_signature(&mut self, signature: RpkiSignatureAlgorithm) {
         self.signature = signature
     }
 
@@ -358,7 +358,7 @@ impl TbsCertList<RevokedCertificates> {
             // version. Technically it is optional but we need v2, so it must
             // actually be there. v2 is encoded as an integer of value 1.
             cons.skip_u8_if(1)?;
-            let signature = SignatureAlgorithm::x509_take_from(cons)?;
+            let signature = RpkiSignatureAlgorithm::x509_take_from(cons)?;
             let issuer = Name::take_from(cons)?;
             let this_update = Time::take_from(cons)?;
             let next_update = Time::take_from(cons)?;
@@ -744,8 +744,8 @@ mod test {
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
     use super::*;
-    use crate::repository::crypto::PublicKeyFormat;
-    use crate::repository::crypto::softsigner::OpenSslSigner;
+    use crate::crypto::PublicKeyFormat;
+    use crate::crypto::softsigner::OpenSslSigner;
 
     #[test]
     fn build_ta_cert() {

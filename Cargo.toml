@@ -43,7 +43,8 @@ default = []
 
 # Main components of the crate.
 ca         = [ "repository", "serde-support" ]
-repository = [ "bcder", "ring", "untrusted", "routecore/bcder" ]
+crypto     = [ "bcder", "ring", "untrusted" ]
+repository = [ "bcder", "crypto", "routecore/bcder" ]
 rrdp       = [ "xml", "ring" ]
 rtr        = [ "futures-util", "tokio", "tokio-stream" ]
 slurm      = [ "serde-support", "serde_json" ]

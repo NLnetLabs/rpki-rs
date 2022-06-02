@@ -2,15 +2,40 @@
 
 use bcder::{decode, encode};
 use bcder::encode::PrimitiveContent;
-use bcder::{Oid, Tag};
+use bcder::{ConstOid, Oid, Tag};
 use bytes::Bytes;
-use super::super::oid;
+use crate::oid;
 use super::keys::PublicKeyFormat;
+use super::signer::SigningAlgorithm;
 
 
 //------------ SignatureAlgorithm --------------------------------------------
 
-/// The signature algorihms used by RPKI.
+/// The allowed signature algorithms for a certain purpose.
+pub trait SignatureAlgorithm: Sized {
+    type Encoder: encode::Values;
+
+    /// Returns the signing algorithm for this algorithm.
+    fn signing_algorithm(&self) -> SigningAlgorithm;
+
+    /// Returns the public key format for the algorithm.
+    fn public_key_format(&self) -> PublicKeyFormat {
+        self.signing_algorithm().public_key_format()
+    }
+
+    /// Takes the algorithm identifier from a DER value in X.509 signed data.
+    fn x509_take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err>;
+
+    /// Returns a DER encoder.
+    fn x509_encode(&self) -> Self::Encoder;
+}
+
+
+//------------ RpkiSignatureAlgorithm ----------------------------------------
+
+/// A signature algorithms used by RPKI.
 ///
 /// These are the algorithms used for creating and verifying signatures. For
 /// RPKI, [RFC 7935] allows only one algorithm, RSA PKCS #1 v1.5 with
@@ -27,7 +52,7 @@ use super::keys::PublicKeyFormat;
 ///
 /// [RFC 7935]: https://tools.ietf.org/html/rfc7935
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct SignatureAlgorithm {
+pub struct RpkiSignatureAlgorithm {
     /// Is the parameter field present?
     ///
     /// If `true`, then a parameter field is present and NULL. Otherwise it
@@ -36,14 +61,6 @@ pub struct SignatureAlgorithm {
     /// Constructed values will always have this set to `true`.
     has_parameter: bool
 }
-
-impl SignatureAlgorithm {
-    /// Returns the preferred public key format for this algorithm.
-    pub fn public_key_format(self) -> PublicKeyFormat {
-        PublicKeyFormat::Rsa
-    }
-}
-
 
 /// # ASN.1 Values
 ///
@@ -81,17 +98,7 @@ impl SignatureAlgorithm {
 /// [RFC 3370]: https://tools.ietf.org/html/rfc3370
 /// [RFC 4055]: https://tools.ietf.org/html/rfc4055
 /// [RFC 7935]: https://tools.ietf.org/html/rfc7935
-impl SignatureAlgorithm {
-    /// Takes a signature algorithm identifier for X.509 objects.
-    ///
-    /// Returns a malformed error if the algorithm isn’t the allowed for RPKI
-    /// or if it isn’t correctly encoded.
-    pub fn x509_take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        cons.take_sequence(Self::x509_from_constructed)
-    }
-
+impl RpkiSignatureAlgorithm {
     /// Parses the algorithm identifier for X.509 objects.
     fn x509_from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
@@ -100,7 +107,7 @@ impl SignatureAlgorithm {
         let has_parameter = cons.take_opt_primitive_if(
             Tag::NULL, |_| Ok(())
         )?.is_some();
-        Ok(SignatureAlgorithm { has_parameter })
+        Ok(RpkiSignatureAlgorithm { has_parameter })
     }
 
     /// Takes a signature algorithm identifier for CMS objects.
@@ -125,7 +132,7 @@ impl SignatureAlgorithm {
         let has_parameter = cons.take_opt_primitive_if(
             Tag::NULL, |_| Ok(())
         )?.is_some();
-        Ok(SignatureAlgorithm { has_parameter })
+        Ok(RpkiSignatureAlgorithm { has_parameter })
     }
 
     /// Provides an encoder for X.509 objects.
@@ -148,9 +155,80 @@ impl SignatureAlgorithm {
 
 //--- Default
 
-impl Default for SignatureAlgorithm {
+impl Default for RpkiSignatureAlgorithm {
     fn default() -> Self {
-        SignatureAlgorithm { has_parameter: true }
+        RpkiSignatureAlgorithm { has_parameter: true }
+    }
+}
+
+
+//--- SignatureAlgorithm
+
+impl SignatureAlgorithm for RpkiSignatureAlgorithm {
+    type Encoder = encode::Constructed<(
+        encode::Primitive<ConstOid>, encode::Primitive<()>
+    )>;
+
+    fn signing_algorithm(&self) -> SigningAlgorithm {
+        SigningAlgorithm::RsaSha256
+    }
+
+    fn x509_take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        cons.take_sequence(Self::x509_from_constructed)
+    }
+
+    fn x509_encode(&self) -> Self::Encoder {
+        encode::Constructed::new(
+            Tag::SEQUENCE,
+            (oid::SHA256_WITH_RSA_ENCRYPTION.encode(), ().encode())
+        )
+    }
+}
+
+
+//------------ BgpsecSignatureAlgorithm --------------------------------------
+
+/// A signature algorithms used by BGPsec.
+///
+/// This is the algorithm used for creating and verifying signatures in
+/// certification requests for router certificates. The allowed algorithms
+/// are currently defined in [RFC 8608] as only ECDSA with curve P-256 and
+/// SHA-256.
+///
+/// [RFC 8608]: https://tools.ietf.org/html/rfc8608
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct BgpsecSignatureAlgorithm(());
+
+impl BgpsecSignatureAlgorithm {
+    /// Parses the algorithm identifier for X.509 objects.
+    fn x509_from_constructed<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        oid::ECDSA_WITH_SHA256.skip_if(cons)?;
+        Ok(BgpsecSignatureAlgorithm(()))
+    }
+}
+
+impl SignatureAlgorithm for BgpsecSignatureAlgorithm {
+    type Encoder = encode::Constructed<encode::Primitive<ConstOid>>;
+
+    fn signing_algorithm(&self) -> SigningAlgorithm {
+        SigningAlgorithm::EcdsaP256Sha256
+    }
+
+    fn x509_take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        cons.take_sequence(Self::x509_from_constructed)
+    }
+
+    fn x509_encode(&self) -> Self::Encoder {
+        encode::Constructed::new(
+            Tag::SEQUENCE,
+            oid::ECDSA_WITH_SHA256.encode()
+        )
     }
 }
 
@@ -158,25 +236,28 @@ impl Default for SignatureAlgorithm {
 //------------ Signature -----------------------------------------------------
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Signature {
-    algorithm: SignatureAlgorithm,
+pub struct Signature<Alg> {
+    algorithm: Alg,
     value: Bytes
 }
 
-impl Signature {
-    pub fn new(algorithm: SignatureAlgorithm, value: Bytes) -> Self {
+pub type RpkiSignature = Signature<RpkiSignatureAlgorithm>;
+
+impl<Alg> Signature<Alg> {
+    pub fn new(algorithm: Alg, value: Bytes) -> Self {
         Signature { algorithm, value }
     }
 
-    pub fn algorithm(&self) -> SignatureAlgorithm {
-        self.algorithm
+    pub fn algorithm(&self) -> &Alg {
+        &self.algorithm
     }
 
     pub fn value(&self) -> &Bytes {
         &self.value
     }
 
-    pub fn unwrap(self) -> (SignatureAlgorithm, Bytes) {
+    pub fn unwrap(self) -> (Alg, Bytes) {
         (self.algorithm, self.value)
     }
 }
+

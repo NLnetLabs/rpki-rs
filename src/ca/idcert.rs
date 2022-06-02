@@ -10,11 +10,15 @@ use bytes::Bytes;
 use log::{debug, error};
 use std::ops;
 
+use crate::oid;
+use crate::crypto::{
+    KeyIdentifier, PublicKey, RpkiSignatureAlgorithm, SignatureAlgorithm,
+    Signer, SigningError,
+};
 use crate::repository::cert::TbsCert;
-use crate::repository::{
-    crypto::{KeyIdentifier, PublicKey, SignatureAlgorithm, Signer, SigningError},
-    oid,
-    x509::{encode_extension, Name, Serial, SignedData, Time, ValidationError, Validity},
+use crate::repository::x509::{
+    encode_extension, Name, Serial, SignedData, Time, ValidationError,
+    Validity,
 };
 
 //------------ IdCert --------------------------------------------------------
@@ -250,9 +254,12 @@ impl IdCert {
     }
 
     /// Validates the certificate’s signature.
-    fn validate_signature(&self, issuer: &IdCert) -> Result<(), ValidationError> {
-        self.signed_data
-            .verify_signature(issuer.subject_public_key_info())
+    fn validate_signature(
+        &self, issuer: &IdCert,
+    ) -> Result<(), ValidationError> {
+        self.signed_data.verify_signature(
+            issuer.subject_public_key_info()
+        )
     }
 }
 
@@ -427,7 +434,7 @@ impl TbsIdCert {
             cons.take_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(2))?;
 
             let serial_number = Serial::take_from(cons)?;
-            let _sig = SignatureAlgorithm::x509_take_from(cons)?;
+            let _sig = RpkiSignatureAlgorithm::x509_take_from(cons)?;
             let issuer = Name::take_from(cons)?;
             let validity = Validity::take_from(cons)?;
             let subject = Name::take_from(cons)?;
@@ -493,7 +500,7 @@ impl TbsIdCert {
         encode::sequence((
             encode::sequence_as(Tag::CTX_0, 2.encode()), // version
             self.serial_number.encode(),
-            SignatureAlgorithm::default().x509_encode(),
+            RpkiSignatureAlgorithm::default().x509_encode(),
             self.issuer.encode_ref(),
             self.validity.encode(),
             self.subject.encode_ref(),
@@ -581,7 +588,9 @@ impl TbsIdCert {
         key: &S::KeyId,
     ) -> Result<IdCert, SigningError<S::Error>> {
         let data = Captured::from_values(Mode::Der, self.encode_ref());
-        let signature = signer.sign(key, SignatureAlgorithm::default(), &data)?;
+        let signature = signer.sign(
+            key, RpkiSignatureAlgorithm::default(), &data
+        )?;
         Ok(IdCert {
             signed_data: SignedData::new(data, signature),
             tbs: self,
@@ -607,8 +616,8 @@ pub mod tests {
 
 #[cfg(all(test, feature = "softkeys"))]
 mod signer_test {
-    use crate::repository::crypto::softsigner::OpenSslSigner;
-    use crate::repository::crypto::PublicKeyFormat;
+    use crate::crypto::softsigner::OpenSslSigner;
+    use crate::crypto::PublicKeyFormat;
 
     use super::*;
 

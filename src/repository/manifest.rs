@@ -17,10 +17,9 @@ use bcder::{
 };
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
-use crate::uri;
-use super::oid;
+use crate::{oid, uri};
+use crate::crypto::{DigestAlgorithm, Signer, SigningError};
 use super::cert::{Cert, ResourceCert};
-use super::crypto::{DigestAlgorithm, Signer, SigningError};
 use super::sigobj::{SignedObject, SignedObjectBuilder};
 use super::x509::{Serial, Time, ValidationError};
 
@@ -553,8 +552,8 @@ mod signer_test {
     use bcder::encode::Values;
     use crate::uri;
     use crate::repository::cert::{KeyUsage, Overclaim, TbsCert};
-    use crate::repository::crypto::{PublicKeyFormat, Signer};
-    use crate::repository::crypto::softsigner::OpenSslSigner;
+    use crate::crypto::{PublicKeyFormat, Signer};
+    use crate::crypto::softsigner::OpenSslSigner;
     use crate::repository::resources::{Asn, Prefix};
     use crate::repository::tal::TalInfo;
     use crate::repository::x509::Validity;

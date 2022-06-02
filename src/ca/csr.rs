@@ -22,11 +22,15 @@
 use bcder::{decode, encode, xerr};
 use bcder::{BitString, Captured, Mode, OctetString, Oid, Tag};
 use bcder::encode::{PrimitiveContent, Constructed};
-use crate::uri;
-use crate::repository::oid;
-use crate::repository::cert::{CertBuilder, KeyUsage, Sia, TbsCert};
-use crate::repository::crypto::{SignatureAlgorithm, PublicKey};
-use crate::repository::crypto::signer::{Signer, SigningError};
+use crate::{oid, uri};
+use crate::repository::cert::{
+    CertBuilder, ExtendedKeyUsage, KeyUsage, Sia, TbsCert
+};
+use crate::crypto::{
+    BgpsecSignatureAlgorithm, RpkiSignatureAlgorithm, PublicKey,
+    SignatureAlgorithm
+};
+use crate::crypto::signer::{Signer, SigningError};
 use crate::repository::x509::{Name, SignedData, ValidationError};
 
 
@@ -34,17 +38,20 @@ use crate::repository::x509::{Name, SignedData, ValidationError};
 
 /// An RPKI Certificate Sign Request.
 #[derive(Clone, Debug)]
-pub struct Csr {
+pub struct Csr<Alg, Attrs> {
     /// The outer structure of the CSR.
-    signed_data: SignedData,
+    signed_data: SignedData<Alg>,
 
     /// The content of the CSR.
-    content: CsrContent
+    content: CsrContent<Attrs>
 }
+
+pub type RpkiCaCsr = Csr<RpkiSignatureAlgorithm, RpkiCaCsrAttributes>;
+pub type BgpsecCsr = Csr<BgpsecSignatureAlgorithm, BgpsecCsrAttributes>;
 
 /// # Data Access
 ///
-impl Csr {
+impl<Alg, Attrs> Csr<Alg, Attrs> {
     /// The subject name included on the CSR.
     ///
     /// TLDR; This field is useless and will be ignored by the issuing CA.
@@ -68,6 +75,13 @@ impl Csr {
         &self.content.public_key
     }
 
+    /// Returns a reference to the attributes of the CSR.
+    pub fn attributes(&self) -> &Attrs {
+        &self.content.attributes
+    }
+}
+
+impl<Alg> Csr<Alg, RpkiCaCsrAttributes> {
     /// Returns the cA field of the basic constraints extension if present, or
     /// false.
     pub fn basic_ca(&self) -> bool {
@@ -80,7 +94,7 @@ impl Csr {
     }
 
     /// Returns the optional desired extended key usage.
-    pub fn extended_key_usage(&self) -> Option<&Captured> {
+    pub fn extended_key_usage(&self) -> Option<&ExtendedKeyUsage> {
        self.content.attributes.extended_key_usage.as_ref()
     }
 
@@ -100,9 +114,9 @@ impl Csr {
     }
 }
 
-/// # Decode and Validate
+/// # Decode, Encode, and Validate
 ///
-impl Csr {
+impl<Alg: SignatureAlgorithm, Attrs: CsrAttributes> Csr<Alg, Attrs> {
     /// Parse as a source as a certificate signing request.
     pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
         Mode::Der.decode(source, Self::take_from)
@@ -125,15 +139,13 @@ impl Csr {
         Ok(Self { signed_data, content })
     }
 
-    /// Validates the CSR against its internal public key
+    /// Validates a CSR against its internal public key.
     pub fn validate(&self) -> Result<(), ValidationError> {
         self.signed_data.verify_signature(self.public_key())
     }
 }
 
-/// # Encoding
-///
-impl Csr {
+impl<Alg: SignatureAlgorithm, Attrs> Csr<Alg, Attrs> {
     /// Returns a value encoder for a reference to the csr.
     pub fn encode_ref(&self) -> impl encode::Values + '_ {
         self.signed_data.encode_ref()
@@ -147,7 +159,7 @@ impl Csr {
 
 /// # Construct
 ///
-impl Csr {
+impl Csr<(), ()> {
     /// Builds a new Csr for RPKI CA certificates.
     ///
     /// Other use cases are not required in RPKI, and for simplicity they are
@@ -156,7 +168,7 @@ impl Csr {
     /// required SIA entries for 'id-ad-caRepository' and
     /// 'id-ad-rpkiManifest' (see RFC6487), and the optional entry for
     /// 'id-ad-rpkiNotify' (see RFC8182), need to be specified.
-    pub fn construct<S: Signer>(
+    pub fn construct_rpki_ca<S: Signer>(
         signer: &S,
         key: &S::KeyId,
         ca_repository: &uri::Rsync,
@@ -206,7 +218,7 @@ impl Csr {
 
         let (alg, signature) = signer.sign(
             key,
-            SignatureAlgorithm::default(),
+            RpkiSignatureAlgorithm::default(),
             &content
         )?.unwrap();
 
@@ -223,7 +235,7 @@ impl Csr {
 //--- Deserialize and Serialize
 
 #[cfg(feature = "serde")]
-impl serde::Serialize for Csr {
+impl<Alg: SignatureAlgorithm, Attrs> serde::Serialize for Csr<Alg, Attrs> {
     fn serialize<S: serde::Serializer>(
         &self, serializer: S
     ) -> Result<S::Ok, S::Error> {
@@ -234,7 +246,11 @@ impl serde::Serialize for Csr {
 }
 
 #[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for Csr {
+impl<'de, Alg, Attrs> serde::Deserialize<'de> for Csr<Alg, Attrs>
+where
+    Alg: SignatureAlgorithm,
+    Attrs: CsrAttributes,
+{
     fn deserialize<D: serde::Deserializer<'de>>(
         deserializer: D
     ) -> Result<Self, D::Error> {
@@ -251,13 +267,13 @@ impl<'de> serde::Deserialize<'de> for Csr {
 //------------ CsrContent ----------------------------------------------------
 
 #[derive(Clone, Debug)]
-struct CsrContent {
+struct CsrContent<Attrs> {
     subject: Name,
     public_key: PublicKey,
-    attributes: CsrAttributes
+    attributes: Attrs,
 }
 
-impl CsrContent {
+impl<Attrs: CsrAttributes> CsrContent<Attrs> {
     /// Takes a value from the beginning of an encoded constructed value.
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
@@ -266,7 +282,7 @@ impl CsrContent {
             cons.skip_u8_if(0)?; // version MUST be 0, cause v1
             let subject = Name::take_from(cons)?;
             let public_key = PublicKey::take_from(cons)?;
-            let attributes = CsrAttributes::take_from(cons)?;
+            let attributes = Attrs::take_from(cons)?;
             Ok(CsrContent { subject, public_key, attributes })
         })
     }
@@ -275,24 +291,32 @@ impl CsrContent {
 
 //------------ CsrAttributes -------------------------------------------------
 
+pub trait CsrAttributes: Sized {
+    fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err>;
+}
+
+
+//------------ RpkiCaCsrAttributes -------------------------------------------
+
 #[derive(Clone, Debug)]
-struct CsrAttributes {
+pub struct RpkiCaCsrAttributes {
     basic_ca: bool,
     key_usage: KeyUsage,
-    extended_key_usage: Option<Captured>,
+    extended_key_usage: Option<ExtendedKeyUsage>,
     sia: Sia
 }
 
-impl CsrAttributes {
+impl CsrAttributes for RpkiCaCsrAttributes {
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, S::Err> {
         cons.take_constructed_if(Tag::CTX_0, |cons| {
-
-            let mut basic_ca: Option<bool> = None;
-            let mut key_usage: Option<KeyUsage> = None;
-            let mut extended_key_usage: Option<Captured> = None;
-            let mut sia: Option<Sia> = None;
+            let mut basic_ca = None;
+            let mut key_usage = None;
+            let mut extended_key_usage = None;
+            let mut sia = None;
 
             cons.take_sequence(|cons| {
                 let id = Oid::take_from(cons)?;
@@ -323,7 +347,7 @@ impl CsrAttributes {
                                         content, &mut sia
                                     )
                                 } else {
-                                    Err(decode::Malformed)
+                                    xerr!(Err(decode::Malformed))
                                 }
                             })?;
 
@@ -341,12 +365,96 @@ impl CsrAttributes {
             let key_usage = key_usage.ok_or(decode::Malformed)?;
             let sia = sia.ok_or(decode::Malformed)?;
 
-            Ok(CsrAttributes {
+            Ok(RpkiCaCsrAttributes {
                     basic_ca, key_usage, extended_key_usage, sia
             })
         })
     }
 }
+
+
+//------------ BgpsecCsrAttributes -------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct BgpsecCsrAttributes {
+    extended_key_usage: Option<ExtendedKeyUsage>,
+}
+
+impl BgpsecCsrAttributes {
+    pub fn extended_key_usage(&self) -> Option<&ExtendedKeyUsage> {
+        self.extended_key_usage.as_ref()
+    }
+}
+
+impl CsrAttributes for BgpsecCsrAttributes {
+    fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        cons.take_constructed_if(Tag::CTX_0, |cons| {
+            let mut basic_ca = None;
+            let mut key_usage = None;
+            let mut extended_key_usage = None;
+            let mut sia = None;
+
+            cons.take_sequence(|cons| {
+                let id = Oid::take_from(cons)?;
+                if id == oid::EXTENSION_REQUEST {
+                    cons.take_set(|cons| { cons.take_sequence(|cons| {
+                        while let Some(()) = cons.take_opt_sequence(|cons| {
+
+                            let id = Oid::take_from(cons)?;
+                            let _crit = cons.take_opt_bool()?;
+
+                            let value = OctetString::take_from(cons)?;
+
+                            Mode::Der.decode(value.to_source(), |content| {
+                                if id == oid::CE_BASIC_CONSTRAINTS {
+                                    TbsCert::take_basic_constraints(
+                                        content, &mut basic_ca
+                                    )
+                                } else if id == oid::CE_KEY_USAGE {
+                                    TbsCert::take_key_usage(
+                                        content, &mut key_usage
+                                    )
+                                } else if id == oid::CE_EXTENDED_KEY_USAGE {
+                                    TbsCert::take_extended_key_usage(
+                                        content, &mut extended_key_usage
+                                    )
+                                } else if id == oid::PE_SUBJECT_INFO_ACCESS {
+                                    TbsCert::take_subject_info_access(
+                                        content, &mut sia
+                                    )
+                                } else {
+                                    xerr!(Err(decode::Malformed))
+                                }
+                            })?;
+
+
+                            Ok(())
+                        })? {};
+                        Ok(())
+                    })})
+                } else {
+                    xerr!(Err(decode::Malformed).map_err(Into::into))
+                }
+            })?;
+
+            // Basic Constraints, Key Usage, and SIA are ignored (they are
+            // allowed but MUST NOT be honored if wrong).
+
+            // Extended Key Usage, if present, must include
+            // id-kp-bgpsec-router.
+            if let Some(eku) = extended_key_usage.as_ref() {
+                eku.inspect_router().map_err(|_| {
+                    xerr!(decode::Malformed.into())
+                })?;
+            }
+
+            Ok(BgpsecCsrAttributes { extended_key_usage })
+        })
+    }
+}
+
 
 //============ Tests =========================================================
 
@@ -367,28 +475,42 @@ mod test {
     #[test]
     fn parse_drl_csr() {
         let bytes = include_bytes!("../../test-data/drl-csr.der");
-
-        let csr = Csr::decode(bytes.as_ref()).unwrap();
-
+        let csr = RpkiCaCsr::decode(bytes.as_ref()).unwrap();
         csr.validate().unwrap();
 
         assert!(csr.basic_ca());
 
-        let ca_repo = rsync("rsync://localhost:4404/rpki/Alice/Bob/Carol/3/");
-        assert_eq!(Some(&ca_repo), csr.ca_repository());
+        assert_eq!(
+            csr.ca_repository(),
+            Some(&rsync("rsync://localhost:4404/rpki/Alice/Bob/Carol/3/"))
+        );
+        assert_eq!(
+            csr.rpki_manifest(),
+            Some(&rsync(
+                "rsync://localhost:4404/rpki/Alice/Bob/Carol/3/\
+                IozwkwjtGls63XR8W2lo1wc7UoU.mnf"
+            ))
+        );
+        assert_eq!(csr.rpki_notify(), None);
 
-        let rpki_mft = rsync("rsync://localhost:4404/rpki/Alice/Bob/Carol/3/IozwkwjtGls63XR8W2lo1wc7UoU.mnf");
-        assert_eq!(Some(&rpki_mft), csr.rpki_manifest());
+        assert!(BgpsecCsr::decode(bytes.as_ref()).is_err());
+    }
 
-        assert_eq!(None, csr.rpki_notify());
+    #[test]
+    fn parse_router_csr() {
+        let bytes = include_bytes!("../../test-data/router-csr.der");
+        let csr = BgpsecCsr::decode(bytes.as_ref()).unwrap();
+        csr.validate().unwrap();
+
+        assert!(RpkiCaCsr::decode(bytes.as_ref()).is_err());
     }
 
     #[test]
     #[cfg(all(test, feature="softkeys"))]
     fn build_csr() {
 
-        use crate::repository::crypto::softsigner::OpenSslSigner;
-        use crate::repository::crypto::PublicKeyFormat;
+        use crate::crypto::softsigner::OpenSslSigner;
+        use crate::crypto::PublicKeyFormat;
 
         let signer = OpenSslSigner::new();
         let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
@@ -398,7 +520,7 @@ mod test {
         let rpki_mft = rsync("rsync://localhost/repo/ca.mft");
         let rpki_not = https("https://localhost/repo/notify.xml");
 
-        let enc = Csr::construct(
+        let enc = Csr::construct_rpki(
             &signer,
             &key,
             &ca_repo,
@@ -406,7 +528,7 @@ mod test {
             Some(&rpki_not)
         ).unwrap();
 
-        let csr = Csr::decode(enc.as_slice()).unwrap();
+        let csr = RpkiCaCsr::decode(enc.as_slice()).unwrap();
         csr.validate().unwrap();
 
         let pub_key = signer.get_key_info(&key).unwrap();
@@ -422,10 +544,10 @@ mod test {
     #[cfg(feature = "serde")]
     fn serde_csr() {
         let bytes = include_bytes!("../../test-data/drl-csr.der");
-        let csr = Csr::decode(bytes.as_ref()).unwrap();
+        let csr = RpkiCaCsr::decode(bytes.as_ref()).unwrap();
 
         let csr_ser = serde_json::to_string(&csr).unwrap();
-        let csr_des: Csr = serde_json::from_str(&csr_ser).unwrap();
+        let csr_des: RpkiCaCsr = serde_json::from_str(&csr_ser).unwrap();
 
         assert_eq!(
             csr.to_captured().as_slice(),

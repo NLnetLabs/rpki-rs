@@ -14,10 +14,11 @@ use bcder::encode::PrimitiveContent;
 use chrono::{
     Datelike, DateTime, Duration, LocalResult, Timelike, TimeZone, Utc
 };
-use super::crypto::{
-    PublicKey, Signature, SignatureAlgorithm, Signer, VerificationError
+use crate::oid;
+use crate::crypto::{
+    PublicKey, RpkiSignatureAlgorithm, Signature, SignatureAlgorithm, Signer,
+    VerificationError,
 };
-use super::oid;
 
 
 //------------ Functions -----------------------------------------------------
@@ -529,23 +530,26 @@ impl<'de> serde::Deserialize<'de> for Serial {
 //------------ SignedData ----------------------------------------------------
 
 #[derive(Clone, Debug)]
-pub struct SignedData {
+pub struct SignedData<Alg = RpkiSignatureAlgorithm> {
     data: Captured,
-    signature: Signature,
+    signature: Signature<Alg>,
 }
 
-impl SignedData {
-    pub fn new(data: Captured, signature: Signature) -> Self {
+impl<Alg> SignedData<Alg> {
+    pub fn new(data: Captured, signature: Signature<Alg>) -> Self {
         Self { data, signature }
     }
 
-    pub fn signature(&self) -> &Signature {
+    pub fn data(&self) -> &Captured {
+        &self.data
+    }
+
+    pub fn signature(&self) -> &Signature<Alg> {
         &self.signature
     }
 }
 
-
-impl SignedData {
+impl<Alg: SignatureAlgorithm> SignedData<Alg> {
     pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
         Mode::Der.decode(source, Self::take_from)
     }
@@ -562,14 +566,18 @@ impl SignedData {
         Ok(SignedData {
             data: cons.capture_one()?,
             signature: Signature::new(
-                SignatureAlgorithm::x509_take_from(cons)?,
+                Alg::x509_take_from(cons)?,
                 BitString::take_from(cons)?.octet_bytes()
             )
         })
     }
 
-    pub fn data(&self) -> &Captured {
-        &self.data
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
+        encode::sequence((
+            &self.data,
+            self.signature.algorithm().x509_encode(),
+            SignatureValueContent(self).encode(),
+        ))
     }
 
     pub fn verify_signature(
@@ -581,15 +589,8 @@ impl SignedData {
             &self.signature
         ).map_err(Into::into)
     }
-
-    pub fn encode_ref(&self) -> impl encode::Values + '_ {
-        encode::sequence((
-            &self.data,
-            self.signature.algorithm().x509_encode(),
-            SignatureValueContent(self).encode(),
-        ))
-    }
 }
+
 
 //--- PartialEq and Eq
 
@@ -604,9 +605,9 @@ impl Eq for SignedData {}
 
 
 #[derive(Clone, Copy, Debug)]
-pub struct SignatureValueContent<'a>(&'a SignedData);
+pub struct SignatureValueContent<'a, Alg>(&'a SignedData<Alg>);
 
-impl<'a> PrimitiveContent for SignatureValueContent<'a> {
+impl<'a, Alg> PrimitiveContent for SignatureValueContent<'a, Alg> {
     const TAG: Tag = Tag::BIT_STRING;
 
     fn encoded_len(&self, _: Mode) -> usize {
@@ -1123,7 +1124,7 @@ mod test {
     #[test]
     fn signed_data_decode_then_encode() {
         let data = include_bytes!("../../test-data/ta.cer");
-        let obj = SignedData::decode(data.as_ref()).unwrap();
+        let obj = SignedData::<RpkiSignatureAlgorithm>::decode(data.as_ref()).unwrap();
         let mut encoded = Vec::new();
         obj.encode_ref().write_encoded(Mode::Der, &mut encoded).unwrap();
         assert_eq!(data.len(), encoded.len());

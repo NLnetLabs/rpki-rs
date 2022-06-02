@@ -13,8 +13,8 @@ use openssl::hash::MessageDigest;
 use ring::rand;
 use ring::rand::SecureRandom;
 use super::keys::{PublicKey, PublicKeyFormat};
-use super::signature::{Signature, SignatureAlgorithm};
-use super::signer::{KeyError, Signer, SigningError};
+use super::signer::{KeyError, Signer, SigningAlgorithm, SigningError};
+use super::signature::{SignatureAlgorithm, Signature};
 
 
 
@@ -97,20 +97,20 @@ impl Signer for OpenSslSigner {
         self.delete_key(*key)
     }
 
-    fn sign<D: AsRef<[u8]> + ?Sized>(
+    fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
         key: &Self::KeyId,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D
-    ) -> Result<Signature, SigningError<Self::Error>> {
+    ) -> Result<Signature<Alg>, SigningError<Self::Error>> {
         self.get_key(*key)?.sign(algorithm, data.as_ref()).map_err(Into::into)
     }
 
-    fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+    fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D
-    ) -> Result<(Signature, PublicKey), Self::Error> {
+    ) -> Result<(Signature<Alg>, PublicKey), Self::Error> {
         let key = KeyPair::new(algorithm.public_key_format())?;
         let info = key.get_key_info()?;
         let sig = key.sign(algorithm, data.as_ref())?;
@@ -191,19 +191,24 @@ impl KeyPair {
         Ok(PublicKey::decode(der.as_ref()).unwrap())
     }
 
-    fn sign(
+    fn sign<Alg: SignatureAlgorithm>(
         &self,
-        _algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &[u8]
-    ) -> Result<Signature, io::Error> {
+    ) -> Result<Signature<Alg>, io::Error> {
+        if !matches!(
+            algorithm.signing_algorithm(), SigningAlgorithm::RsaSha256
+        ) {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "invalid algorithm"
+            ));
+        }
         let mut signer = ::openssl::sign::Signer::new(
             MessageDigest::sha256(), &self.0
         )?;
         signer.update(data)?;
-        Ok(Signature::new(
-            SignatureAlgorithm::default(),
-            signer.sign_to_vec()?.into()
-        ))
+        Ok(Signature::new(algorithm, signer.sign_to_vec()?.into()))
     }
 }
 
@@ -214,6 +219,7 @@ impl KeyPair {
 pub mod tests {
 
     use super::*;
+    use crate::crypto::signature::RpkiSignatureAlgorithm;
 
     #[test]
     fn info_sign_delete() {
@@ -221,14 +227,14 @@ pub mod tests {
         let ki = s.create_key(PublicKeyFormat::Rsa).unwrap();
         let data = b"foobar";
         let _ = s.get_key_info(&ki).unwrap();
-        let _ = s.sign(&ki, SignatureAlgorithm::default(), data).unwrap();
+        let _ = s.sign(&ki, RpkiSignatureAlgorithm::default(), data).unwrap();
         s.destroy_key(&ki).unwrap();
     }
     
     #[test]
     fn one_off() {
         let s = OpenSslSigner::new();
-        s.sign_one_off(SignatureAlgorithm::default(), b"foobar").unwrap();
+        s.sign_one_off(RpkiSignatureAlgorithm::default(), b"foobar").unwrap();
     }
 }
 

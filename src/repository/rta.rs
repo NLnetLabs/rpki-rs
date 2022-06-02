@@ -18,13 +18,13 @@ use bcder::encode::{PrimitiveContent, Values};
 use bcder::string::OctetStringSource;
 use bcder::xerr;
 use bytes::Bytes;
-use super::oid;
+use crate::oid;
+use crate::crypto:: {
+    Digest, DigestAlgorithm, KeyIdentifier, RpkiSignature,
+    RpkiSignatureAlgorithm, Signer, SigningError
+};
 use super::cert::{Cert, Overclaim, ResourceCert};
 use super::crl::Crl;
-use super::crypto:: {
-    Digest, DigestAlgorithm, KeyIdentifier, Signature, SignatureAlgorithm,
-    Signer, SigningError
-};
 use super::resources::{
     AddressFamily, AsBlock, AsBlocks, AsBlocksBuilder, IpBlock, IpBlocks,
     IpBlocksBuilder,
@@ -413,7 +413,7 @@ pub struct SignerInfo {
     sid: KeyIdentifier,
     digest_algorithm: DigestAlgorithm,
     signed_attrs: SignedAttrs,
-    signature: Signature,
+    signature: RpkiSignature,
 
     //--- SignedAttributes
     //
@@ -448,8 +448,8 @@ impl SignerInfo {
             if attrs.2 != oid::CT_RESOURCE_TAGGED_ATTESTATION {
                 return Err(decode::Malformed.into())
             }
-            let signature = Signature::new(
-                SignatureAlgorithm::cms_take_from(cons)?,
+            let signature = RpkiSignature::new(
+                RpkiSignatureAlgorithm::cms_take_from(cons)?,
                 OctetString::take_from(cons)?.into_bytes()
             );
             // no unsignedAttributes
@@ -1272,7 +1272,7 @@ impl RtaBuilder {
 
         // Sign those attributes
         let signature = signer.sign(
-            key, SignatureAlgorithm::default(),
+            key, RpkiSignatureAlgorithm::default(),
             &signed_attrs.encode_verify()
         )?;
 
