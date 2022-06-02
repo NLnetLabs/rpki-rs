@@ -445,9 +445,7 @@ impl CsrAttributes for BgpsecCsrAttributes {
             // Extended Key Usage, if present, must include
             // id-kp-bgpsec-router.
             if let Some(eku) = extended_key_usage.as_ref() {
-                eku.inspect_router().map_err(|_| {
-                    xerr!(decode::Malformed.into())
-                })?;
+                eku.inspect_router().map_err(|_| xerr!(decode::Malformed))?;
             }
 
             Ok(BgpsecCsrAttributes { extended_key_usage })
@@ -520,7 +518,7 @@ mod test {
         let rpki_mft = rsync("rsync://localhost/repo/ca.mft");
         let rpki_not = https("https://localhost/repo/notify.xml");
 
-        let enc = Csr::construct_rpki(
+        let enc = Csr::construct_rpki_ca(
             &signer,
             &key,
             &ca_repo,
