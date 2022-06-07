@@ -1089,6 +1089,11 @@ impl TbsCert {
         self.extended_key_usage.as_ref()
     }
 
+    /// Sets the extended key usage.
+    pub fn set_extended_key_usage(&mut self, eku: Option<ExtendedKeyUsage>) {
+        self.extended_key_usage = eku
+    }
+
     /// Returns a reference to the certificate’s CRL distribution point.
     pub fn crl_uri(&self) -> Option<&uri::Rsync> {
         self.crl_uri.as_ref()
@@ -2043,17 +2048,17 @@ pub struct CertBuilder {
     ///
     /// Must be present except in trust-anchor certificates and non-critical.
     /// It must contain the subject key identifier of issuing certificate.
-    authority_key_identifier: Option<OctetString>, 
+    authority_key_identifier: Option<KeyIdentifier>, 
 
     //  Key Usage.
     //
     //  Must be present and critical. For CA certificates, keyCertSign and
     //  CRLSign are set, for EE certificates, digitalSignature bit is set.
 
-    //  Extended Key Usage
-    //
-    //  This is only allowed in router keys. For now, we will not support
-    //  this.
+    ///  Extended Key Usage
+    ///
+    ///  This is only allowed in router certificates.
+    extended_key_usage: Option<ExtendedKeyUsage>,
     
     /// CRL Distribution Points
     ///
@@ -2128,6 +2133,7 @@ impl CertBuilder {
             subject: None,
             ca,
             authority_key_identifier: None,
+            extended_key_usage: None,
             crl_distribution: None,
             authority_info_access: None,
             ca_repository: None,
@@ -2147,9 +2153,16 @@ impl CertBuilder {
     }
 
     pub fn authority_key_identifier(
-        &mut self, id: OctetString
+        &mut self, id: KeyIdentifier,
     ) -> &mut Self {
         self.authority_key_identifier = Some(id);
+        self
+    }
+
+    pub fn extended_key_usage(
+        &mut self, eku: ExtendedKeyUsage,
+    ) -> &mut Self {
+        self.extended_key_usage = Some(eku);
         self
     }
 
@@ -2301,7 +2314,13 @@ impl CertBuilder {
                     }
                 ),
 
-                // Extended Key Usage: currently not supported.
+                // Extended Key Usage
+                self.extended_key_usage.as_ref().map(|eku| {
+                    Some(Self::extension(
+                        &oid::CE_EXTENDED_KEY_USAGE, false,
+                        encode::sequence(eku.encode_ref())
+                    ))
+                }),
 
                 // CRL Distribution Points
                 self.crl_distribution.as_ref().map(|uri| {
@@ -2311,9 +2330,7 @@ impl CertBuilder {
                             encode::sequence( // DistributionPoint
                                 encode::sequence_as(Tag::CTX_0, // distrib.Pt.
                                     encode::sequence_as(Tag::CTX_0, // fullName
-                                        encode::sequence( // GeneralNames
-                                            uri.encode_general_name()
-                                        )
+                                        uri.encode_general_name()
                                     )
                                 )
                             )

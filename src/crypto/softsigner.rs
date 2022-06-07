@@ -57,6 +57,7 @@ impl OpenSslSigner {
         }).ok_or(KeyError::KeyNotFound)
     }
 
+    #[allow(clippy::significant_drop_in_scrutinee)]
     fn delete_key(&self, key: KeyId) -> Result<(), KeyError<io::Error>> {
         let mut keys = self.keys.write().unwrap();
         match keys.get_mut(key.0) {

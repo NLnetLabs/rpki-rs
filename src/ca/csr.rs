@@ -553,3 +553,73 @@ mod test {
         );
     }
 }
+
+#[cfg(all(test, feature="softkeys"))]
+mod signer_test {
+    use std::str::FromStr;
+    use super::*;
+
+    #[test]
+    fn router_cert_from_csr() {
+        use bcder::encode::Values;
+        use crate::crypto::keys::PublicKeyFormat;
+        use crate::crypto::softsigner::OpenSslSigner;
+        use crate::repository::cert::{Cert, Overclaim};
+        use crate::repository::resources::{Asn, Prefix};
+        use crate::repository::x509::Validity;
+        use crate::repository::tal::TalInfo;
+
+        let bytes = include_bytes!("../../test-data/router-csr.der");
+        let csr = BgpsecCsr::decode(bytes.as_ref()).unwrap();
+        csr.validate().unwrap();
+
+        let signer = OpenSslSigner::new();
+        let ca_key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
+        let ca_pubkey = signer.get_key_info(&ca_key).unwrap();
+        let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
+        let mut cert = TbsCert::new(
+            12u64.into(), ca_pubkey.to_subject_name(),
+            Validity::from_secs(86400), None, ca_pubkey.clone(), KeyUsage::Ca,
+            Overclaim::Trim
+        );
+        cert.set_basic_ca(Some(true));
+        cert.set_ca_repository(Some(uri.clone()));
+        cert.set_rpki_manifest(Some(uri.clone()));
+        cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
+        cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
+        cert.build_as_resource_blocks(|b| b.push((Asn::MIN, Asn::MAX)));
+        let cert = cert.into_cert(&signer, &ca_key).unwrap().to_captured();
+        let cert = Cert::decode(cert.as_slice()).unwrap();
+        let talinfo = TalInfo::from_name("foo".into()).into_arc();
+        let ca_cert = cert.validate_ta(talinfo, true).unwrap();
+
+        let mut builder = CertBuilder::new(
+            42,
+            ca_pubkey.to_subject_name(),
+            Validity::from_secs(86400),
+            false
+        );
+        builder.subject(
+            csr.public_key().to_subject_name()
+        ).authority_key_identifier(
+            ca_pubkey.key_identifier()
+        ).extended_key_usage(
+            csr.attributes().extended_key_usage().unwrap().clone()
+        ).crl_distribution(
+            uri.clone()
+        ).authority_info_access(
+            uri
+        ).as_blocks(|blocks| {
+            blocks.push(Asn::from(12))
+        });
+        let cert = builder.encode(
+            &signer,
+            &ca_key,
+            RpkiSignatureAlgorithm::default(),
+            csr.public_key(),
+        ).unwrap().to_captured(bcder::Mode::Der);
+        let cert = Cert::decode(cert.as_slice()).unwrap();
+        cert.validate_router(&ca_cert, true).unwrap();
+    }
+}
+
