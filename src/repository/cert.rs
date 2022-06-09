@@ -1989,10 +1989,7 @@ pub struct CertBuilder {
     //  This is always present and v3, which really is 2.
 
     /// Serial number.
-    ///
-    /// This is required for all certificates. The standard demands twenty
-    /// digits, u128 gives us 38, so this should be fine.
-    serial_number: u128,
+    serial_number: Serial,
 
     /// Signature.
     ///
@@ -2121,7 +2118,7 @@ pub struct CertBuilder {
 
 impl CertBuilder {
     pub fn new(
-        serial_number: u128,
+        serial_number: Serial,
         issuer: Name,
         validity: Validity,
         ca: bool

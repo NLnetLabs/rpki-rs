@@ -557,6 +557,7 @@ mod test {
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
     use std::str::FromStr;
+
     use super::*;
 
     #[test]
@@ -594,7 +595,7 @@ mod signer_test {
         let ca_cert = cert.validate_ta(talinfo, true).unwrap();
 
         let mut builder = CertBuilder::new(
-            42,
+            42_u128.into(),
             ca_pubkey.to_subject_name(),
             Validity::from_secs(86400),
             false
