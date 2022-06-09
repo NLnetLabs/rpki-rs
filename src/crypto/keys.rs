@@ -293,6 +293,34 @@ impl PublicKey {
 }
 
 
+//--- Deserialize and Serialize
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for PublicKey {
+    fn serialize<S: serde::Serializer>(
+        &self, serializer: S
+    ) -> Result<S::Ok, S::Error> {
+        let bytes = self.to_info_bytes();
+        let b64 = base64::encode(&bytes);
+        b64.serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for PublicKey {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
+        use serde::de;
+
+        let string = String::deserialize(deserializer)?;
+        let decoded = base64::decode(&string).map_err(de::Error::custom)?;
+        let bytes = Bytes::from(decoded);
+        PublicKey::decode(bytes).map_err(de::Error::custom)
+    }
+}
+
+
 //------------ PublicKeyCn ---------------------------------------------------
 
 /// Value encoder for a public key as a common name.
@@ -343,3 +371,27 @@ impl fmt::Display for VerificationError {
 }
 
 impl error::Error for VerificationError { }
+
+
+//============ Tests =========================================================
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn serde_pub_key() {
+        use crate::repository::Cert;
+
+        let der = include_bytes!("../../test-data/ta.cer");
+        let cert = Cert::decode(Bytes::from_static(der)).unwrap();
+
+        let pub_key = cert.subject_public_key_info();
+
+        let ser = serde_json::to_string(pub_key).unwrap();
+        let de: PublicKey = serde_json::from_str(&ser).unwrap();
+
+        assert_eq!(pub_key, &de);
+    }
+}
