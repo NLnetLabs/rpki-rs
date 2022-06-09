@@ -604,7 +604,7 @@ mod signer_test {
         ).authority_key_identifier(
             ca_pubkey.key_identifier()
         ).extended_key_usage(
-            csr.attributes().extended_key_usage().unwrap().clone()
+            ExtendedKeyUsage::create_router()
         ).crl_distribution(
             uri.clone()
         ).authority_info_access(

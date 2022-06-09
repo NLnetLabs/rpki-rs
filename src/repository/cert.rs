@@ -22,7 +22,7 @@ use std::iter::FromIterator;
 use std::sync::Arc;
 use bcder::{decode, encode};
 use bcder::xerr;
-use bcder::encode::PrimitiveContent;
+use bcder::encode::{PrimitiveContent, Values};
 use bcder::{
     BitString, Captured, ConstOid, Ia5String, Mode, OctetString, Oid, Tag
 };
@@ -2557,6 +2557,12 @@ impl ExtendedKeyUsage {
             }
         }
         Err(ValidationError)
+    }
+
+    /// Create a BGP Sec Router Extended Key Usage
+    pub fn create_router() -> Self {
+        let captured = oid::KP_BGPSEC_ROUTER.encode().to_captured(Mode::Der);
+        ExtendedKeyUsage(captured)
     }
 }
 
