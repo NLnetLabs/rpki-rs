@@ -19,12 +19,12 @@
 //! - a signature (to prove possession of the public key)
 //!
 
-use bcder::{decode, encode, xerr};
+use bcder::{decode, encode, xerr, ConstOid};
 use bcder::{BitString, Captured, Mode, OctetString, Oid, Tag};
 use bcder::encode::{PrimitiveContent, Constructed};
 use crate::{oid, uri};
 use crate::repository::cert::{
-    CertBuilder, ExtendedKeyUsage, KeyUsage, Sia, TbsCert
+    ExtendedKeyUsage, KeyUsage, Sia, TbsCert
 };
 use crate::crypto::{
     BgpsecSignatureAlgorithm, RpkiSignatureAlgorithm, PublicKey,
@@ -185,15 +185,15 @@ impl Csr<(), ()> {
             Constructed::new(Tag::CTX_0, encode::sequence((
                 oid::EXTENSION_REQUEST.encode_ref(),
                 encode::set(encode::sequence((
-                    CertBuilder::extension(
+                    Self::extension(
                         &oid::CE_BASIC_CONSTRAINTS, true,
                         encode::sequence(true.encode())
                     ),
-                    CertBuilder::extension(
+                    Self::extension(
                         &oid::CE_KEY_USAGE, true,
                         KeyUsage::Ca.encode()
                     ),
-                    CertBuilder::extension(
+                    Self::extension(
                         &oid::PE_SUBJECT_INFO_ACCESS, false,
                         encode::sequence((
                             encode::sequence((
@@ -229,6 +229,19 @@ impl Csr<(), ()> {
             BitString::new(0, signature).encode()
         ))))
     }
+
+    fn extension<V: encode::Values>(
+        oid: &'static ConstOid,
+        critical: bool,
+        content: V
+    ) -> impl encode::Values {
+        encode::sequence((
+            oid.encode(),
+            critical.encode(),
+            OctetString::encode_wrapped(Mode::Der, content)
+        ))
+    }
+
 }
 
 
@@ -562,7 +575,6 @@ mod signer_test {
 
     #[test]
     fn router_cert_from_csr() {
-        use bcder::encode::Values;
         use crate::crypto::keys::PublicKeyFormat;
         use crate::crypto::softsigner::OpenSslSigner;
         use crate::repository::cert::{Cert, Overclaim};
@@ -580,7 +592,7 @@ mod signer_test {
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
         let mut cert = TbsCert::new(
             12u64.into(), ca_pubkey.to_subject_name(),
-            Validity::from_secs(86400), None, ca_pubkey.clone(), KeyUsage::Ca,
+            Validity::from_secs(86400), None, ca_pubkey, KeyUsage::Ca,
             Overclaim::Trim
         );
         cert.set_basic_ca(Some(true));
@@ -594,33 +606,38 @@ mod signer_test {
         let talinfo = TalInfo::from_name("foo".into()).into_arc();
         let ca_cert = cert.validate_ta(talinfo, true).unwrap();
 
-        let mut builder = CertBuilder::new(
+        let mut router_cert = TbsCert::new(
             42_u128.into(),
-            ca_pubkey.to_subject_name(),
+            ca_cert.subject().clone(),
             Validity::from_secs(86400),
-            false
+            None,
+            csr.public_key().clone(),
+            KeyUsage::Ee,
+            Overclaim::Refuse
         );
-        builder.subject(
-            csr.public_key().to_subject_name()
-        ).authority_key_identifier(
-            ca_pubkey.key_identifier()
-        ).extended_key_usage(
-            ExtendedKeyUsage::create_router()
-        ).crl_distribution(
-            uri.clone()
-        ).authority_info_access(
-            uri
-        ).as_blocks(|blocks| {
-            blocks.push(Asn::from(12))
-        });
-        let cert = builder.encode(
-            &signer,
-            &ca_key,
-            RpkiSignatureAlgorithm::default(),
-            csr.public_key(),
-        ).unwrap().to_captured(bcder::Mode::Der);
-        let cert = Cert::decode(cert.as_slice()).unwrap();
-        cert.validate_router(&ca_cert, true).unwrap();
+        router_cert.set_authority_key_identifier(
+            Some(ca_cert.subject_key_identifier())
+        );
+        router_cert.set_ca_issuer(
+            Some(uri.clone())
+        );
+        router_cert.set_crl_uri(
+            Some(uri)
+        );
+        router_cert.set_extended_key_usage(
+            Some(ExtendedKeyUsage::create_router())
+        );
+        router_cert.build_as_resource_blocks(
+            |b| b.push(Asn::from(12))
+        );
+
+        // test sign and encode
+        let router_cert = router_cert.into_cert(&signer, &ca_key).unwrap();
+
+        // decode again
+        let router_cert = router_cert.to_captured();
+        let router_cert = Cert::decode(router_cert.as_slice()).unwrap();
+        router_cert.validate_router(&ca_cert, true).unwrap();
     }
 }
 
