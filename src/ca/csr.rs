@@ -19,8 +19,9 @@
 //! - a signature (to prove possession of the public key)
 //!
 
-use bcder::{decode, encode, xerr, ConstOid};
+use bcder::{decode, encode, ConstOid};
 use bcder::{BitString, Captured, Mode, OctetString, Oid, Tag};
+use bcder::decode::Error as _;
 use bcder::encode::{PrimitiveContent, Constructed};
 use crate::{oid, uri};
 use crate::repository::cert::{
@@ -118,23 +119,25 @@ impl<Alg> Csr<Alg, RpkiCaCsrAttributes> {
 ///
 impl<Alg: SignatureAlgorithm, Attrs: CsrAttributes> Csr<Alg, Attrs> {
     /// Parse as a source as a certificate signing request.
-    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
+    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Error> {
         Mode::Der.decode(source, Self::take_from)
     }
 
     /// Takes an encoded CSR from the beginning of a constructed value.
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(Self::from_constructed)
     }
 
     /// Parses the content of a certificate signing request.
     fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         let signed_data = SignedData::from_constructed(cons)?;
-        let content = signed_data.data().clone().decode(CsrContent::take_from)?;
+        let content = signed_data.data().clone().decode(
+            CsrContent::take_from
+        ).map_err(|err| err.into())?;
 
         Ok(Self { signed_data, content })
     }
@@ -290,7 +293,7 @@ impl<Attrs: CsrAttributes> CsrContent<Attrs> {
     /// Takes a value from the beginning of an encoded constructed value.
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(|cons| {
             cons.skip_u8_if(0)?; // version MUST be 0, cause v1
             let subject = Name::take_from(cons)?;
@@ -307,7 +310,7 @@ impl<Attrs: CsrAttributes> CsrContent<Attrs> {
 pub trait CsrAttributes: Sized {
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err>;
+    ) -> Result<Self, S::Error>;
 }
 
 
@@ -324,7 +327,7 @@ pub struct RpkiCaCsrAttributes {
 impl CsrAttributes for RpkiCaCsrAttributes {
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_constructed_if(Tag::CTX_0, |cons| {
             let mut basic_ca = None;
             let mut key_usage = None;
@@ -360,7 +363,9 @@ impl CsrAttributes for RpkiCaCsrAttributes {
                                         content, &mut sia
                                     )
                                 } else {
-                                    xerr!(Err(decode::Malformed))
+                                    Err(decode::ContentError::malformed(
+                                        format!( "invalid extension {}", id)
+                                    ))
                                 }
                             })?;
 
@@ -370,13 +375,23 @@ impl CsrAttributes for RpkiCaCsrAttributes {
                         Ok(())
                     })})
                 } else {
-                    xerr!(Err(decode::Malformed).map_err(Into::into))
+                    Err(S::Error::malformed(
+                        format!("invalid attribute {}", id)
+                    ))
                 }
             })?;
 
-            let basic_ca = basic_ca.ok_or(decode::Malformed)?;
-            let key_usage = key_usage.ok_or(decode::Malformed)?;
-            let sia = sia.ok_or(decode::Malformed)?;
+            let basic_ca = basic_ca.ok_or_else(|| {
+                S::Error::malformed("missing Basic Constraints extension")
+            })?;
+            let key_usage = key_usage.ok_or_else(|| {
+                S::Error::malformed("missing Key Usage extension")
+            })?;
+            let sia = sia.ok_or_else(|| {
+                S::Error::malformed(
+                    "missing Subject Information Access extension"
+                )
+            })?;
 
             Ok(RpkiCaCsrAttributes {
                     basic_ca, key_usage, extended_key_usage, sia
@@ -402,7 +417,7 @@ impl BgpsecCsrAttributes {
 impl CsrAttributes for BgpsecCsrAttributes {
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_constructed_if(Tag::CTX_0, |cons| {
             let mut basic_ca = None;
             let mut key_usage = None;
@@ -438,7 +453,9 @@ impl CsrAttributes for BgpsecCsrAttributes {
                                         content, &mut sia
                                     )
                                 } else {
-                                    xerr!(Err(decode::Malformed))
+                                    Err(decode::ContentError::malformed(
+                                        format!( "invalid extension {}", id)
+                                    ))
                                 }
                             })?;
 
@@ -448,7 +465,9 @@ impl CsrAttributes for BgpsecCsrAttributes {
                         Ok(())
                     })})
                 } else {
-                    xerr!(Err(decode::Malformed).map_err(Into::into))
+                    Err(S::Error::malformed(
+                        format!("invalid attribute {}", id)
+                    ))
                 }
             })?;
 
@@ -458,7 +477,7 @@ impl CsrAttributes for BgpsecCsrAttributes {
             // Extended Key Usage, if present, must include
             // id-kp-bgpsec-router.
             if let Some(eku) = extended_key_usage.as_ref() {
-                eku.inspect_router().map_err(|_| xerr!(decode::Malformed))?;
+                eku.inspect_router().map_err(S::Error::malformed)?;
             }
 
             Ok(BgpsecCsrAttributes { extended_key_usage })

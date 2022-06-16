@@ -3,9 +3,10 @@
 
 //! Support for building RPKI Certificates and Objects
 
-use bcder::encode::PrimitiveContent;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Oid, Tag};
+use bcder::decode::Error as _;
+use bcder::encode::PrimitiveContent;
 use bytes::Bytes;
 use log::{debug, error};
 use std::ops;
@@ -90,19 +91,19 @@ impl IdCert {
 ///
 impl IdCert {
     /// Decodes a source as a certificate.
-    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
+    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Error> {
         Mode::Der.decode(source, Self::take_from)
     }
 
     /// Takes an encoded certificate from the beginning of a value.
-    pub fn take_from<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Self, S::Err> {
+    pub fn take_from<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Self, S::Error> {
         cons.take_sequence(Self::from_constructed)
     }
 
     /// Parses the content of a Certificate sequence.
     pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         let signed_data = SignedData::from_constructed(cons)?;
         let tbs = signed_data
             .data()
@@ -426,7 +427,7 @@ impl TbsIdCert {
     ///  Sha256WithRsaEncryption
     fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(|cons| {
             // version [0] EXPLICIT Version DEFAULT v1.
             //  -- we need extensions so apparently, we want v3 which,
@@ -489,7 +490,11 @@ impl TbsIdCert {
                 subject,
                 subject_public_key_info,
                 basic_ca,
-                subject_key_id: subject_key_id.ok_or(decode::Malformed)?,
+                subject_key_id: subject_key_id.ok_or_else(|| {
+                    S::Error::malformed(
+                        "missing Subject Key Identifier extension"
+                    )
+                })?,
                 authority_key_id,
             })
         })
@@ -516,7 +521,9 @@ impl TbsIdCert {
                         encode_extension(
                             &oid::CE_BASIC_CONSTRAINTS,
                             true,
-                            encode::sequence(if ca { Some(ca.encode()) } else { None }),
+                            encode::sequence(
+                                if ca { Some(ca.encode()) } else { None }
+                            ),
                         )
                     }),
                     // Subject Key Identifier

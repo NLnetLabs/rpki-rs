@@ -1,9 +1,10 @@
 //! Signed Message CMS wrappers used in the RPKI publication (RFC 8181) and
 //! provisioning (RFC 6492) protocols.
 
-use bcder::encode::PrimitiveContent;
 use bcder::{decode, encode, Captured};
-use bcder::{Mode, Oid, OctetString, Tag, xerr};
+use bcder::{Mode, Oid, OctetString, Tag};
+use bcder::decode::Error as _;
+use bcder::encode::PrimitiveContent;
 use bytes::Bytes;
 use crate::oid;
 use crate::repository::crl::RevokedCertificates;
@@ -84,7 +85,7 @@ impl SignedMessage {
     pub fn decode<S: decode::Source>(
         source: S,
         strict: bool
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         if strict { Mode::Der }
         else { Mode::Ber }
             .decode(source, Self::take_from)
@@ -93,7 +94,7 @@ impl SignedMessage {
     /// Takes a signed message from an encoded constructed value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(|cons| {
             oid::SIGNED_DATA.skip_if(cons)?; // contentType
             cons.take_constructed_if(Tag::CTX_0, Self::take_signed_data)
@@ -102,7 +103,7 @@ impl SignedMessage {
 
     fn take_signed_data<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(|cons| {
             cons.skip_u8_if(3)?; // version -- must be 3
             
@@ -121,7 +122,7 @@ impl SignedMessage {
                 })?
             };
             if content_type != oid::PROTOCOL_CONTENT_TYPE {
-                return xerr!(Err(decode::Malformed.into()));
+                return Err(S::Error::malformed("unexpected content type"));
             }
             let id_cert = Self::take_id_cert(cons)?;
             let crl = Self::take_crl(cons)?;
@@ -136,13 +137,17 @@ impl SignedMessage {
                         })?;
                         let alg = DigestAlgorithm::take_from(cons)?;
                         if alg != digest_algorithm {
-                            return Err(decode::Malformed.into());
+                            return Err(S::Error::malformed(
+                                    "signer algorithm mismatch"
+                            ));
                         }
                         let attrs = SignedAttrs::take_from_signed_message(
                             cons
                         )?;
                         if attrs.2 != content_type {
-                            return Err(decode::Malformed.into());
+                            return Err(S::Error::malformed(
+                                "content type in signed attributes differs"
+                            ));
                         }
                         let signature = RpkiSignature::new(
                             RpkiSignatureAlgorithm::cms_take_from(cons)?,
@@ -174,11 +179,15 @@ impl SignedMessage {
     // insist that there is only a single embedded EE certificate.
     fn take_id_cert<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<IdCert, S::Err> {
+    ) -> Result<IdCert, S::Error> {
         cons.take_constructed_if(Tag::CTX_0, |cons| {
             cons.take_constructed(|tag, cons| match tag {
                 Tag::SEQUENCE => IdCert::from_constructed(cons),
-                _ => xerr!(Err(decode::Unimplemented.into())),
+                _ => {
+                    Err(S::Error::unimplemented(
+                        "multiple embedded EE certificates not supported"
+                    ))
+                }
             })
         })
     }
@@ -191,7 +200,7 @@ impl SignedMessage {
     // just expecting 1 CRL here.
     fn take_crl<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<SignedMessageCrl, S::Err> {
+    ) -> Result<SignedMessageCrl, S::Error> {
         cons.take_constructed_if(Tag::CTX_1, |cons| {
             SignedMessageCrl::take_from(cons)
         })
@@ -426,14 +435,14 @@ impl SignedMessageCrl {
     /// Takes an encoded CRL from the beginning of a constructed value.
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(Self::from_constructed)
     }
 
     /// Parses the content of a certificate revocation list.
     fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         let signed_data = SignedData::from_constructed(cons)?;
         let tbs = signed_data.data().clone()
             .decode(SignedMessageTbsCrl::take_from)?;
@@ -568,7 +577,7 @@ impl SignedMessageTbsCrl {
     /// Takes a value from the beginning of a encoded constructed value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(|cons| {
             // version. Technically it is optional but we need v2, so it must
             // actually be there. v2 is encoded as an integer of value 1.
@@ -601,7 +610,9 @@ impl SignedMessageTbsCrl {
                                 // RFC 6487 says that no other extensions are
                                 // allowed. So we fail even if there is only
                                 // non-critical extension.
-                                xerr!(Err(decode::Malformed))
+                                Err(decode::ContentError::malformed(
+                                    format!("invalid extension {}", id)
+                                ))
                             }
                         }).map_err(Into::into)
                     })? { }
@@ -625,22 +636,32 @@ impl SignedMessageTbsCrl {
     fn take_authority_key_identifier<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         authority_key_id: &mut Option<KeyIdentifier>,
-    ) -> Result<(), S::Err> {
-        update_once(authority_key_id, || {
-            cons.take_sequence(|cons| {
-                cons.take_value_if(Tag::CTX_0, KeyIdentifier::from_content)
-            })
-        })
+    ) -> Result<(), S::Error> {
+        update_once(
+            authority_key_id,
+            "duplicate Authority Key Identifier extension",
+            || {
+                cons.take_sequence(|cons| {
+                    cons.take_value_if(
+                        Tag::CTX_0, KeyIdentifier::from_content
+                    )
+                })
+            }
+        )
     }
 
     /// Parses the CRL Number extension.
     fn take_crl_number<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         crl_number: &mut Option<Serial>,
-    ) -> Result<(), S::Err> {
-        update_once(crl_number, || {
-            Serial::take_from(cons)
-        })
+    ) -> Result<(), S::Error> {
+        update_once(
+            crl_number,
+            "duplicate CRL number extension",
+            || {
+                Serial::take_from(cons)
+            }
+        )
     }
 }
 

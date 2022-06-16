@@ -112,7 +112,7 @@ impl DigestAlgorithm {
     /// algorithms or if the value isn’t correctly encoded.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(Self::from_constructed)
     }
 
@@ -124,7 +124,7 @@ impl DigestAlgorithm {
     /// algorithms.
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Err> {
+    ) -> Result<Option<Self>, S::Error> {
         cons.take_opt_sequence(Self::from_constructed)
     }
 
@@ -135,14 +135,14 @@ impl DigestAlgorithm {
     /// allowed, a malformed error is returned.
     pub fn take_set_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_set(Self::take_from)
     }
 
     /// Parses the algorithm identifier from the contents of its sequence.
     fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         oid::SHA256.skip_if(cons)?;
         cons.take_opt_null()?;
         Ok(DigestAlgorithm::default())
@@ -159,7 +159,7 @@ impl DigestAlgorithm {
     /// chosen from the allowed values.
     pub fn skip_set<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<(), S::Err> {
+    ) -> Result<(), S::Error> {
         cons.take_constructed_if(Tag::SET, |cons| {
             while Self::take_opt_from(cons)?.is_some() { }
             Ok(())
@@ -169,7 +169,7 @@ impl DigestAlgorithm {
     /// Takes a single algorithm object identifier from a constructed value.
     pub fn take_oid_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         oid::SHA256.skip_if(cons)?;
         Ok(Self::default())
     }

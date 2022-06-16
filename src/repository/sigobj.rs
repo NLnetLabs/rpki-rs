@@ -4,7 +4,8 @@
 
 use std::{cmp, io};
 use bcder::{decode, encode};
-use bcder::{Captured, Mode, OctetString, Oid, Tag, xerr};
+use bcder::{Captured, Mode, OctetString, Oid, Tag};
+use bcder::decode::Error as _;
 use bcder::encode::PrimitiveContent;
 use bcder::string::OctetStringSource;
 use bytes::Bytes;
@@ -60,10 +61,12 @@ impl SignedObject {
     }
 
     /// Decodes the object’s content.
-    pub fn decode_content<F, T>(&self, op: F) -> Result<T, decode::Error>
-    where F: FnOnce(&mut decode::Constructed<OctetStringSource>)
-                    -> Result<T, decode::Error> {
-        // XXX Let’s see if using DER here at least holds.
+    pub fn decode_content<F, T>(
+        &self, op: F
+    ) -> Result<T, <OctetStringSource as decode::Source>::Error>
+    where F: FnOnce(
+        &mut decode::Constructed<OctetStringSource>
+    ) -> Result<T, <OctetStringSource as decode::Source>::Error> {
         Mode::Der.decode(self.content.to_source(), op)
     }
 
@@ -90,7 +93,7 @@ impl SignedObject {
     pub fn decode<S: decode::Source>(
         source: S,
         strict: bool
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         if strict { Mode::Der }
         else { Mode::Ber }
             .decode(source, Self::take_from)
@@ -99,7 +102,7 @@ impl SignedObject {
     /// Takes a signed object from an encoded constructed value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(|cons| { // ContentInfo
             oid::SIGNED_DATA.skip_if(cons)?; // contentType
             cons.take_constructed_if(Tag::CTX_0, |cons| { // content
@@ -134,11 +137,16 @@ impl SignedObject {
                                 )?;
                                 let alg = DigestAlgorithm::take_from(cons)?;
                                 if alg != digest_algorithm {
-                                    return Err(decode::Malformed.into())
+                                    return Err(S::Error::malformed(
+                                        "digest algorithm mismatch"
+                                    ))
                                 }
                                 let attrs = SignedAttrs::take_from(cons)?;
                                 if attrs.2 != content_type {
-                                    return Err(decode::Malformed.into())
+                                    return Err(S::Error::malformed(
+                                        "content type in signed attributes \
+                                        differs"
+                                    ))
                                 }
                                 let signature = RpkiSignature::new(
                                     RpkiSignatureAlgorithm::cms_take_from(
@@ -398,7 +406,7 @@ impl SignedAttrs {
         strict: bool
     ) -> Result<
         (Self, MessageDigest, Oid<Bytes>, Option<Time>, Option<u64>),
-        S::Err
+        S::Error
     > {
         let mut message_digest = None;
         let mut content_type = None;
@@ -426,22 +434,37 @@ impl SignedAttrs {
                     else if !strict {
                         cons.skip_all()
                     } else {
-                        xerr!(Err(decode::Malformed.into()))
+                        Err(S::Error::malformed(
+                            format!(
+                                "unexpected signed attribute {}",
+                                oid
+                            )
+                        ))
                     }
                 })? { }
                 Ok(())
             })
         })?;
         if raw.len() > 0xFFFF {
-            return Err(decode::Unimplemented.into())
+            return Err(S::Error::unimplemented(
+                "signed attributes over 65536 bytes not supported"
+            ))
         }
         let message_digest = match message_digest {
             Some(some) => MessageDigest(some.into_bytes()),
-            None => return Err(decode::Malformed.into())
+            None => {
+                return Err(S::Error::malformed(
+                    "missing message digest in signed attributes"
+                ))
+            }
         };
         let content_type = match content_type {
             Some(some) => some,
-            None => return Err(decode::Malformed.into())
+            None => {
+                return Err(S::Error::malformed(
+                    "missing content type in signed attributes",
+                ))
+            }
         };
         Ok((
             Self(raw), message_digest, content_type, signing_time,
@@ -460,7 +483,7 @@ impl SignedAttrs {
         cons: &mut decode::Constructed<S>
     ) -> Result<
         (Self, MessageDigest, Oid<Bytes>, Option<Time>, Option<u64>),
-        S::Err
+        S::Error
     > {
         Self::take_from_with_mode(cons, true)
     }
@@ -480,7 +503,7 @@ impl SignedAttrs {
         cons: &mut decode::Constructed<S>
     ) -> Result<
         (Self, MessageDigest, Oid<Bytes>, Option<Time>, Option<u64>),
-        S::Err
+        S::Error
     > {
         Self::take_from_with_mode(cons, false)
     }
@@ -492,37 +515,45 @@ impl SignedAttrs {
     fn take_content_type<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         content_type: &mut Option<Oid<Bytes>>
-    ) -> Result<(), S::Err> {
-        update_once(content_type, || {
-            cons.take_set(|cons| Oid::take_from(cons))
-        })
+    ) -> Result<(), S::Error> {
+        update_once(
+            content_type,
+            "duplicate Content Type attribute",
+            || cons.take_set(|cons| Oid::take_from(cons))
+        )
     }
 
     fn take_message_digest<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         message_digest: &mut Option<OctetString>
-    ) -> Result<(), S::Err> {
-        update_once(message_digest, || {
-            cons.take_set(|cons| OctetString::take_from(cons))
-        })
+    ) -> Result<(), S::Error> {
+        update_once(
+            message_digest,
+            "duplicate Message Digest attribute",
+            || cons.take_set(|cons| OctetString::take_from(cons))
+        )
     }
 
     fn take_signing_time<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         signing_time: &mut Option<Time>
-    ) -> Result<(), S::Err> {
-        update_once(signing_time, || {
-            cons.take_set(Time::take_from)
-        })
+    ) -> Result<(), S::Error> {
+        update_once(
+            signing_time,
+            "duplicate Signing Time attribute",
+            || cons.take_set(Time::take_from)
+        )
     }
 
     fn take_bin_signing_time<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         bin_signing_time: &mut Option<u64>
-    ) -> Result<(), S::Err> {
-        update_once(bin_signing_time, || {
-            cons.take_set(|cons| cons.take_u64())
-        })
+    ) -> Result<(), S::Error> {
+        update_once(
+            bin_signing_time,
+            "duplicate Binary Signing Time attribute",
+            || cons.take_set(|cons| cons.take_u64())
+        )
     }
 
     pub fn encode_ref(&self) -> impl encode::Values + '_ {

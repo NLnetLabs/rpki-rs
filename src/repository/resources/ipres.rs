@@ -14,7 +14,8 @@ use std::net::{AddrParseError, IpAddr, Ipv4Addr, Ipv6Addr};
 use std::num::ParseIntError;
 use std::str::FromStr;
 use bcder::{decode, encode};
-use bcder::{BitString, Mode, OctetString, Tag, xerr};
+use bcder::{BitString, Mode, OctetString, Tag};
+use bcder::decode::Error as _;
 use bcder::encode::{Nothing, PrimitiveContent};
 use super::super::cert::Overclaim;
 use super::super::roa::RoaIpAddress;
@@ -81,7 +82,7 @@ impl IpResources {
     /// the first for IPv4, the second for IPv6.
     pub fn take_families_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<(Option<Self>, Option<Self>), S::Err> {
+    ) -> Result<(Option<Self>, Option<Self>), S::Error> {
         cons.take_sequence(|cons| {
             let mut v4 = None;
             let mut v6 = None;
@@ -90,13 +91,17 @@ impl IpResources {
                 match af {
                     AddressFamily::Ipv4 => {
                         if v4.is_some() {
-                            xerr!(return Err(decode::Malformed.into()));
+                            return Err(S::Error::malformed(
+                                "multiple IPv4 resourcess"
+                            ));
                         }
                         v4 = Some(Self::take_from(cons, AddressFamily::Ipv4)?);
                     }
                     AddressFamily::Ipv6 => {
                         if v6.is_some() {
-                            xerr!(return Err(decode::Malformed.into()));
+                            return Err(S::Error::malformed(
+                                "multiple IPv6 resources"
+                            ));
                         }
                         v6 = Some(Self::take_from(cons, AddressFamily::Ipv6)?);
                     }
@@ -104,7 +109,9 @@ impl IpResources {
                 Ok(())
             })? { }
             if v4.is_none() && v6.is_none() {
-                xerr!(return Err(decode::Malformed.into()));
+                return Err(S::Error::malformed(
+                    "no address family in IP resources"
+                ));
             }
             Ok((v4, v6))
         })
@@ -114,7 +121,7 @@ impl IpResources {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         family: AddressFamily,
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_value(|tag, content| {
             if tag == Tag::NULL {
                 content.to_null()?;
@@ -125,7 +132,7 @@ impl IpResources {
                     .map(ResourcesChoice::Blocks)
             }
             else {
-                xerr!(Err(decode::Error::Malformed.into()))
+                Err(S::Error::malformed("invalid IP resources"))
             }
         }).map(IpResources)
     }
@@ -448,7 +455,7 @@ impl IpBlocks {
 impl IpBlocks {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(|cons| {
             // The family is here only for checking the lengths of
             // bitstrings. Since we don’t care, IPv6 will work.
@@ -459,7 +466,7 @@ impl IpBlocks {
     pub fn take_from_with_family<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         family: AddressFamily
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(|cons| {
             Self::parse_cons_content(cons, family)
         })
@@ -469,7 +476,7 @@ impl IpBlocks {
     fn parse_content<S: decode::Source>(
         content: &mut decode::Content<S>,
         family: AddressFamily,
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         let cons = content.as_constructed()?;
         Self::parse_cons_content(cons, family)
     }
@@ -477,7 +484,7 @@ impl IpBlocks {
     fn parse_cons_content<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         family: AddressFamily,
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         let mut err = None;
 
         let res = iter::repeat_with(||
@@ -708,7 +715,7 @@ impl IpBlock {
     /// Takes an optional address block from the beginning of encoded value.
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Err> {
+    ) -> Result<Option<Self>, S::Error> {
         cons.take_opt_value(|tag, content| {
             if tag == Tag::BIT_STRING {
                 Prefix::parse_content(content).map(IpBlock::Prefix)
@@ -717,7 +724,7 @@ impl IpBlock {
                 AddressRange::parse_content(content).map(IpBlock::Range)
             }
             else {
-                xerr!(Err(decode::Malformed.into()))
+                Err(S::Error::malformed("invalid IP resources"))
             }
         })
     }
@@ -725,7 +732,7 @@ impl IpBlock {
     pub fn take_opt_from_with_family<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         family: AddressFamily,
-    ) -> Result<Option<Self>, S::Err> {
+    ) -> Result<Option<Self>, S::Error> {
         cons.take_opt_value(|tag, content| {
             if tag == Tag::BIT_STRING {
                 Prefix::parse_content_with_family(
@@ -738,7 +745,7 @@ impl IpBlock {
                 ).map(IpBlock::Range)
             }
             else {
-                xerr!(Err(decode::Malformed.into()))
+                Err(S::Error::malformed("invalid IP resources"))
             }
         })
     }
@@ -1024,7 +1031,7 @@ impl AddressRange {
 impl AddressRange {
     fn parse_content<S: decode::Source>(
         content: &mut decode::Content<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         let cons = content.as_constructed()?;
         Ok(AddressRange {
             min: Prefix::take_from(cons)?.min(),
@@ -1035,11 +1042,11 @@ impl AddressRange {
     fn parse_content_with_family<S: decode::Source>(
         content: &mut decode::Content<S>,
         family: AddressFamily,
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         let cons = content.as_constructed()?;
         
-        let min = Self::check_len(Prefix::take_from(cons)?, family)?;
-        let max = Self::check_len(Prefix::take_from(cons)?, family)?;
+        let min = Self::check_len::<S>(Prefix::take_from(cons)?, family)?;
+        let max = Self::check_len::<S>(Prefix::take_from(cons)?, family)?;
 
         Ok(AddressRange {
             min: min.min(),
@@ -1051,11 +1058,11 @@ impl AddressRange {
     /// Checks the length of the prefix for the given address family.
     /// Returns an error if the prefix length exceeds the maximum length
     /// for the address family.
-    fn check_len(
+    fn check_len<S: decode::Source>(
         addr: Prefix, family: AddressFamily
-     ) -> Result<Prefix, decode::Error> {
+     ) -> Result<Prefix, S::Error> {
         if addr.addr_len() > family.max_addr_len() {
-            Err(decode::Malformed)
+            Err(S::Error::malformed("invalid range in IP resources"))
         }
         else {
             Ok(addr)
@@ -1072,9 +1079,9 @@ impl AddressRange {
     /// This has issue has long been fixed, but such certificates can
     /// still be found in the history of Krill instances with history
     /// going back to Krill version 0.3.0.
-    fn check_len(
+    fn check_len<S: decode::Source>(
         mut addr: Prefix, family: AddressFamily
-    ) -> Result<Prefix, decode::Error> {
+    ) -> Result<Prefix, S::Error> {
         addr.len = std::cmp::min(addr.len, family.max_addr_len());
         Ok(addr)
     }
@@ -1083,7 +1090,7 @@ impl AddressRange {
     /// Skips over the address range at the beginning of a value.
     fn skip_opt_in<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<()>, S::Err> {
+    ) -> Result<Option<()>, S::Error> {
         Self::take_opt_from(cons).map(|x| x.map(|_| ()))
     }
     */
@@ -1196,9 +1203,11 @@ impl Prefix {
     }
 
     /// Creates a new prefix from its encoding as a BIT STRING.
-    pub fn from_bit_string(src: &BitString) -> Result<Self, decode::Error> {
+    pub fn from_bit_string(
+        src: &BitString
+    ) -> Result<Self, DecodePrefixError> {
         if src.octet_len() > 16 {
-            xerr!(return Err(decode::Malformed))
+            return Err(DecodePrefixError(()))
         }
         let mut addr = 0;
         for octet in src.octets() {
@@ -1316,28 +1325,30 @@ impl Prefix {
     /// Takes an encoded prefix from a source.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        Ok(Self::from_bit_string(&BitString::take_from(cons)?)?)
+    ) -> Result<Self, S::Error> {
+        Ok(Self::from_bit_string(
+            &BitString::take_from(cons)?
+        ).map_err(S::Error::malformed)?)
     }
 
     /// Parses the content of a prefix.
     pub fn parse_content<S: decode::Source>(
         content: &mut decode::Content<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         Ok(Self::from_bit_string(
             &BitString::from_content(content)?
-        )?)
+        ).map_err(S::Error::malformed)?)
     }
 
     pub fn parse_content_with_family<S: decode::Source>(
         content: &mut decode::Content<S>,
         family: AddressFamily,
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         let res = Self::from_bit_string(
             &BitString::from_content(content)?
-        )?;
+        ).map_err(S::Error::malformed)?;
         if res.addr_len() > family.max_addr_len() {
-            return Err(decode::Malformed.into())
+            return Err(S::Error::malformed("invalid prefix in IP resources"))
         }
         Ok(res)
     }
@@ -1580,19 +1591,23 @@ impl AddressFamily {
     /// Takes a single address family from the beginning of a value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         let octet_string = OctetString::take_from(cons)?;
-        let afi = Self::decode_octet_string(octet_string)?;
+        let afi = Self::decode_octet_string(
+            octet_string
+        ).map_err(S::Error::malformed)?;
         Ok(afi)
     }
 
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Err> {
+    ) -> Result<Option<Self>, S::Error> {
         match OctetString::take_opt_from(cons)? {
             None => Ok(None),
             Some(octet_string) => {
-                let afi = Self::decode_octet_string(octet_string)?;
+                let afi = Self::decode_octet_string(
+                    octet_string
+                ).map_err(S::Error::malformed)?;
                 Ok(Some(afi))
             }
         }
@@ -1600,27 +1615,29 @@ impl AddressFamily {
 
     pub fn skip_opt_in<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<()>, S::Err> {
+    ) -> Result<Option<()>, S::Error> {
         Self::take_opt_from(cons).map(|opt| opt.map(|_| ()))
     }
 
-    fn decode_octet_string(octet_string: OctetString) -> Result<AddressFamily, decode::Error> {
+    fn decode_octet_string(
+        octet_string: OctetString
+    ) -> Result<AddressFamily, DecodeFamilyError> {
         let mut octets = octet_string.octets();
         let first = match octets.next() {
             Some(first) => first,
-            None => xerr!(return Err(decode::Malformed))
+            None => return Err(DecodeFamilyError(())),
         };
         let second = match octets.next() {
             Some(second) => second,
-            None => xerr!(return Err(decode::Malformed))
+            None => return Err(DecodeFamilyError(())),
         };
         if octets.next().is_some() {
-            xerr!(return Err(decode::Malformed))
+            return Err(DecodeFamilyError(()))
         }
         match (first, second) {
             (0, 1) => Ok(AddressFamily::Ipv4),
             (0, 2) => Ok(AddressFamily::Ipv6),
-            _ => xerr!(Err(decode::Malformed)),
+            _ => Err(DecodeFamilyError(())),
         }
     }
 
@@ -1811,6 +1828,30 @@ impl std::ops::Deref for Ipv6Blocks {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+
+//------------ DecodePrefixError ---------------------------------------------
+
+#[derive(Clone, Copy, Debug)]
+pub struct DecodePrefixError(());
+
+impl fmt::Display for DecodePrefixError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("invalid prefix in IP resources")
+    }
+}
+
+
+//------------ DecodeFamilyError ---------------------------------------------
+
+#[derive(Clone, Copy, Debug)]
+pub struct DecodeFamilyError(());
+
+impl fmt::Display for DecodeFamilyError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("invalid address family in IP resources")
     }
 }
 

@@ -21,11 +21,11 @@ use std::{borrow, ops};
 use std::iter::FromIterator;
 use std::sync::Arc;
 use bcder::{decode, encode};
-use bcder::xerr;
-use bcder::encode::{PrimitiveContent, Values};
 use bcder::{
     BitString, Captured, ConstOid, Ia5String, Mode, OctetString, Oid, Tag
 };
+use bcder::encode::{PrimitiveContent, Values};
+use bcder::decode::Error as _;
 use bytes::Bytes;
 use crate::{oid, uri};
 use crate::crypto::{
@@ -94,7 +94,7 @@ pub struct Cert {
 ///
 impl Cert {
     /// Decodes a source as a certificate.
-    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
+    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Error> {
         Mode::Der.decode(source, Self::take_from)
     }
 
@@ -104,21 +104,21 @@ impl Cert {
     /// constructed value in `cons` tagged as a sequence.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(Self::from_constructed)
     }
 
     /// Takes an optional certificate from the beginning of a value.
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Err> {
+    ) -> Result<Option<Self>, S::Error> {
         cons.take_opt_sequence(Self::from_constructed)
     }
 
     /// Parses the content of a Certificate sequence.
     pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         let signed_data = SignedData::from_constructed(cons)?;
         let tbs = signed_data.data().clone().decode(
             TbsCert::from_constructed
@@ -340,13 +340,13 @@ impl Cert {
 
         // 4.8.1. Basic Constraints: Must not be present.
         if self.basic_ca.is_some(){
-            xerr!(return Err(ValidationError))
+            return Err(ValidationError)
         }
 
         // 4.8.4. Key Usage. Bits for CA or not CA have been checked during
         // parsing already.
         if self.key_usage != KeyUsage::Ee {
-            xerr!(return Err(ValidationError))
+            return Err(ValidationError)
         }
 
         // 4.8.8.  Subject Information Access. We need the signed object
@@ -354,7 +354,7 @@ impl Cert {
         if self.ca_repository.is_some() || self.rpki_manifest.is_some()
             || self.signed_object.is_none()
         {
-            xerr!(return Err(ValidationError))
+            return Err(ValidationError)
         }
 
         Ok(())
@@ -374,19 +374,19 @@ impl Cert {
 
         // 4.8.1. Basic Constraints: Must not be present.
         if self.basic_ca.is_some(){
-            xerr!(return Err(ValidationError))
+            return Err(ValidationError)
         }
 
         // 4.8.4. Key Usage. Bits for CA or not CA have been checked during
         // parsing already.
         if self.key_usage != KeyUsage::Ee {
-            xerr!(return Err(ValidationError))
+            return Err(ValidationError)
         }
 
         // 4.8.8.  Subject Information Access. We allow the signed object one
         // but not the other ones.
         if self.ca_repository.is_some() || self.rpki_manifest.is_some() {
-            xerr!(return Err(ValidationError))
+            return Err(ValidationError)
         }
 
         Ok(())
@@ -424,12 +424,12 @@ impl Cert {
 
         // 4.7 Subject Public Key Info: limited algorithms.
         if !self.subject_public_key_info().allow_router_cert() {
-            xerr!(return Err(ValidationError))
+            return Err(ValidationError)
         }
 
         // 4.8.1. Basic Constraints. Must not be present.
         if self.basic_ca.is_some(){
-            xerr!(return Err(ValidationError))
+            return Err(ValidationError)
         }
 
         // 4.8.2. Subject Key Identifier. Must be the SHA-1 hash of the octets
@@ -444,7 +444,7 @@ impl Cert {
 
         // 4.8.4. Key Usage. Must be EE.
         if self.key_usage != KeyUsage::Ee {
-            xerr!(return Err(ValidationError))
+            return Err(ValidationError)
         }
 
         // 4.8.5. Extended Key Usage.
@@ -605,7 +605,7 @@ impl Cert {
 
         // 4.7 Subject Public Key Info: limited algorithms.
         if !self.subject_public_key_info().allow_rpki_cert() {
-            xerr!(return Err(ValidationError))
+            return Err(ValidationError)
         }
 
         // 4.8.1. Basic Constraints. Differing requirements for CA and EE
@@ -1277,7 +1277,7 @@ impl TbsCert {
     /// Parses the content of a Certificate sequence.
     pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(|cons| {
             // version [0] EXPLICIT Version DEFAULT v1.
             //  -- we need extensions so apparently, we want v3 which,
@@ -1358,7 +1358,12 @@ impl TbsCert {
                             as_overclaim = Some(m);
                             Self::take_as_resources(content, &mut as_resources)
                         } else if critical {
-                            xerr!(Err(decode::Malformed))
+                            Err(decode::ContentError::malformed(
+                                format!(
+                                    "unexpected critical extension {}",
+                                    id
+                                )
+                            ))
                         } else {
                             // RFC 5280 says we can ignore non-critical
                             // extensions we don’t know of. RFC 6487
@@ -1372,13 +1377,19 @@ impl TbsCert {
             }))?;
 
             if ip_resources.is_none() && as_resources.is_none() {
-                xerr!(return Err(decode::Malformed.into()))
+                return Err(S::Error::malformed(
+                    "both AS and IP resources extensions are missing"
+                ))
             }
             if ip_resources.is_some() && ip_overclaim != overclaim {
-                xerr!(return Err(decode::Malformed.into()))
+                return Err(S::Error::malformed(
+                    "wrong IP resources extension for certificate policy"
+                ))
             }
             if as_resources.is_some() && as_overclaim != overclaim {
-                xerr!(return Err(decode::Malformed.into()))
+                return Err(S::Error::malformed(
+                    "wrong AS resources extension for certificate policy"
+                ))
             }
             let (v4_resources, v6_resources) = match ip_resources {
                 Some(res) => res,
@@ -1402,10 +1413,17 @@ impl TbsCert {
                 subject,
                 subject_public_key_info,
                 basic_ca,
-                subject_key_identifier:
-                    subject_key_id.ok_or(decode::Malformed)?,
+                subject_key_identifier: subject_key_id.ok_or_else(|| {
+                    S::Error::malformed(
+                        "missing Subject Key Identifier extension"
+                    )
+                })?,
                 authority_key_identifier: authority_key_id,
-                key_usage: key_usage.ok_or(decode::Malformed)?,
+                key_usage: key_usage.ok_or_else(|| {
+                    S::Error::malformed(
+                        "missing Key Usage extension"
+                    )
+                })?,
                 extended_key_usage,
                 crl_uri,
                 ca_issuer,
@@ -1413,7 +1431,11 @@ impl TbsCert {
                 rpki_manifest,
                 signed_object,
                 rpki_notify,
-                overclaim: overclaim.ok_or(decode::Malformed)?,
+                overclaim: overclaim.ok_or_else(|| {
+                    S::Error::malformed(
+                        "missing Certificate Policy extenstion"
+                    )
+                })?,
                 v4_resources: v4_resources.unwrap_or_else(
                     IpResources::missing
                 ),
@@ -1448,11 +1470,15 @@ impl TbsCert {
     pub(crate) fn take_basic_constraints<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         basic_ca: &mut Option<bool>,
-    ) -> Result<(), S::Err> {
-        update_once(basic_ca, || {
-            cons.take_sequence(|cons| cons.take_opt_bool())
-                .map(|ca| ca.unwrap_or(false))
-        })
+    ) -> Result<(), S::Error> {
+        update_once(
+            basic_ca,
+            "duplcate Basic Contraints extension",
+            || {
+                cons.take_sequence(|cons| cons.take_opt_bool())
+                    .map(|ca| ca.unwrap_or(false))
+            }
+        )
     }
 
     /// Parses the Subject Key Identifier extension.
@@ -1468,8 +1494,12 @@ impl TbsCert {
     pub(crate) fn take_subject_key_identifier<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         subject_key_id: &mut Option<KeyIdentifier>,
-    ) -> Result<(), S::Err> {
-        update_once(subject_key_id, || KeyIdentifier::take_from(cons))
+    ) -> Result<(), S::Error> {
+        update_once(
+            subject_key_id,
+            "duplicate Subject Key Identifier extension",
+            || KeyIdentifier::take_from(cons)
+        )
     }
 
     /// Parses the Authority Key Identifier extension.
@@ -1487,12 +1517,16 @@ impl TbsCert {
     pub(crate) fn take_authority_key_identifier<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         authority_key_id: &mut Option<KeyIdentifier>,
-    ) -> Result<(), S::Err> {
-        update_once(authority_key_id, || {
-            cons.take_sequence(|cons| {
-                cons.take_value_if(Tag::CTX_0, KeyIdentifier::from_content)
-            })
-        })
+    ) -> Result<(), S::Error> {
+        update_once(
+            authority_key_id,
+            "duplicate Authority Key Identifier extension",
+            || {
+                cons.take_sequence(|cons| {
+                    cons.take_value_if(Tag::CTX_0, KeyIdentifier::from_content)
+                })
+            }
+        )
     }
 
     /// Parses the Key Usage extension.
@@ -1509,6 +1543,7 @@ impl TbsCert {
     ///      cRLSign                 (6),
     ///      encipherOnly            (7),
     ///      decipherOnly            (8) }
+    /// ```
     ///
     /// Must be present. In CA certificates, keyCertSign and
     /// CRLSign must be set, in EE certificates, digitalSignatures must be
@@ -1516,19 +1551,23 @@ impl TbsCert {
     pub(crate) fn take_key_usage<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         key_usage: &mut Option<KeyUsage>
-    ) -> Result<(), S::Err> {
-        update_once(key_usage, || {
-            let bits = BitString::take_from(cons)?;
-            if bits.bit(5) && bits.bit(6) {
-                Ok(KeyUsage::Ca)
+    ) -> Result<(), S::Error> {
+        update_once(
+            key_usage,
+            "duplicate Key Usage extension",
+            || {
+                let bits = BitString::take_from(cons)?;
+                if bits.bit(5) && bits.bit(6) {
+                    Ok(KeyUsage::Ca)
+                }
+                else if bits.bit(0) {
+                    Ok(KeyUsage::Ee)
+                }
+                else {
+                    Err(S::Error::malformed("invalid Key Usage"))
+                }
             }
-            else if bits.bit(0) {
-                Ok(KeyUsage::Ee)
-            }
-            else {
-                Err(decode::Malformed.into())
-            }
-        })
+        )
     }
 
     /// Parses the Extended Key Usage extension.
@@ -1542,10 +1581,14 @@ impl TbsCert {
     pub(crate) fn take_extended_key_usage<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         extended_key_usage: &mut Option<ExtendedKeyUsage>
-    ) -> Result<(), S::Err> {
-        update_once(extended_key_usage, || {
-            ExtendedKeyUsage::take_from(cons)
-        })
+    ) -> Result<(), S::Error> {
+        update_once(
+            extended_key_usage,
+            "duplicate Extended Key Usage extension",
+            || {
+                ExtendedKeyUsage::take_from(cons)
+            }
+        )
     }
 
     /// Parses the CRL Distribution Points extension.
@@ -1572,25 +1615,32 @@ impl TbsCert {
     fn take_crl_distribution_points<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         crl_uri: &mut Option<uri::Rsync>
-    ) -> Result<(), S::Err> {
-        update_once(crl_uri, || {
-            // CRLDistributionPoints
-            cons.take_sequence(|cons| {
-                // DistributionPoint
+    ) -> Result<(), S::Error> {
+        update_once(
+            crl_uri,
+            "duplicate CRL Distribution Points extension",
+            || {
+                // CRLDistributionPoints
                 cons.take_sequence(|cons| {
-                    // distributionPoint
-                    cons.take_constructed_if(Tag::CTX_0, |cons| {
-                        // fullName
+                    // DistributionPoint
+                    cons.take_sequence(|cons| {
+                        // distributionPoint
                         cons.take_constructed_if(Tag::CTX_0, |cons| {
-                            // GeneralNames content
-                            take_general_names_content(
-                                cons, uri::Rsync::from_bytes
-                            )
+                            // fullName
+                            cons.take_constructed_if(Tag::CTX_0, |cons| {
+                                // GeneralNames content
+                                take_general_names_content(
+                                    cons,
+                                    "invalid CRL Distribution Points \
+                                     extension",
+                                    uri::Rsync::from_bytes,
+                                )
+                            })
                         })
                     })
                 })
-            })
-        })
+            }
+        )
     }
 
     /// Parses the Authority Information Access extension.
@@ -1611,15 +1661,23 @@ impl TbsCert {
     fn take_authority_info_access<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         ca_issuer: &mut Option<uri::Rsync>
-    ) -> Result<(), S::Err> {
-        update_once(ca_issuer, || {
-            cons.take_sequence(|cons| {
+    ) -> Result<(), S::Error> {
+        update_once(
+            ca_issuer,
+            "duplicate Authority Information Access extension",
+            || {
                 cons.take_sequence(|cons| {
-                    oid::AD_CA_ISSUERS.skip_if(cons)?;
-                    take_general_names_content(cons, uri::Rsync::from_bytes)
+                    cons.take_sequence(|cons| {
+                        oid::AD_CA_ISSUERS.skip_if(cons)?;
+                        take_general_names_content(
+                            cons,
+                            "invalid Authority Information Access extension",
+                            uri::Rsync::from_bytes,
+                        )
+                    })
                 })
-            })
-        })
+            }
+        )
     }
 
     /// Parses the Subject Information Access extension.
@@ -1650,53 +1708,57 @@ impl TbsCert {
     pub(crate) fn take_subject_info_access<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         sia: &mut Option<Sia>,
-    ) -> Result<(), S::Err> {
-        update_once(sia, || {
-            let mut sia = Sia::default();
-            let mut others_seen = false;
-            cons.take_sequence(|cons| {
-                while let Some(()) = cons.take_opt_sequence(|cons| {
-                    let oid = Oid::take_from(cons)?;
-                    if oid == oid::AD_CA_REPOSITORY {
-                        update_first(&mut sia.ca_repository, || {
-                            take_general_name(
-                                cons, uri::Rsync::from_bytes
-                            )
-                        })
-                    }
-                    else if oid == oid::AD_RPKI_MANIFEST {
-                        update_first(&mut sia.rpki_manifest, || {
-                            take_general_name(
-                                cons, uri::Rsync::from_bytes
-                            )
-                        })
-                    }
-                    else if oid == oid::AD_SIGNED_OBJECT {
-                        update_first(&mut sia.signed_object, || {
-                            take_general_name(
-                                cons, uri::Rsync::from_bytes
-                            )
-                        })
-                    }
-                    else if oid == oid::AD_RPKI_NOTIFY {
-                        update_first(&mut sia.rpki_notify, || {
-                            take_general_name(
-                                cons, uri::Https::from_bytes
-                            )
-                        })
-                    }
-                    else {
-                        others_seen = true;
-                        // XXX Presumably it is fine to just skip over these
-                        //     things. Since this is DER, it can’t be tricked
-                        //     into reading forever.
-                        cons.skip_all()
-                    }
-                })? { }
-                Ok(())
-            })?;
-            Ok(sia)
-        })
+    ) -> Result<(), S::Error> {
+        update_once(
+            sia,
+            "duplicate Subject Key Identifier extension",
+            || {
+                let mut sia = Sia::default();
+                let mut others_seen = false;
+                cons.take_sequence(|cons| {
+                    while let Some(()) = cons.take_opt_sequence(|cons| {
+                        let oid = Oid::take_from(cons)?;
+                        if oid == oid::AD_CA_REPOSITORY {
+                            update_first(&mut sia.ca_repository, || {
+                                take_general_name(
+                                    cons, uri::Rsync::from_bytes
+                                )
+                            })
+                        }
+                        else if oid == oid::AD_RPKI_MANIFEST {
+                            update_first(&mut sia.rpki_manifest, || {
+                                take_general_name(
+                                    cons, uri::Rsync::from_bytes
+                                )
+                            })
+                        }
+                        else if oid == oid::AD_SIGNED_OBJECT {
+                            update_first(&mut sia.signed_object, || {
+                                take_general_name(
+                                    cons, uri::Rsync::from_bytes
+                                )
+                            })
+                        }
+                        else if oid == oid::AD_RPKI_NOTIFY {
+                            update_first(&mut sia.rpki_notify, || {
+                                take_general_name(
+                                    cons, uri::Https::from_bytes
+                                )
+                            })
+                        }
+                        else {
+                            others_seen = true;
+                            // XXX Presumably it is fine to just skip over
+                            //     these things. Since this is DER, it can’t
+                            //     be tricked into reading forever.
+                            cons.skip_all()
+                        }
+                    })? { }
+                    Ok(())
+                })?;
+                Ok(sia)
+            }
+        )
     }
 
     /// Parses the Certificate Policies extension.
@@ -1720,37 +1782,50 @@ impl TbsCert {
     fn take_certificate_policies<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         overclaim: &mut Option<Overclaim>,
-    ) -> Result<(), S::Err> {
-        update_once(overclaim, || {
-            cons.take_sequence(|cons| {
+    ) -> Result<(), S::Error> {
+        update_once(
+            overclaim,
+            "duplicate Certificate Policies extension",
+            || {
                 cons.take_sequence(|cons| {
-                    let res = Overclaim::from_policy(&Oid::take_from(cons)?)?;
-                    // policyQualifiers. This is a sequence of sequences with
-                    // stuff we don’t really care about. Let’s skip all the
-                    // rest.
-                    cons.skip_all()?;
-                    Ok(res)
+                    cons.take_sequence(|cons| {
+                        let res = Overclaim::from_policy::<S>(
+                            &Oid::take_from(cons)?
+                        )?;
+
+                        // policyQualifiers. This is a sequence of sequences
+                        // with stuff we don’t really care about. Let’s skip
+                        // all the rest.
+                        cons.skip_all()?;
+                        Ok(res)
+                    })
                 })
-            })
-        })
+            }
+        )
     }
 
     /// Parses the IP Resources extension.
     fn take_ip_resources<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         ip_resources: &mut Option<(Option<IpResources>, Option<IpResources>)>
-    ) -> Result<(), S::Err> {
-        update_once(ip_resources, || IpResources::take_families_from(cons))
+    ) -> Result<(), S::Error> {
+        update_once(
+            ip_resources,
+            "duplicate IP Resources extension",
+            || IpResources::take_families_from(cons)
+        )
     }
 
     /// Parses the AS Resources extension.
     fn take_as_resources<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         as_resources: &mut Option<AsResources>
-    ) -> Result<(), S::Err> {
-        update_once(as_resources, || {
-            AsResources::take_from(cons)
-        })
+    ) -> Result<(), S::Error> {
+        update_once(
+            as_resources,
+            "duplicate AS Resources extension",
+            || AsResources::take_from(cons)
+        )
     }
 
     /// Returns an encoder for the value.
@@ -1914,15 +1989,16 @@ impl TbsCert {
 /// where the closure returns successfully, that’s an error, too.
 fn take_general_names_content<S: decode::Source, F, T, E>(
     cons: &mut decode::Constructed<S>,
+    error_msg: &'static str,
     mut op: F
-) -> Result<T, S::Err>
+) -> Result<T, S::Error>
 where F: FnMut(Bytes) -> Result<T, E> {
     let mut res = None;
     while let Some(()) = cons.take_opt_value_if(Tag::CTX_6, |content| {
         let uri = Ia5String::from_content(content)?;
         if let Ok(uri) = op(uri.into_bytes()) {
             if res.is_some() {
-                xerr!(return Err(decode::Malformed.into()))
+                return Err(S::Error::malformed(error_msg))
             }
             res = Some(uri)
         }
@@ -1930,14 +2006,14 @@ where F: FnMut(Bytes) -> Result<T, E> {
     })? {}
     match res {
         Some(res) => Ok(res),
-        None => xerr!(Err(decode::Malformed.into()))
+        None => Err(S::Error::malformed(error_msg))
     }
 }
 
 fn take_general_name<S: decode::Source, F, T, E>(
     cons: &mut decode::Constructed<S>,
     mut op: F
-) -> Result<Option<T>, S::Err>
+) -> Result<Option<T>, S::Error>
 where F: FnMut(Bytes) -> Result<T, E> {
     cons.take_value_if(Tag::CTX_6, |content| {
         Ia5String::from_content(content).map(|uri| {
@@ -2081,7 +2157,7 @@ pub struct ExtendedKeyUsage(Captured);
 impl ExtendedKeyUsage {
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         let res = cons.take_sequence(|c| c.capture_all())?;
         res.clone().decode(|cons| {
             Oid::skip_in(cons)?;
@@ -2141,7 +2217,9 @@ pub enum Overclaim {
 }
 
 impl Overclaim {
-    fn from_policy(oid: &Oid) -> Result<Self, decode::Error> {
+    fn from_policy<S: decode::Source>(
+        oid: &Oid
+    ) -> Result<Self, S::Error> {
         if oid == &oid::CP_IPADDR_ASNUMBER {
             Ok(Overclaim::Refuse)
         }
@@ -2149,7 +2227,7 @@ impl Overclaim {
             Ok(Overclaim::Trim)
         }
         else {
-            xerr!(Err(decode::Malformed))
+            Err(S::Error::malformed("invalid Certificate Policy identifier"))
         }
     }
 

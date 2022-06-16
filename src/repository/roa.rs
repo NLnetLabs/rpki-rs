@@ -4,7 +4,8 @@
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use bcder::{decode, encode};
-use bcder::{Captured, Mode, OctetString, Oid, Tag, xerr};
+use bcder::{Captured, Mode, OctetString, Oid, Tag};
+use bcder::decode::Error as _;
 use bcder::encode::{PrimitiveContent, Values};
 use crate::oid;
 use crate::crypto::{Signer, SigningError};
@@ -26,10 +27,10 @@ impl Roa {
     pub fn decode<S: decode::Source>(
         source: S,
         strict: bool
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         let signed = SignedObject::decode(source, strict)?;
         if signed.content_type().ne(&oid::ROUTE_ORIGIN_AUTHZ) {
-            return Err(decode::Malformed.into())
+            return Err(S::Error::malformed("content type mismatch"))
         }
         let content = signed.decode_content(|cons| {
             RouteOriginAttestation::take_from(cons)
@@ -158,7 +159,7 @@ impl RouteOriginAttestation {
 impl RouteOriginAttestation {
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(|cons| {
             // version [0] EXPLICIT INTEGER DEFAULT 0
             cons.take_opt_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(0))?;
@@ -170,7 +171,9 @@ impl RouteOriginAttestation {
                     match AddressFamily::take_from(cons)? {
                         AddressFamily::Ipv4 => {
                             if v4.is_some() {
-                                xerr!(return Err(decode::Malformed.into()));
+                                return Err(S::Error::malformed(
+                                    "multiple IPv4 blocks in ROA prefixes"
+                                ));
                             }
                             v4 = Some(RoaIpAddresses::take_from(
                                 cons, AddressFamily::Ipv4
@@ -178,7 +181,9 @@ impl RouteOriginAttestation {
                         }
                         AddressFamily::Ipv6 => {
                             if v6.is_some() {
-                                xerr!(return Err(decode::Malformed.into()));
+                                return Err(S::Error::malformed(
+                                    "multiple IPv6 blocks in ROA prefixes"
+                                ));
                             }
                             v6 = Some(RoaIpAddresses::take_from(
                                 cons, AddressFamily::Ipv6
@@ -255,7 +260,7 @@ impl RoaIpAddresses {
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         family: AddressFamily,
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(|cons| {
             cons.capture(|cons| {
                 while RoaIpAddress::skip_opt_in(cons, family)?.is_some() { }
@@ -353,7 +358,7 @@ impl RoaIpAddress {
 
     fn take_opt_from_unchecked<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Err> {
+    ) -> Result<Option<Self>, S::Error> {
         cons.take_opt_sequence(|cons| {
             Ok(RoaIpAddress {
                 prefix: Prefix::take_from(cons)?,
@@ -369,7 +374,7 @@ impl RoaIpAddress {
     fn skip_opt_in<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         family: AddressFamily,
-    ) -> Result<Option<()>, S::Err> {
+    ) -> Result<Option<()>, S::Error> {
         let addr = match Self::take_opt_from_unchecked(cons)? {
             Some(addr) => addr,
             None => return Ok(None)
@@ -377,7 +382,9 @@ impl RoaIpAddress {
 
         // Check that the prefix length fits the address family.
         if addr.prefix.addr_len() > family.max_addr_len() {
-            return Err(decode::Malformed.into())
+            return Err(S::Error::malformed(
+                "prefix length too large in ROA prefix"
+            ))
         }
 
         // Check that a max length fits both family and prefix length.
@@ -385,7 +392,9 @@ impl RoaIpAddress {
             if max_length > family.max_addr_len() 
                 || max_length < addr.prefix.addr_len()
             {
-                return Err(decode::Malformed.into())
+                return Err(S::Error::malformed(
+                    "max length too large in ROA prefix"
+                ))
             }
         }
 

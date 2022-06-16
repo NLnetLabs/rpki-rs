@@ -18,7 +18,8 @@ use std::ops;
 use std::collections::HashSet;
 use std::str::FromStr;
 use bcder::{decode, encode};
-use bcder::{Captured, Mode, OctetString, Oid, Tag, xerr};
+use bcder::{Captured, Mode, OctetString, Oid, Tag};
+use bcder::decode::Error as _;
 use bcder::encode::PrimitiveContent;
 use crate::{oid, uri};
 use crate::crypto::{
@@ -90,28 +91,28 @@ impl Crl {
 ///
 impl Crl {
     /// Parses a source as a certificate revocation list.
-    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
+    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Error> {
         Mode::Der.decode(source, Self::take_from)
     }
 
     /// Takes an encoded CRL from the beginning of a constructed value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(Self::from_constructed)
     }
 
     /// Takes an encoded CRL from the beginning of a constructed value.
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Err> {
+    ) -> Result<Option<Self>, S::Error> {
         cons.take_opt_sequence(Self::from_constructed)
     }
 
     /// Parses the content of a certificate revocation list.
     pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         let signed_data = SignedData::from_constructed(cons)?;
         let tbs = signed_data.data().clone().decode(TbsCertList::take_from)?;
         Ok(Self { signed_data, tbs, serials: None })
@@ -353,7 +354,7 @@ impl TbsCertList<RevokedCertificates> {
     /// Takes a value from the beginning of a encoded constructed value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(|cons| {
             // version. Technically it is optional but we need v2, so it must
             // actually be there. v2 is encoded as an integer of value 1.
@@ -386,15 +387,23 @@ impl TbsCertList<RevokedCertificates> {
                                 // RFC 6487 says that no other extensions are
                                 // allowed. So we fail even if there is only
                                 // non-critical extension.
-                                xerr!(Err(decode::Malformed))
+                                Err(decode::ContentError::malformed(
+                                    format!("invalid extension {}", id)
+                                ))
                             }
                         }).map_err(Into::into)
                     })? { }
                     Ok(())
                 })
             })?;
-            let authority_key_id = authority_key_id.ok_or(decode::Malformed)?;
-            let crl_number = crl_number.ok_or(decode::Malformed)?;
+            let authority_key_id = authority_key_id.ok_or_else(|| {
+                S::Error::malformed(
+                    "missing Authority Key Identifier extension"
+                )
+            })?;
+            let crl_number = crl_number.ok_or_else(|| {
+                S::Error::malformed("missing CRL Number extension")
+            })?;
             Ok(Self {
                 signature,
                 issuer,
@@ -411,22 +420,28 @@ impl TbsCertList<RevokedCertificates> {
     fn take_authority_key_identifier<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         authority_key_id: &mut Option<KeyIdentifier>,
-    ) -> Result<(), S::Err> {
-        update_once(authority_key_id, || {
-            cons.take_sequence(|cons| {
-                cons.take_value_if(Tag::CTX_0, KeyIdentifier::from_content)
-            })
-        })
+    ) -> Result<(), S::Error> {
+        update_once(
+            authority_key_id,
+            "duplicate Authority Key Identifier extension",
+            || {
+                cons.take_sequence(|cons| {
+                    cons.take_value_if(Tag::CTX_0, KeyIdentifier::from_content)
+                })
+            }
+        )
     }
 
     /// Parses the CRL Number extension.
     fn take_crl_number<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         crl_number: &mut Option<Serial>,
-    ) -> Result<(), S::Err> {
-        update_once(crl_number, || {
-            Serial::take_from(cons)
-        })
+    ) -> Result<(), S::Error> {
+        update_once(
+            crl_number,
+            "duplicate CRL Number extension",
+            || Serial::take_from(cons)
+        )
     }
 
     /// Returns a value encoder for a reference to this value.
@@ -497,7 +512,7 @@ impl RevokedCertificates {
     /// Takes a revoked certificates list from the beginning of a value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         let res = cons.take_opt_sequence(|cons| {
             cons.capture(|cons| {
                 while CrlEntry::take_opt_from(cons)?.is_some() { }
@@ -589,21 +604,21 @@ impl CrlEntry {
     /// Takes a single CRL entry from the beginning of a constructed value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(Self::from_constructed)
     }
 
     /// Takes an optional CRL entry from the beginning of a contructed value.
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Err> {
+    ) -> Result<Option<Self>, S::Error> {
         cons.take_opt_sequence(Self::from_constructed)
     }
 
     /// Parses the content of a CRL entry.
     pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         Ok(CrlEntry {
             user_certificate: Serial::take_from(cons)?,
             revocation_date: Time::take_from(cons)?,

@@ -11,6 +11,7 @@ use std::fmt;
 use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, Oid, Tag};
+use bcder::decode::Error as _;
 use bcder::encode::Values;
 use crate::oid;
 use crate::crypto::{Signer, SigningError};
@@ -33,10 +34,10 @@ impl Aspa {
     pub fn decode<S: decode::Source>(
         source: S,
         strict: bool
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         let signed = SignedObject::decode(source, strict)?;
         if signed.content_type().ne(&oid::CT_ASPA) {
-            return Err(decode::Malformed.into())
+            return Err(S::Error::malformed("invalid content type"))
         }
         let content = signed.decode_content(|cons| {
             AsProviderAttestation::take_from(cons)
@@ -113,7 +114,7 @@ pub struct AsProviderAttestation {
 impl AsProviderAttestation {
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         // version [0] EXPLICIT INTEGER DEFAULT 0
         cons.take_opt_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(0))?;
                 
@@ -172,7 +173,7 @@ impl ProviderAsSet {
 
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(|cons| {
             cons.capture(|cons| {
                 let mut last: Option<Asn> = None;
@@ -184,7 +185,9 @@ impl ProviderAsSet {
                         let current_as_id = provider_as.provider();
                         if let Some(last_as_id) = last {
                             if last_as_id >= current_as_id {
-                                return Err(decode::Malformed.into());
+                                return Err(S::Error::malformed(
+                                    "provider AS set not in order"
+                                ));
                             }
                         }
                         last = Some(provider_as.provider());
@@ -264,7 +267,7 @@ impl ProviderAs {
     /// Takes an optional ProviderAS from the beginning of an encoded value.
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Err> {
+    ) -> Result<Option<Self>, S::Error> {
         cons.take_opt_sequence(|cons|{
             let provider = Asn::take_from(cons)?;
             let afi_limit = AddressFamily::take_opt_from(cons)?;
@@ -275,7 +278,7 @@ impl ProviderAs {
     /// Skips over a ProviderAs if it is present.
     pub fn skip_opt_in<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<()>, S::Err> {
+    ) -> Result<Option<()>, S::Error> {
         Self::take_opt_from(cons).map(|opt| opt.map(|_| ()))
     }
 

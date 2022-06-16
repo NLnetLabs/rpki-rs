@@ -274,7 +274,7 @@ pub enum ReadError {
     UnexpectedEof,
     BadUri(uri::Error),
     BadKeyInfoEncoding(base64::DecodeError),
-    BadKeyInfo(decode::Error),
+    BadKeyInfo(decode::ContentError),
 }
 
 impl From<io::Error> for ReadError {
@@ -295,8 +295,8 @@ impl From<base64::DecodeError> for ReadError {
     }
 }
 
-impl From<decode::Error> for ReadError {
-    fn from(err: decode::Error) -> ReadError {
+impl From<decode::ContentError> for ReadError {
+    fn from(err: decode::ContentError) -> ReadError {
         ReadError::BadKeyInfo(err)
     }
 }

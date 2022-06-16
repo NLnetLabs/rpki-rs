@@ -13,8 +13,9 @@
 use std::{borrow, ops};
 use bcder::{decode, encode};
 use bcder::{
-    BitString, Captured, Ia5String, Mode, OctetString, Oid, Tag, xerr
+    BitString, Captured, Ia5String, Mode, OctetString, Oid, Tag,
 };
+use bcder::decode::Error as _;
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use crate::{oid, uri};
@@ -42,10 +43,10 @@ impl Manifest {
     pub fn decode<S: decode::Source>(
         source: S,
         strict: bool
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         let signed = SignedObject::decode(source, strict)?;
         if signed.content_type().ne(&oid::CT_RPKI_MANIFEST) {
-            return Err(decode::Malformed.into())
+            return Err(S::Error::malformed("content type mismatch"))
         }
         let content = signed.decode_content(
             |cons| ManifestContent::take_from(cons)
@@ -322,7 +323,7 @@ impl ManifestContent {
     /// Takes the content from the beginning of an encoded constructed value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(|cons| {
             cons.take_opt_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(0))?;
             let manifest_number = Serial::take_from(cons)?;
@@ -330,7 +331,9 @@ impl ManifestContent {
             let next_update = Time::take_from(cons)?;
             let file_hash_alg = DigestAlgorithm::take_oid_from(cons)?;
             if this_update > next_update {
-                xerr!(return Err(decode::Malformed.into()));
+                return Err(S::Error::malformed(
+                    "thisUpdate after nextUpdate"
+                ));
             }
 
             let mut len = 0;
@@ -432,7 +435,7 @@ impl FileAndHash<Bytes, Bytes> {
     /// Skips over an optional value in a constructed value.
     fn skip_opt_in<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<()>, S::Err> {
+    ) -> Result<Option<()>, S::Error> {
         cons.take_opt_sequence(|cons| {
             cons.take_value_if(
                 Tag::IA5_STRING,
@@ -446,7 +449,7 @@ impl FileAndHash<Bytes, Bytes> {
     /// Takes an optional value from the beginning of a constructed value.
     fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Err> {
+    ) -> Result<Option<Self>, S::Error> {
         cons.take_opt_sequence(|cons| {
             Ok(FileAndHash {
                 file: Ia5String::take_from(cons)?.into_bytes(),

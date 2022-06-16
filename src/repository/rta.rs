@@ -14,9 +14,9 @@
 use std::ops;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Tag};
+use bcder::decode::Error as _;
 use bcder::encode::{PrimitiveContent, Values};
 use bcder::string::OctetStringSource;
-use bcder::xerr;
 use bytes::Bytes;
 use crate::oid;
 use crate::crypto:: {
@@ -49,7 +49,7 @@ impl Rta {
 
     pub fn decode<S: decode::Source>(
         source: S, strict: bool
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         let signed = MultiSignedObject::decode(source, strict)?;
         let content = signed.decode_content(|cons| {
             ResourceTaggedAttestation::take_from(cons)
@@ -135,7 +135,7 @@ impl ResourceTaggedAttestation {
 impl ResourceTaggedAttestation {
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(|cons| {
             cons.take_opt_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(0))?;
             let subject_keys = Self::take_subject_keys_from(cons)?;
@@ -155,7 +155,7 @@ impl ResourceTaggedAttestation {
 
     fn take_subject_keys_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Vec<KeyIdentifier>, S::Err> {
+    ) -> Result<Vec<KeyIdentifier>, S::Error> {
         cons.take_set(|cons| {
             let mut res = Vec::new();
             while let Some(id) = KeyIdentifier::take_opt_from(cons)? {
@@ -167,7 +167,7 @@ impl ResourceTaggedAttestation {
 
     fn take_resources_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<(IpBlocks, IpBlocks, AsBlocks), S::Err> {
+    ) -> Result<(IpBlocks, IpBlocks, AsBlocks), S::Error> {
         cons.take_sequence(|cons| {
             let asres = cons.take_opt_constructed_if(Tag::CTX_0, |cons| {
                 AsBlocks::take_from(cons)
@@ -181,7 +181,9 @@ impl ResourceTaggedAttestation {
                         match AddressFamily::take_from(cons)? {
                             AddressFamily::Ipv4 => {
                                 if v4.is_some() {
-                                    xerr!(return Err(decode::Malformed.into()));
+                                    return Err(S::Error::malformed(
+                                        "multiple IPv4 blocks in RTA prefixes"
+                                    ));
                                 }
                                 v4 = Some(IpBlocks::take_from_with_family(
                                     cons, AddressFamily::Ipv4
@@ -189,7 +191,9 @@ impl ResourceTaggedAttestation {
                             }
                             AddressFamily::Ipv6 => {
                                 if v6.is_some() {
-                                    xerr!(return Err(decode::Malformed.into()));
+                                    return Err(S::Error::malformed(
+                                        "multiple IPv6 blocks in RTA prefixes"
+                                    ));
                                 }
                                 v6 = Some(IpBlocks::take_from_with_family(
                                     cons, AddressFamily::Ipv6
@@ -203,7 +207,7 @@ impl ResourceTaggedAttestation {
             })?;
 
             if asres.is_none() && v4.is_none() && v6.is_none() {
-                xerr!(return Err(decode::Malformed.into()));
+                return Err(S::Error::malformed("no resources in RTA"));
             }
             Ok((
                 v4.unwrap_or_default(),
@@ -280,9 +284,12 @@ impl MultiSignedObject {
     }
 
     /// Decodes the object’s content.
-    pub fn decode_content<F, T>(&self, op: F) -> Result<T, decode::Error>
-    where F: FnOnce(&mut decode::Constructed<OctetStringSource>)
-                    -> Result<T, decode::Error> {
+    pub fn decode_content<F, T>(
+        &self, op: F
+    ) -> Result<T, <OctetStringSource as decode::Source>::Error>
+    where F: FnOnce(
+        &mut decode::Constructed<OctetStringSource>
+    ) -> Result<T, <OctetStringSource as decode::Source>::Error> {
         Mode::Der.decode(self.content.to_source(), op)
     }
 }
@@ -290,13 +297,13 @@ impl MultiSignedObject {
 impl MultiSignedObject {
     pub fn decode<S: decode::Source>(
         source: S, strict: bool
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         Mode::Der.decode(source, |cons| Self::take_from(cons, strict))
     }
 
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>, strict: bool
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(|cons| {
             oid::SIGNED_DATA.skip_if(cons)?; // contentType
             cons.take_constructed_if(Tag::CTX_0, |cons| { // content
@@ -330,7 +337,7 @@ impl MultiSignedObject {
 
     fn take_certificates<S: decode::Source>(
         cons: &mut decode::Constructed<S>, _strict: bool
-    ) -> Result<Vec<Cert>, S::Err> {
+    ) -> Result<Vec<Cert>, S::Error> {
         cons.take_constructed_if(Tag::CTX_0, |cons| {
             let mut certificates = Vec::new();
             while let Some(cert) = Cert::take_opt_from(cons)? {
@@ -342,7 +349,7 @@ impl MultiSignedObject {
 
     fn take_crls<S: decode::Source>(
         cons: &mut decode::Constructed<S>, _strict: bool
-    ) -> Result<Vec<Crl>, S::Err> {
+    ) -> Result<Vec<Crl>, S::Error> {
         cons.take_opt_constructed_if(Tag::CTX_1, |cons| {
             let mut crls = Vec::new();
             while let Some(crl) = Crl::take_opt_from(cons)? {
@@ -354,7 +361,7 @@ impl MultiSignedObject {
 
     fn take_signer_infos<S: decode::Source>(
         cons: &mut decode::Constructed<S>, _strict: bool
-    ) -> Result<Vec<SignerInfo>, S::Err> {
+    ) -> Result<Vec<SignerInfo>, S::Error> {
         cons.take_set(|cons| {
             let mut infos = Vec::new();
             while let Some(info) = SignerInfo::take_opt_from(cons)? {
@@ -435,7 +442,7 @@ impl SignerInfo {
 
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
-    ) -> Result<Option<Self>, S::Err> {
+    ) -> Result<Option<Self>, S::Error> {
         cons.take_opt_sequence(|cons| {
             cons.skip_u8_if(3)?;
             let sid = cons.take_value_if(
@@ -446,7 +453,9 @@ impl SignerInfo {
             let alg = DigestAlgorithm::take_from(cons)?;
             let attrs = SignedAttrs::take_from(cons)?;
             if attrs.2 != oid::CT_RESOURCE_TAGGED_ATTESTATION {
-                return Err(decode::Malformed.into())
+                return Err(S::Error::malformed(
+                    "content type in signed attributes differs"
+                ))
             }
             let signature = RpkiSignature::new(
                 RpkiSignatureAlgorithm::cms_take_from(cons)?,
@@ -550,17 +559,17 @@ impl<'a> Validation<'a> {
 
         // All subject keys need to have been used.
         if keys.iter().any(|item| item.is_some()) {
-            xerr!(return Err(ValidationError))
+            return Err(ValidationError)
         }
 
         // All CRLs need to have been used.
         if crls.iter().any(|item| item.is_some()) {
-            xerr!(return Err(ValidationError))
+            return Err(ValidationError)
         }
 
         // All EE certificates have to have been used.
         if ees.iter().any(|item| item.is_some()) {
-            xerr!(return Err(ValidationError))
+            return Err(ValidationError)
         }
 
         // Create the object and advance the chains using the CA certificates
@@ -570,7 +579,7 @@ impl<'a> Validation<'a> {
 
         // All the CA certificates have to have been used.
         if cas.iter().any(|item| !item.used) {
-            xerr!(return Err(ValidationError))
+            return Err(ValidationError)
         }
 
         // Hurray!
@@ -711,12 +720,12 @@ impl<'a> Chain<'a> {
         // Find and removed sid in keys.
         match keys.iter_mut().find(|item| **item == Some(info.sid)) {
             Some(item) => *item = None,
-            None => xerr!(return Err(ValidationError))
+            None => return Err(ValidationError)
         }
 
         // Verify the message digest attribute
         if digest.as_ref() != info.message_digest.as_ref() {
-            return xerr!(Err(ValidationError))
+            return Err(ValidationError)
         }
 
         // Find th EE cert that signed this signer info.
@@ -752,7 +761,7 @@ impl<'a> Chain<'a> {
             }
 
         }
-        xerr!(Err(ValidationError))
+        Err(ValidationError)
     }
 
     //--- advance and helpers
@@ -797,7 +806,7 @@ impl<'a> Chain<'a> {
             return Ok(Some(ca))
         }
         if found {
-            xerr!(Err(ValidationError))
+            Err(ValidationError)
         }
         else {
             Ok(None)
@@ -807,7 +816,7 @@ impl<'a> Chain<'a> {
     fn apply_ca(&mut self, ca: &Ca<'a>) -> Result<(), ValidationError> {
         // Check that our cert hasn’t been revoked.
         if ca.crl.contains(self.cert.serial_number()) {
-            xerr!(return Err(ValidationError))
+            return Err(ValidationError)
         }
 
         // Check if the CA allows us to have our resources.

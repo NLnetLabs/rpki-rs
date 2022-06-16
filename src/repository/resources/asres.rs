@@ -18,7 +18,8 @@ use std::cmp::Ordering;
 use std::iter::FromIterator;
 use std::str::FromStr;
 use bcder::{decode, encode};
-use bcder::{Tag, xerr};
+use bcder::Tag;
+use bcder::decode::Error as _;
 use bcder::encode::{PrimitiveContent, Nothing};
 use routecore::asn::ParseAsnError;
 use super::super::cert::Overclaim;
@@ -131,7 +132,7 @@ impl AsResources {
     /// [RFC 6487]: https://tools.ietf.org/html/rfc6487
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(|cons| {
             cons.take_constructed_if(Tag::CTX_0, |cons| {
                 cons.take_value(|tag, content| {
@@ -144,7 +145,7 @@ impl AsResources {
                             .map(ResourcesChoice::Blocks)
                     }
                     else {
-                        xerr!(Err(decode::Error::Malformed.into()))
+                        Err(S::Error::malformed("invalid AS resources"))
                     }
                 })
             })
@@ -426,21 +427,21 @@ impl AsBlocks {
 impl AsBlocks {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(Self::parse_cons_content)
     }
 
     /// Parses the content of a AS ID blocks sequence.
     fn parse_content<S: decode::Source>(
         content: &mut decode::Content<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         let cons = content.as_constructed()?;
         Self::parse_cons_content(cons)
     }
 
     fn parse_cons_content<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         let mut err = None;
 
         let res = iter::repeat_with(||
@@ -671,7 +672,7 @@ impl AsBlock {
     /// Takes an optional AS bock from the beginning of an encoded value.
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Err> {
+    ) -> Result<Option<Self>, S::Error> {
         cons.take_opt_value(|tag, content| {
             if tag == Tag::INTEGER {
                 Asn::parse_content(content).map(AsBlock::Id)
@@ -680,7 +681,7 @@ impl AsBlock {
                 AsRange::parse_content(content).map(AsBlock::Range)
             }
             else {
-                xerr!(Err(decode::Error::Malformed.into()))
+                Err(S::Error::malformed("invalid AS resources"))
             }
         })
     }
@@ -688,7 +689,7 @@ impl AsBlock {
     /// Skips over the AS block at the beginning of an encoded value.
     pub fn skip_opt_in<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<()>, S::Err> {
+    ) -> Result<Option<()>, S::Error> {
         cons.take_opt_value(|tag, content| {
             if tag == Tag::INTEGER {
                 Asn::skip_content(content)
@@ -697,7 +698,7 @@ impl AsBlock {
                 AsRange::skip_content(content)
             }
             else {
-                xerr!(Err(decode::Error::Malformed.into()))
+                Err(S::Error::malformed("invalid AS resources"))
             }
         })
     }
@@ -893,7 +894,7 @@ impl AsRange {
     /// Parses the content of an AS range value.
     fn parse_content<S: decode::Source>(
         content: &mut decode::Content<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         let cons = content.as_constructed()?;
         Ok(AsRange {
             min: Asn::take_from(cons)?,
@@ -904,7 +905,7 @@ impl AsRange {
     /// Skips over the content of an AS range value.
     fn skip_content<S: decode::Source>(
         content: &mut decode::Content<S>
-    ) -> Result<(), S::Err> {
+    ) -> Result<(), S::Error> {
         let cons = content.as_constructed()?;
         Asn::skip_in(cons)?;
         Asn::skip_in(cons)?;

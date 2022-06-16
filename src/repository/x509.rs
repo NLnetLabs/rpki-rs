@@ -6,10 +6,10 @@ use std::str::FromStr;
 use std::time::SystemTime;
 use bcder::{decode, encode};
 use bcder::{
-    BitString, Captured, ConstOid, Mode, OctetString, Oid, Tag, Unsigned, xerr
+    BitString, Captured, ConstOid, Mode, OctetString, Oid, Tag, Unsigned,
 };
 use bcder::string::{PrintableString, Utf8String};
-use bcder::decode::Source;
+use bcder::decode::{Error as _, Source};
 use bcder::encode::PrimitiveContent;
 use chrono::{
     Datelike, DateTime, Duration, LocalResult, Timelike, TimeZone, Utc
@@ -26,10 +26,17 @@ use crate::crypto::{
 /// Updates an optional value once.
 ///
 /// If another update is tried, returns a malformed error instead.
-pub fn update_once<F, T, E>(opt: &mut Option<T>, op: F) -> Result<(), E>
-where F: FnOnce() -> Result<T, E>, E: From<decode::Error> {
+pub fn update_once<F, T, E>(
+    opt: &mut Option<T>,
+    err_message: &'static str,
+    op: F
+) -> Result<(), E>
+where
+    F: FnOnce() -> Result<T, E>,
+    E: decode::Error
+{
     if opt.is_some() {
-        Err(decode::Malformed.into())
+        Err(E::malformed(err_message))
     }
     else {
         *opt = Some(op()?);
@@ -82,16 +89,16 @@ impl Name {
 
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.capture(|cons| {
             cons.take_sequence(|cons| { // RDNSequence
                 while let Some(()) = cons.take_opt_set(|cons| {
                     while let Some(()) = cons.take_opt_sequence(|cons| {
                         Oid::skip_in(cons)?;
                         if cons.skip_one()?.is_none() {
-                            xerr!(
-                                return Err(decode::Error::Malformed.into())
-                            );
+                            return Err(S::Error::malformed(
+                                "invalid name"
+                            ))
                         }
                         Ok(())
                     })? { }
@@ -104,46 +111,52 @@ impl Name {
 
     /// Validate the name to conform with resource certificates.
     pub fn validate_rpki(&self, strict: bool) -> Result<(), ValidationError> {
-        if strict {
-            self.0.clone().decode(|cons| {
-                let mut cn = false;
-                let mut sn = false;
-                cons.take_sequence(|cons| {
-                    while let Some(()) = cons.take_opt_set(|cons| {
-                        while let Some(()) = cons.take_opt_sequence(|cons| {
-                            let id = Oid::take_from(cons)?;
-                            if id == oid::AT_COMMON_NAME {
-                                if cn {
-                                    xerr!(
-                                        return Err(decode::Error::Malformed)
-                                    )
-                                }
-                                let _ = PrintableString::take_from(cons)?;
-                                cn = true;
+        fn validate_strict<S: decode::Source>(
+            cons: &mut decode::Constructed<S>
+        ) -> Result<(), S::Error> {
+            let mut cn = false;
+            let mut sn = false;
+            cons.take_sequence(|cons| {
+                while let Some(()) = cons.take_opt_set(|cons| {
+                    while let Some(()) = cons.take_opt_sequence(|cons| {
+                        let id = Oid::take_from(cons)?;
+                        if id == oid::AT_COMMON_NAME {
+                            if cn {
+                                return Err(S::Error::malformed(
+                                    "invalid name"
+                                ))
                             }
-                            else if id == oid::AT_SERIAL_NUMBER {
-                                if sn {
-                                    xerr!(
-                                        return Err(decode::Error::Malformed)
-                                    )
-                                }
-                                let _ = PrintableString::take_from(cons)?;
-                                sn = true;
+                            let _ = PrintableString::take_from(cons)?;
+                            cn = true;
+                        }
+                        else if id == oid::AT_SERIAL_NUMBER {
+                            if sn {
+                                return Err(S::Error::malformed(
+                                    "invalid name"
+                                ))
                             }
-                            Ok(())
-                        })? { }
+                            let _ = PrintableString::take_from(cons)?;
+                            sn = true;
+                        }
                         Ok(())
-                    })? {}
+                    })? { }
                     Ok(())
-                })?;
-                // Common name is MUST.
-                if cn {
-                    Ok(())
-                }
-                else {
-                    Err(decode::Error::Malformed)
-                }
-            })?
+                })? {}
+                Ok(())
+            })?;
+            // Common name is MUST.
+            if cn {
+                Ok(())
+            }
+            else {
+                Err(S::Error::malformed("invalid name"))
+            }
+        }
+
+        if strict {
+            self.0.clone().decode(
+                validate_strict
+            ).map_err(|_| ValidationError)?
         }
         Ok(())
     }
@@ -152,46 +165,52 @@ impl Name {
     pub fn validate_router(
         &self, strict: bool
     ) -> Result<(), ValidationError> {
-        if strict {
-            self.0.clone().decode(|cons| {
-                let mut cn = false;
-                let mut sn = false;
-                cons.take_sequence(|cons| {
-                    while let Some(()) = cons.take_opt_set(|cons| {
-                        while let Some(()) = cons.take_opt_sequence(|cons| {
-                            let id = Oid::take_from(cons)?;
-                            if id == oid::AT_COMMON_NAME {
-                                if cn {
-                                    xerr!(
-                                        return Err(decode::Error::Malformed)
-                                    )
-                                }
-                                Self::skip_router_string(cons)?;
-                                cn = true;
+        fn validate_strict<S: decode::Source>(
+            cons: &mut decode::Constructed<S>
+        ) -> Result<(), S::Error> {
+            let mut cn = false;
+            let mut sn = false;
+            cons.take_sequence(|cons| {
+                while let Some(()) = cons.take_opt_set(|cons| {
+                    while let Some(()) = cons.take_opt_sequence(|cons| {
+                        let id = Oid::take_from(cons)?;
+                        if id == oid::AT_COMMON_NAME {
+                            if cn {
+                                return Err(S::Error::malformed(
+                                    "invalid router subject"
+                                ))
                             }
-                            else if id == oid::AT_SERIAL_NUMBER {
-                                if sn {
-                                    xerr!(
-                                        return Err(decode::Error::Malformed)
-                                    )
-                                }
-                                Self::skip_router_string(cons)?;
-                                sn = true;
+                            Name::skip_router_string(cons)?;
+                            cn = true;
+                        }
+                        else if id == oid::AT_SERIAL_NUMBER {
+                            if sn {
+                                return Err(S::Error::malformed(
+                                    "invalid router subject"
+                                ))
                             }
-                            Ok(())
-                        })? { }
+                            Name::skip_router_string(cons)?;
+                            sn = true;
+                        }
                         Ok(())
-                    })? {}
+                    })? { }
                     Ok(())
-                })?;
-                // Common name is MUST.
-                if cn {
-                    Ok(())
-                }
-                else {
-                    Err(decode::Error::Malformed)
-                }
-            })?
+                })? {}
+                Ok(())
+            })?;
+            // Common name is MUST.
+            if cn {
+                Ok(())
+            }
+            else {
+                Err(S::Error::malformed("invalid router subject"))
+            }
+        }
+
+        if strict {
+            self.0.clone().decode(
+                validate_strict
+            ).map_err(|_| ValidationError)?
         }
         Ok(())
     }
@@ -199,7 +218,7 @@ impl Name {
     /// Skips a value if it is a PrintableString or UTF8String.
     fn skip_router_string<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<(), S::Err> {
+    ) -> Result<(), S::Error> {
         cons.take_value(|tag, content| {
             if tag == Tag::PRINTABLE_STRING {
                 PrintableString::from_content(content).map(|_| ())
@@ -208,7 +227,7 @@ impl Name {
                 Utf8String::from_content(content).map(|_| ())
             }
             else {
-                Err(decode::Error::Malformed.into())
+                Err(S::Error::malformed("invalid router subject"))
             }
         })
     }
@@ -267,16 +286,16 @@ impl Eq for Name {}
 pub struct Serial([u8; 20]);
 
 impl Serial {
-    /// Creates a serial number from a octet slice.
-    pub fn from_slice(s: &[u8]) -> Result<Self, decode::Error> {
+    /// Creates a serial number from an octet slice.
+    pub fn from_slice(s: &[u8]) -> Result<Self, SerialSliceError> {
         // Empty slice is malformed.
         if s.is_empty() {
-            return Err(decode::Malformed)
+            return Err(SerialSliceError::empty())
         }
         // We do not support more than 20 octets or exactly 20 octets if the
         // sign bit is set.
         if s.len() > 20 || (s.len() == 20 && s[0] & 0x80 != 0) {
-            return Err(decode::Unimplemented)
+            return Err(SerialSliceError::long())
         }
         let mut res = <[u8; 20]>::default();
         res[20 - s.len()..].copy_from_slice(s);
@@ -311,9 +330,9 @@ impl Serial {
 
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         Unsigned::take_from(cons).and_then(|s| {
-            Self::from_slice(s.as_ref()).map_err(Into::into)
+            Self::from_slice(s.as_ref()).map_err(|err| err.into_decode_error())
         })
             
     }
@@ -550,19 +569,19 @@ impl<Alg> SignedData<Alg> {
 }
 
 impl<Alg: SignatureAlgorithm> SignedData<Alg> {
-    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
+    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Error> {
         Mode::Der.decode(source, Self::take_from)
     }
 
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(Self::from_constructed)
     }
 
     pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         Ok(SignedData {
             data: cons.capture_one()?,
             signature: Signature::new(
@@ -705,7 +724,7 @@ impl Time {
 
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_primitive(|tag, prim| {
             match tag {
                 Tag::UTC_TIME => {
@@ -722,9 +741,11 @@ impl Time {
                         read_two_char(prim)?,
                     );
                     if prim.take_u8()? != b'Z' {
-                        return Err(decode::Malformed.into())
+                        return Err(S::Error::malformed(
+                            "malformed time value"
+                        ))
                     }
-                    Self::from_parts(res).map_err(Into::into)
+                    Self::from_parts::<S::Error>(res)
                 }
                 Tag::GENERALIZED_TIME => {
                     // RFC 5280 requires the format YYYYMMDDHHMMSSZ
@@ -737,12 +758,16 @@ impl Time {
                         read_two_char(prim)?,
                     );
                     if prim.take_u8()? != b'Z' {
-                        return Err(decode::Malformed.into())
+                        return Err(S::Error::malformed(
+                            "malformed time value"
+                        ))
                     }
-                    Self::from_parts(res).map_err(Into::into)
+                    Self::from_parts::<S::Error>(res)
                 }
                 _ => {
-                    xerr!(Err(decode::Malformed.into()))
+                    Err(S::Error::malformed(
+                        "malformed time value"
+                    ))
                 }
             }
         })
@@ -750,7 +775,7 @@ impl Time {
 
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Err> {
+    ) -> Result<Option<Self>, S::Error> {
         let res = cons.take_opt_primitive_if(Tag::UTC_TIME, |prim| {
             let year = read_two_char(prim)? as i32;
             let year = if year >= 50 { year + 1900 }
@@ -764,9 +789,11 @@ impl Time {
                 read_two_char(prim)?,
             );
             if prim.take_u8()? != b'Z' {
-                return Err(decode::Malformed.into())
+                return Err(S::Error::malformed(
+                    "malformed time value"
+                ))
             }
-            Self::from_parts(res).map_err(Into::into)
+            Self::from_parts::<S::Error>(res)
         })?;
         if let Some(res) = res {
             return Ok(Some(res))
@@ -781,23 +808,25 @@ impl Time {
                 read_two_char(prim)?,
             );
             if prim.take_u8()? != b'Z' {
-                return Err(decode::Malformed.into())
+                return Err(S::Error::malformed(
+                    "malformed time value"
+                ))
             }
-            Self::from_parts(res).map_err(Into::into)
+            Self::from_parts::<S::Error>(res)
         })
     }
 
-    fn from_parts(
+    fn from_parts<E: decode::Error>(
         parts: (i32, u32, u32, u32, u32, u32)
-    ) -> Result<Self, decode::Error> {
+    ) -> Result<Self, E> {
         Ok(Time(match Utc.ymd_opt(parts.0, parts.1, parts.2) {
             LocalResult::Single(dt) => {
                 match dt.and_hms_opt(parts.3, parts.4, parts.5) {
                     Some(dt) => dt,
-                    None => return Err(decode::Malformed),
+                    None => return Err(E::malformed("malformed time value")),
                 }
             }
-            _ => return Err(decode::Malformed)
+            _ => return Err(E::malformed("malformed time value"))
         }))
     }
 
@@ -918,23 +947,23 @@ impl ops::Sub<Duration> for Time {
 }
 
 
-fn read_two_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Err> {
+fn read_two_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Error> {
     let mut s = [0u8; 2];
     s[0] = source.take_u8()?;
     s[1] = source.take_u8()?;
     let s = match str::from_utf8(&s[..]) {
         Ok(s) => s,
         Err(_err) => {
-            xerr!(return Err(decode::Malformed.into()))
+            return Err(S::Error::malformed("malformed time value"))
         }
     };
     u32::from_str(s).map_err(|_err| {
-        xerr!(decode::Malformed.into())
+        S::Error::malformed("malformed time value")
     })
 }
 
 
-fn read_four_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Err> {
+fn read_four_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Error> {
     let mut s = [0u8; 4];
     s[0] = source.take_u8()?;
     s[1] = source.take_u8()?;
@@ -943,11 +972,11 @@ fn read_four_char<S: decode::Source>(source: &mut S) -> Result<u32, S::Err> {
     let s = match str::from_utf8(&s[..]) {
         Ok(s) => s,
         Err(_err) => {
-            xerr!(return Err(decode::Malformed.into()))
+            return Err(S::Error::malformed("malformed time value"))
         }
     };
     u32::from_str(s).map_err(|_err| {
-        xerr!(decode::Malformed.into())
+        S::Error::malformed("malformed time value")
     })
 }
 
@@ -1044,7 +1073,7 @@ impl Validity {
 
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_sequence(|cons| {
             Ok(Validity::new(
                 Time::take_from(cons)?,
@@ -1072,6 +1101,53 @@ impl Validity {
 }
 
 
+//------------ SerialSliceError ----------------------------------------------
+
+/// A serial number’s slice is empty.
+#[derive(Clone, Copy, Debug)]
+pub struct SerialSliceError(SerialSliceErrorKind);
+
+#[derive(Clone, Copy, Debug)]
+enum SerialSliceErrorKind {
+    Empty,
+    Long,
+}
+
+impl SerialSliceError {
+    fn empty() -> Self {
+        SerialSliceError(SerialSliceErrorKind::Empty)
+    }
+
+    fn long() -> Self {
+        SerialSliceError(SerialSliceErrorKind::Long)
+    }
+
+    fn into_decode_error<E: decode::Error> (self) -> E {
+        if matches!(self.0, SerialSliceErrorKind::Long) {
+            E::unimplemented(self)
+        }
+        else {
+            E::malformed(self)
+        }
+    }
+}
+
+impl fmt::Display for SerialSliceError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(
+            match self.0 {
+                SerialSliceErrorKind::Empty => "empty serial number",
+                SerialSliceErrorKind::Long => {
+                    "serial number longer than 20 bytes"
+                }
+            }
+        )
+    }
+}
+
+impl error::Error for SerialSliceError { }
+
+
 //------------ RepresentationError -------------------------------------------
 
 /// A source value is not correctly formated for converting into a value.
@@ -1092,8 +1168,8 @@ impl error::Error for RepresentationError { }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ValidationError;
 
-impl From<decode::Error> for ValidationError {
-    fn from(_: decode::Error) -> ValidationError {
+impl From<decode::ContentError> for ValidationError {
+    fn from(_: decode::ContentError) -> ValidationError {
         ValidationError
     }
 }

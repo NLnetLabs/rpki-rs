@@ -1136,7 +1136,7 @@ pub enum Error {
     InvalidVersion,
     InvalidHandle,
     InvalidTaBase64(base64::DecodeError),
-    InvalidTaCertEncoding(bcder::decode::Error),
+    InvalidTaCertEncoding(bcder::decode::ContentError),
     InvalidTaCert,
     InvalidUri(uri::Error),
 }
@@ -1169,8 +1169,8 @@ impl From<base64::DecodeError> for Error {
     }
 }
 
-impl From<bcder::decode::Error> for Error {
-    fn from(e: bcder::decode::Error) -> Self {
+impl From<bcder::decode::ContentError> for Error {
+    fn from(e: bcder::decode::ContentError) -> Self {
         Error::InvalidTaCertEncoding(e)
     }
 }
