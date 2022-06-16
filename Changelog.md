@@ -4,6 +4,27 @@
 
 Breaking Changes
 
+* Multiple changes to support BGPsec CSRs ([#210]):
+  * Moved `repository::crypto` into its own top-level module and added a
+    separate `crypto` feature.
+  * Added separate signature algorithm types for RPKI and BGPsec and added a
+    `SignatureAlgorithm` trait so the two can be used in parallel.
+  * Made `crypto::signature::Signature` generic over the signature algorithm.
+  * Changed the `Signer` trait and soft-signer implementation to be able to
+    deal with both signature algorithm types via an intermediary
+    `SigningAlgorithm` enum.
+  * Made `repository::x509::SignedData` generic over the signature algorithm
+    type so it can be used for both RPKI and BGPsec objects.
+  * Moved `repository::oid` into its own top-level module and made it depend
+    on the `bcder` feature.
+  * Moved `repository::csr` to `ca::csr`.
+  * Changes the `ca::csr`’s types to be generic over the signature algorithms
+    and CSR attributes.
+  * Changed the type of the Extended Key Usage attribute of certificates and
+    CSRs into a newtype around the wrapping capture.
+  * Add missing functionality to `TbsCert` and `CertBuilder` to be able to
+    generate router certificates.
+
 New
 
 * Added support for RFC 8183 out-of-band XML exchanges between CAs, their
@@ -17,6 +38,7 @@ Bug Fixes
 Other Changes
 
 [#208]: https://github.com/NLnetLabs/rpki-rs/pull/208
+[#210]: https://github.com/NLnetLabs/rpki-rs/pull/210
 
 
 
