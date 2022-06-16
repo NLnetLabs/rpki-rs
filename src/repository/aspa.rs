@@ -12,9 +12,9 @@ use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, Oid, Tag};
 use bcder::encode::Values;
-use super::oid;
+use crate::oid;
+use crate::crypto::{Signer, SigningError};
 use super::cert::{Cert, ResourceCert};
-use super::crypto::{Signer, SigningError};
 use super::resources::{
     AddressFamily, AsBlock, AsBlocks, AsBlocksBuilder, Asn, AsResources
 };
@@ -466,8 +466,8 @@ mod signer_test {
     use std::str::FromStr;
     use crate::uri;
     use crate::repository::cert::{KeyUsage, Overclaim, TbsCert};
-    use crate::repository::crypto::{PublicKeyFormat, Signer};
-    use crate::repository::crypto::softsigner::OpenSslSigner;
+    use crate::crypto::{PublicKeyFormat, Signer};
+    use crate::crypto::softsigner::OpenSslSigner;
     use crate::repository::resources::{Asn, Prefix};
     use crate::repository::tal::TalInfo;
     use crate::repository::x509::Validity;

@@ -10,9 +10,8 @@ use ring::{digest, signature};
 use ring::error::Unspecified;
 use ring::signature::VerificationAlgorithm;
 use untrusted::Input;
-use super::super::oid;
-use super::super::x509::Name;
-use super::signature::Signature;
+use crate::oid;
+use super::signature::{RpkiSignatureAlgorithm, Signature, SignatureAlgorithm};
 
 
 //------------ Re-exports ----------------------------------------------------
@@ -135,6 +134,32 @@ impl PublicKeyFormat{
             }
         }
     }
+
+    fn verify(
+        self,
+        bits: Input<'_>,
+        message: Input<'_>,
+        signature: Input<'_>,
+    ) -> Result<(), VerificationError> {
+        match self {
+            PublicKeyFormat::Rsa => {
+                signature::RSA_PKCS1_2048_8192_SHA256.verify(
+                    bits, message, signature
+                ).map_err(Into::into)
+            }
+            PublicKeyFormat::EcdsaP256 => {
+                signature::ECDSA_P256_SHA256_ASN1.verify(
+                    bits, message, signature
+                ).map_err(Into::into)
+            }
+        }
+    }
+}
+
+impl From<RpkiSignatureAlgorithm> for PublicKeyFormat {
+    fn from(_: RpkiSignatureAlgorithm) -> Self {
+        PublicKeyFormat::Rsa
+    }
 }
 
 
@@ -193,21 +218,17 @@ impl PublicKey {
     }
 
     /// Verifies a signature using this public key.
-    ///
-    /// Currently, only keys for which `allow_rpki_cert` returns `true`
-    /// can be used for verification. All other keys will always return an
-    /// error.
-    pub fn verify(
-        &self, message: &[u8], signature: &Signature
+    pub fn verify<Alg: SignatureAlgorithm>(
+        &self, message: &[u8], signature: &Signature<Alg>
     ) -> Result<(), VerificationError> {
-        if !self.allow_rpki_cert() {
+        if signature.algorithm().public_key_format() != self.algorithm {
             return Err(VerificationError)
         }
-        signature::RSA_PKCS1_2048_8192_SHA256.verify(
+        self.algorithm.verify(
             Input::from(self.bits()),
             Input::from(message),
             Input::from(signature.value().as_ref())
-        ).map_err(Into::into)
+        )
     }
 }
 
@@ -258,13 +279,44 @@ impl PublicKey {
         )
     }
 
-    pub fn to_subject_name(&self) -> Name {
-        Name::from_captured(self.encode_subject_name().to_captured(Mode::Der))
+    #[cfg(feature = "repository")]
+    pub fn to_subject_name(&self) -> crate::repository::x509::Name {
+        crate::repository::x509::Name::from_captured(
+            self.encode_subject_name().to_captured(Mode::Der)
+        )
     }
 
     /// Returns a bytes values of the encoded the *subjectPublicKeyInfo*.
     pub fn to_info_bytes(&self) -> Bytes {
         self.encode_ref().to_captured(Mode::Der).into_bytes()
+    }
+}
+
+
+//--- Deserialize and Serialize
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for PublicKey {
+    fn serialize<S: serde::Serializer>(
+        &self, serializer: S
+    ) -> Result<S::Ok, S::Error> {
+        let bytes = self.to_info_bytes();
+        let b64 = base64::encode(&bytes);
+        b64.serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for PublicKey {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
+        use serde::de;
+
+        let string = String::deserialize(deserializer)?;
+        let decoded = base64::decode(&string).map_err(de::Error::custom)?;
+        let bytes = Bytes::from(decoded);
+        PublicKey::decode(bytes).map_err(de::Error::custom)
     }
 }
 
@@ -319,3 +371,27 @@ impl fmt::Display for VerificationError {
 }
 
 impl error::Error for VerificationError { }
+
+
+//============ Tests =========================================================
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn serde_pub_key() {
+        use crate::repository::Cert;
+
+        let der = include_bytes!("../../test-data/ta.cer");
+        let cert = Cert::decode(Bytes::from_static(der)).unwrap();
+
+        let pub_key = cert.subject_public_key_info();
+
+        let ser = serde_json::to_string(pub_key).unwrap();
+        let de: PublicKey = serde_json::from_str(&ser).unwrap();
+
+        assert_eq!(pub_key, &de);
+    }
+}

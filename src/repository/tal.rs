@@ -11,7 +11,7 @@ use bytes::Bytes;
 use bcder::decode;
 use log::{debug, error};
 use crate::uri;
-use super::crypto::PublicKey;
+use crate::crypto::PublicKey;
 
 
 //------------ Tal -----------------------------------------------------------

@@ -1,6 +1,6 @@
 [package]
 name = "rpki"
-version = "0.14.3-dev"
+version = "0.15.0-dev"
 edition = "2018"
 authors = ["The NLnet Labs RPKI Team <rpki@nlnetlabs.nl>"]
 description = "A library for validating and creating RPKI data."
@@ -43,7 +43,8 @@ default = []
 
 # Main components of the crate.
 ca         = [ "repository", "serde-support" ]
-repository = [ "bcder", "ring", "untrusted", "routecore/bcder" ]
+crypto     = [ "bcder", "ring", "untrusted" ]
+repository = [ "bcder", "crypto", "routecore/bcder" ]
 rrdp       = [ "xml", "ring" ]
 rtr        = [ "futures-util", "tokio", "tokio-stream" ]
 slurm      = [ "serde-support", "serde_json" ]
@@ -62,7 +63,7 @@ extra-debug = [ "bcder/extra-debug" ]
 
 # Dummy features for Windows CI runs where we don’t want to have to deal
 # with OpenSSL
-__windows_ci_all = [ "repository", "rrdp", "rtr", "serde-support", "extra-debug" ]
+__windows_ci_all = [ "ca", "rrdp", "rtr", "serde-support", "extra-debug" ]
 
 [[bin]]
 name = "readcer"

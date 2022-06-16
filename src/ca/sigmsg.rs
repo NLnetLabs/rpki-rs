@@ -5,12 +5,12 @@ use bcder::encode::PrimitiveContent;
 use bcder::{decode, encode, Captured};
 use bcder::{Mode, Oid, OctetString, Tag, xerr};
 use bytes::Bytes;
+use crate::oid;
 use crate::repository::crl::RevokedCertificates;
-use crate::repository::crypto::{
-    DigestAlgorithm, KeyIdentifier, Signature, SignatureAlgorithm, Signer,
-    SigningError
+use crate::crypto::{
+    DigestAlgorithm, KeyIdentifier, RpkiSignature, RpkiSignatureAlgorithm,
+    SignatureAlgorithm, Signer, SigningError
 };
-use crate::repository::oid::{self, PROTOCOL_CONTENT_TYPE};
 use crate::repository::sigobj::{
     MessageDigest, SignedAttrs
 };
@@ -55,7 +55,7 @@ pub struct  SignedMessage {
     //
     sid: KeyIdentifier,
     signed_attrs: SignedAttrs,
-    signature: Signature,
+    signature: RpkiSignature,
 
     //--- SignedAttributes
     //
@@ -144,8 +144,8 @@ impl SignedMessage {
                         if attrs.2 != content_type {
                             return Err(decode::Malformed.into());
                         }
-                        let signature = Signature::new(
-                            SignatureAlgorithm::cms_take_from(cons)?,
+                        let signature = RpkiSignature::new(
+                            RpkiSignatureAlgorithm::cms_take_from(cons)?,
                             OctetString::take_from(cons)?.into_bytes(),
                         );
                         // no unsignedAttributes
@@ -278,7 +278,7 @@ impl SignedMessage {
         // - include EE cert
 
         let digest_algorithm = DigestAlgorithm::default();
-        let content_type = Oid(PROTOCOL_CONTENT_TYPE.0.into());
+        let content_type = Oid(oid::PROTOCOL_CONTENT_TYPE.0.into());
         
         // Produce signed attributes
         let message_digest = digest_algorithm.digest(&data).into();
@@ -293,7 +293,7 @@ impl SignedMessage {
         );
         
         let (signature, ee_key) = signer.sign_one_off(
-            SignatureAlgorithm::default(), &signed_attrs.encode_verify()
+            RpkiSignatureAlgorithm::default(), &signed_attrs.encode_verify()
         )?;
         let sid = ee_key.key_identifier();
         
@@ -399,10 +399,12 @@ impl SignedMessageCrl {
         issuer: &IdCert,
         when: Time
     ) -> Result<(), ValidationError> {
-        if self.tbs.signature != self.signed_data.signature().algorithm() {
+        if self.tbs.signature != *self.signed_data.signature().algorithm() {
             return Err(ValidationError)
         }
-        self.signed_data.verify_signature(issuer.subject_public_key_info())?;
+        self.signed_data.verify_signature(
+            issuer.subject_public_key_info()
+        )?;
         self.tbs.validate(issuer, when)
     }
 
@@ -457,7 +459,7 @@ impl SignedMessageCrl {
     ) -> Result<Self, SigningError<S::Error>> {
         let issuing_pub_key = signer.get_key_info(issuing_key_id)?;
         
-        let signature = SignatureAlgorithm::default();
+        let signature = RpkiSignatureAlgorithm::default();
         let issuer = Name::from_pub_key(&issuing_pub_key);
         
         let this_update = validity.not_before();
@@ -508,7 +510,7 @@ struct SignedMessageTbsCrl {
     /// The algorithm used for signing the certificate.
     /// 
     /// This MUST be RSA.
-    signature: SignatureAlgorithm,
+    signature: RpkiSignatureAlgorithm,
     
     /// The name of the issuer.
     ///
@@ -571,7 +573,7 @@ impl SignedMessageTbsCrl {
             // version. Technically it is optional but we need v2, so it must
             // actually be there. v2 is encoded as an integer of value 1.
             cons.skip_u8_if(1)?;
-            let signature = SignatureAlgorithm::x509_take_from(cons)?;
+            let signature = RpkiSignatureAlgorithm::x509_take_from(cons)?;
             let issuer = Name::take_from(cons)?;
             let this_update = Time::take_from(cons)?;
             let next_update = Time::take_from(cons)?;
@@ -702,7 +704,7 @@ mod signer_test {
 
     use crate::{
         ca::idcert::IdCert,
-        repository::crypto::{softsigner::OpenSslSigner, PublicKeyFormat}
+        crypto::{softsigner::OpenSslSigner, PublicKeyFormat}
     };
 
     

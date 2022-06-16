@@ -22,16 +22,16 @@ use std::iter::FromIterator;
 use std::sync::Arc;
 use bcder::{decode, encode};
 use bcder::xerr;
-use bcder::encode::PrimitiveContent;
+use bcder::encode::{PrimitiveContent, Values};
 use bcder::{
     BitString, Captured, ConstOid, Ia5String, Mode, OctetString, Oid, Tag
 };
 use bytes::Bytes;
-use crate::uri;
-use super::crypto::{
-    KeyIdentifier, PublicKey, SignatureAlgorithm, Signer, SigningError
+use crate::{oid, uri};
+use crate::crypto::{
+    KeyIdentifier, PublicKey, RpkiSignatureAlgorithm, SignatureAlgorithm,
+    Signer, SigningError,
 };
-use super::oid;
 use super::resources::{
     AsBlock, AsBlocks, AsBlocksBuilder, AsResources, AsResourcesBuilder,
     IpBlock, IpBlocks, IpBlocksBuilder, IpResources, IpResourcesBuilder
@@ -409,7 +409,7 @@ impl Cert {
         //
         // However, RFC 5280 demands that the two mentions of the signature
         // algorithm are the same. So we do that here.
-        if self.signature != self.signed_data.signature().algorithm() {
+        if self.signature != *self.signed_data.signature().algorithm() {
             return Err(ValidationError)
         }
 
@@ -450,7 +450,10 @@ impl Cert {
         // 4.8.5. Extended Key Usage.
         //
         // Must be present and contain at least the kp-bgpsec-router OID.
-        self.inspect_router_eku(strict)?;
+        match self.extended_key_usage().as_ref() {
+            Some(eku) => eku.inspect_router()?,
+            None => return Err(ValidationError),
+        }
 
         // 4.8.6. CRL Distribution Points. There must be one.
         if self.crl_uri().is_none() {
@@ -587,7 +590,7 @@ impl Cert {
         //
         // However, RFC 5280 demands that the two mentions of the signature
         // algorithm are the same. So we do that here.
-        if self.signature != self.signed_data.signature().algorithm() {
+        if self.signature != *self.signed_data.signature().algorithm() {
             return Err(ValidationError)
         }
 
@@ -684,29 +687,6 @@ impl Cert {
         }
 
         Ok(())
-    }
-
-    /// Inspects a router certificate’s extended key usage.
-    fn inspect_router_eku(
-        &self, _strict: bool
-    ) -> Result<(), ValidationError> {
-        match self.extended_key_usage() {
-            Some(captured) => {
-                // We already know that the content is a sequence of OIDs
-                // (that has been tested in take_extended_key_usage). So we
-                // can return successfully as soon as we find our OID.
-                let mut captured = captured.clone();
-                while let Some(oid) = captured.decode_partial(|cons| {
-                    Oid::take_opt_from(cons)
-                })? {
-                    if oid == oid::KP_BGPSEC_ROUTER {
-                        return Ok(())
-                    }
-                }
-                Err(ValidationError)
-            }
-            None => Err(ValidationError)
-        }
     }
 
     /// Verifies that the certificate claims to have been issued by `issuer`.
@@ -855,7 +835,7 @@ pub struct TbsCert {
     serial_number: Serial,
 
     /// The algorithm used for signing the certificate.
-    signature: SignatureAlgorithm,
+    signature: RpkiSignatureAlgorithm,
 
     /// The name of the issuer.
     ///
@@ -893,7 +873,7 @@ pub struct TbsCert {
     ///
     /// The value is the content of the DER-encoded sequence of object
     /// identifiers.
-    extended_key_usage: Option<Captured>,
+    extended_key_usage: Option<ExtendedKeyUsage>,
 
     // The following fields are lists of URIs. Each has to have at least one
     // rsync or HTTPS URI but may contain more. We only support those primary
@@ -954,7 +934,7 @@ impl TbsCert {
     ) -> Self {
         Self {
             serial_number,
-            signature: SignatureAlgorithm::default(),
+            signature: RpkiSignatureAlgorithm::default(),
             issuer,
             validity,
             subject: {
@@ -1105,8 +1085,13 @@ impl TbsCert {
     ///
     /// Since this field isn’t allowed in any certificate used for RPKI
     /// objects directly, we do not currently support setting this field.
-    pub fn extended_key_usage(&self) -> Option<&Captured> {
+    pub fn extended_key_usage(&self) -> Option<&ExtendedKeyUsage> {
         self.extended_key_usage.as_ref()
+    }
+
+    /// Sets the extended key usage.
+    pub fn set_extended_key_usage(&mut self, eku: Option<ExtendedKeyUsage>) {
+        self.extended_key_usage = eku
     }
 
     /// Returns a reference to the certificate’s CRL distribution point.
@@ -1300,7 +1285,7 @@ impl TbsCert {
             cons.take_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(2))?;
 
             let serial_number = Serial::take_from(cons)?;
-            let signature = SignatureAlgorithm::x509_take_from(cons)?;
+            let signature = RpkiSignatureAlgorithm::x509_take_from(cons)?;
             let issuer = Name::take_from(cons)?;
             let validity = Validity::take_from(cons)?;
             let subject = Name::take_from(cons)?;
@@ -1556,15 +1541,10 @@ impl TbsCert {
     /// May only be present in EE certificates issued to devices.
     pub(crate) fn take_extended_key_usage<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
-        extended_key_usage: &mut Option<Captured>
+        extended_key_usage: &mut Option<ExtendedKeyUsage>
     ) -> Result<(), S::Err> {
         update_once(extended_key_usage, || {
-            let res = cons.take_sequence(|c| c.capture_all())?;
-            res.clone().decode(|cons| {
-                Oid::skip_in(cons)?;
-                while Oid::skip_opt_in(cons)?.is_some() { }
-                Ok(res)
-            }).map_err(Into::into)
+            ExtendedKeyUsage::take_from(cons)
         })
     }
 
@@ -1823,10 +1803,10 @@ impl TbsCert {
                 ),
 
                 // Extended Key Usage
-                self.extended_key_usage.as_ref().map(|captured| {
+                self.extended_key_usage.as_ref().map(|eku| {
                     encode_extension(
                         &oid::CE_EXTENDED_KEY_USAGE, false,
-                        encode::sequence(captured)
+                        encode::sequence(eku.encode_ref())
                     )
                 }),
 
@@ -1988,447 +1968,6 @@ impl Sia {
 }
 
 
-//------------ CertBuilder ---------------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct CertBuilder {
-    //  The following lists how all the parts to go into the final certificate
-    //  are to be generated. It also mentions all the parts that don’t need to
-    //  be stored in the builder.
-
-    //--- Certificate
-    //
-    //  tbsCertificate: see below,
-    //  signatureAlgorithm and signature: generated when signing the final
-    //     certificate
-
-    //--- TBSCertificate
-
-    //  Version.
-    //
-    //  This is always present and v3, which really is 2.
-
-    /// Serial number.
-    ///
-    /// This is required for all certificates. The standard demands twenty
-    /// digits, u128 gives us 38, so this should be fine.
-    serial_number: u128,
-
-    /// Signature.
-    ///
-    /// This is the signature algorithm and must be identical to the one used
-    /// on the outer value. Thus, it needs to be set when constructing the
-    /// certificate for signing.
-
-    /// Issuer.
-    ///
-    /// This needs to be identical to the subject of the issuing certificate.
-    /// It needs to be presented when creating the builder.
-    issuer: Name,    
-
-    /// Validity.
-    ///
-    /// This needs to be present for all certificates.
-    validity: Validity,
-
-    /// Subject.
-    ///
-    /// This needs to be present for all certifications. In RPKI, we commonly
-    /// derive the name from the public key of the certificate, so this is an
-    /// option. If it is not set explicitly, we derive the name.
-    subject: Option<Name>, // XXX NameBuilder?
-
-    /// Subject Public Key Info
-    ///
-    /// This is required for all certificates. However, because we sometimes
-    /// use one-off certificates that only receive their key info very late
-    /// in the process, we won’t store the key info but take it as an
-    /// argument for encoding.
-
-    //  Issuer Unique ID, Subject Unique ID
-    //
-    //  These must not be present.
-
-    //--- Extensions
-
-    /// Basic Constraints
-    ///
-    /// Needs to be present and critical and the cA boolean set to true for
-    /// a CA and TA certificate. We simply remember whether we are making a
-    /// CA certificate here.
-    ca: bool,
-
-    //  Subject Key Identifier
-    //
-    //  Must be present and non-critical. It is the SHA1 of the BIT STRING
-    //  of the Subject Public Key, so we take it from
-    //  subject_public_key_info.
-
-    /// Authority Key Identifier
-    ///
-    /// Must be present except in trust-anchor certificates and non-critical.
-    /// It must contain the subject key identifier of issuing certificate.
-    authority_key_identifier: Option<OctetString>, 
-
-    //  Key Usage.
-    //
-    //  Must be present and critical. For CA certificates, keyCertSign and
-    //  CRLSign are set, for EE certificates, digitalSignature bit is set.
-
-    //  Extended Key Usage
-    //
-    //  This is only allowed in router keys. For now, we will not support
-    //  this.
-    
-    /// CRL Distribution Points
-    ///
-    /// Must be present and non-critical except in self-signed certificates.
-    /// For RPKI it is very restricted and boils down to a list of URIs. Most
-    /// likely, it will be exactly one. So for now, we allow at most one.
-    crl_distribution: Option<uri::Rsync>,
-
-    /// Authority Information Access
-    ///
-    /// Except for self-signed certificates, must be present and non-critical.
-    /// There must be one rsync URI as a id-ad-caIssuer. Additional URIs may
-    /// be present, but we don’t support that as of now.
-    authority_info_access: Option<uri::Rsync>,
-
-    //  Subject Information Access
-    // 
-    //  Must be present and non-critical. There are essentially three
-    //  access methods that may be present. id-ad-rpkiManifest points to the
-    //  manifest of a CA, id-ad-signedObject points to the signed object of
-    //  an EE certificate. id-ad-rpkiNotify points to the RRDP notification
-    //  file of a CA. We only support one of each and simply add whatever is
-    //  there.
-
-    /// Subject Information Access of type `id-ad-caRepository`
-    ca_repository: Option<uri::Rsync>,
-
-    /// Subject Information Access of type `id-ad-rpkiManifest`
-    rpki_manifest: Option<uri::Rsync>,
-
-    /// Subject Information Access of type `id-ad-signedObject`
-    signed_object: Option<uri::Rsync>,
-
-    /// Subject Information Access of type `id-ad-rpkiNotify`
-    rpki_notify: Option<uri::Https>,
-
-    /// Certificate Policies
-    ///
-    /// This is chosen via the value of the overclaim mode,
-    overclaim: Overclaim,
-
-    /// IPv4 Resources
-    ///
-    /// One of the resources must be present. The IPv4 resources are part of
-    /// the IP resources which, if present, it must be critical.
-    v4_resources: IpResourcesBuilder,
-
-    /// IPv6 Resources
-    ///
-    /// One of the resources must be present. The IPv4 resources are part of
-    /// the IP resources which, if present, it must be critical.
-    v6_resources: IpResourcesBuilder,
-
-    /// AS Resources
-    ///
-    /// If present, it must be critical. One of the resources must be
-    /// present.
-    as_resources: AsResourcesBuilder,
-}
-
-impl CertBuilder {
-    pub fn new(
-        serial_number: u128,
-        issuer: Name,
-        validity: Validity,
-        ca: bool
-    ) -> Self {
-        CertBuilder {
-            serial_number,
-            issuer,
-            validity,
-            subject: None,
-            ca,
-            authority_key_identifier: None,
-            crl_distribution: None,
-            authority_info_access: None,
-            ca_repository: None,
-            rpki_manifest: None,
-            signed_object: None,
-            rpki_notify: None,
-            overclaim: Overclaim::Refuse,
-            v4_resources: IpResourcesBuilder::new(),
-            v6_resources: IpResourcesBuilder::new(),
-            as_resources: AsResourcesBuilder::new(),
-        }
-    }
-
-    pub fn subject(&mut self, name: Name) -> &mut Self {
-        self.subject = Some(name);
-        self
-    }
-
-    pub fn authority_key_identifier(
-        &mut self, id: OctetString
-    ) -> &mut Self {
-        self.authority_key_identifier = Some(id);
-        self
-    }
-
-    pub fn crl_distribution(&mut self, uri: uri::Rsync) -> &mut Self {
-        self.crl_distribution = Some(uri);
-        self
-    }
-
-    pub fn authority_info_access(&mut self, uri: uri::Rsync) -> &mut Self {
-        self.authority_info_access = Some(uri);
-        self
-    }
-
-    pub fn ca_repository(&mut self, uri: uri::Rsync) -> &mut Self {
-        self.ca_repository = Some(uri);
-        self
-    }
-
-    pub fn rpki_manifest(&mut self, uri: uri::Rsync) -> &mut Self {
-        self.rpki_manifest = Some(uri);
-        self
-    }
-
-    pub fn signed_object(&mut self, uri: uri::Rsync) -> &mut Self {
-        self.signed_object = Some(uri);
-        self
-    }
-
-    pub fn rpki_notify(&mut self, uri: uri::Https) -> &mut Self {
-        self.rpki_notify = Some(uri);
-        self
-    }
-
-    pub fn overclaim(&mut self, overclaim: Overclaim) -> &mut Self {
-        self.overclaim = overclaim;
-        self
-    }
-
-    pub fn inherit_v4(&mut self) -> &mut Self {
-        self.v4_resources.inherit();
-        self
-    }
-
-    pub fn inherit_v6(&mut self) -> &mut Self {
-        self.v6_resources.inherit();
-        self
-    }
-
-    pub fn inherit_as(&mut self) -> &mut Self {
-        self.as_resources.inherit();
-        self
-    }
-
-    pub fn v4_blocks<F>(&mut self, build: F) -> &mut Self
-    where F: FnOnce(&mut IpBlocksBuilder) {
-        self.v4_resources.blocks(build);
-        self
-    }
-
-    pub fn v6_blocks<F>(&mut self, build: F) -> &mut Self
-    where F: FnOnce(&mut IpBlocksBuilder) {
-        self.v6_resources.blocks(build);
-        self
-    }
-
-    pub fn as_blocks<F>(&mut self, build: F) -> &mut Self
-    where F: FnOnce(&mut AsBlocksBuilder) {
-        self.as_resources.blocks(build);
-        self
-    }
-    
-    /// Finalizes the certificate and returns an encoder for it.
-    pub fn encode<S: Signer>(
-        self,
-        signer: &S,
-        key: &S::KeyId,
-        alg: SignatureAlgorithm,
-        public_key: &PublicKey,
-    ) -> Result<impl encode::Values, SigningError<S::Error>> {
-        let tbs_cert = self.encode_tbs_cert(alg, public_key);
-        let (alg, signature) = signer.sign(key, alg, &tbs_cert)?.unwrap();
-        Ok(encode::sequence((
-            tbs_cert,
-            alg.x509_encode(),
-            BitString::new(0, signature).encode()
-        )))
-    }
-
-    fn encode_tbs_cert(
-        mut self,
-        alg: SignatureAlgorithm,
-        public_key: &PublicKey,
-    ) -> Captured {
-        if self.subject.is_none() {
-            self.subject = Some(Name::from_pub_key(public_key))
-        }
-        Captured::from_values(Mode::Der, encode::sequence((
-            encode::sequence_as(Tag::CTX_0, 2.encode()), // version
-            self.serial_number.encode(),
-            alg.x509_encode(),
-            self.issuer.encode_ref(),
-            self.validity.encode(),
-            match self.subject.as_ref() {
-                Some(subject) => encode::Choice2::One(subject.encode_ref()),
-                None => {
-                    encode::Choice2::Two(
-                        public_key.encode_subject_name()
-                    )
-                }
-            },
-            public_key.encode_ref(),
-            // no issuerUniqueID, no subjectUniqueID
-            encode::sequence_as(Tag::CTX_3, encode::sequence((
-                // Basic Constraints
-                if self.ca {
-                    Some(Self::extension(
-                        &oid::CE_BASIC_CONSTRAINTS, true,
-                        encode::sequence(true.encode())
-                    ))
-                }
-                else { None },
-
-                // Subject Key Identifier
-                Self::extension(
-                    &oid::CE_SUBJECT_KEY_IDENTIFIER, false,
-                    OctetString::encode_slice(
-                        public_key.key_identifier()
-                    )
-                ),
-
-                // Authority Key Identifier
-                self.authority_key_identifier.as_ref().map(|id| {
-                    Self::extension(
-                        &oid::CE_AUTHORITY_KEY_IDENTIFIER, false,
-                        encode::sequence(id.encode_ref_as(Tag::CTX_0))
-                    )
-                }),
-
-                // Key Usage
-                Self::extension(
-                    &oid::CE_KEY_USAGE, true,
-                    if self.ca {
-                        // Bits 5 and 6 must be set.
-                        b"\x01\x06".encode_as(Tag::BIT_STRING)
-                    }
-                    else {
-                        // Bit 0 must be set.
-                        b"\x07\x80".encode_as(Tag::BIT_STRING)
-                    }
-                ),
-
-                // Extended Key Usage: currently not supported.
-
-                // CRL Distribution Points
-                self.crl_distribution.as_ref().map(|uri| {
-                    Self::extension(
-                        &oid::CE_CRL_DISTRIBUTION_POINTS, false,
-                        encode::sequence( // CRLDistributionPoints
-                            encode::sequence( // DistributionPoint
-                                encode::sequence_as(Tag::CTX_0, // distrib.Pt.
-                                    encode::sequence_as(Tag::CTX_0, // fullName
-                                        encode::sequence( // GeneralNames
-                                            uri.encode_general_name()
-                                        )
-                                    )
-                                )
-                            )
-                        )
-                    )
-                }),
-
-                // Authority Information Access
-                self.authority_info_access.as_ref().map(|uri| {
-                    Self::extension(
-                        &oid::PE_AUTHORITY_INFO_ACCESS, false,
-                        encode::sequence(
-                            encode::sequence((
-                                oid::AD_CA_ISSUERS.encode(),
-                                uri.encode_general_name()
-                            ))
-                        )
-                    )
-                }),
-
-                // Subject Information Access
-                Self::extension(
-                    &oid::PE_SUBJECT_INFO_ACCESS, false,
-                    encode::sequence((
-                        self.ca_repository.as_ref().map(|uri| {
-                            encode::sequence((
-                                oid::AD_CA_REPOSITORY.encode(),
-                                uri.encode_general_name()
-                            ))
-                        }),
-                        self.rpki_manifest.as_ref().map(|uri| {
-                            encode::sequence((
-                                oid::AD_RPKI_MANIFEST.encode(),
-                                uri.encode_general_name()
-                            ))
-                        }),
-                        self.signed_object.as_ref().map(|uri| {
-                            encode::sequence((
-                                oid::AD_SIGNED_OBJECT.encode(),
-                                uri.encode_general_name()
-                            ))
-                        }),
-                        self.rpki_notify.as_ref().map(|uri| {
-                            encode::sequence((
-                                oid::AD_RPKI_NOTIFY.encode(),
-                                uri.encode_general_name()
-                            ))
-                        })
-                    ))
-                ),
-
-                // Certificate Policies
-                Self::extension(
-                    &oid::CE_CERTIFICATE_POLICIES, true,
-                    encode::sequence(
-                        encode::sequence(
-                            oid::CP_IPADDR_ASNUMBER.encode()
-                        )
-                    )
-                ),
-
-                // IP Resources
-                IpResources::encode_extension(
-                    self.overclaim,
-                    &self.v4_resources.finalize(),
-                    &self.v6_resources.finalize()
-                ),
-
-                // AS Resources
-                self.as_resources.finalize().encode_extension(
-                    self.overclaim
-                ),
-            )))
-        )))
-    }
-
-    pub(crate) fn extension<V: encode::Values>(
-        oid: &'static ConstOid,
-        critical: bool,
-        content: V
-    ) -> impl encode::Values {
-        encode::sequence((
-            oid.encode(),
-            critical.encode(),
-            OctetString::encode_wrapped(Mode::Der, content)
-        ))
-    }
-}
-
-
 //------------ ResourceCert --------------------------------------------------
 
 /// A validated resource certificate.
@@ -2529,6 +2068,48 @@ impl KeyUsage {
             KeyUsage::Ee => b"\x07\x80", // Bit 0
         };
         s.encode_as(Tag::BIT_STRING)
+    }
+}
+
+
+//------------ ExtendedKeyUsage ----------------------------------------------
+
+/// The allowed key usages (extended version) of a resource certificate.
+#[derive(Clone, Debug)]
+pub struct ExtendedKeyUsage(Captured);
+
+impl ExtendedKeyUsage {
+    fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Err> {
+        let res = cons.take_sequence(|c| c.capture_all())?;
+        res.clone().decode(|cons| {
+            Oid::skip_in(cons)?;
+            while Oid::skip_opt_in(cons)?.is_some() { }
+            Ok(res)
+        }).map(ExtendedKeyUsage).map_err(Into::into)
+    }
+
+    fn encode_ref(&self) -> impl encode::Values + '_ {
+        &self.0
+    }
+
+    pub fn inspect_router(&self) -> Result<(), ValidationError> {
+        let mut captured = self.0.clone();
+        while let Some(oid) = captured.decode_partial(|cons| {
+            Oid::take_opt_from(cons)
+        })? {
+            if oid == oid::KP_BGPSEC_ROUTER {
+                return Ok(())
+            }
+        }
+        Err(ValidationError)
+    }
+
+    /// Create a BGP Sec Router Extended Key Usage
+    pub fn create_router() -> Self {
+        let captured = oid::KP_BGPSEC_ROUTER.encode().to_captured(Mode::Der);
+        ExtendedKeyUsage(captured)
     }
 }
 
@@ -2695,8 +2276,8 @@ mod test {
 mod signer_test {
     use std::str::FromStr;
     use crate::repository::cert::Cert;
-    use crate::repository::crypto::PublicKeyFormat;
-    use crate::repository::crypto::softsigner::OpenSslSigner;
+    use crate::crypto::PublicKeyFormat;
+    use crate::crypto::softsigner::OpenSslSigner;
     use crate::repository::resources::{Asn, Prefix};
     use crate::repository::tal::TalInfo;
     use super::*;

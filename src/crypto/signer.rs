@@ -2,7 +2,7 @@
 
 use std::fmt;
 use super::keys::{PublicKey, PublicKeyFormat};
-use super::signature::{Signature, SignatureAlgorithm};
+use super::signature::{SignatureAlgorithm, Signature};
 
 
 //------------ Signer --------------------------------------------------------
@@ -38,27 +38,50 @@ pub trait Signer {
     ) -> Result<(), KeyError<Self::Error>>;
 
     /// Signs data.
-    fn sign<D: AsRef<[u8]> + ?Sized>(
+    fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
         key: &Self::KeyId,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D
-    ) -> Result<Signature, SigningError<Self::Error>>;
+    ) -> Result<Signature<Alg>, SigningError<Self::Error>>;
 
     /// Signs data using a one time use keypair.
     ///
     /// Returns both the signature and the public key of the key pair,
     /// but will not store this key pair.
-    fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+    fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D
-    ) -> Result<(Signature, PublicKey), Self::Error>;
+    ) -> Result<(Signature<Alg>, PublicKey), Self::Error>;
 
     /// Creates random data.
     ///
     /// The method fills the provide bytes slice with random data.
     fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error>;
+}
+
+
+//------------ SigningAlgorithm ----------------------------------------------
+
+/// The algorithm to use for signing.
+#[derive(Clone, Copy, Debug)]
+pub enum SigningAlgorithm {
+    /// RSA with PKCS#1 1.5 padding using SHA-256.
+    RsaSha256,
+
+    /// ECDSA using the P-256 curva and SHA-256.
+    EcdsaP256Sha256,
+}
+
+impl SigningAlgorithm {
+    /// Returns the preferred public key format for this algorithm.
+    pub fn public_key_format(self) -> PublicKeyFormat {
+        match self {
+            SigningAlgorithm::RsaSha256 => PublicKeyFormat::Rsa,
+            SigningAlgorithm::EcdsaP256Sha256 => PublicKeyFormat::EcdsaP256,
+        }
+    }
 }
 
 

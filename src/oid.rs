@@ -4,6 +4,8 @@
 //! in this crate in one central place. They are public so you can refer to
 //! them should that ever become necessary.
 
+#![cfg(feature = "bcder")]
+
 use bcder::{ConstOid, Oid};
 
 /// [RFC 4055](https://tools.ietf.org/html/rfc4055) `id-sha256`
@@ -29,6 +31,12 @@ pub const SHA256_WITH_RSA_ENCRYPTION: ConstOid
 ///
 /// Identifies public keys for elliptic curve cryptography.
 pub const EC_PUBLIC_KEY: ConstOid = Oid(&[42, 134, 72, 206, 61, 2, 1]);
+
+/// [RFC 5480](https://tools.ietf.org/html/rfc5480) `ecdsa-with-SHA256`.
+///
+/// Identifies public keys for elliptic curve cryptography.
+pub const ECDSA_WITH_SHA256: ConstOid
+    = Oid(&[42, 134, 72, 206, 61, 4, 3, 2]);
 
 /// [RFC 5480](https://tools.ietf.org/html/rfc5480) `secp256r1`.
 ///

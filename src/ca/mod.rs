@@ -10,12 +10,10 @@
 
 #![cfg(feature = "ca")]
 
-//--- Modules
-//
+
+pub mod csr;
 pub mod idcert;
 pub mod idexchange;
-
-pub mod sigmsg;
-
 pub mod provisioning;
 pub mod publication;
+pub mod sigmsg;

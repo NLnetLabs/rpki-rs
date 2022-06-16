@@ -8,13 +8,12 @@ use bcder::{Captured, Mode, OctetString, Oid, Tag, xerr};
 use bcder::encode::PrimitiveContent;
 use bcder::string::OctetStringSource;
 use bytes::Bytes;
-use crate::uri;
-use super::oid;
-use super::cert::{Cert, KeyUsage, Overclaim, ResourceCert, TbsCert};
-use super::crypto::{
-    Digest, DigestAlgorithm, KeyIdentifier, Signature, SignatureAlgorithm,
-    Signer, SigningError
+use crate::{oid, uri};
+use crate::crypto::{
+    Digest, DigestAlgorithm, KeyIdentifier, RpkiSignature,
+    RpkiSignatureAlgorithm, Signer, SigningError
 };
+use super::cert::{Cert, KeyUsage, Overclaim, ResourceCert, TbsCert};
 use super::resources::{
     AsBlocksBuilder, AsResources, AsResourcesBuilder, IpBlocksBuilder,
     IpResources, IpResourcesBuilder
@@ -38,7 +37,7 @@ pub struct SignedObject {
     //
     sid: KeyIdentifier,
     signed_attrs: SignedAttrs,
-    signature: Signature,
+    signature: RpkiSignature,
 
     //--- SignedAttributes
     //
@@ -141,8 +140,10 @@ impl SignedObject {
                                 if attrs.2 != content_type {
                                     return Err(decode::Malformed.into())
                                 }
-                                let signature = Signature::new(
-                                    SignatureAlgorithm::cms_take_from(cons)?,
+                                let signature = RpkiSignature::new(
+                                    RpkiSignatureAlgorithm::cms_take_from(
+                                        cons
+                                    )?,
                                     OctetString::take_from(cons)?.into_bytes()
                                 );
                                 // no unsignedAttributes
@@ -862,7 +863,7 @@ impl SignedObjectBuilder {
 
         // Sign signed attributes with a one-off key.
         let (signature, key_info) = signer.sign_one_off(
-            SignatureAlgorithm::default(), &signed_attrs.encode_verify()
+            RpkiSignatureAlgorithm::default(), &signed_attrs.encode_verify()
         )?;
         let sid = key_info.key_identifier();
 
@@ -977,8 +978,8 @@ mod signer_test {
     use bcder::Oid;
     use bcder::encode::Values;
     use crate::uri;
-    use crate::repository::crypto::PublicKeyFormat;
-    use crate::repository::crypto::softsigner::OpenSslSigner;
+    use crate::crypto::PublicKeyFormat;
+    use crate::crypto::softsigner::OpenSslSigner;
     use crate::repository::resources::{Asn, Prefix};
     use crate::repository::tal::TalInfo;
     use super::*;

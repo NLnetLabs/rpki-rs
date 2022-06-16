@@ -11,22 +11,20 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::repository::crypto::KeyIdentifier;
-use crate::repository::crypto::PublicKey;
-use crate::repository::crypto::Signer;
-use crate::repository::crypto::SigningError;
+use crate::crypto::{KeyIdentifier, PublicKey, Signer, SigningError};
 use crate::repository::resources::{
     AsBlocks, Ipv4Blocks, Ipv6Blocks, ResourceSet
 };
 use crate::repository::x509::Time;
 use crate::repository::x509::ValidationError;
 use crate::repository::x509::Validity;
-use crate::repository::{Cert, Csr};
+use crate::repository::Cert;
 use crate::uri;
 use crate::xml;
 use crate::xml::decode::{Content, Error as XmlError};
 use crate::xml::encode;
 
+use super::csr::RpkiCaCsr;
 use super::idcert::IdCert;
 use super::idexchange::RecipientHandle;
 use super::idexchange::SenderHandle;
@@ -472,13 +470,17 @@ impl fmt::Display for PayloadTypeError {
 pub struct IssuanceRequest {
     class_name: ResourceClassName,
     limit: RequestResourceLimit,
-    csr: Csr,
+    csr: RpkiCaCsr,
 }
 
 /// # Data
 ///
 impl IssuanceRequest {
-    pub fn new(class_name: ResourceClassName, limit: RequestResourceLimit, csr: Csr) -> Self {
+    pub fn new(
+        class_name: ResourceClassName,
+        limit: RequestResourceLimit,
+        csr: RpkiCaCsr
+    ) -> Self {
         IssuanceRequest {
             class_name,
             limit,
@@ -486,7 +488,9 @@ impl IssuanceRequest {
         }
     }
 
-    pub fn unpack(self) -> (ResourceClassName, RequestResourceLimit, Csr) {
+    pub fn unpack(
+        self
+    ) -> (ResourceClassName, RequestResourceLimit, RpkiCaCsr) {
         (self.class_name, self.limit, self.csr)
     }
 
@@ -496,7 +500,7 @@ impl IssuanceRequest {
     pub fn limit(&self) -> &RequestResourceLimit {
         &self.limit
     }
-    pub fn csr(&self) -> &Csr {
+    pub fn csr(&self) -> &RpkiCaCsr {
         &self.csr
     }
 }
@@ -554,7 +558,7 @@ impl IssuanceRequest {
         let csr_bytes = request_el.take_text(reader, |text| text.base64_decode())?;
 
         let csr =
-            Csr::decode(csr_bytes.as_ref()).map_err(|e| Error::InvalidCsrSyntax(e.to_string()))?;
+            RpkiCaCsr::decode(csr_bytes.as_ref()).map_err(|e| Error::InvalidCsrSyntax(e.to_string()))?;
 
         request_el.take_end(reader)?;
 
@@ -1910,7 +1914,7 @@ mod signer_test {
 
     use crate::{
         ca::idcert::IdCert,
-        repository::crypto::{
+        crypto::{
             softsigner::{KeyId, OpenSslSigner},
             PublicKeyFormat,
         },

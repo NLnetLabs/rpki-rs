@@ -31,6 +31,8 @@
 #![allow(clippy::unknown_clippy_lints)]
 
 pub mod ca;
+pub mod crypto;
+pub mod oid;
 pub mod repository;
 pub mod rrdp;
 pub mod rtr;
