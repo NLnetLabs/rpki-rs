@@ -174,6 +174,46 @@ pub struct PublicKey {
 
 
 impl PublicKey {
+    /// Creates an RSA Public Key based on the supplied exponent and modulus.
+    /// 
+    /// See:
+    /// [RFC 4055]: https://tools.ietf.org/html/rfc4055
+    /// 
+    /// An RSA Public Key uses the following DER encoded structure inside its
+    /// BitString component:
+    /// 
+    /// ```
+    /// RSAPublicKey  ::=  SEQUENCE  {
+    ///     modulus            INTEGER,    -- n
+    ///     publicExponent     INTEGER  }  -- e
+    /// ```
+    pub fn rsa_from_components(
+        modulus: &[u8], // n
+        exponent: &[u8] // e 
+    ) -> Result<Self, bcder::decode::Error> {
+        let modulus = bcder::Unsigned::from_slice(modulus)?;
+        let exponent = bcder::Unsigned::from_slice(exponent)?;
+
+        let pub_key_sequence = bcder::encode::sequence((
+            modulus.encode(),
+            exponent.encode()
+        ));
+
+        Ok(PublicKey::rsa_from_public_key_bytes(
+            pub_key_sequence.to_captured(bcder::Mode::Der).into_bytes()
+        ))
+    }
+
+    /// Creates an RSA Public Key based on the given RSAPublicKey bytes.
+    pub fn rsa_from_public_key_bytes(
+        bytes: Bytes
+    ) -> Self {
+        let algorithm = PublicKeyFormat::Rsa;
+        let bits = BitString::new(0, bytes);
+
+        PublicKey { algorithm, bits }
+    }
+    
     /// Returns the algorithm of this public key.
     pub fn algorithm(&self) -> PublicKeyFormat {
         self.algorithm
