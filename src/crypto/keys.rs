@@ -182,7 +182,7 @@ impl PublicKey {
     /// An RSA Public Key uses the following DER encoded structure inside its
     /// BitString component:
     /// 
-    /// ```
+    /// ```txt
     /// RSAPublicKey  ::=  SEQUENCE  {
     ///     modulus            INTEGER,    -- n
     ///     publicExponent     INTEGER  }  -- e
