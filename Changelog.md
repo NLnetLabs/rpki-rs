@@ -24,6 +24,13 @@ Breaking Changes
     CSRs into a newtype around the wrapping capture.
   * Add missing functionality to `TbsCert` and `CertBuilder` to be able to
     generate router certificates.
+* Completely redesigned error handling ([#211])
+  * Switch decoding errors to the new errors defined in bcder 0.7.
+  * Rename `rpki::crypto::VerificationError` to `SignatureVerificationError`
+    for better clarity.
+  * Introduce a number of new error types for specific validation issues.
+* Renamed `rpki::repository::x509::Name::validate_*` methods to
+  `inspect_*` for consistency. ([#211])
 
 New
 
@@ -39,6 +46,7 @@ Other Changes
 
 [#208]: https://github.com/NLnetLabs/rpki-rs/pull/208
 [#210]: https://github.com/NLnetLabs/rpki-rs/pull/210
+[#211]: https://github.com/NLnetLabs/rpki-rs/pull/211
 
 
 

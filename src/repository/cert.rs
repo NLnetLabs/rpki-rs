@@ -30,7 +30,7 @@ use bytes::Bytes;
 use crate::{oid, uri};
 use crate::crypto::{
     KeyIdentifier, PublicKey, RpkiSignatureAlgorithm, SignatureAlgorithm,
-    Signer, SigningError,
+    SignatureVerificationError, Signer, SigningError,
 };
 use super::resources::{
     AsBlock, AsBlocks, AsBlocksBuilder, AsResources, AsResourcesBuilder,
@@ -38,8 +38,8 @@ use super::resources::{
 };
 use super::tal::TalInfo;
 use super::x509::{
-    Name, SignedData, Serial, Time, Validity, ValidationError,
-    encode_extension, update_first, update_once
+    InspectionError, Name, SignedData, Serial, Time, Validity,
+    ValidationError, encode_extension, update_first, update_once
 };
 
 
@@ -278,7 +278,7 @@ impl Cert {
 
     //--- Inspection
 
-    pub fn inspect_ta(&self, strict: bool) -> Result<(), ValidationError> {
+    pub fn inspect_ta(&self, strict: bool) -> Result<(), InspectionError> {
         self.inspect_ta_at(strict, Time::now())
     }
 
@@ -286,7 +286,7 @@ impl Cert {
         &self,
         strict: bool,
         now: Time
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(), InspectionError> {
         self.inspect_basics(strict, now)?;
         self.inspect_ca_basics(strict)?;
 
@@ -294,18 +294,27 @@ impl Cert {
         // equal to the subject key identifier.
         if let Some(ref aki) = self.authority_key_identifier {
             if *aki != self.subject_key_identifier {
-                return Err(ValidationError);
+                return Err(InspectionError::new(
+                    "Authority Key Identifier doesn't match \
+                    Subject Key Identifier"
+                ));
             }
         }
 
         // 4.8.6. CRL Distribution Points. There mustn’t be one.
         if self.crl_uri.is_some() {
-            return Err(ValidationError)
+            return Err(InspectionError::new(
+                "CRL Distribution Points extension \
+                 not allowed in trust anchor certificate"
+            ))
         }
 
         // 4.8.7. Authority Information Access. Must not be present.
         if self.ca_issuer.is_some() {
-            return Err(ValidationError)
+            return Err(InspectionError::new(
+                "Authority Information Access extension \
+                 not allowed in trust anchor certificate"
+            ))
         }
 
         // 4.8.10. IP Resources.
@@ -316,45 +325,64 @@ impl Cert {
         Ok(())
     }
 
-    pub fn inspect_ca(&self, strict: bool) -> Result<(), ValidationError> {
+    pub fn inspect_ca(&self, strict: bool) -> Result<(), InspectionError> {
         self.inspect_ca_at(strict, Time::now())
     }
 
     pub fn inspect_ca_at(
         &self, strict: bool, now: Time
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(), InspectionError> {
         self.inspect_basics(strict, now)?;
         self.inspect_ca_basics(strict)?;
         self.inspect_issued(strict)
     }
 
-    pub fn inspect_ee(&self, strict: bool) -> Result<(), ValidationError> {
+    pub fn inspect_ee(&self, strict: bool) -> Result<(), InspectionError> {
         self.inspect_ee_at(strict, Time::now())
     }
 
     pub fn inspect_ee_at(
         &self, strict: bool, now: Time
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(), InspectionError> {
         self.inspect_basics(strict, now)?;
         self.inspect_issued(strict)?;
 
         // 4.8.1. Basic Constraints: Must not be present.
         if self.basic_ca.is_some(){
-            return Err(ValidationError)
+            return Err(InspectionError::new(
+                "Basic Contraints extension \
+                 not allowed in end entity certificate"
+            ))
         }
 
         // 4.8.4. Key Usage. Bits for CA or not CA have been checked during
         // parsing already.
         if self.key_usage != KeyUsage::Ee {
-            return Err(ValidationError)
+            return Err(InspectionError::new(
+                "invalid Key Usage extension \
+                 for end entity certificate"
+            ))
         }
 
         // 4.8.8.  Subject Information Access. We need the signed object
         // but not the other ones.
-        if self.ca_repository.is_some() || self.rpki_manifest.is_some()
-            || self.signed_object.is_none()
-        {
-            return Err(ValidationError)
+        if self.ca_repository.is_some() {
+            return Err(InspectionError::new(
+                "id-ad-caRepository SIA instance \
+                 not allowed in end entity certificate"
+            ))
+        }
+        if self.rpki_manifest.is_some() {
+            return Err(InspectionError::new(
+                "id-ad-rpkiManifest SIA instance \
+                 not allowed in end entity certificate"
+            ))
+        }
+        if self.signed_object.is_none() {
+            return Err(InspectionError::new(
+                "missing id-ad-signedObject SIA instance \
+                 in signed object end entity certificate"
+            ))
         }
 
         Ok(())
@@ -362,31 +390,46 @@ impl Cert {
 
     pub fn inspect_detached_ee(
         &self, strict: bool
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(), InspectionError> {
         self.inspect_detached_ee_at(strict, Time::now())
     }
 
     pub fn inspect_detached_ee_at(
         &self, strict: bool, now: Time
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(), InspectionError> {
         self.inspect_basics(strict, now)?;
         self.inspect_issued(strict)?;
 
         // 4.8.1. Basic Constraints: Must not be present.
         if self.basic_ca.is_some(){
-            return Err(ValidationError)
+            return Err(InspectionError::new(
+                "Basic Contraints extension \
+                 not allowed in end entity certificate"
+            ))
         }
 
         // 4.8.4. Key Usage. Bits for CA or not CA have been checked during
         // parsing already.
         if self.key_usage != KeyUsage::Ee {
-            return Err(ValidationError)
+            return Err(InspectionError::new(
+                "invalid Key Usage extension \
+                 for end entity certificate"
+            ))
         }
 
         // 4.8.8.  Subject Information Access. We allow the signed object one
         // but not the other ones.
-        if self.ca_repository.is_some() || self.rpki_manifest.is_some() {
-            return Err(ValidationError)
+        if self.ca_repository.is_some() {
+            return Err(InspectionError::new(
+                "id-ad-caRepository SIA instance \
+                 not allowed in end entity certificate"
+            ))
+        }
+        if self.rpki_manifest.is_some() {
+            return Err(InspectionError::new(
+                "id-ad-rpkiManifest SIA instance \
+                 not allowed in end entity certificate"
+            ))
         }
 
         Ok(())
@@ -394,13 +437,13 @@ impl Cert {
 
     pub fn inspect_router(
         &self, strict: bool
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(), InspectionError> {
         self.inspect_router_at(strict, Time::now())
     }
 
     pub fn inspect_router_at(
         &self, strict: bool, now: Time
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(), InspectionError> {
         // 4.2 Serial Number: must be unique over the CA. We cannot check
         // here, and -- XXX --- probably don’t care?
 
@@ -410,33 +453,48 @@ impl Cert {
         // However, RFC 5280 demands that the two mentions of the signature
         // algorithm are the same. So we do that here.
         if self.signature != *self.signed_data.signature().algorithm() {
-            return Err(ValidationError)
+            return Err(InspectionError::new(
+                "signature algorithm mismatch"
+            ))
         }
 
         // 4.4 Issuer: must have certain format.
-        Name::validate_rpki(&self.issuer, strict)?;
+        Name::inspect_rpki(&self.issuer, strict).map_err(|err| {
+            InspectionError::with_location("Issuer", err)
+        })?;
 
         // 4.5 Subject: same as 4.4.
-        Name::validate_router(&self.subject, strict)?;
+        Name::inspect_router(&self.subject, strict).map_err(|err| {
+            InspectionError::with_location("Subject", err)
+        })?;
 
         // 4.6 Validity. Check according to RFC 5280.
         self.validity.validate_at(now)?;
 
         // 4.7 Subject Public Key Info: limited algorithms.
         if !self.subject_public_key_info().allow_router_cert() {
-            return Err(ValidationError)
+            return Err(InspectionError::new(
+                "invalid public key algorithm for router certificate"
+            ))
         }
 
         // 4.8.1. Basic Constraints. Must not be present.
         if self.basic_ca.is_some(){
-            return Err(ValidationError)
+            return Err(InspectionError::new(
+                "Basic Contraints extension \
+                 not allowed in end entity certificate"
+            ))
         }
 
         // 4.8.2. Subject Key Identifier. Must be the SHA-1 hash of the octets
         // of the subjectPublicKey.
         if self.subject_key_identifier() !=
-                             self.subject_public_key_info().key_identifier() {
-            return Err(ValidationError)
+            self.subject_public_key_info().key_identifier()
+        {
+            return Err(InspectionError::new(
+                "Subject Key Identifer extension doesn't match \
+                 the public key"
+            ))
         }
 
         // 4.8.3. Authority Key Identifier. Will be checked during
@@ -444,7 +502,10 @@ impl Cert {
 
         // 4.8.4. Key Usage. Must be EE.
         if self.key_usage != KeyUsage::Ee {
-            return Err(ValidationError)
+            return Err(InspectionError::new(
+                "invalid Key Usage extension \
+                 for end entity certificate"
+            ))
         }
 
         // 4.8.5. Extended Key Usage.
@@ -452,22 +513,32 @@ impl Cert {
         // Must be present and contain at least the kp-bgpsec-router OID.
         match self.extended_key_usage().as_ref() {
             Some(eku) => eku.inspect_router()?,
-            None => return Err(ValidationError),
+            None => {
+                return Err(InspectionError::new(
+                    "missing Extended Key Usage extension \
+                     in router certificate"
+                ))
+            }
         }
 
         // 4.8.6. CRL Distribution Points. There must be one.
         if self.crl_uri().is_none() {
-            return Err(ValidationError)
+            return Err(InspectionError::new(
+                "missing CRL Distribution Points extension \
+                 in router certificate"
+            ))
         }
 
-        // 4.8.7. Authority Information Access. Differs between TA and other
-        // certificates.
+        // 4.8.7. Authority Information Access. Checked during verification.
 
         // 4.8.8.  Subject Information Access. There must be none.
         if self.ca_repository().is_some() || self.rpki_manifest().is_some()
             || self.signed_object().is_some() || self.rpki_notify().is_some()
         {
-            return Err(ValidationError)
+            return Err(InspectionError::new(
+                "Subject Information Access extension \
+                 not allowed in router certificate"
+            ))
         }
 
         // 4.8.9.  Certificate Policies. XXX I think this can be ignored.
@@ -476,15 +547,24 @@ impl Cert {
         // 4.8.10.  IP Resources.  Must not be present.
         if self.v4_resources().is_present() || self.v6_resources().is_present()
         {
-            return Err(ValidationError)
+            return Err(InspectionError::new(
+                "IP Resources extension \
+                 not allowed in router certificate"
+            ))
         }
 
         // 4.8.11.  AS Resources. Differs between trust anchor and issued
         // certificates.
-        if !self.as_resources().is_present()
-            || self.as_resources().is_inherited()
-        {
-            return Err(ValidationError)
+        if !self.as_resources().is_present() {
+            return Err(InspectionError::new(
+                "missing AS Resources extension \
+                 in router certificate"
+            ))
+        }
+        if self.as_resources().is_inherited() {
+            return Err(InspectionError::new(
+                "inherited AS Resources in router certifiate"
+            ))
         }
 
         Ok(())
@@ -578,7 +658,7 @@ impl Cert {
         &self,
         strict: bool,
         now: Time
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(), InspectionError> {
         // The following lists all such constraints in the RFC, noting those
         // that we cannot check here.
 
@@ -591,21 +671,29 @@ impl Cert {
         // However, RFC 5280 demands that the two mentions of the signature
         // algorithm are the same. So we do that here.
         if self.signature != *self.signed_data.signature().algorithm() {
-            return Err(ValidationError)
+            return Err(InspectionError::new(
+                "signature algorithm mismatch in certificate"
+            ))
         }
 
         // 4.4 Issuer: must have certain format.
-        Name::validate_rpki(&self.issuer, strict)?;
+        Name::inspect_rpki(&self.issuer, strict).map_err(|err| {
+            InspectionError::with_location("Issuer", err)
+        })?;
 
         // 4.5 Subject: same as 4.4.
-        Name::validate_rpki(&self.subject, strict)?;
+        Name::inspect_rpki(&self.subject, strict).map_err(|err| {
+            InspectionError::with_location("Subject", err)
+        })?;
 
         // 4.6 Validity. Check according to RFC 5280.
         self.validity.validate_at(now)?;
 
         // 4.7 Subject Public Key Info: limited algorithms.
         if !self.subject_public_key_info().allow_rpki_cert() {
-            return Err(ValidationError)
+            return Err(InspectionError::new(
+                "invalid algorithm for public key"
+            ))
         }
 
         // 4.8.1. Basic Constraints. Differing requirements for CA and EE
@@ -613,9 +701,13 @@ impl Cert {
 
         // 4.8.2. Subject Key Identifier. Must be the SHA-1 hash of the octets
         // of the subjectPublicKey.
-        if self.subject_key_identifier() !=
-                             self.subject_public_key_info().key_identifier() {
-            return Err(ValidationError)
+        if self.subject_key_identifier()
+            != self.subject_public_key_info().key_identifier()
+        {
+            return Err(InspectionError::new(
+                "Subject Key Identifier extension \
+                 doesn't match public key"
+            ))
         }
 
         // 4.8.3. Authority Key Identifier. Differing requirements of TA and
@@ -626,7 +718,10 @@ impl Cert {
         // 4.8.5. Extended Key Usage. Must not be present for the kind of
         // certificates we use here.
         if self.extended_key_usage().is_some() {
-            return Err(ValidationError)
+            return Err(InspectionError::new(
+                "Extended Key Usage extension \
+                 not allowed in RPKI certifcates"
+            ))
         }
 
         // 4.8.6. CRL Distribution Points. Differs between TA and other
@@ -650,10 +745,12 @@ impl Cert {
         Ok(())
     }
 
-    fn inspect_issued(&self, _strict: bool) -> Result<(), ValidationError> {
+    fn inspect_issued(&self, _strict: bool) -> Result<(), InspectionError> {
         // 4.8.6. CRL Distribution Points. There must be one.
         if self.crl_uri().is_none() {
-            return Err(ValidationError)
+            return Err(InspectionError::new(
+                "missing CRL Distribution Points extension in certificate"
+            ))
         }
 
         Ok(())
@@ -666,24 +763,48 @@ impl Cert {
     fn inspect_ca_basics(
         &self,
         _strict: bool
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(), InspectionError> {
         // 4.8.1. Basic Constraints: For a CA it must be present (RFC6487)
         // und the “cA” flag must be set (RFC5280).
-        if self.basic_ca() != Some(true) {
-            return Err(ValidationError)
+        match self.basic_ca() {
+            Some(true) => { }
+            Some(false) => {
+                return Err(InspectionError::new(
+                    "cA flag in Basic Constraints extension set to false"
+                ))
+            }
+            None => {
+                return Err(InspectionError::new(
+                    "missing Basic Constraints extension \
+                     in CA certificate"
+                ))
+            }
         }
 
         // 4.8.4. Key Usage. Bits for CA or not CA have been checked during
         // parsing already.
         if self.key_usage() != KeyUsage::Ca {
-            return Err(ValidationError)
+            return Err(InspectionError::new(
+                "invalid Key Usage in CA certifcate"
+            ))
         }
 
         // 4.8.8.  Subject Information Access.
-        if self.ca_repository().is_none() || self.rpki_manifest().is_none()
-            || self.signed_object().is_some()
-        {
-            return Err(ValidationError)
+        if self.ca_repository().is_none() {
+            return Err(InspectionError::new(
+                "missing id-ad-caRepository SIA instance in CA certificate"
+            ))
+        }
+        if self.rpki_manifest().is_none() {
+            return Err(InspectionError::new(
+                "missing id-ad-rpkiManifest SIA instance in CA certificate"
+            ))
+        }
+        if self.signed_object().is_some() {
+            return Err(InspectionError::new(
+                "id-ad-signedObject SIA instance not allowed \
+                 in CA certificate"
+            ))
         }
 
         Ok(())
@@ -722,7 +843,7 @@ impl Cert {
         &self,
         issuer: &Cert,
         _strict: bool
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(), SignatureVerificationError> {
         self.signed_data.verify_signature(
             issuer.subject_public_key_info()
         )
@@ -1473,7 +1594,7 @@ impl TbsCert {
     ) -> Result<(), S::Error> {
         update_once(
             basic_ca,
-            "duplcate Basic Contraints extension",
+            "duplicate Basic Contraints extension",
             || {
                 cons.take_sequence(|cons| cons.take_opt_bool())
                     .map(|ca| ca.unwrap_or(false))
@@ -2170,16 +2291,23 @@ impl ExtendedKeyUsage {
         &self.0
     }
 
-    pub fn inspect_router(&self) -> Result<(), ValidationError> {
+    pub fn inspect_router(&self) -> Result<(), InspectionError> {
         let mut captured = self.0.clone();
         while let Some(oid) = captured.decode_partial(|cons| {
             Oid::take_opt_from(cons)
+        }).map_err(|err| {
+            InspectionError::with_location(
+                "Extended Key Usage extension", err,
+            )
         })? {
             if oid == oid::KP_BGPSEC_ROUTER {
                 return Ok(())
             }
         }
-        Err(ValidationError)
+        Err(InspectionError::new(
+            "Extended Key Usage extension is missing \
+             id-kp-bgpsec-router usage in router certificate"
+        ))
     }
 
     /// Create a BGP Sec Router Extended Key Usage

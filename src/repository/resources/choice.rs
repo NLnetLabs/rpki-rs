@@ -2,8 +2,7 @@
 ///
 /// This is a private module used only internally.
 
-use std::fmt;
-use super::super::x509::ValidationError;
+use std::{error, fmt};
 
 
 //------------ ResourcesChoice -----------------------------------------------
@@ -40,11 +39,11 @@ impl<T> ResourcesChoice<T> {
     /// Converts the resources into blocks or returns an error.
     ///
     /// In case the resources are missing, returns a default `T`.
-    pub fn to_blocks(&self) -> Result<T, ValidationError>
+    pub fn to_blocks(&self) -> Result<T, InheritedResources>
     where T: Clone + Default {
         match self {
             ResourcesChoice::Missing => Ok(Default::default()),
-            ResourcesChoice::Inherit => Err(ValidationError),
+            ResourcesChoice::Inherit => Err(InheritedResources(())),
             ResourcesChoice::Blocks(ref some) => Ok(some.clone()),
         }
     }
@@ -77,4 +76,25 @@ impl<T: fmt::Display> fmt::Display for ResourcesChoice<T> {
         }
     }
 }
+
+
+//------------ InheritedResources --------------------------------------------
+
+/// An attempt was made to convert inherited resources into blocks.
+#[derive(Clone, Copy, Debug)]
+pub struct InheritedResources(());
+
+impl InheritedResources {
+    pub(crate) fn new() -> Self {
+        InheritedResources(())
+    }
+}
+
+impl fmt::Display for InheritedResources {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("inherited resources")
+    }
+}
+
+impl error::Error for InheritedResources { }
 

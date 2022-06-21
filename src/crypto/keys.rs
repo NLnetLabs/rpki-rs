@@ -141,7 +141,7 @@ impl PublicKeyFormat{
         bits: Input<'_>,
         message: Input<'_>,
         signature: Input<'_>,
-    ) -> Result<(), VerificationError> {
+    ) -> Result<(), SignatureVerificationError> {
         match self {
             PublicKeyFormat::Rsa => {
                 signature::RSA_PKCS1_2048_8192_SHA256.verify(
@@ -221,9 +221,9 @@ impl PublicKey {
     /// Verifies a signature using this public key.
     pub fn verify<Alg: SignatureAlgorithm>(
         &self, message: &[u8], signature: &Signature<Alg>
-    ) -> Result<(), VerificationError> {
+    ) -> Result<(), SignatureVerificationError> {
         if signature.algorithm().public_key_format() != self.algorithm {
-            return Err(VerificationError)
+            return Err(SignatureVerificationError(()))
         }
         self.algorithm.verify(
             Input::from(self.bits()),
@@ -351,27 +351,27 @@ impl PrimitiveContent for PublicKeyCn {
 }
 
 
-//------------ VerificationError ---------------------------------------------
+//------------ SignatureVerificationError ------------------------------------
 
 /// An error happened while verifying a signature.
 ///
 /// No further information is provided. This is on purpose.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct VerificationError;
+pub struct SignatureVerificationError(());
 
-impl From<Unspecified> for VerificationError {
+impl From<Unspecified> for SignatureVerificationError {
     fn from(_: Unspecified) -> Self {
-        VerificationError
+        SignatureVerificationError(())
     }
 }
 
-impl fmt::Display for VerificationError {
+impl fmt::Display for SignatureVerificationError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("signature verification failed")
     }
 }
 
-impl error::Error for VerificationError { }
+impl error::Error for SignatureVerificationError { }
 
 
 //============ Tests =========================================================

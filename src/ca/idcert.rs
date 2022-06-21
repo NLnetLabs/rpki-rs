@@ -14,7 +14,7 @@ use std::ops;
 use crate::oid;
 use crate::crypto::{
     KeyIdentifier, PublicKey, RpkiSignatureAlgorithm, SignatureAlgorithm,
-    Signer, SigningError,
+    SignatureVerificationError, Signer, SigningError,
 };
 use crate::repository::cert::TbsCert;
 use crate::repository::x509::{
@@ -163,7 +163,7 @@ impl IdCert {
                 .verify_signature(&self.subject_public_key_info)
             {
                 error!("ID TA certificate is *invalidly* self-signed");
-                return Err(e);
+                return Err(e.into());
             }
         }
 
@@ -257,7 +257,7 @@ impl IdCert {
     /// Validates the certificate’s signature.
     fn validate_signature(
         &self, issuer: &IdCert,
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(), SignatureVerificationError> {
         self.signed_data.verify_signature(
             issuer.subject_public_key_info()
         )

@@ -29,10 +29,10 @@ use crate::repository::cert::{
 };
 use crate::crypto::{
     BgpsecSignatureAlgorithm, RpkiSignatureAlgorithm, PublicKey,
-    SignatureAlgorithm
+    SignatureAlgorithm, SignatureVerificationError,
 };
 use crate::crypto::signer::{Signer, SigningError};
-use crate::repository::x509::{Name, SignedData, ValidationError};
+use crate::repository::x509::{Name, SignedData};
 
 
 //------------ Csr -----------------------------------------------------------
@@ -143,7 +143,7 @@ impl<Alg: SignatureAlgorithm, Attrs: CsrAttributes> Csr<Alg, Attrs> {
     }
 
     /// Validates a CSR against its internal public key.
-    pub fn validate(&self) -> Result<(), ValidationError> {
+    pub fn validate(&self) -> Result<(), SignatureVerificationError> {
         self.signed_data.verify_signature(self.public_key())
     }
 }

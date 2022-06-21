@@ -6,10 +6,11 @@ use std::str::FromStr;
 use std::time::SystemTime;
 use bcder::{decode, encode};
 use bcder::{
-    BitString, Captured, ConstOid, Mode, OctetString, Oid, Tag, Unsigned,
+    BitString, Captured, ConstOid, Mode, OctetString, Oid, Tag,
+    Unsigned,
 };
 use bcder::string::{PrintableString, Utf8String};
-use bcder::decode::{Error as _, Source};
+use bcder::decode::{ContentError, Error as _, Source};
 use bcder::encode::PrimitiveContent;
 use chrono::{
     Datelike, DateTime, Duration, LocalResult, Timelike, TimeZone, Utc
@@ -17,7 +18,7 @@ use chrono::{
 use crate::oid;
 use crate::crypto::{
     PublicKey, RpkiSignatureAlgorithm, Signature, SignatureAlgorithm, Signer,
-    VerificationError,
+    SignatureVerificationError,
 };
 
 
@@ -110,8 +111,8 @@ impl Name {
     }
 
     /// Validate the name to conform with resource certificates.
-    pub fn validate_rpki(&self, strict: bool) -> Result<(), ValidationError> {
-        fn validate_strict<S: decode::Source>(
+    pub fn inspect_rpki(&self, strict: bool) -> Result<(), ContentError> {
+        fn inspect_strict<S: decode::Source>(
             cons: &mut decode::Constructed<S>
         ) -> Result<(), S::Error> {
             let mut cn = false;
@@ -154,18 +155,16 @@ impl Name {
         }
 
         if strict {
-            self.0.clone().decode(
-                validate_strict
-            ).map_err(|_| ValidationError)?
+            self.0.clone().decode(inspect_strict)?
         }
         Ok(())
     }
 
     /// Validate the name to conform with BGPSec router certificates.
-    pub fn validate_router(
+    pub fn inspect_router(
         &self, strict: bool
-    ) -> Result<(), ValidationError> {
-        fn validate_strict<S: decode::Source>(
+    ) -> Result<(), ContentError> {
+        fn inspect_strict<S: decode::Source>(
             cons: &mut decode::Constructed<S>
         ) -> Result<(), S::Error> {
             let mut cn = false;
@@ -208,9 +207,7 @@ impl Name {
         }
 
         if strict {
-            self.0.clone().decode(
-                validate_strict
-            ).map_err(|_| ValidationError)?
+            self.0.clone().decode(inspect_strict)?;
         }
         Ok(())
     }
@@ -602,11 +599,8 @@ impl<Alg: SignatureAlgorithm> SignedData<Alg> {
     pub fn verify_signature(
         &self,
         public_key: &PublicKey
-    ) -> Result<(), ValidationError> {
-        public_key.verify(
-            self.data.as_ref(),
-            &self.signature
-        ).map_err(Into::into)
+    ) -> Result<(), SignatureVerificationError> {
+        public_key.verify(self.data.as_ref(), &self.signature)
     }
 }
 
@@ -833,9 +827,9 @@ impl Time {
     pub fn validate_not_before(
         &self,
         now: Time
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(), ValidityPeriodError> {
         if now.0 < self.0 {
-            Err(ValidationError)
+            Err(ValidityPeriodError::too_old())
         }
         else {
             Ok(())
@@ -845,9 +839,9 @@ impl Time {
     pub fn validate_not_after(
         &self,
         now: Time
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(), ValidityPeriodError> {
         if now.0 > self.0 {
-            Err(ValidationError)
+            Err(ValidityPeriodError::too_new())
         }
         else {
             Ok(())
@@ -1082,11 +1076,11 @@ impl Validity {
         })
     }
 
-    pub fn validate(self) -> Result<(), ValidationError> {
+    pub fn validate(self) -> Result<(), ValidityPeriodError> {
         self.validate_at(Time::now())
     }
 
-    pub fn validate_at(self, now: Time) -> Result<(), ValidationError> {
+    pub fn validate_at(self, now: Time) -> Result<(), ValidityPeriodError> {
         self.not_before.validate_not_before(now)?;
         self.not_after.validate_not_after(now)?;
         Ok(())
@@ -1132,6 +1126,15 @@ impl SerialSliceError {
     }
 }
 
+impl From<SerialSliceError> for decode::ErrorMessage {
+    fn from(err: SerialSliceError) -> Self {
+        decode::ErrorMessage::from_static(match err.0 {
+            SerialSliceErrorKind::Empty => "empty serial number",
+            SerialSliceErrorKind::Long => "serial number longer than 20 bytes"
+        })
+    }
+}
+
 impl fmt::Display for SerialSliceError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(
@@ -1163,20 +1166,155 @@ impl fmt::Display for RepresentationError {
 impl error::Error for RepresentationError { }
 
 
+//------------ ValidityPeriodError -------------------------------------------
+
+/// An object is outside of its period of validity.
+#[derive(Clone, Copy, Debug)]
+pub struct ValidityPeriodError {
+    /// Is the object too new?
+    ///
+    /// It is too old otherwise.
+    too_new: bool,
+}
+
+impl ValidityPeriodError {
+    fn too_new() -> Self {
+        ValidityPeriodError { too_new: true }
+    }
+
+    fn too_old() -> Self {
+        ValidityPeriodError { too_new: false }
+    }
+}
+
+impl From<ValidityPeriodError> for InspectionError {
+    fn from(err: ValidityPeriodError) -> Self {
+        InspectionError::new(
+            if err.too_new {
+                "object is not yet valid"
+            }
+            else {
+                "object has expired"
+            }
+        )
+    }
+}
+
+impl fmt::Display for ValidityPeriodError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(
+            if self.too_new {
+                "object is not yet valid"
+            }
+            else {
+                "object has expired"
+            }
+        )
+    }
+}
+
+impl error::Error for ValidityPeriodError { }
+
+
+//------------ InspectionError -----------------------------------------------
+
+/// An object failed to comply with the formal specification.
+///
+/// This error is used when checking both whether an object complies with the
+/// basic specification as well as whether it conforms to any profile
+/// limiting the allowed content.
+pub struct InspectionError {
+    /// An optional location the error relates to.
+    location: Option<&'static str>,
+
+    /// A trait object of the actual error.
+    error: decode::ErrorMessage,
+}
+
+impl InspectionError {
+    /// Creates a new simple inspection error without a location.
+    pub(crate) fn new(error: impl Into<decode::ErrorMessage>) -> Self {
+        InspectionError {
+            location: None,
+            error: error.into(),
+        }
+    }
+
+    /// Creates a new inspection error with a location and message.
+    pub(crate) fn with_location(
+        location: &'static str,
+        error: impl Into<decode::ErrorMessage>,
+    ) -> Self {
+        InspectionError {
+            location: Some(location),
+            error: error.into(),
+        }
+    }
+}
+
+impl From<InspectionError> for decode::ErrorMessage {
+    fn from(err: InspectionError) -> Self {
+        Self::from_boxed(Box::new(err))
+    }
+}
+
+impl fmt::Display for InspectionError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(location) = self.location {
+            write!(f, "invalid {}: ", location)?;
+        }
+        write!(f, "{}", self.error)
+    }
+}
+
+impl fmt::Debug for InspectionError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("InspectionError")
+            .field("location", &self.location)
+            .field("error", &format_args!("{}", self.error))
+            .finish()
+    }
+}
+
+
 //------------ ValidationError -----------------------------------------------
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ValidationError;
 
-impl From<decode::ContentError> for ValidationError {
-    fn from(_: decode::ContentError) -> ValidationError {
+impl From<ContentError> for ValidationError {
+    fn from(_: ContentError) -> ValidationError {
         ValidationError
     }
 }
 
-impl From<VerificationError> for ValidationError {
-    fn from(_: VerificationError) -> ValidationError {
+impl From<super::resources::InheritedResources> for ValidationError {
+    fn from(_: super::resources::InheritedResources) -> ValidationError {
         ValidationError
+    }
+}
+
+impl From<SignatureVerificationError> for ValidationError {
+    fn from(_: SignatureVerificationError) -> ValidationError {
+        ValidationError
+    }
+}
+
+impl From<ValidityPeriodError> for ValidationError {
+    fn from(_: ValidityPeriodError) -> Self {
+        Self
+    }
+}
+
+impl From<InspectionError> for ValidationError {
+    fn from(_: InspectionError) -> Self {
+        Self
+    }
+}
+
+impl From<ValidationError> for decode::ErrorMessage {
+    fn from(_: ValidationError) -> Self {
+        decode::ErrorMessage::from("validation error")
     }
 }
 
@@ -1200,7 +1338,9 @@ mod test {
     #[test]
     fn signed_data_decode_then_encode() {
         let data = include_bytes!("../../test-data/ta.cer");
-        let obj = SignedData::<RpkiSignatureAlgorithm>::decode(data.as_ref()).unwrap();
+        let obj = SignedData::<RpkiSignatureAlgorithm>::decode(
+            data.as_ref()
+        ).unwrap();
         let mut encoded = Vec::new();
         obj.encode_ref().write_encoded(Mode::Der, &mut encoded).unwrap();
         assert_eq!(data.len(), encoded.len());
@@ -1301,64 +1441,36 @@ mod test {
 
     #[test]
     fn next_year() {
-        let now = DateTime::parse_from_rfc3339("2014-10-21T16:39:57-00:00").unwrap();
-        let future = Time::years_from_date(1, DateTime::from_utc(now.naive_utc(), Utc));
+        let now = DateTime::parse_from_rfc3339(
+            "2014-10-21T16:39:57-00:00"
+        ).unwrap();
+        let future = Time::years_from_date(
+            1, DateTime::from_utc(now.naive_utc(), Utc)
+        );
 
-        assert_eq!(
-            future.year(),
-            2015
-        );
-        assert_eq!(
-            future.month(),
-            10
-        );
-        assert_eq!(
-            future.day(),
-            21
-        );
-        assert_eq!(
-            future.hour(),
-            16
-        );
-        assert_eq!(
-            future.minute(),
-            39
-        );
-        assert_eq!(
-            future.second(),
-            57
-        );
+        assert_eq!(future.year(), 2015);
+        assert_eq!(future.month(), 10);
+        assert_eq!(future.day(), 21);
+        assert_eq!(future.hour(), 16);
+        assert_eq!(future.minute(), 39);
+        assert_eq!(future.second(), 57);
     }
 
     #[test]
     fn next_year_from_leap() {
-        let now = DateTime::parse_from_rfc3339("2020-02-29T16:39:57-00:00").unwrap();
-        let future = Time::years_from_date(10, DateTime::from_utc(now.naive_utc(), Utc));
+        let now = DateTime::parse_from_rfc3339(
+            "2020-02-29T16:39:57-00:00"
+        ).unwrap();
+        let future = Time::years_from_date(
+            10, DateTime::from_utc(now.naive_utc(), Utc)
+        );
 
-        assert_eq!(
-            future.year(),
-            2030
-        );
-        assert_eq!(
-            future.month(),
-            2
-        );
-        assert_eq!(
-            future.day(),
-            28
-        );
-        assert_eq!(
-            future.hour(),
-            16
-        );
-        assert_eq!(
-            future.minute(),
-            39
-        );
-        assert_eq!(
-            future.second(),
-            57
-        );
+        assert_eq!(future.year(), 2030);
+        assert_eq!(future.month(), 2);
+        assert_eq!(future.day(), 28);
+        assert_eq!(future.hour(), 16);
+        assert_eq!(future.minute(), 39);
+        assert_eq!(future.second(), 57);
     }
 }
 

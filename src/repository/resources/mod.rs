@@ -17,7 +17,7 @@
 pub use self::asres::{
     AsBlock, AsBlocks, AsBlocksBuilder, Asn, AsResources, AsResourcesBuilder
 };
-pub use self::choice::ResourcesChoice;
+pub use self::choice::{InheritedResources, ResourcesChoice};
 pub use self::ipres::{
     Addr, AddressFamily, IpBlock, IpBlocks, Ipv4Blocks, Ipv6Blocks,
     IpBlocksBuilder, IpBlocksForFamily, IpResources, IpResourcesBuilder,

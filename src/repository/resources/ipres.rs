@@ -21,7 +21,7 @@ use super::super::cert::Overclaim;
 use super::super::roa::RoaIpAddress;
 use super::super::x509::{encode_extension, ValidationError};
 use super::chain::{Block, SharedChain};
-use super::choice::ResourcesChoice;
+use super::choice::{InheritedResources, ResourcesChoice};
 
 
 //------------ IpResources ---------------------------------------------------
@@ -70,7 +70,9 @@ impl IpResources {
     }
 
     /// Converts the resources into blocks or returns an error.
-    pub fn to_blocks(&self) -> Result<IpBlocks, ValidationError> {
+    ///
+    /// The method returns an error for inherited resources.
+    pub fn to_blocks(&self) -> Result<IpBlocks, InheritedResources> {
         self.0.to_blocks()
     }
 }
@@ -305,10 +307,10 @@ impl IpBlocks {
     /// If the resources are of the inherited variant, returns an error.
     pub fn from_resources(
         res: IpResources
-    ) -> Result<Self, ValidationError> {
+    ) -> Result<Self, InheritedResources> {
         match res.0 {
             ResourcesChoice::Missing => Ok(IpBlocks::empty()),
-            ResourcesChoice::Inherit => Err(ValidationError),
+            ResourcesChoice::Inherit => Err(InheritedResources::new()),
             ResourcesChoice::Blocks(some) => Ok(some),
         }
     }
@@ -1837,6 +1839,14 @@ impl std::ops::Deref for Ipv6Blocks {
 #[derive(Clone, Copy, Debug)]
 pub struct DecodePrefixError(());
 
+impl From<DecodePrefixError> for decode::ErrorMessage {
+    fn from(_: DecodePrefixError) -> Self {
+        decode::ErrorMessage::from_static(
+            "invalid prefix in IP resources"
+        )
+    }
+}
+
 impl fmt::Display for DecodePrefixError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("invalid prefix in IP resources")
@@ -1848,6 +1858,14 @@ impl fmt::Display for DecodePrefixError {
 
 #[derive(Clone, Copy, Debug)]
 pub struct DecodeFamilyError(());
+
+impl From<DecodeFamilyError> for decode::ErrorMessage {
+    fn from(_: DecodeFamilyError) -> Self {
+        decode::ErrorMessage::from_static(
+            "invalid address family in IP resources"
+        )
+    }
+}
 
 impl fmt::Display for DecodeFamilyError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

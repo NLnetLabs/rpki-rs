@@ -25,7 +25,7 @@ use routecore::asn::ParseAsnError;
 use super::super::cert::Overclaim;
 use super::super::x509::{encode_extension, ValidationError};
 use super::chain::{Block, SharedChain};
-use super::choice::ResourcesChoice;
+use super::choice::{InheritedResources, ResourcesChoice};
 
 
 //------------ Re-exports ----------------------------------------------------
@@ -89,7 +89,7 @@ impl AsResources {
     }
 
     /// Converts the resources into blocks or returns an error.
-    pub fn to_blocks(&self) -> Result<AsBlocks, ValidationError> {
+    pub fn to_blocks(&self) -> Result<AsBlocks, InheritedResources> {
         self.0.to_blocks()
     }
 }
@@ -301,10 +301,10 @@ impl AsBlocks {
     /// is returned.
     pub fn from_resources(
         res: AsResources
-    ) -> Result<Self, ValidationError> {
+    ) -> Result<Self, InheritedResources> {
         match res.0 {
             ResourcesChoice::Missing => Ok(AsBlocks::empty()),
-            ResourcesChoice::Inherit => Err(ValidationError),
+            ResourcesChoice::Inherit => Err(InheritedResources::new()),
             ResourcesChoice::Blocks(some) => Ok(some),
         }
     }

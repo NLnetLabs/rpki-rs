@@ -128,7 +128,7 @@ impl Crl {
         if self.tbs.signature != *self.signed_data.signature().algorithm() {
             return Err(ValidationError)
         }
-        self.signed_data.verify_signature(public_key)
+        self.signed_data.verify_signature(public_key).map_err(Into::into)
     }
 
     pub fn encode_ref(&self) -> impl encode::Values + '_ {
