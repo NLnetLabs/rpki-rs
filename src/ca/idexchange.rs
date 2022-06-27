@@ -959,7 +959,7 @@ impl RepositoryResponse {
 ///
 impl RepositoryResponse {
     /// Parses a <repository_response /> message.
-    fn parse<R: io::BufRead>(reader: R) -> Result<Self, Error> {
+    pub fn parse<R: io::BufRead>(reader: R) -> Result<Self, Error> {
         let mut reader = xml::decode::Reader::new(reader);
 
         let mut tag: Option<String> = None;
