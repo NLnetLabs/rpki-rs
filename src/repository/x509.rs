@@ -823,7 +823,7 @@ impl Time {
         now: Time
     ) -> Result<(), ValidityPeriodError> {
         if now.0 < self.0 {
-            Err(ValidityPeriodError::too_old())
+            Err(ValidityPeriodError::too_new())
         }
         else {
             Ok(())
@@ -835,7 +835,7 @@ impl Time {
         now: Time
     ) -> Result<(), ValidityPeriodError> {
         if now.0 > self.0 {
-            Err(ValidityPeriodError::too_new())
+            Err(ValidityPeriodError::too_old())
         }
         else {
             Ok(())
