@@ -14,21 +14,22 @@
 //! [`Crl`]: struct.Crl.html
 //! [`CrlStore`]: struct.CrlStore.html
 
-use std::ops;
+use std::{fmt, ops};
 use std::collections::HashSet;
 use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Oid, Tag};
-use bcder::decode::Error as _;
+use bcder::decode::{ContentError, DecodeError, IntoSource, Source};
 use bcder::encode::PrimitiveContent;
+use bytes::Bytes;
 use crate::{oid, uri};
 use crate::crypto::{
     KeyIdentifier, PublicKey, RpkiSignatureAlgorithm, SignatureAlgorithm,
     Signer, SigningError,
 };
+use super::error::VerificationError;
 use super::x509::{
-    Name, RepresentationError, Serial, SignedData, Time, ValidationError,
-    encode_extension, update_once
+    Name, RepresentationError, Serial, SignedData, Time, encode_extension,
 };
 
 
@@ -91,44 +92,52 @@ impl Crl {
 ///
 impl Crl {
     /// Parses a source as a certificate revocation list.
-    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Error> {
+    pub fn decode<S: IntoSource>(
+        source: S
+    ) -> Result<Self, DecodeError<<S::Source as Source>::Error>> {
         Mode::Der.decode(source, Self::take_from)
     }
 
     /// Takes an encoded CRL from the beginning of a constructed value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Error> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(Self::from_constructed)
     }
 
     /// Takes an encoded CRL from the beginning of a constructed value.
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Error> {
+    ) -> Result<Option<Self>, DecodeError<S::Error>> {
         cons.take_opt_sequence(Self::from_constructed)
     }
 
     /// Parses the content of a certificate revocation list.
     pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Error> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         let signed_data = SignedData::from_constructed(cons)?;
-        let tbs = signed_data.data().clone().decode(TbsCertList::take_from)?;
+        let tbs = signed_data.data().clone().decode(
+            TbsCertList::take_from
+        ).map_err(DecodeError::convert)?;
+        if tbs.signature != *signed_data.signature().algorithm() {
+            return Err(cons.content_err(
+                "CRL signature algorithm mismatch"
+            ))
+        }
         Ok(Self { signed_data, tbs, serials: None })
     }
 
-    /// Validates the certificate revocation list.
+    /// Verifies the certificate revocation list’s signature.
     ///
-    /// The list’s signature is validated against the provided public key.
-    pub fn validate(
+    /// The signature is verified against the provided public key.
+    pub fn verify_signature(
         &self,
         public_key: &PublicKey
-    ) -> Result<(), ValidationError> {
-        if self.tbs.signature != *self.signed_data.signature().algorithm() {
-            return Err(ValidationError)
-        }
-        self.signed_data.verify_signature(public_key).map_err(Into::into)
+    ) -> Result<(), VerificationError> {
+        self.signed_data.verify_signature(
+            public_key
+        ).map_err(VerificationError::new)
     }
 
     pub fn encode_ref(&self) -> impl encode::Values + '_ {
@@ -354,7 +363,7 @@ impl TbsCertList<RevokedCertificates> {
     /// Takes a value from the beginning of a encoded constructed value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Error> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(|cons| {
             // version. Technically it is optional but we need v2, so it must
             // actually be there. v2 is encoded as an integer of value 1.
@@ -372,7 +381,7 @@ impl TbsCertList<RevokedCertificates> {
                         let id = Oid::take_from(cons)?;
                         let _critical = cons.take_opt_bool()?.unwrap_or(false);
                         let value = OctetString::take_from(cons)?;
-                        Mode::Der.decode(value.to_source(), |content| {
+                        Mode::Der.decode(value, |content| {
                             if id == oid::CE_AUTHORITY_KEY_IDENTIFIER {
                                 Self::take_authority_key_identifier(
                                     content, &mut authority_key_id
@@ -387,22 +396,22 @@ impl TbsCertList<RevokedCertificates> {
                                 // RFC 6487 says that no other extensions are
                                 // allowed. So we fail even if there is only
                                 // non-critical extension.
-                                Err(decode::ContentError::malformed(
-                                    format!("invalid extension {}", id)
+                                Err(content.content_err(
+                                    InvalidExtension::new(id)
                                 ))
                             }
-                        }).map_err(Into::into)
+                        }).map_err(DecodeError::convert)
                     })? { }
                     Ok(())
                 })
             })?;
             let authority_key_id = authority_key_id.ok_or_else(|| {
-                S::Error::malformed(
+                cons.content_err(
                     "missing Authority Key Identifier extension"
                 )
             })?;
             let crl_number = crl_number.ok_or_else(|| {
-                S::Error::malformed("missing CRL Number extension")
+                cons.content_err("missing CRL Number extension")
             })?;
             Ok(Self {
                 signature,
@@ -420,28 +429,34 @@ impl TbsCertList<RevokedCertificates> {
     fn take_authority_key_identifier<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         authority_key_id: &mut Option<KeyIdentifier>,
-    ) -> Result<(), S::Error> {
-        update_once(
-            authority_key_id,
-            "duplicate Authority Key Identifier extension",
-            || {
+    ) -> Result<(), DecodeError<S::Error>> {
+        if authority_key_id.is_some() {
+            Err(cons.content_err(
+                "duplicate Authority Key Identifier extension"
+            ))
+        }
+        else {
+            *authority_key_id = Some(
                 cons.take_sequence(|cons| {
                     cons.take_value_if(Tag::CTX_0, KeyIdentifier::from_content)
-                })
-            }
-        )
+                })?
+            );
+            Ok(())
+        }
     }
 
     /// Parses the CRL Number extension.
     fn take_crl_number<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         crl_number: &mut Option<Serial>,
-    ) -> Result<(), S::Error> {
-        update_once(
-            crl_number,
-            "duplicate CRL Number extension",
-            || Serial::take_from(cons)
-        )
+    ) -> Result<(), DecodeError<S::Error>> {
+        if crl_number.is_some() {
+            Err(cons.content_err("duplicate CRL Number extension"))
+        }
+        else {
+            *crl_number = Some(Serial::take_from(cons)?);
+            Ok(())
+        }
     }
 
     /// Returns a value encoder for a reference to this value.
@@ -512,7 +527,7 @@ impl RevokedCertificates {
     /// Takes a revoked certificates list from the beginning of a value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Error> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         let res = cons.take_opt_sequence(|cons| {
             cons.capture(|cons| {
                 while CrlEntry::take_opt_from(cons)?.is_some() { }
@@ -604,21 +619,21 @@ impl CrlEntry {
     /// Takes a single CRL entry from the beginning of a constructed value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Error> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(Self::from_constructed)
     }
 
     /// Takes an optional CRL entry from the beginning of a contructed value.
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Error> {
+    ) -> Result<Option<Self>, DecodeError<S::Error>> {
         cons.take_opt_sequence(Self::from_constructed)
     }
 
     /// Parses the content of a CRL entry.
     pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Error> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         Ok(CrlEntry {
             user_certificate: Serial::take_from(cons)?,
             revocation_date: Time::take_from(cons)?,
@@ -720,6 +735,35 @@ impl CrlStore {
 impl Default for CrlStore {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+
+//============ Error Types ===================================================
+
+//------------ InvalidExtension ----------------------------------------------
+
+/// An invalid certificate extension was encountered.
+#[derive(Clone, Debug)]
+pub struct InvalidExtension {
+    oid: Oid<Bytes>,
+}
+
+impl InvalidExtension {
+    pub(crate) fn new(oid: Oid<Bytes>) -> Self {
+        InvalidExtension { oid }
+    }
+}
+
+impl From<InvalidExtension> for ContentError {
+    fn from(err: InvalidExtension) -> Self {
+        ContentError::from_boxed(Box::new(err))
+    }
+}
+
+impl fmt::Display for InvalidExtension {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "invalid extension {}", self.oid)
     }
 }
 

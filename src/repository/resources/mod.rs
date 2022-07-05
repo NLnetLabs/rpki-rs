@@ -15,13 +15,15 @@
 //! [RFC 6487]: https://tools.ietf.org/html/rfc6487
 
 pub use self::asres::{
-    AsBlock, AsBlocks, AsBlocksBuilder, Asn, AsResources, AsResourcesBuilder
+    AsBlock, AsBlocks, AsBlocksBuilder, Asn, AsResources, AsResourcesBuilder,
+    InheritedAsResources, OverclaimedAsResources,
 };
-pub use self::choice::{InheritedResources, ResourcesChoice};
+pub use self::choice::ResourcesChoice;
 pub use self::ipres::{
-    Addr, AddressFamily, IpBlock, IpBlocks, Ipv4Blocks, Ipv6Blocks,
-    IpBlocksBuilder, IpBlocksForFamily, IpResources, IpResourcesBuilder,
-    Prefix
+    Addr, AddressFamily, InheritedIpResources, IpBlock, IpBlocks, Ipv4Blocks,
+    Ipv6Blocks, IpBlocksBuilder, IpBlocksForFamily, IpResources,
+    IpResourcesBuilder, OverclaimedIpResources, OverclaimedIpv4Resources,
+    OverclaimedIpv6Resources, Prefix
 };
 pub use self::set::{
     ResourceDiff, ResourceSet

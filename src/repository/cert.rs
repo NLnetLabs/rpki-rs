@@ -17,29 +17,29 @@
 //! [RFC 5280]: https://tools.ietf.org/html/rfc5280
 //! [RFC 6487]: https://tools.ietf.org/html/rfc5487
 
-use std::{borrow, ops};
+use std::{borrow, fmt, ops};
 use std::iter::FromIterator;
 use std::sync::Arc;
 use bcder::{decode, encode};
 use bcder::{
     BitString, Captured, ConstOid, Ia5String, Mode, OctetString, Oid, Tag
 };
+use bcder::decode::{ContentError, DecodeError, IntoSource, Source};
 use bcder::encode::{PrimitiveContent, Values};
-use bcder::decode::Error as _;
 use bytes::Bytes;
 use crate::{oid, uri};
 use crate::crypto::{
     KeyIdentifier, PublicKey, RpkiSignatureAlgorithm, SignatureAlgorithm,
     SignatureVerificationError, Signer, SigningError,
 };
+use super::error::{InspectionError, ValidationError, VerificationError};
 use super::resources::{
     AsBlock, AsBlocks, AsBlocksBuilder, AsResources, AsResourcesBuilder,
     IpBlock, IpBlocks, IpBlocksBuilder, IpResources, IpResourcesBuilder
 };
 use super::tal::TalInfo;
 use super::x509::{
-    InspectionError, Name, SignedData, Serial, Time, Validity,
-    ValidationError, encode_extension, update_first, update_once
+    Name, SignedData, Serial, Time, Validity, encode_extension, update_first,
 };
 
 
@@ -94,7 +94,9 @@ pub struct Cert {
 ///
 impl Cert {
     /// Decodes a source as a certificate.
-    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Error> {
+    pub fn decode<S: IntoSource>(
+        source: S,
+    ) -> Result<Self, DecodeError<<S::Source as Source>::Error>> {
         Mode::Der.decode(source, Self::take_from)
     }
 
@@ -104,25 +106,25 @@ impl Cert {
     /// constructed value in `cons` tagged as a sequence.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Error> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(Self::from_constructed)
     }
 
     /// Takes an optional certificate from the beginning of a value.
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Error> {
+    ) -> Result<Option<Self>, DecodeError<S::Error>> {
         cons.take_opt_sequence(Self::from_constructed)
     }
 
     /// Parses the content of a Certificate sequence.
     pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Error> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         let signed_data = SignedData::from_constructed(cons)?;
         let tbs = signed_data.data().clone().decode(
             TbsCert::from_constructed
-        )?;
+        ).map_err(DecodeError::convert)?;
         Ok(Self { signed_data, tbs })
     }
 
@@ -184,8 +186,8 @@ impl Cert {
         strict: bool,
         now: Time,
     ) -> Result<ResourceCert, ValidationError> {
-        self.inspect_ta_at(strict, now)?;
-        self.verify_ta(tal, strict)
+        self.inspect_ta(strict)?;
+        self.verify_ta_at(tal, strict, now).map_err(Into::into)
     }
 
     /// Validates the certificate as a CA certificate.
@@ -208,8 +210,8 @@ impl Cert {
         strict: bool,
         now: Time,
     ) -> Result<ResourceCert, ValidationError> {
-        self.inspect_ca_at(strict, now)?;
-        self.verify_ca(issuer, strict)
+        self.inspect_ca(strict)?;
+        self.verify_ca_at(issuer, strict, now).map_err(Into::into)
     }
 
     /// Validates the certificate as an EE RPKI-internal certificate.
@@ -235,8 +237,8 @@ impl Cert {
         strict: bool,
         now: Time,
     ) -> Result<ResourceCert, ValidationError>  {
-        self.inspect_ee_at(strict, now)?;
-        self.verify_ee(issuer, strict)
+        self.inspect_ee(strict)?;
+        self.verify_ee_at(issuer, strict, now).map_err(Into::into)
     }
 
     pub fn validate_detached_ee(
@@ -253,8 +255,8 @@ impl Cert {
         strict: bool,
         now: Time,
     ) -> Result<ResourceCert, ValidationError>  {
-        self.inspect_detached_ee_at(strict, now)?;
-        self.verify_ee(issuer, strict)
+        self.inspect_detached_ee(strict)?;
+        self.verify_ee_at(issuer, strict, now).map_err(Into::into)
     }
 
     pub fn validate_router(
@@ -271,23 +273,17 @@ impl Cert {
         strict: bool,
         now: Time,
     ) -> Result<(), ValidationError> {
-        self.inspect_router_at(strict, now)?;
-        self.verify_router(issuer, strict)
+        self.inspect_router(strict)?;
+        self.verify_router_at(issuer, strict, now).map_err(Into::into)
     }
 
 
     //--- Inspection
 
-    pub fn inspect_ta(&self, strict: bool) -> Result<(), InspectionError> {
-        self.inspect_ta_at(strict, Time::now())
-    }
-
-    pub fn inspect_ta_at(
-        &self,
-        strict: bool,
-        now: Time
+    pub fn inspect_ta(
+        &self, strict: bool,
     ) -> Result<(), InspectionError> {
-        self.inspect_basics(strict, now)?;
+        self.inspect_basics(strict)?;
         self.inspect_ca_basics(strict)?;
 
         // 4.8.3. Authority Key Identifier. May be present, if so, must be
@@ -326,25 +322,13 @@ impl Cert {
     }
 
     pub fn inspect_ca(&self, strict: bool) -> Result<(), InspectionError> {
-        self.inspect_ca_at(strict, Time::now())
-    }
-
-    pub fn inspect_ca_at(
-        &self, strict: bool, now: Time
-    ) -> Result<(), InspectionError> {
-        self.inspect_basics(strict, now)?;
+        self.inspect_basics(strict)?;
         self.inspect_ca_basics(strict)?;
         self.inspect_issued(strict)
     }
 
     pub fn inspect_ee(&self, strict: bool) -> Result<(), InspectionError> {
-        self.inspect_ee_at(strict, Time::now())
-    }
-
-    pub fn inspect_ee_at(
-        &self, strict: bool, now: Time
-    ) -> Result<(), InspectionError> {
-        self.inspect_basics(strict, now)?;
+        self.inspect_basics(strict)?;
         self.inspect_issued(strict)?;
 
         // 4.8.1. Basic Constraints: Must not be present.
@@ -391,13 +375,7 @@ impl Cert {
     pub fn inspect_detached_ee(
         &self, strict: bool
     ) -> Result<(), InspectionError> {
-        self.inspect_detached_ee_at(strict, Time::now())
-    }
-
-    pub fn inspect_detached_ee_at(
-        &self, strict: bool, now: Time
-    ) -> Result<(), InspectionError> {
-        self.inspect_basics(strict, now)?;
+        self.inspect_basics(strict)?;
         self.inspect_issued(strict)?;
 
         // 4.8.1. Basic Constraints: Must not be present.
@@ -438,12 +416,6 @@ impl Cert {
     pub fn inspect_router(
         &self, strict: bool
     ) -> Result<(), InspectionError> {
-        self.inspect_router_at(strict, Time::now())
-    }
-
-    pub fn inspect_router_at(
-        &self, strict: bool, now: Time
-    ) -> Result<(), InspectionError> {
         // 4.2 Serial Number: must be unique over the CA. We cannot check
         // here, and -- XXX --- probably don’t care?
 
@@ -459,17 +431,12 @@ impl Cert {
         }
 
         // 4.4 Issuer: must have certain format.
-        Name::inspect_rpki(&self.issuer, strict).map_err(|err| {
-            InspectionError::with_location("Issuer", err)
-        })?;
+        Name::inspect_rpki(&self.issuer, strict).map_err(IssuerError)?;
 
         // 4.5 Subject: same as 4.4.
-        Name::inspect_router(&self.subject, strict).map_err(|err| {
-            InspectionError::with_location("Subject", err)
-        })?;
+        Name::inspect_router(&self.subject, strict).map_err(SubjectError)?;
 
-        // 4.6 Validity. Check according to RFC 5280.
-        self.validity.validate_at(now)?;
+        // 4.6 Validity. Checked during verification.
 
         // 4.7 Subject Public Key Info: limited algorithms.
         if !self.subject_public_key_info().allow_router_cert() {
@@ -573,22 +540,43 @@ impl Cert {
     //--- Verification
 
     pub fn verify_ta(
-        self, tal: Arc<TalInfo>, _strict: bool
-    ) -> Result<ResourceCert, ValidationError> {
+        self, tal: Arc<TalInfo>, strict: bool,
+    ) -> Result<ResourceCert, VerificationError> {
+        self.verify_ta_at(tal, strict, Time::now())
+    }
+
+    pub fn verify_ta_at(
+        self, tal: Arc<TalInfo>, _strict: bool, now: Time,
+    ) -> Result<ResourceCert, VerificationError> {
+        // 4.6 Validity.
+        self.verify_validity(now)?;
+        
         // 4.8.10. IP Resources. If present, mustn’t be "inherit".
         let v4_resources = IpBlocks::from_resources(
             self.v4_resources.clone()
-        )?;
+        ).map_err(|_| {
+            VerificationError::new(
+                "inherited IPv4 resources in trust anchor certificate"
+            )
+        })?;
         let v6_resources = IpBlocks::from_resources(
             self.v6_resources.clone()
-        )?;
+        ).map_err(|_| {
+            VerificationError::new(
+                "inherited IPv6 resources in trust anchor certificate"
+            )
+        })?;
 
         // 4.8.11.  AS Resources. If present, mustn’t be "inherit". That
         // IP resources (logical) or AS resources are present has already
         // been checked during parsing.
         let as_resources = AsBlocks::from_resources(
             self.as_resources.clone()
-        )?;
+        ).map_err(|_| {
+            VerificationError::new(
+                "inherited AS resources in trust anchor certificate"
+            )
+        })?;
 
         self.signed_data.verify_signature(
             &self.subject_public_key_info
@@ -603,20 +591,36 @@ impl Cert {
         })
     }
 
+    /// Verify a trust anchor certificate without converting it.
     pub fn verify_ta_ref(
-        &self, _strict: bool
-    ) -> Result<(), ValidationError> {
+        &self, strict: bool
+    ) -> Result<(), VerificationError> {
+        self.verify_ta_ref_at(strict, Time::now())
+    }
+
+    pub fn verify_ta_ref_at(
+        &self, _strict: bool, now: Time,
+    ) -> Result<(), VerificationError> {
+        // 4.6 Validity.
+        self.verify_validity(now)?;
+
         // 4.8.10. IP Resources. If present, mustn’t be "inherit".
         if self.v4_resources.is_inherited() {
-            return Err(ValidationError)
+            return Err(VerificationError::new(
+                "inherited IPv4 resources in trust anchor certificate"
+            ))
         }
         if self.v6_resources.is_inherited() {
-            return Err(ValidationError)
+            return Err(VerificationError::new(
+                "inherited IPv6 resources in trust anchor certificate"
+            ))
         }
 
         // 4.8.11.  AS Resources. If present, mustn’t be "inherit".
         if self.as_resources.is_inherited() {
-            return Err(ValidationError)
+            return Err(VerificationError::new(
+                "inherited AS resources in trust anchor certificate"
+            ))
         }
 
         self.signed_data.verify_signature(
@@ -628,23 +632,44 @@ impl Cert {
 
     pub fn verify_ca(
         self, issuer: &ResourceCert, strict: bool
-    ) -> Result<ResourceCert, ValidationError> {
+    ) -> Result<ResourceCert, VerificationError> {
+        self.verify_ca_at(issuer, strict, Time::now())
+    }
+
+    pub fn verify_ca_at(
+        self, issuer: &ResourceCert, strict: bool, now: Time,
+    ) -> Result<ResourceCert, VerificationError> {
+        self.verify_validity(now)?;
         self.verify_issuer_claim(issuer, strict)?;
         self.verify_signature(issuer, strict)?;
         self.verify_resources(issuer, strict)
     }
 
     pub fn verify_ee(
-        self, issuer: &ResourceCert, strict: bool
-    ) -> Result<ResourceCert, ValidationError> {
+        self, issuer: &ResourceCert, strict: bool,
+    ) -> Result<ResourceCert, VerificationError> {
+        self.verify_ee_at(issuer, strict, Time::now())
+    }
+
+    pub fn verify_ee_at(
+        self, issuer: &ResourceCert, strict: bool, now: Time,
+    ) -> Result<ResourceCert, VerificationError> {
+        self.verify_validity(now)?;
         self.verify_issuer_claim(issuer, strict)?;
         self.verify_signature(issuer, strict)?;
         self.verify_resources(issuer, strict)
     }
 
     pub fn verify_router(
-        &self, issuer: &ResourceCert, strict: bool
-    ) -> Result<(), ValidationError> {
+        &self, issuer: &ResourceCert, strict: bool,
+    ) -> Result<(), VerificationError> {
+        self.verify_router_at(issuer, strict, Time::now())
+    }
+
+    pub fn verify_router_at(
+        &self, issuer: &ResourceCert, strict: bool, now: Time,
+    ) -> Result<(), VerificationError> {
+        self.verify_validity(now)?;
         self.verify_issuer_claim(issuer, strict)?;
         self.verify_signature(issuer, strict)?;
         self.verify_as_resources(issuer, strict)
@@ -657,7 +682,6 @@ impl Cert {
     fn inspect_basics(
         &self,
         strict: bool,
-        now: Time
     ) -> Result<(), InspectionError> {
         // The following lists all such constraints in the RFC, noting those
         // that we cannot check here.
@@ -677,17 +701,12 @@ impl Cert {
         }
 
         // 4.4 Issuer: must have certain format.
-        Name::inspect_rpki(&self.issuer, strict).map_err(|err| {
-            InspectionError::with_location("Issuer", err)
-        })?;
+        Name::inspect_rpki(&self.issuer, strict).map_err(IssuerError)?;
 
         // 4.5 Subject: same as 4.4.
-        Name::inspect_rpki(&self.subject, strict).map_err(|err| {
-            InspectionError::with_location("Subject", err)
-        })?;
+        Name::inspect_rpki(&self.subject, strict).map_err(SubjectError)?;
 
-        // 4.6 Validity. Check according to RFC 5280.
-        self.validity.validate_at(now)?;
+        // 4.6 Validity. Checked during verification.
 
         // 4.7 Subject Public Key Info: limited algorithms.
         if !self.subject_public_key_info().allow_rpki_cert() {
@@ -810,6 +829,13 @@ impl Cert {
         Ok(())
     }
 
+    /// Verifies that the certificate is valid at the given time.
+    pub fn verify_validity(
+        &self, now: Time,
+    ) -> Result<(), VerificationError> {
+        self.validity.verify_at(now).map_err(Into::into)
+    }
+
     /// Verifies that the certificate claims to have been issued by `issuer`.
     ///
     /// This is only the first part of verification. You _must_ call
@@ -818,13 +844,24 @@ impl Cert {
         &self,
         issuer: &ResourceCert,
         _strict: bool,
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(), VerificationError> {
         // 4.8.3. Authority Key Identifier. Must be present and match the
         // subject key ID of `issuer`.
-        if self.authority_key_identifier()
-            != Some(issuer.cert.subject_key_identifier())
-        {
-            return Err(ValidationError)
+        match self.authority_key_identifier() {
+            Some(aki) => {
+                if aki != issuer.cert.subject_key_identifier() {
+                    return Err(VerificationError::new(
+                        "certificate's Authority Key Identifier doesn't \
+                         match issuer's Subject Key Identifier"
+                    ))
+                }
+            }
+            None => {
+                return Err(VerificationError::new(
+                    "missing Authority Key Identifier extension \
+                     on certificate"
+                ))
+            }
         }
 
         // 4.8.7. Authority Information Access. Must be present and contain
@@ -832,7 +869,10 @@ impl Cert {
         // we don’t really need that URI so – XXX – leave it unchecked for
         // now.
         if self.ca_issuer().is_none() {
-            return Err(ValidationError);
+            return Err(VerificationError::new(
+                "missing Authority Information Access extension \
+                 on certificate"
+            ))
         }
 
         Ok(())
@@ -856,21 +896,33 @@ impl Cert {
         self,
         issuer: &ResourceCert,
         _strict: bool
-    ) -> Result<ResourceCert, ValidationError> {
+    ) -> Result<ResourceCert, VerificationError> {
         Ok(ResourceCert {
             // 4.8.10.  IP Resources. If present, must be encompassed by or
             // trimmed down to the issuer certificate.
-            v4_resources: issuer.v4_resources.validate_issued(
+            v4_resources: issuer.v4_resources.verify_issued(
                 self.v4_resources(), self.overclaim
-            )?,
-            v6_resources: issuer.v6_resources.validate_issued(
+            ).map_err(|_| {
+                VerificationError::new(
+                    "certificate is overclaiming IPv4 resources"
+                )
+            })?,
+            v6_resources: issuer.v6_resources.verify_issued(
                 self.v6_resources(), self.overclaim
-            )?,
+            ).map_err(|_| {
+                VerificationError::new(
+                    "certificate is overclaiming IPv6 resources"
+                )
+            })?,
             // 4.8.11.  AS Resources. If present, must be encompassed by or
             // trimmed down to the issuer.
-            as_resources: issuer.as_resources.validate_issued(
+            as_resources: issuer.as_resources.verify_issued(
                 self.as_resources(), self.overclaim()
-            )?,
+            ).map_err(|_| {
+                VerificationError::new(
+                    "certificate is overclaiming AS resources"
+                )
+            })?,
             cert: self,
             tal: issuer.tal.clone(),
         })
@@ -881,10 +933,14 @@ impl Cert {
         &self,
         issuer: &ResourceCert,
         _strict: bool
-    ) -> Result<(), ValidationError> {
-        let _ = issuer.as_resources.validate_issued(
+    ) -> Result<(), VerificationError> {
+        let _ = issuer.as_resources.verify_issued(
             self.as_resources(), self.overclaim()
-        )?;
+        ).map_err(|_| {
+            VerificationError::new(
+                "certificate is overclaiming AS resources"
+            )
+        })?;
         Ok(())
     }
 }
@@ -1398,7 +1454,7 @@ impl TbsCert {
     /// Parses the content of a Certificate sequence.
     pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Error> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(|cons| {
             // version [0] EXPLICIT Version DEFAULT v1.
             //  -- we need extensions so apparently, we want v3 which,
@@ -1435,7 +1491,7 @@ impl TbsCert {
                     let id = Oid::take_from(cons)?;
                     let critical = cons.take_opt_bool()?.unwrap_or(false);
                     let value = OctetString::take_from(cons)?;
-                    Mode::Der.decode(value.to_source(), |content| {
+                    Mode::Der.decode(value, |content| {
                         if id == oid::CE_BASIC_CONSTRAINTS {
                             Self::take_basic_constraints(
                                 content, &mut basic_ca
@@ -1479,11 +1535,8 @@ impl TbsCert {
                             as_overclaim = Some(m);
                             Self::take_as_resources(content, &mut as_resources)
                         } else if critical {
-                            Err(decode::ContentError::malformed(
-                                format!(
-                                    "unexpected critical extension {}",
-                                    id
-                                )
+                            Err(content.content_err(
+                                UnexpectedCriticalExtension::new(id)
                             ))
                         } else {
                             // RFC 5280 says we can ignore non-critical
@@ -1491,24 +1544,24 @@ impl TbsCert {
                             // agrees. So let’s do that.
                             Ok(())
                         }
-                    })?;
+                    }).map_err(DecodeError::convert)?;
                     Ok(())
                 })? { }
                 Ok(())
             }))?;
 
             if ip_resources.is_none() && as_resources.is_none() {
-                return Err(S::Error::malformed(
+                return Err(cons.content_err(
                     "both AS and IP resources extensions are missing"
                 ))
             }
             if ip_resources.is_some() && ip_overclaim != overclaim {
-                return Err(S::Error::malformed(
+                return Err(cons.content_err(
                     "wrong IP resources extension for certificate policy"
                 ))
             }
             if as_resources.is_some() && as_overclaim != overclaim {
-                return Err(S::Error::malformed(
+                return Err(cons.content_err(
                     "wrong AS resources extension for certificate policy"
                 ))
             }
@@ -1535,13 +1588,13 @@ impl TbsCert {
                 subject_public_key_info,
                 basic_ca,
                 subject_key_identifier: subject_key_id.ok_or_else(|| {
-                    S::Error::malformed(
+                    cons.content_err(
                         "missing Subject Key Identifier extension"
                     )
                 })?,
                 authority_key_identifier: authority_key_id,
                 key_usage: key_usage.ok_or_else(|| {
-                    S::Error::malformed(
+                    cons.content_err(
                         "missing Key Usage extension"
                     )
                 })?,
@@ -1553,7 +1606,7 @@ impl TbsCert {
                 signed_object,
                 rpki_notify,
                 overclaim: overclaim.ok_or_else(|| {
-                    S::Error::malformed(
+                    cons.content_err(
                         "missing Certificate Policy extenstion"
                     )
                 })?,
@@ -1591,15 +1644,18 @@ impl TbsCert {
     pub(crate) fn take_basic_constraints<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         basic_ca: &mut Option<bool>,
-    ) -> Result<(), S::Error> {
-        update_once(
-            basic_ca,
-            "duplicate Basic Contraints extension",
-            || {
-                cons.take_sequence(|cons| cons.take_opt_bool())
-                    .map(|ca| ca.unwrap_or(false))
-            }
-        )
+    ) -> Result<(), DecodeError<S::Error>> {
+        if basic_ca.is_some() {
+            Err(cons.content_err("duplicate Basic Contraints extension"))
+        }
+        else {
+            *basic_ca = Some(
+                cons.take_sequence(|cons| {
+                    cons.take_opt_bool()
+                })?.unwrap_or(false)
+            );
+            Ok(())
+        }
     }
 
     /// Parses the Subject Key Identifier extension.
@@ -1615,12 +1671,16 @@ impl TbsCert {
     pub(crate) fn take_subject_key_identifier<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         subject_key_id: &mut Option<KeyIdentifier>,
-    ) -> Result<(), S::Error> {
-        update_once(
-            subject_key_id,
-            "duplicate Subject Key Identifier extension",
-            || KeyIdentifier::take_from(cons)
-        )
+    ) -> Result<(), DecodeError<S::Error>> {
+        if subject_key_id.is_some() {
+            Err(cons.content_err(
+                "duplicate Subject Key Identifier extension"
+            ))
+        }
+        else {
+            *subject_key_id = Some(KeyIdentifier::take_from(cons)?);
+            Ok(())
+        }
     }
 
     /// Parses the Authority Key Identifier extension.
@@ -1638,16 +1698,20 @@ impl TbsCert {
     pub(crate) fn take_authority_key_identifier<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         authority_key_id: &mut Option<KeyIdentifier>,
-    ) -> Result<(), S::Error> {
-        update_once(
-            authority_key_id,
-            "duplicate Authority Key Identifier extension",
-            || {
+    ) -> Result<(), DecodeError<S::Error>> {
+        if authority_key_id.is_some() {
+            Err(cons.content_err(
+                "duplicate Authority Key Identifier extension"
+            ))
+        }
+        else {
+            *authority_key_id = Some(
                 cons.take_sequence(|cons| {
                     cons.take_value_if(Tag::CTX_0, KeyIdentifier::from_content)
-                })
-            }
-        )
+                })?
+            );
+            Ok(())
+        }
     }
 
     /// Parses the Key Usage extension.
@@ -1672,11 +1736,12 @@ impl TbsCert {
     pub(crate) fn take_key_usage<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         key_usage: &mut Option<KeyUsage>
-    ) -> Result<(), S::Error> {
-        update_once(
-            key_usage,
-            "duplicate Key Usage extension",
-            || {
+    ) -> Result<(), DecodeError<S::Error>> {
+        if key_usage.is_some() {
+            Err(cons.content_err("duplicate Key Usage extension"))
+        }
+        else {
+            *key_usage = Some({
                 let bits = BitString::take_from(cons)?;
                 if bits.bit(5) && bits.bit(6) {
                     Ok(KeyUsage::Ca)
@@ -1685,10 +1750,11 @@ impl TbsCert {
                     Ok(KeyUsage::Ee)
                 }
                 else {
-                    Err(S::Error::malformed("invalid Key Usage"))
+                    Err(cons.content_err("invalid Key Usage"))
                 }
-            }
-        )
+            }?);
+            Ok(())
+        }
     }
 
     /// Parses the Extended Key Usage extension.
@@ -1702,14 +1768,14 @@ impl TbsCert {
     pub(crate) fn take_extended_key_usage<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         extended_key_usage: &mut Option<ExtendedKeyUsage>
-    ) -> Result<(), S::Error> {
-        update_once(
-            extended_key_usage,
-            "duplicate Extended Key Usage extension",
-            || {
-                ExtendedKeyUsage::take_from(cons)
-            }
-        )
+    ) -> Result<(), DecodeError<S::Error>> {
+        if extended_key_usage.is_some() {
+            Err(cons.content_err("duplicate Extended Key Usage extension"))
+        }
+        else {
+            *extended_key_usage = Some(ExtendedKeyUsage::take_from(cons)?);
+            Ok(())
+        }
     }
 
     /// Parses the CRL Distribution Points extension.
@@ -1736,11 +1802,14 @@ impl TbsCert {
     fn take_crl_distribution_points<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         crl_uri: &mut Option<uri::Rsync>
-    ) -> Result<(), S::Error> {
-        update_once(
-            crl_uri,
-            "duplicate CRL Distribution Points extension",
-            || {
+    ) -> Result<(), DecodeError<S::Error>> {
+        if crl_uri.is_some() {
+            Err(cons.content_err(
+                "duplicate CRL Distribution Points extension"
+            ))
+        }
+        else {
+            *crl_uri = Some(
                 // CRLDistributionPoints
                 cons.take_sequence(|cons| {
                     // DistributionPoint
@@ -1759,9 +1828,10 @@ impl TbsCert {
                             })
                         })
                     })
-                })
-            }
-        )
+                })?
+            );
+            Ok(())
+        }
     }
 
     /// Parses the Authority Information Access extension.
@@ -1782,11 +1852,14 @@ impl TbsCert {
     fn take_authority_info_access<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         ca_issuer: &mut Option<uri::Rsync>
-    ) -> Result<(), S::Error> {
-        update_once(
-            ca_issuer,
-            "duplicate Authority Information Access extension",
-            || {
+    ) -> Result<(), DecodeError<S::Error>> {
+        if ca_issuer.is_some() {
+            Err(cons.content_err(
+                "duplicate Authority Information Access extension"
+            ))
+        }
+        else {
+            *ca_issuer = Some(
                 cons.take_sequence(|cons| {
                     cons.take_sequence(|cons| {
                         oid::AD_CA_ISSUERS.skip_if(cons)?;
@@ -1796,9 +1869,10 @@ impl TbsCert {
                             uri::Rsync::from_bytes,
                         )
                     })
-                })
-            }
-        )
+                })?
+            );
+            Ok(())
+        }
     }
 
     /// Parses the Subject Information Access extension.
@@ -1829,57 +1903,16 @@ impl TbsCert {
     pub(crate) fn take_subject_info_access<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         sia: &mut Option<Sia>,
-    ) -> Result<(), S::Error> {
-        update_once(
-            sia,
-            "duplicate Subject Key Identifier extension",
-            || {
-                let mut sia = Sia::default();
-                let mut others_seen = false;
-                cons.take_sequence(|cons| {
-                    while let Some(()) = cons.take_opt_sequence(|cons| {
-                        let oid = Oid::take_from(cons)?;
-                        if oid == oid::AD_CA_REPOSITORY {
-                            update_first(&mut sia.ca_repository, || {
-                                take_general_name(
-                                    cons, uri::Rsync::from_bytes
-                                )
-                            })
-                        }
-                        else if oid == oid::AD_RPKI_MANIFEST {
-                            update_first(&mut sia.rpki_manifest, || {
-                                take_general_name(
-                                    cons, uri::Rsync::from_bytes
-                                )
-                            })
-                        }
-                        else if oid == oid::AD_SIGNED_OBJECT {
-                            update_first(&mut sia.signed_object, || {
-                                take_general_name(
-                                    cons, uri::Rsync::from_bytes
-                                )
-                            })
-                        }
-                        else if oid == oid::AD_RPKI_NOTIFY {
-                            update_first(&mut sia.rpki_notify, || {
-                                take_general_name(
-                                    cons, uri::Https::from_bytes
-                                )
-                            })
-                        }
-                        else {
-                            others_seen = true;
-                            // XXX Presumably it is fine to just skip over
-                            //     these things. Since this is DER, it can’t
-                            //     be tricked into reading forever.
-                            cons.skip_all()
-                        }
-                    })? { }
-                    Ok(())
-                })?;
-                Ok(sia)
-            }
-        )
+    ) -> Result<(), DecodeError<S::Error>> {
+        if sia.is_some() {
+            Err(cons.content_err(
+                "duplicate Subject Key Identifier extension"
+            ))
+        }
+        else {
+            *sia = Some(Sia::take_from(cons)?);
+            Ok(())
+        }
     }
 
     /// Parses the Certificate Policies extension.
@@ -1903,16 +1936,17 @@ impl TbsCert {
     fn take_certificate_policies<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         overclaim: &mut Option<Overclaim>,
-    ) -> Result<(), S::Error> {
-        update_once(
-            overclaim,
-            "duplicate Certificate Policies extension",
-            || {
+    ) -> Result<(), DecodeError<S::Error>> {
+        if overclaim.is_some() {
+            Err(cons.content_err("duplicate Certificate Policies extension"))
+        }
+        else {
+            *overclaim = Some(
                 cons.take_sequence(|cons| {
                     cons.take_sequence(|cons| {
                         let res = Overclaim::from_policy::<S>(
                             &Oid::take_from(cons)?
-                        )?;
+                        ).map_err(|err| cons.content_err(err))?;
 
                         // policyQualifiers. This is a sequence of sequences
                         // with stuff we don’t really care about. Let’s skip
@@ -1920,33 +1954,38 @@ impl TbsCert {
                         cons.skip_all()?;
                         Ok(res)
                     })
-                })
-            }
-        )
+                })?
+            );
+            Ok(())
+        }
     }
 
     /// Parses the IP Resources extension.
     fn take_ip_resources<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         ip_resources: &mut Option<(Option<IpResources>, Option<IpResources>)>
-    ) -> Result<(), S::Error> {
-        update_once(
-            ip_resources,
-            "duplicate IP Resources extension",
-            || IpResources::take_families_from(cons)
-        )
+    ) -> Result<(), DecodeError<S::Error>> {
+        if ip_resources.is_some() {
+            Err(cons.content_err("duplicate IP Resources extension"))
+        }
+        else {
+            *ip_resources = Some(IpResources::take_families_from(cons)?);
+            Ok(())
+        }
     }
 
     /// Parses the AS Resources extension.
     fn take_as_resources<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         as_resources: &mut Option<AsResources>
-    ) -> Result<(), S::Error> {
-        update_once(
-            as_resources,
-            "duplicate AS Resources extension",
-            || AsResources::take_from(cons)
-        )
+    ) -> Result<(), DecodeError<S::Error>> {
+        if as_resources.is_some() {
+            Err(cons.content_err("duplicate AS Resources extension"))
+        }
+        else {
+            *as_resources = Some(AsResources::take_from(cons)?);
+            Ok(())
+        }
     }
 
     /// Returns an encoder for the value.
@@ -2112,14 +2151,14 @@ fn take_general_names_content<S: decode::Source, F, T, E>(
     cons: &mut decode::Constructed<S>,
     error_msg: &'static str,
     mut op: F
-) -> Result<T, S::Error>
+) -> Result<T, DecodeError<S::Error>>
 where F: FnMut(Bytes) -> Result<T, E> {
     let mut res = None;
     while let Some(()) = cons.take_opt_value_if(Tag::CTX_6, |content| {
         let uri = Ia5String::from_content(content)?;
         if let Ok(uri) = op(uri.into_bytes()) {
             if res.is_some() {
-                return Err(S::Error::malformed(error_msg))
+                return Err(content.content_err(error_msg))
             }
             res = Some(uri)
         }
@@ -2127,14 +2166,14 @@ where F: FnMut(Bytes) -> Result<T, E> {
     })? {}
     match res {
         Some(res) => Ok(res),
-        None => Err(S::Error::malformed(error_msg))
+        None => Err(cons.content_err(error_msg))
     }
 }
 
 fn take_general_name<S: decode::Source, F, T, E>(
     cons: &mut decode::Constructed<S>,
     mut op: F
-) -> Result<Option<T>, S::Error>
+) -> Result<Option<T>, DecodeError<S::Error>>
 where F: FnMut(Bytes) -> Result<T, E> {
     cons.take_value_if(Tag::CTX_6, |content| {
         Ia5String::from_content(content).map(|uri| {
@@ -2161,6 +2200,55 @@ impl Sia {
     }
     pub(crate) fn rpki_notify(&self) -> Option<&uri::Https> {
         self.rpki_notify.as_ref()
+    }
+
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, DecodeError<S::Error>> {
+        let mut sia = Sia::default();
+        let mut others_seen = false;
+        cons.take_sequence(|cons| {
+            while let Some(()) = cons.take_opt_sequence(|cons| {
+                let oid = Oid::take_from(cons)?;
+                if oid == oid::AD_CA_REPOSITORY {
+                    update_first(&mut sia.ca_repository, || {
+                        take_general_name(
+                            cons, uri::Rsync::from_bytes
+                        )
+                    })
+                }
+                else if oid == oid::AD_RPKI_MANIFEST {
+                    update_first(&mut sia.rpki_manifest, || {
+                        take_general_name(
+                            cons, uri::Rsync::from_bytes
+                        )
+                    })
+                }
+                else if oid == oid::AD_SIGNED_OBJECT {
+                    update_first(&mut sia.signed_object, || {
+                        take_general_name(
+                            cons, uri::Rsync::from_bytes
+                        )
+                    })
+                }
+                else if oid == oid::AD_RPKI_NOTIFY {
+                    update_first(&mut sia.rpki_notify, || {
+                        take_general_name(
+                            cons, uri::Https::from_bytes
+                        )
+                    })
+                }
+                else {
+                    others_seen = true;
+                    // XXX Presumably it is fine to just skip over
+                    //     these things. Since this is DER, it can’t
+                    //     be tricked into reading forever.
+                    cons.skip_all()
+                }
+            })? { }
+            Ok(())
+        })?;
+        Ok(sia)
     }
 }
 
@@ -2273,47 +2361,58 @@ impl KeyUsage {
 
 /// The allowed key usages (extended version) of a resource certificate.
 #[derive(Clone, Debug)]
-pub struct ExtendedKeyUsage(Captured);
+pub struct ExtendedKeyUsage {
+    content: Captured,
+    has_bgpsec_router: bool,
+}
 
 impl ExtendedKeyUsage {
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Error> {
-        let res = cons.take_sequence(|c| c.capture_all())?;
-        res.clone().decode(|cons| {
-            Oid::skip_in(cons)?;
-            while Oid::skip_opt_in(cons)?.is_some() { }
-            Ok(res)
-        }).map(ExtendedKeyUsage).map_err(Into::into)
+    ) -> Result<Self, DecodeError<S::Error>> {
+        let mut has_bgpsec_router = false;
+        let content = cons.take_sequence(|cons| cons.capture(|cons| {
+            let mut empty = true;
+            while let Some(oid) = Oid::take_opt_from(cons)? {
+                if oid == oid::KP_BGPSEC_ROUTER {
+                    has_bgpsec_router = true;
+                }
+                empty = false;
+            }
+            if empty {
+                Err(cons.content_err(
+                    "empty Extended key Usage extension"
+                ))
+            }
+            else {
+                Ok(())
+            }
+        }))?;
+        Ok(ExtendedKeyUsage { content, has_bgpsec_router })
     }
 
     fn encode_ref(&self) -> impl encode::Values + '_ {
-        &self.0
+        &self.content
     }
 
     pub fn inspect_router(&self) -> Result<(), InspectionError> {
-        let mut captured = self.0.clone();
-        while let Some(oid) = captured.decode_partial(|cons| {
-            Oid::take_opt_from(cons)
-        }).map_err(|err| {
-            InspectionError::with_location(
-                "Extended Key Usage extension", err,
-            )
-        })? {
-            if oid == oid::KP_BGPSEC_ROUTER {
-                return Ok(())
-            }
+        if self.has_bgpsec_router {
+            Ok(())
         }
-        Err(InspectionError::new(
-            "Extended Key Usage extension is missing \
-             id-kp-bgpsec-router usage in router certificate"
-        ))
+        else {
+            Err(InspectionError::new(
+                "Extended Key Usage extension is missing \
+                 id-kp-bgpsec-router usage in router certificate"
+            ))
+        }
     }
 
     /// Create a BGP Sec Router Extended Key Usage
     pub fn create_router() -> Self {
-        let captured = oid::KP_BGPSEC_ROUTER.encode().to_captured(Mode::Der);
-        ExtendedKeyUsage(captured)
+        ExtendedKeyUsage {
+            content: oid::KP_BGPSEC_ROUTER.encode().to_captured(Mode::Der),
+            has_bgpsec_router: true
+        }
     }
 }
 
@@ -2347,7 +2446,7 @@ pub enum Overclaim {
 impl Overclaim {
     fn from_policy<S: decode::Source>(
         oid: &Oid
-    ) -> Result<Self, S::Error> {
+    ) -> Result<Self, ContentError> {
         if oid == &oid::CP_IPADDR_ASNUMBER {
             Ok(Overclaim::Refuse)
         }
@@ -2355,7 +2454,7 @@ impl Overclaim {
             Ok(Overclaim::Trim)
         }
         else {
-            Err(S::Error::malformed("invalid Certificate Policy identifier"))
+            Err("invalid Certificate Policy identifier".into())
         }
     }
 
@@ -2406,6 +2505,100 @@ impl Overclaim {
 }
 
 
+//============ Error Types ===================================================
+
+//------------ InvalidExtension ----------------------------------------------
+
+/// An invalid certificate extension was encountered.
+#[derive(Clone, Debug)]
+pub(crate) struct InvalidExtension {
+    oid: Oid<Bytes>,
+}
+
+impl InvalidExtension {
+    pub(crate) fn new(oid: Oid<Bytes>) -> Self {
+        InvalidExtension { oid }
+    }
+}
+
+impl From<InvalidExtension> for ContentError {
+    fn from(err: InvalidExtension) -> Self {
+        ContentError::from_boxed(Box::new(err))
+    }
+}
+
+impl fmt::Display for InvalidExtension {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "invalid extension {}", self.oid)
+    }
+}
+
+
+//------------ UnexpectedCriticalExtension -----------------------------------
+
+/// An invalid certificate extension was encountered.
+#[derive(Clone, Debug)]
+struct UnexpectedCriticalExtension {
+    oid: Oid<Bytes>,
+}
+
+impl UnexpectedCriticalExtension {
+    fn new(oid: Oid<Bytes>) -> Self {
+       UnexpectedCriticalExtension { oid }
+    }
+}
+
+impl From<UnexpectedCriticalExtension> for ContentError {
+    fn from(err: UnexpectedCriticalExtension) -> Self {
+        ContentError::from_boxed(Box::new(err))
+    }
+}
+
+impl fmt::Display for UnexpectedCriticalExtension {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "unexpected critical extension {}", self.oid)
+    }
+}
+
+
+//------------ IssuerError ---------------------------------------------------
+
+/// An error happened when decoding the certificate’s subject.
+#[derive(Debug)]
+struct IssuerError(InspectionError);
+
+impl From<IssuerError> for InspectionError {
+    fn from(err: IssuerError) -> Self {
+        ContentError::from_boxed(Box::new(err)).into()
+    }
+}
+
+impl fmt::Display for IssuerError{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "invalid subject: {}", self.0)
+    }
+}
+
+
+//------------ SubjectError --------------------------------------------------
+
+/// An error happened when decoding the certificate’s subject.
+#[derive(Debug)]
+struct SubjectError(InspectionError);
+
+impl From<SubjectError> for InspectionError {
+    fn from(err: SubjectError) -> Self {
+        ContentError::from_boxed(Box::new(err)).into()
+    }
+}
+
+impl fmt::Display for SubjectError{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "invalid subject: {}", self.0)
+    }
+}
+
+
 //============ Tests =========================================================
 
 #[cfg(test)]
@@ -2416,22 +2609,16 @@ mod test {
     fn decode_and_inspect_certs() {
         Cert::decode(
             include_bytes!("../../test-data/ta.cer").as_ref()
-        ).unwrap().inspect_ta_at(
-            true, Time::utc(2020, 11, 1, 12, 0, 0)
-        ).unwrap();
+        ).unwrap().inspect_ta(true).unwrap();
         Cert::decode(
             include_bytes!("../../test-data/ca1.cer").as_ref()
-        ).unwrap().inspect_ca_at(
-            true, Time::utc(2020, 5, 1, 12, 0, 0)
-        ).unwrap();
+        ).unwrap().inspect_ca(true).unwrap();
         Cert::decode(
             include_bytes!("../../test-data/router.cer").as_ref()
-        ).unwrap().inspect_router_at(
-            true, Time::utc(2020, 11, 1, 12, 0, 0)
-        ).unwrap();
+        ).unwrap().inspect_router(true).unwrap();
     }
 
-    /// Tests that inconsistent algorithm encoding fail validation.
+    /// Tests that inconsistent algorithm encoding fails validation.
     ///
     /// Specifically, tests that a certificate with different encoding of
     /// the signature algorithm parameters (NULL value v. not present) in
@@ -2445,11 +2632,7 @@ mod test {
             ).as_ref(),
             false
         ).unwrap();
-        assert!(
-            roa.cert().inspect_ee_at(
-                true, Time::utc(2020, 5, 1, 0, 0, 0)
-            ).is_ok()
-        );
+        assert!(roa.cert().inspect_ee(true).is_ok());
 
         let mft = crate::repository::manifest::Manifest::decode(
             include_bytes!(
@@ -2457,11 +2640,7 @@ mod test {
             ).as_ref(),
             false
         ).unwrap();
-        assert!(
-            mft.cert().inspect_ee_at(
-                true, Time::utc(2020, 5, 1, 0, 0, 0)
-            ).is_err()
-        );
+        assert!(mft.cert().inspect_ee(true).is_err());
     }
 
     #[test]

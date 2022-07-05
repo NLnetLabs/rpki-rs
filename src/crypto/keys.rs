@@ -4,7 +4,7 @@ use std::{error, fmt, io};
 use std::convert::TryFrom;
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, Oid, Tag};
-use bcder::decode::Error as _;
+use bcder::decode::{ContentError, DecodeError, IntoSource};
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use ring::{digest, signature};
@@ -92,14 +92,14 @@ impl PublicKeyFormat{
     /// algorithms or if the value isn’t correctly encoded.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Error> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(Self::from_constructed)
     }
 
     /// Parses the algorithm identifier from the contents of its sequence.
     fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Error> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         let alg = Oid::take_from(cons)?;
         if alg == oid::RSA_ENCRYPTION {
             cons.take_opt_null()?;
@@ -110,7 +110,7 @@ impl PublicKeyFormat{
             Ok(PublicKeyFormat::EcdsaP256)
         }
         else {
-            Err(S::Error::malformed("invalid public key format"))
+            Err(cons.content_err("invalid public key format"))
         }
     }
 
@@ -240,13 +240,15 @@ impl PublicKey {
 /// structures. As these contain the same information as `PublicKey`,
 /// it can be decoded from and encoded to such sequences.
 impl PublicKey {
-    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Error> {
+    pub fn decode<S: decode::Source>(
+        source: S
+    ) -> Result<Self, DecodeError<S::Error>> {
         Mode::Der.decode(source, Self::take_from)
     }
 
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Error> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(|cons| {
             Ok(PublicKey {
                 algorithm: PublicKeyFormat::take_from(cons)?,
@@ -317,7 +319,7 @@ impl<'de> serde::Deserialize<'de> for PublicKey {
         let string = String::deserialize(deserializer)?;
         let decoded = base64::decode(&string).map_err(de::Error::custom)?;
         let bytes = Bytes::from(decoded);
-        PublicKey::decode(bytes).map_err(de::Error::custom)
+        PublicKey::decode(bytes.into_source()).map_err(de::Error::custom)
     }
 }
 
@@ -362,6 +364,12 @@ pub struct SignatureVerificationError(());
 impl From<Unspecified> for SignatureVerificationError {
     fn from(_: Unspecified) -> Self {
         SignatureVerificationError(())
+    }
+}
+
+impl From<SignatureVerificationError> for ContentError {
+    fn from(_: SignatureVerificationError) -> Self {
+        ContentError::from_static("signature verification failed")
     }
 }
 

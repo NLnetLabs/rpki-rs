@@ -5,7 +5,7 @@
 
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Oid, Tag};
-use bcder::decode::Error as _;
+use bcder::decode::{DecodeError, IntoSource, Source};
 use bcder::encode::PrimitiveContent;
 use bytes::Bytes;
 use log::{debug, error};
@@ -17,9 +17,9 @@ use crate::crypto::{
     SignatureVerificationError, Signer, SigningError,
 };
 use crate::repository::cert::TbsCert;
+use crate::repository::error::{ValidationError, VerificationError};
 use crate::repository::x509::{
-    encode_extension, Name, Serial, SignedData, Time, ValidationError,
-    Validity,
+    encode_extension, Name, Serial, SignedData, Time, Validity,
 };
 
 //------------ IdCert --------------------------------------------------------
@@ -91,24 +91,27 @@ impl IdCert {
 ///
 impl IdCert {
     /// Decodes a source as a certificate.
-    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Error> {
-        Mode::Der.decode(source, Self::take_from)
+    pub fn decode<S: IntoSource>(
+        source: S
+    ) -> Result<Self, DecodeError<<S::Source as Source>::Error>> {
+        Mode::Der.decode(source.into_source(), Self::take_from)
     }
 
     /// Takes an encoded certificate from the beginning of a value.
-    pub fn take_from<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Self, S::Error> {
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(Self::from_constructed)
     }
 
     /// Parses the content of a Certificate sequence.
     pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
-    ) -> Result<Self, S::Error> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         let signed_data = SignedData::from_constructed(cons)?;
-        let tbs = signed_data
-            .data()
-            .clone()
-            .decode(TbsIdCert::from_constructed)?;
+        let tbs = signed_data.data().clone().decode(
+            TbsIdCert::from_constructed
+        ).map_err(DecodeError::convert)?;
 
         Ok(Self { signed_data, tbs })
     }
@@ -163,7 +166,7 @@ impl IdCert {
                 .verify_signature(&self.subject_public_key_info)
             {
                 error!("ID TA certificate is *invalidly* self-signed");
-                return Err(e.into());
+                return Err(VerificationError::new(e).into());
             }
         }
 
@@ -183,19 +186,23 @@ impl IdCert {
         self.validate_ee_at(issuer, Time::now())
     }
 
-    pub fn validate_ee_at(&self, issuer: &IdCert, now: Time) -> Result<(), ValidationError> {
+    pub fn validate_ee_at(
+        &self, issuer: &IdCert, now: Time
+    ) -> Result<(), ValidationError> {
         self.validate_basics(now)?;
         self.validate_issued(issuer)?;
 
         // Basic Constraints: Must not be a CA cert.
         if let Some(basic_ca) = self.basic_ca {
             if basic_ca {
-                return Err(ValidationError);
+                return Err(VerificationError::new(
+                    "Basic Constraints extions in end entity cert"
+                ).into());
             }
         }
 
         // Verify that this is signed by the issuer
-        self.validate_signature(issuer)?;
+        self.validate_signature(issuer).map_err(VerificationError::new)?;
         Ok(())
     }
 
@@ -206,11 +213,15 @@ impl IdCert {
     /// Note the the standards are pretty permissive in this context.
     fn validate_basics(&self, now: Time) -> Result<(), ValidationError> {
         // Validity. Check according to RFC 5280.
-        self.validity.validate_at(now)?;
+        self.validity.verify_at(now).map_err(VerificationError::from)?;
 
         // Subject Key Identifier must match the subjectPublicKey.
-        if self.subject_key_id != self.subject_public_key_info.key_identifier() {
-            return Err(ValidationError);
+        if self.subject_key_id
+            != self.subject_public_key_info.key_identifier()
+        {
+            return Err(VerificationError::new(
+                "Subject Key Identifier mismatch"
+            ).into());
         }
 
         Ok(())
@@ -224,15 +235,21 @@ impl IdCert {
     ///
     /// This check assumes for now that we are always dealing with V3
     /// certificates and AKI and SKI have to match.
-    fn validate_issued(&self, issuer: &IdCert) -> Result<(), ValidationError> {
+    fn validate_issued(
+        &self, issuer: &IdCert,
+    ) -> Result<(), ValidationError> {
         // Authority Key Identifier. Must be present and match the
         // subject key ID of `issuer`.
         if let Some(aki) = self.authority_key_id {
             if aki != issuer.subject_key_id {
-                return Err(ValidationError);
+                return Err(VerificationError::new(
+                    "Authority Key Identifier doesn’t match issuer key"
+                ).into());
             }
         } else {
-            return Err(ValidationError);
+            return Err(VerificationError::new(
+                "missing Authority Key Identifier extension"
+            ).into());
         }
 
         Ok(())
@@ -246,12 +263,19 @@ impl IdCert {
         // 4.8.1. Basic Constraints: For a CA it must be present (RFC6487)
         // und the “cA” flag must be set (RFC5280).
         if let Some(ca) = self.basic_ca {
-            if ca {
-                return Ok(());
+            if !ca {
+                return Err(VerificationError::new(
+                    "Basic Contraints with cA flag set to false"
+                ).into())
             }
         }
+        else {
+            return Err(VerificationError::new(
+                "missing Basic Contraints extension"
+            ).into())
+        }
 
-        Err(ValidationError)
+        Ok(())
     }
 
     /// Validates the certificate’s signature.
@@ -427,7 +451,7 @@ impl TbsIdCert {
     ///  Sha256WithRsaEncryption
     fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
-    ) -> Result<Self, S::Error> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(|cons| {
             // version [0] EXPLICIT Version DEFAULT v1.
             //  -- we need extensions so apparently, we want v3 which,
@@ -454,11 +478,15 @@ impl TbsIdCert {
                         let id = Oid::take_from(cons)?;
                         let _critical = cons.take_opt_bool()?.unwrap_or(false);
                         let value = OctetString::take_from(cons)?;
-                        Mode::Der.decode(value.to_source(), |content| {
+                        Mode::Der.decode(value.into_source(), |content| {
                             if id == oid::CE_BASIC_CONSTRAINTS {
-                                TbsCert::take_basic_constraints(content, &mut basic_ca)
+                                TbsCert::take_basic_constraints(
+                                    content, &mut basic_ca
+                                )
                             } else if id == oid::CE_SUBJECT_KEY_IDENTIFIER {
-                                TbsCert::take_subject_key_identifier(content, &mut subject_key_id)
+                                TbsCert::take_subject_key_identifier(
+                                    content, &mut subject_key_id
+                                )
                             } else if id == oid::CE_AUTHORITY_KEY_IDENTIFIER {
                                 TbsCert::take_authority_key_identifier(
                                     content,
@@ -466,17 +494,17 @@ impl TbsIdCert {
                                 )
                             } else {
                                 // Id Certificates are poorly defined and may
-                                // contain critical extensions we do not actually
-                                // understand or need.
+                                // contain critical extensions we do not
+                                // actually understand or need.
                                 //
                                 // E.g. APNIC includes 'key usage', and rpkid
-                                // does not. Neither does Krill at this time. We
-                                // can ignore this particular one - because the
-                                // allowed key usage is unambiguous in the context
-                                // of the RPKI remote protocols.
+                                // does not. Neither does Krill at this time.
+                                // We can ignore this particular one - because
+                                // the allowed key usage is unambiguous in the
+                                // context of the RPKI remote protocols.
                                 Ok(())
                             }
-                        })?;
+                        }).map_err(DecodeError::convert)?;
                         Ok(())
                     })? {}
                     Ok(())
@@ -491,7 +519,7 @@ impl TbsIdCert {
                 subject_public_key_info,
                 basic_ca,
                 subject_key_id: subject_key_id.ok_or_else(|| {
-                    S::Error::malformed(
+                    cons.content_err(
                         "missing Subject Key Identifier extension"
                     )
                 })?,
@@ -632,7 +660,9 @@ mod signer_test {
     fn build_id_ta_cert() {
         let signer = OpenSslSigner::new();
         let ta_key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
-        let ta_cert = IdCert::new_ta(Validity::from_secs(60), &ta_key, &signer).unwrap();
+        let ta_cert = IdCert::new_ta(
+            Validity::from_secs(60), &ta_key, &signer
+        ).unwrap();
         ta_cert.validate_ta().unwrap();
     }
 }

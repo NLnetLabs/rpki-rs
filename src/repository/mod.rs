@@ -20,6 +20,7 @@ pub use self::tal::Tal;
 pub mod aspa;
 pub mod cert;
 pub mod crl;
+pub mod error;
 pub mod manifest;
 pub mod resources;
 pub mod roa;
@@ -27,4 +28,3 @@ pub mod rta;
 pub mod sigobj;
 pub mod tal;
 pub mod x509;
-

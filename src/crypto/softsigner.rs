@@ -7,6 +7,7 @@
 
 use std::io;
 use std::sync::{Arc, RwLock};
+use bcder::decode::IntoSource;
 use openssl::rsa::Rsa;
 use openssl::pkey::{PKey, Private};
 use openssl::hash::MessageDigest;
@@ -188,7 +189,7 @@ impl KeyPair {
         // Issues unwrapping this indicate a bug in the openssl
         // library. So, there is no way to recover.
         let der = self.0.rsa().unwrap().public_key_to_der()?;
-        Ok(PublicKey::decode(der.as_ref()).unwrap())
+        Ok(PublicKey::decode(der.as_slice().into_source()).unwrap())
     }
 
     fn sign<Alg: SignatureAlgorithm>(

@@ -5,7 +5,7 @@
 //! parent CA and/or RPKI Publication Servers.
 
 use std::borrow;
-use std::convert::TryFrom;
+use std::convert::{Infallible, TryFrom};
 use std::fmt;
 use std::io;
 use std::path::PathBuf;
@@ -17,7 +17,8 @@ use log::debug;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::ca::idcert::IdCert;
-use crate::repository::x509::{Time, ValidationError};
+use crate::repository::error::ValidationError;
+use crate::repository::x509::Time;
 use crate::uri;
 use crate::xml;
 use crate::xml::decode::{Error as XmlError, Name};
@@ -1136,7 +1137,7 @@ pub enum Error {
     InvalidVersion,
     InvalidHandle,
     InvalidTaBase64(base64::DecodeError),
-    InvalidTaCertEncoding(bcder::decode::ContentError),
+    InvalidTaCertEncoding(bcder::decode::DecodeError<Infallible>),
     InvalidTaCert,
     InvalidUri(uri::Error),
 }
@@ -1169,8 +1170,8 @@ impl From<base64::DecodeError> for Error {
     }
 }
 
-impl From<bcder::decode::ContentError> for Error {
-    fn from(e: bcder::decode::ContentError) -> Self {
+impl From<bcder::decode::DecodeError<Infallible>> for Error {
+    fn from(e: bcder::decode::DecodeError<Infallible>) -> Self {
         Error::InvalidTaCertEncoding(e)
     }
 }
