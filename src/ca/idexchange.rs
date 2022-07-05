@@ -17,6 +17,7 @@ use log::debug;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::ca::idcert::IdCert;
+use crate::ca::publication::Base64;
 use crate::repository::x509::{Time, ValidationError};
 use crate::uri;
 use crate::xml;
@@ -318,7 +319,7 @@ impl AsRef<str> for ServiceUri {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildRequest {
     /// The self-signed IdCert containing the child's public key.
-    id_cert: IdCert,
+    id_cert: Base64,
 
     /// The handle the child wants to use for itself. This may not be honored
     /// by the parent.
@@ -331,7 +332,7 @@ pub struct ChildRequest {
 /// # Data Access
 ///
 impl ChildRequest {
-    pub fn new(id_cert: IdCert, child_handle: ChildHandle) -> Self {
+    pub fn new(id_cert: Base64, child_handle: ChildHandle) -> Self {
         ChildRequest {
             id_cert,
             child_handle,
@@ -339,11 +340,11 @@ impl ChildRequest {
         }
     }
 
-    pub fn unpack(self) -> (IdCert, ChildHandle, Option<String>) {
+    pub fn unpack(self) -> (Base64, ChildHandle, Option<String>) {
         (self.id_cert, self.child_handle, self.tag)
     }
 
-    pub fn id_cert(&self) -> &IdCert {
+    pub fn id_cert(&self) -> &Base64 {
         &self.id_cert
     }
 
@@ -359,49 +360,8 @@ impl ChildRequest {
 /// # XML Support
 ///
 impl ChildRequest {
-    /// Parses a <child_request /> message, and validates the
-    /// embedded certificate. MUST be a validly signed TA cert.
-    pub fn validate<R: io::BufRead>(reader: R) -> Result<Self, Error> {
-        Self::validate_at(reader, Time::now())
-    }
-
-    /// Writes the ChildRequest's XML representation.
-    pub fn write_xml(&self, writer: &mut impl io::Write) -> Result<(), io::Error> {
-        let mut writer = xml::encode::Writer::new(writer);
-
-        writer
-            .element(CHILD_REQUEST.into_unqualified())?
-            .attr("xmlns", NS)?
-            .attr("version", VERSION)?
-            .attr("child_handle", self.child_handle())?
-            .attr_opt("tag", self.tag())?
-            .content(|content| {
-                content
-                    .element(CHILD_BPKI_TA.into_unqualified())?
-                    .content(|content| content.base64(self.id_cert.to_captured().as_slice()))?;
-                Ok(())
-            })?;
-
-        writer.done()
-    }
-
-    /// Writes the ChildRequest's XML representation to a new Vec<u8>.
-    pub fn to_xml_vec(&self) -> Vec<u8> {
-        let mut vec = vec![];
-        self.write_xml(&mut vec).unwrap(); // safe
-        vec
-    }
-
-    /// Writes the ChildRequest's XML representation to a new String.
-    pub fn to_xml_string(&self) -> String {
-        let vec = self.to_xml_vec();
-        let xml = from_utf8(vec.as_slice()).unwrap(); // safe
-
-        xml.to_string()
-    }
-
     /// Parses a <child_request /> message.
-    fn validate_at<R: io::BufRead>(reader: R, when: Time) -> Result<Self, Error> {
+    pub fn parse<R: io::BufRead>(reader: R) -> Result<Self, Error> {
         let mut reader = xml::decode::Reader::new(reader);
 
         let mut child_handle: Option<ChildHandle> = None;
@@ -440,7 +400,14 @@ impl ChildRequest {
             _ => Err(XmlError::Malformed),
         })?;
 
-        let id_cert = validate_idcert_xml_at(&mut content, &mut reader, when)?;
+        // Do base64 decoding of the certificate to ensure that it CAN be
+        // decoded.
+        let bytes = content.take_text(
+            &mut reader, |text| text.base64_decode()
+        )?;
+
+        // Then re-encode as Base64 for keeping this data.
+        let id_cert = Base64::from_content(bytes.as_slice());
 
         content.take_end(&mut reader)?;
         outer.take_end(&mut reader)?;
@@ -451,6 +418,50 @@ impl ChildRequest {
             child_handle,
             id_cert,
         })
+    }
+
+    /// Validates and return the IdCert if it is correct and valid.
+    pub fn validate(&self) -> Result<IdCert, Error> {
+        self.validate_at(Time::now())
+    }
+
+    fn validate_at(&self, when: Time) -> Result<IdCert, Error> {
+        validate_idcert_at(&self.id_cert, when)
+    }
+
+    /// Writes the ChildRequest's XML representation.
+    pub fn write_xml(&self, writer: &mut impl io::Write) -> Result<(), io::Error> {
+        let mut writer = xml::encode::Writer::new(writer);
+
+        writer
+            .element(CHILD_REQUEST.into_unqualified())?
+            .attr("xmlns", NS)?
+            .attr("version", VERSION)?
+            .attr("child_handle", self.child_handle())?
+            .attr_opt("tag", self.tag())?
+            .content(|content| {
+                content
+                    .element(CHILD_BPKI_TA.into_unqualified())?
+                    .content(|content| content.raw(&self.id_cert))?;
+                Ok(())
+            })?;
+
+        writer.done()
+    }
+
+    /// Writes the ChildRequest's XML representation to a new Vec<u8>.
+    pub fn to_xml_vec(&self) -> Vec<u8> {
+        let mut vec = vec![];
+        self.write_xml(&mut vec).unwrap(); // safe
+        vec
+    }
+
+    /// Writes the ChildRequest's XML representation to a new String.
+    pub fn to_xml_string(&self) -> String {
+        let vec = self.to_xml_vec();
+        let xml = from_utf8(vec.as_slice()).unwrap(); // safe
+
+        xml.to_string()
     }
 }
 
@@ -469,7 +480,7 @@ impl fmt::Display for ChildRequest {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentResponse {
     /// The parent CA's IdCert
-    id_cert: IdCert,
+    id_cert: Base64,
 
     /// The handle of the parent CA.
     parent_handle: ParentHandle,
@@ -489,7 +500,7 @@ pub struct ParentResponse {
 ///
 impl ParentResponse {
     pub fn new(
-        id_cert: IdCert,
+        id_cert: Base64,
         parent_handle: ParentHandle,
         child_handle: ChildHandle,
         service_uri: ServiceUri,
@@ -504,7 +515,7 @@ impl ParentResponse {
         }
     }
 
-    pub fn id_cert(&self) -> &IdCert {
+    pub fn id_cert(&self) -> &Base64 {
         &self.id_cert
     }
 
@@ -528,35 +539,8 @@ impl ParentResponse {
 /// # XML Support
 ///
 impl ParentResponse {
-    /// Parses a <parent_response /> message, and validates the
-    /// embedded certificate. MUST be a validly signed TA cert.
-    pub fn validate<R: io::BufRead>(reader: R) -> Result<Self, Error> {
-        Self::validate_at(reader, Time::now())
-    }
-
-    /// Writes the ParentResponse's XML representation.
-    pub fn write_xml(&self, writer: &mut impl io::Write) -> Result<(), io::Error> {
-        let mut writer = xml::encode::Writer::new(writer);
-
-        writer
-            .element(PARENT_RESPONSE.into_unqualified())?
-            .attr("xmlns", NS)?
-            .attr("version", VERSION)?
-            .attr("parent_handle", self.parent_handle())?
-            .attr("child_handle", self.child_handle())?
-            .attr("service_uri", self.service_uri())?
-            .attr_opt("tag", self.tag())?
-            .content(|content| {
-                content
-                    .element(PARENT_BPKI_TA.into_unqualified())?
-                    .content(|content| content.base64(self.id_cert.to_captured().as_slice()))?;
-                Ok(())
-            })?;
-        writer.done()
-    }
-
     /// Parses a <parent_response /> message.
-    fn validate_at<R: io::BufRead>(reader: R, when: Time) -> Result<Self, Error> {
+    pub fn parse<R: io::BufRead>(reader: R) -> Result<Self, Error> {
         let mut reader = xml::decode::Reader::new(reader);
 
         let mut child_handle: Option<ChildHandle> = None;
@@ -615,7 +599,7 @@ impl ParentResponse {
         // we cannot assume that 'parent_bpki_ta' will be the first element.
         // And we should return an error if we find any other unexpected
         // element here.
-        let mut id_cert: Option<IdCert> = None;
+        let mut id_cert: Option<Base64> = None;
 
         loop {
             let mut bpki_ta_element_found = false;
@@ -637,7 +621,15 @@ impl ParentResponse {
 
             if bpki_ta_element_found {
                 // parse inner text as the ID certificate
-                id_cert = Some(validate_idcert_xml_at(&mut inner, &mut reader, when)?);
+                
+                // Do base64 decoding of the certificate to ensure that it CAN be
+                // decoded.
+                let bytes = inner.take_text(
+                    &mut reader, |text| text.base64_decode()
+                )?;
+
+                // Then re-encode as Base64 for keeping this data.
+                id_cert = Some(Base64::from_content(bytes.as_slice()));
             } else {
                 // skip inner text if there is any (offer does not have any)
                 inner.skip_opt_text(&mut reader)?;
@@ -659,6 +651,36 @@ impl ParentResponse {
             child_handle,
             service_uri,
         })
+    }
+
+    /// Writes the ParentResponse's XML representation.
+    pub fn write_xml(&self, writer: &mut impl io::Write) -> Result<(), io::Error> {
+        let mut writer = xml::encode::Writer::new(writer);
+
+        writer
+            .element(PARENT_RESPONSE.into_unqualified())?
+            .attr("xmlns", NS)?
+            .attr("version", VERSION)?
+            .attr("parent_handle", self.parent_handle())?
+            .attr("child_handle", self.child_handle())?
+            .attr("service_uri", self.service_uri())?
+            .attr_opt("tag", self.tag())?
+            .content(|content| {
+                content
+                    .element(PARENT_BPKI_TA.into_unqualified())?
+                    .content(|content| content.raw(&self.id_cert))?;
+                Ok(())
+            })?;
+        writer.done()
+    }
+
+    /// Validates and return the IdCert if it is correct and valid.
+    pub fn validate(&self) -> Result<IdCert, Error> {
+        self.validate_at(Time::now())
+    }
+
+    fn validate_at(&self, when: Time) -> Result<IdCert, Error> {
+        validate_idcert_at(&self.id_cert, when)
     }
 
     /// Writes the ParentResponse's XML representation to a new Vec<u8>.
@@ -696,7 +718,7 @@ impl fmt::Display for ParentResponse {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherRequest {
     /// The self-signed IdCert containing the publisher's public key.
-    id_cert: IdCert,
+    id_cert: Base64,
 
     /// The name the publishing CA likes to call itself by
     publisher_handle: PublisherHandle,
@@ -708,7 +730,7 @@ pub struct PublisherRequest {
 /// # Construct and Data Access
 ///
 impl PublisherRequest {
-    pub fn new(id_cert: IdCert, publisher_handle: PublisherHandle, tag: Option<String>) -> Self {
+    pub fn new(id_cert: Base64, publisher_handle: PublisherHandle, tag: Option<String>) -> Self {
         PublisherRequest {
             id_cert,
             publisher_handle,
@@ -716,11 +738,11 @@ impl PublisherRequest {
         }
     }
 
-    pub fn unpack(self) -> (IdCert, PublisherHandle, Option<String>) {
+    pub fn unpack(self) -> (Base64, PublisherHandle, Option<String>) {
         (self.id_cert, self.publisher_handle, self.tag)
     }
 
-    pub fn id_cert(&self) -> &IdCert {
+    pub fn id_cert(&self) -> &Base64 {
         &self.id_cert
     }
 
@@ -736,49 +758,8 @@ impl PublisherRequest {
 /// # XML Support
 ///
 impl PublisherRequest {
-    /// Parses a <publisher_request /> message, and validates the
-    /// embedded certificate. MUST be a validly signed TA cert.
-    pub fn validate<R: io::BufRead>(reader: R) -> Result<Self, Error> {
-        Self::validate_at(reader, Time::now())
-    }
-
-    /// Writes the PublisherRequest's XML representation.
-    pub fn write_xml(&self, writer: &mut impl io::Write) -> Result<(), io::Error> {
-        let mut writer = xml::encode::Writer::new(writer);
-
-        writer
-            .element(PUBLISHER_REQUEST.into_unqualified())?
-            .attr("xmlns", NS)?
-            .attr("version", VERSION)?
-            .attr("publisher_handle", self.publisher_handle())?
-            .attr_opt("tag", self.tag())?
-            .content(|content| {
-                content
-                    .element(PUBLISHER_BPKI_TA.into_unqualified())?
-                    .content(|content| content.base64(self.id_cert.to_captured().as_slice()))?;
-                Ok(())
-            })?;
-
-        writer.done()
-    }
-
-    /// Writes the PublisherRequest's XML representation to a new Vec<u8>.
-    pub fn to_xml_vec(&self) -> Vec<u8> {
-        let mut vec = vec![];
-        self.write_xml(&mut vec).unwrap(); // safe
-        vec
-    }
-
-    /// Writes the PublisherRequest's XML representation to a new String.
-    pub fn to_xml_string(&self) -> String {
-        let vec = self.to_xml_vec();
-        let xml = from_utf8(vec.as_slice()).unwrap(); // safe
-
-        xml.to_string()
-    }
-
     /// Parses a <publisher_request /> message.
-    fn validate_at<R: io::BufRead>(reader: R, when: Time) -> Result<Self, Error> {
+    pub fn parse<R: io::BufRead>(reader: R) -> Result<Self, Error> {
         let mut reader = xml::decode::Reader::new(reader);
 
         let mut publisher_handle: Option<PublisherHandle> = None;
@@ -817,8 +798,15 @@ impl PublisherRequest {
             _ => Err(XmlError::Malformed),
         })?;
 
-        let id_cert = validate_idcert_xml_at(&mut content, &mut reader, when)?;
+        // Do base64 decoding of the certificate to ensure that it CAN be
+        // decoded.
+        let bytes = content.take_text(
+            &mut reader, |text| text.base64_decode()
+        )?;
 
+        // Then re-encode as Base64 for keeping this data.
+        let id_cert = Base64::from_content(bytes.as_slice());
+        
         content.take_end(&mut reader)?;
 
         outer.take_end(&mut reader)?;
@@ -831,6 +819,52 @@ impl PublisherRequest {
             id_cert,
         })
     }
+
+    /// Validates and return the IdCert if it is correct and valid.
+    pub fn validate(&self) -> Result<IdCert, Error> {
+        self.validate_at(Time::now())
+    }
+
+    fn validate_at(&self, when: Time) -> Result<IdCert, Error> {
+        validate_idcert_at(&self.id_cert, when)
+    }
+
+    /// Writes the PublisherRequest's XML representation.
+    pub fn write_xml(&self, writer: &mut impl io::Write) -> Result<(), io::Error> {
+        let mut writer = xml::encode::Writer::new(writer);
+
+        writer
+            .element(PUBLISHER_REQUEST.into_unqualified())?
+            .attr("xmlns", NS)?
+            .attr("version", VERSION)?
+            .attr("publisher_handle", self.publisher_handle())?
+            .attr_opt("tag", self.tag())?
+            .content(|content| {
+                content
+                    .element(PUBLISHER_BPKI_TA.into_unqualified())?
+                    .content(|content| content.raw(&self.id_cert))?;
+                Ok(())
+            })?;
+
+        writer.done()
+    }
+
+    /// Writes the PublisherRequest's XML representation to a new Vec<u8>.
+    pub fn to_xml_vec(&self) -> Vec<u8> {
+        let mut vec = vec![];
+        self.write_xml(&mut vec).unwrap(); // safe
+        vec
+    }
+
+    /// Writes the PublisherRequest's XML representation to a new String.
+    pub fn to_xml_string(&self) -> String {
+        let vec = self.to_xml_vec();
+        let xml = from_utf8(vec.as_slice()).unwrap(); // safe
+
+        xml.to_string()
+    }
+
+
 }
 
 //--- Display
@@ -852,7 +886,7 @@ impl fmt::Display for PublisherRequest {
 #[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
 pub struct RepositoryResponse {
     /// The Publication Server Identity Certificate
-    id_cert: IdCert,
+    id_cert: Base64,
 
     /// The name the publication server decided to call the CA by.
     /// Note that this may not be the same as the handle the CA asked for.
@@ -874,7 +908,7 @@ pub struct RepositoryResponse {
 impl RepositoryResponse {
     /// Creates a new response.
     pub fn new(
-        id_cert: IdCert,
+        id_cert: Base64,
         publisher_handle: PublisherHandle,
         service_uri: ServiceUri,
         sia_base: uri::Rsync,
@@ -892,7 +926,7 @@ impl RepositoryResponse {
         }
     }
 
-    pub fn id_cert(&self) -> &IdCert {
+    pub fn id_cert(&self) -> &Base64 {
         &self.id_cert
     }
 
@@ -924,36 +958,8 @@ impl RepositoryResponse {
 /// # XML Support
 ///
 impl RepositoryResponse {
-    /// Parses a <repository_response /> message, and validates the
-    /// embedded certificate. MUST be a validly signed TA cert.
-    pub fn validate<R: io::BufRead>(reader: R) -> Result<Self, Error> {
-        Self::validate_at(reader, Time::now())
-    }
-
-    /// Writes the RepositoryResponse's XML representation.
-    pub fn write_xml(&self, writer: &mut impl io::Write) -> Result<(), io::Error> {
-        let mut writer = xml::encode::Writer::new(writer);
-
-        writer
-            .element(REPOSITORY_RESPONSE.into_unqualified())?
-            .attr("xmlns", NS)?
-            .attr("version", VERSION)?
-            .attr("publisher_handle", self.publisher_handle())?
-            .attr("service_uri", self.service_uri())?
-            .attr("sia_base", self.sia_base())?
-            .attr_opt("rrdp_notification_uri", self.rrdp_notification_uri())?
-            .attr_opt("tag", self.tag())?
-            .content(|content| {
-                content
-                    .element(REPOSITORY_BPKI_TA.into_unqualified())?
-                    .content(|content| content.base64(self.id_cert.to_captured().as_slice()))?;
-                Ok(())
-            })?;
-        writer.done()
-    }
-
     /// Parses a <repository_response /> message.
-    fn validate_at<R: io::BufRead>(reader: R, when: Time) -> Result<Self, Error> {
+    pub fn parse<R: io::BufRead>(reader: R) -> Result<Self, Error> {
         let mut reader = xml::decode::Reader::new(reader);
 
         let mut tag: Option<String> = None;
@@ -1017,7 +1023,14 @@ impl RepositoryResponse {
             _ => Err(XmlError::Malformed),
         })?;
 
-        let id_cert = validate_idcert_xml_at(&mut content, &mut reader, when)?;
+        // Do base64 decoding of the certificate to ensure that it CAN be
+        // decoded.
+        let bytes = content.take_text(
+            &mut reader, |text| text.base64_decode()
+        )?;
+
+        // Then re-encode as Base64 for keeping this data.
+        let id_cert = Base64::from_content(bytes.as_slice());
 
         content.take_end(&mut reader)?;
 
@@ -1034,6 +1047,37 @@ impl RepositoryResponse {
             service_uri,
             repo_info
         })
+    }
+
+    /// Writes the RepositoryResponse's XML representation.
+    pub fn write_xml(&self, writer: &mut impl io::Write) -> Result<(), io::Error> {
+        let mut writer = xml::encode::Writer::new(writer);
+
+        writer
+            .element(REPOSITORY_RESPONSE.into_unqualified())?
+            .attr("xmlns", NS)?
+            .attr("version", VERSION)?
+            .attr("publisher_handle", self.publisher_handle())?
+            .attr("service_uri", self.service_uri())?
+            .attr("sia_base", self.sia_base())?
+            .attr_opt("rrdp_notification_uri", self.rrdp_notification_uri())?
+            .attr_opt("tag", self.tag())?
+            .content(|content| {
+                content
+                    .element(REPOSITORY_BPKI_TA.into_unqualified())?
+                    .content(|content| content.raw(&self.id_cert))?;
+                Ok(())
+            })?;
+        writer.done()
+    }
+
+    /// Validates and return the IdCert if it is correct and valid.
+    pub fn validate(&self) -> Result<IdCert, Error> {
+        self.validate_at(Time::now())
+    }
+
+    fn validate_at(&self, when: Time) -> Result<IdCert, Error> {
+        validate_idcert_at(&self.id_cert, when)
     }
 
     /// Writes the RepositoryResponse's XML representation to a new Vec<u8>.
@@ -1115,14 +1159,12 @@ impl RepoInfo {
 /// valid on the given time. Normally the 'time' would be
 /// 'now' - but we need to allow overriding this to support
 /// testing.
-pub fn validate_idcert_xml_at<R: io::BufRead>(
-    content: &mut xml::decode::Content,
-    reader: &mut xml::decode::Reader<R>,
+pub fn validate_idcert_at(
+    base64: &Base64,
     when: Time,
 ) -> Result<IdCert, Error> {
-    let bytes = content.take_text(reader, |text| text.base64_decode())?;
-
-    let id_cert = IdCert::decode(bytes.as_slice())?;
+    let bytes = base64.to_bytes();
+    let id_cert = IdCert::decode(bytes.as_ref())?;
     id_cert.validate_ta_at(when)?;
 
     Ok(id_cert)
@@ -1194,25 +1236,16 @@ mod tests {
 
     use super::*;
 
-    fn rpkid_time() -> Time {
-        Time::utc(2012, 1, 1, 0, 0, 0)
-    }
-
-    fn apnic_time() -> Time {
-        Time::utc(2020, 3, 3, 0, 0, 0)
-    }
-
     #[test]
     fn child_request_codec() {
         let xml = include_str!("../../test-data/ca/rfc8183/rpkid-child-id.xml");
-        let req = ChildRequest::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
+        let req = ChildRequest::parse(xml.as_bytes()).unwrap();
 
         assert_eq!(&Handle::from_str("Carol").unwrap(), req.child_handle());
         assert_eq!(None, req.tag());
 
         let re_encoded_xml = req.to_xml_string();
-        let re_decoded =
-            ChildRequest::validate_at(re_encoded_xml.as_bytes(), rpkid_time()).unwrap();
+        let re_decoded = ChildRequest::parse(re_encoded_xml.as_bytes()).unwrap();
 
         assert_eq!(req, re_decoded);
     }
@@ -1220,11 +1253,11 @@ mod tests {
     #[test]
     fn parent_response_codec() {
         let xml = include_str!("../../test-data/ca/rfc8183/apnic-parent-response.xml");
-        let req = ParentResponse::validate_at(xml.as_bytes(), apnic_time()).unwrap();
+        let req = ParentResponse::parse(xml.as_bytes()).unwrap();
 
         let re_encoded_xml = req.to_xml_string();
         let re_decoded =
-            ParentResponse::validate_at(re_encoded_xml.as_bytes(), apnic_time()).unwrap();
+            ParentResponse::parse(re_encoded_xml.as_bytes()).unwrap();
 
         assert_eq!(req, re_decoded);
     }
@@ -1232,23 +1265,23 @@ mod tests {
     #[test]
     fn parent_response_parse_rpkid_referral() {
         let xml = include_str!("../../test-data/ca/rfc8183/rpkid-parent-response-referral.xml");
-        let _req = ParentResponse::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
+        let _req = ParentResponse::parse(xml.as_bytes()).unwrap();
     }
 
     #[test]
     fn parent_response_parse_rpkid_offer() {
         let xml = include_str!("../../test-data/ca/rfc8183/rpkid-parent-response-offer.xml");
-        let _req = ParentResponse::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
+        let _req = ParentResponse::parse(xml.as_bytes()).unwrap();
     }
 
     #[test]
     fn publisher_request_codec() {
         let xml = include_str!("../../test-data/ca/rfc8183/rpkid-publisher-request.xml");
-        let req = PublisherRequest::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
+        let req = PublisherRequest::parse(xml.as_bytes()).unwrap();
 
         let re_encoded_xml = req.to_xml_string();
-        let re_decoded =
-            PublisherRequest::validate_at(re_encoded_xml.as_bytes(), rpkid_time()).unwrap();
+        let re_decoded = 
+            PublisherRequest::parse(re_encoded_xml.as_bytes()).unwrap();
 
         assert_eq!(req, re_decoded);
     }
@@ -1256,11 +1289,11 @@ mod tests {
     #[test]
     fn repository_response_codec() {
         let xml = include_str!("../../test-data/ca/rfc8183/apnic-repository-response.xml");
-        let req = RepositoryResponse::validate_at(xml.as_bytes(), apnic_time()).unwrap();
+        let req = RepositoryResponse::parse(xml.as_bytes()).unwrap();
 
         let re_encoded_xml = req.to_xml_string();
         let re_decoded =
-            RepositoryResponse::validate_at(re_encoded_xml.as_bytes(), apnic_time()).unwrap();
+            RepositoryResponse::parse(re_encoded_xml.as_bytes()).unwrap();
 
         assert_eq!(req, re_decoded);
     }

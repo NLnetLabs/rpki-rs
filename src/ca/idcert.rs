@@ -178,13 +178,13 @@ impl IdCert {
     /// by the provided `issuer` certificate.
     ///
     /// Note that this does _not_ check the CRL.
-    pub fn validate_ee(&self, issuer: &IdCert) -> Result<(), ValidationError> {
-        self.validate_ee_at(issuer, Time::now())
+    pub fn validate_ee(&self, issuer_key: &PublicKey) -> Result<(), ValidationError> {
+        self.validate_ee_at(issuer_key, Time::now())
     }
 
-    pub fn validate_ee_at(&self, issuer: &IdCert, now: Time) -> Result<(), ValidationError> {
+    pub fn validate_ee_at(&self, issuer_key: &PublicKey, now: Time) -> Result<(), ValidationError> {
         self.validate_basics(now)?;
-        self.validate_issued(issuer)?;
+        self.validate_aki(issuer_key)?;
 
         // Basic Constraints: Must not be a CA cert.
         if let Some(basic_ca) = self.basic_ca {
@@ -194,7 +194,7 @@ impl IdCert {
         }
 
         // Verify that this is signed by the issuer
-        self.validate_signature(issuer)?;
+        self.validate_signature(issuer_key)?;
         Ok(())
     }
 
@@ -215,7 +215,7 @@ impl IdCert {
         Ok(())
     }
 
-    /// Validates that the certificate is a correctly issued certificate.
+    /// Validates that the certificate AKI matches the issuer's SKI
     ///
     /// Note this check is used to check that an EE certificate in an RFC8183,
     /// or RFC6492 message is validly signed by the TA certificate that was
@@ -223,11 +223,11 @@ impl IdCert {
     ///
     /// This check assumes for now that we are always dealing with V3
     /// certificates and AKI and SKI have to match.
-    fn validate_issued(&self, issuer: &IdCert) -> Result<(), ValidationError> {
+    fn validate_aki(&self, issuer_key: &PublicKey) -> Result<(), ValidationError> {
         // Authority Key Identifier. Must be present and match the
-        // subject key ID of `issuer`.
+        // Subject Key Identifier of the issuer.
         if let Some(aki) = self.authority_key_id {
-            if aki != issuer.subject_key_id {
+            if aki != issuer_key.key_identifier() {
                 return Err(ValidationError);
             }
         } else {
@@ -255,11 +255,9 @@ impl IdCert {
 
     /// Validates the certificate’s signature.
     fn validate_signature(
-        &self, issuer: &IdCert,
+        &self, public_key: &PublicKey,
     ) -> Result<(), ValidationError> {
-        self.signed_data.verify_signature(
-            issuer.subject_public_key_info()
-        )
+        self.signed_data.verify_signature(public_key)
     }
 }
 
