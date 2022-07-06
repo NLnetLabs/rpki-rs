@@ -29,8 +29,8 @@ Breaking Changes
   * Rename `rpki::crypto::VerificationError` to `SignatureVerificationError`
     for better clarity.
   * Introduce a number of new error types for specific validation issues.
-* Renamed `rpki::repository::x509::Name::validate_*` methods to
-  `inspect_*` for consistency. ([#211])
+* In the `repository` module, renamed various methods from `validate_*` to
+  either `inspect_*` or `verify_*` for consistency. ([#211])
 
 New
 
