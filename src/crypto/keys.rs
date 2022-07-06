@@ -1,10 +1,11 @@
 //! Types and parameters of keys.
 
 use std::{error, fmt, io};
-use std::convert::TryFrom;
+use std::convert::{Infallible, TryFrom};
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, Oid, Tag};
 use bcder::decode::{ContentError, DecodeError, IntoSource};
+use bcder::int::{InvalidInteger, Unsigned};
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use ring::{digest, signature};
@@ -175,6 +176,62 @@ pub struct PublicKey {
 
 
 impl PublicKey {
+    /// Creates an RSA Public Key based on the supplied exponent and modulus.
+    /// 
+    /// See:
+    /// [RFC 4055]: https://tools.ietf.org/html/rfc4055
+    /// 
+    /// An RSA Public Key uses the following DER encoded structure inside its
+    /// BitString component:
+    /// 
+    /// ```txt
+    /// RSAPublicKey  ::=  SEQUENCE  {
+    ///     modulus            INTEGER,    -- n
+    ///     publicExponent     INTEGER  }  -- e
+    /// ```
+    pub fn rsa_from_components(
+        modulus: &[u8], // n
+        exponent: &[u8] // e 
+    ) -> Result<Self, InvalidInteger> {
+        let modulus = Unsigned::from_slice(modulus)?;
+        let exponent = Unsigned::from_slice(exponent)?;
+
+        let pub_key_sequence = encode::sequence((
+            modulus.encode(),
+            exponent.encode()
+        ));
+
+        Ok(PublicKey {
+            algorithm: PublicKeyFormat::Rsa,
+            bits: BitString::new(
+                0,
+                pub_key_sequence.to_captured(Mode::Der).into_bytes()
+            ),
+        })
+    }
+
+    /// Creates an RSA public key from the key’s bits.
+    ///
+    /// Note that this is _not_ the DER-encoded public key written by, for
+    /// instance, the OpenSSL command line tools. These files contain the
+    /// complete public key including the algorithm and need to be read
+    /// with [`PublicKey::decode`].
+    pub fn rsa_from_bits_bytes(
+        bytes: Bytes
+    ) -> Result<Self, DecodeError<Infallible>> {
+        Mode::Der.decode(bytes.clone(), |cons| {
+            cons.take_sequence(|cons| {
+                let _ = bcder::Unsigned::take_from(cons)?;
+                let _ = bcder::Unsigned::take_from(cons)?;
+                Ok(())
+            })
+        })?;
+        Ok(PublicKey {
+            algorithm: PublicKeyFormat::Rsa,
+            bits: BitString::new(0, bytes)
+        })
+    }
+    
     /// Returns the algorithm of this public key.
     pub fn algorithm(&self) -> PublicKeyFormat {
         self.algorithm
@@ -402,5 +459,19 @@ mod test {
         let de: PublicKey = serde_json::from_str(&ser).unwrap();
 
         assert_eq!(pub_key, &de);
+    }
+
+    #[test]
+    fn rsa_from_public_key_bytes() {
+        let key = PublicKey::decode(
+            include_bytes!(
+                "../../test-data/rsa-key.public.der"
+            ).as_ref().into_source(),
+        ).unwrap();
+        assert!(
+            PublicKey::rsa_from_bits_bytes(
+                key.bits_bytes()
+            ).is_ok()
+        );
     }
 }

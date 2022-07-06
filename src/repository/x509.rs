@@ -261,6 +261,34 @@ impl PartialEq for Name {
 
 impl Eq for Name {}
 
+//--- Deserialize and Serialize
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for Name {
+    fn serialize<S: serde::Serializer>(
+        &self, serializer: S
+    ) -> Result<S::Ok, S::Error> {
+        let bytes = self.0.as_slice();
+        let b64 = base64::encode(bytes);
+        b64.serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Name {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
+        use serde::de;
+
+        let string = String::deserialize(deserializer)?;
+        let decoded = base64::decode(&string).map_err(de::Error::custom)?;
+        let bytes = bytes::Bytes::from(decoded);
+
+        Mode::Der.decode(bytes, Name::take_from).map_err(de::Error::custom)
+    }
+}
+
 
 //------------ Serial --------------------------------------------------------
 

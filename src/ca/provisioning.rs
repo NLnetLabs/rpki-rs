@@ -25,7 +25,6 @@ use crate::xml::decode::{Content, Error as XmlError};
 use crate::xml::encode;
 
 use super::csr::RpkiCaCsr;
-use super::idcert::IdCert;
 use super::idexchange::RecipientHandle;
 use super::idexchange::SenderHandle;
 use super::sigmsg::SignedMessage;
@@ -101,13 +100,13 @@ impl ProvisioningCms {
         })
     }
 
-    pub fn validate(&self, issuer: &IdCert) -> Result<(), Error> {
-        self.signed_msg.validate(issuer).map_err(|e| e.into())
+    pub fn validate(&self, issuer_key: &PublicKey) -> Result<(), Error> {
+        self.signed_msg.validate(issuer_key).map_err(|e| e.into())
     }
 
-    pub fn validate_at(&self, issuer: &IdCert, when: Time) -> Result<(), Error> {
+    pub fn validate_at(&self, issuer_key: &PublicKey, when: Time) -> Result<(), Error> {
         self.signed_msg
-            .validate_at(issuer, when)
+            .validate_at(issuer_key, when)
             .map_err(|e| e.into())
     }
 }
@@ -1923,16 +1922,18 @@ mod signer_test {
 
     fn sign_and_validate_msg(
         signer: &OpenSslSigner,
-        ta_key: KeyId,
-        ta_cert: &IdCert,
+        signing_key: KeyId,
+        validation_key: &PublicKey,
         message: Message,
     ) {
-        let cms = ProvisioningCms::create(message.clone(), &ta_key, signer).unwrap();
+        let cms = ProvisioningCms::create(
+            message.clone(), &signing_key, signer
+        ).unwrap();
 
         let bytes = cms.to_bytes();
 
         let decoded = ProvisioningCms::decode(&bytes).unwrap();
-        decoded.validate(ta_cert).unwrap();
+        decoded.validate(validation_key).unwrap();
 
         let decoded_message = decoded.into_message();
 
@@ -1944,14 +1945,16 @@ mod signer_test {
         let signer = OpenSslSigner::new();
 
         let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
-        let cert = IdCert::new_ta(Validity::from_secs(60), &key, &signer).unwrap();
+        let cert = IdCert::new_ta(
+            Validity::from_secs(60), &key, &signer
+        ).unwrap();
 
         let child = SenderHandle::from_str("child").unwrap();
         let parent = RecipientHandle::from_str("parent").unwrap();
 
         let list = Message::list(child, parent);
 
-        sign_and_validate_msg(&signer, key, &cert, list);
+        sign_and_validate_msg(&signer, key, cert.public_key(), list);
     }
 
     #[test]

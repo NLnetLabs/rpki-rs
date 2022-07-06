@@ -42,9 +42,9 @@ tokio           = { version="1.0", features=["net", "macros"]}
 default = []
 
 # Main components of the crate.
-ca         = [ "repository", "serde-support" ]
+ca         = [ "repository", "serde-support", "rrdp" ]
 crypto     = [ "bcder", "ring", "untrusted", "routecore/bcder" ]
-repository = [ "crypto" ]
+repository = [ "bcder", "crypto", "routecore/bcder" ]
 rrdp       = [ "xml", "ring" ]
 rtr        = [ "futures-util", "tokio", "tokio-stream" ]
 slurm      = [ "serde-support", "serde_json" ]

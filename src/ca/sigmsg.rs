@@ -9,7 +9,7 @@ use bytes::Bytes;
 use crate::oid;
 use crate::crypto::{
     DigestAlgorithm, KeyIdentifier, RpkiSignature, RpkiSignatureAlgorithm,
-    SignatureAlgorithm, Signer, SigningError
+    SignatureAlgorithm, Signer, SigningError, PublicKey
 };
 use crate::repository::crl;
 use crate::repository::error::{
@@ -218,18 +218,20 @@ impl SignedMessage {
     ///
     /// The requirements for an object to be valid are given in section 3
     /// of [RFC 6488].
-    pub fn validate(&self, issuer: &IdCert) -> Result<(), ValidationError> {
-        self.validate_at(issuer, Time::now())
+    pub fn validate(
+        &self, issuer_key: &PublicKey
+    ) -> Result<(), ValidationError> {
+        self.validate_at(issuer_key, Time::now())
     }
 
     /// Validates a signed message for a given point in time.
     pub fn validate_at(
-        &self, issuer: &IdCert, when: Time
+        &self, issuer_key: &PublicKey, when: Time
     ) -> Result<(), ValidationError> {
         self.inspect()?;
         self.verify()?;
-        self.ee_cert.validate_ee_at(issuer, when)?;
-        self.crl.validate(issuer, when)?;
+        self.ee_cert.validate_ee_at(issuer_key, when)?;
+        self.crl.validate(issuer_key, when)?;
         self.crl.verify_not_revoked(&self.ee_cert)?;
         Ok(())
     }
@@ -411,7 +413,7 @@ impl SignedMessageCrl {
     /// The list’s signature is validated against the provided public key.
     pub fn validate(
         &self,
-        issuer: &IdCert,
+        issuer_key: &PublicKey,
         when: Time
     ) -> Result<(), ValidationError> {
         if self.tbs.signature != *self.signed_data.signature().algorithm() {
@@ -420,9 +422,9 @@ impl SignedMessageCrl {
             ).into())
         }
         self.signed_data.verify_signature(
-            issuer.subject_public_key_info()
+            issuer_key
         ).map_err(VerificationError::from)?;
-        self.tbs.validate(issuer, when)
+        self.tbs.validate(issuer_key, when)
     }
 
     /// Returns whether the given serial number is on this revocation list.
@@ -564,7 +566,7 @@ impl SignedMessageTbsCrl {
     /// of this content.
     fn validate(
         &self,
-        issuer: &IdCert,
+        issuer_key: &PublicKey,
         when: Time,
     ) -> Result<(), ValidationError> {
         if self.this_update > when {
@@ -580,7 +582,7 @@ impl SignedMessageTbsCrl {
         else {
             match self.authority_key_id {
                 None => Ok(()),
-                Some(aki) => if issuer.subject_key_id() == aki {
+                Some(aki) => if issuer_key.key_identifier() == aki {
                     Ok(())
                 } else {
                     Err(VerificationError::new(
@@ -741,7 +743,10 @@ mod tests {
         let b = include_bytes!("../../test-data/ca/sigmsg/cms_ta.cer");
         let id_cert = IdCert::decode(Bytes::from_static(b)).unwrap();
 
-        msg.validate_at(&id_cert, Time::utc(2012, 1, 1, 0, 0, 0)).unwrap();
+        msg.validate_at(
+            id_cert.public_key(),
+            Time::utc(2012, 1, 1, 0, 0, 0)
+        ).unwrap();
     }
 
 }
@@ -785,6 +790,6 @@ mod signer_test {
         let decoded = SignedMessage::decode(bytes, false).unwrap();
 
         // Validate it
-        decoded.validate(&ta_cert).unwrap();
+        decoded.validate(ta_cert.public_key()).unwrap();
     }
 }

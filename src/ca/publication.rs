@@ -11,6 +11,7 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer
 };
 
+use crate::crypto::PublicKey;
 use crate::repository::Cert;
 use crate::repository::Crl;
 use crate::repository::Manifest;
@@ -28,7 +29,6 @@ use crate::xml::decode::{
 };
 use crate::xml::encode;
 
-use super::idcert::IdCert;
 use super::sigmsg::SignedMessage;
 
 // Constants for the RFC 8183 XML
@@ -110,14 +110,14 @@ impl PublicationCms {
         Ok(PublicationCms { signed_msg, message })
     }
 
-    pub fn validate(&self, issuer: &IdCert) -> Result<(), Error> {
-        self.signed_msg.validate(issuer).map_err(|e| e.into())
+    pub fn validate(&self, issuer_key: &PublicKey) -> Result<(), Error> {
+        self.signed_msg.validate(issuer_key).map_err(|e| e.into())
     }
 
     pub fn validate_at(
-        &self, issuer: &IdCert, when: Time
+        &self, issuer_key: &PublicKey, when: Time
     ) -> Result<(), Error> {
-        self.signed_msg.validate_at(issuer, when).map_err(|e| e.into())
+        self.signed_msg.validate_at(issuer_key, when).map_err(|e| e.into())
     }
 }
 
@@ -1683,20 +1683,20 @@ mod signer_test {
 
     fn sign_and_validate_msg(
         signer: &OpenSslSigner,
-        ta_key: KeyId,
-        ta_cert: &IdCert,
+        signing_key: KeyId,
+        validation_key: &PublicKey,
         message: Message
     ) {
         let cms = PublicationCms::create(
             message.clone(),
-            &ta_key,
+            &signing_key,
             signer
         ).unwrap();
 
         let bytes = cms.to_bytes();
 
         let decoded = PublicationCms::decode(&bytes).unwrap();
-        decoded.validate(ta_cert).unwrap();
+        decoded.validate(validation_key).unwrap();
 
         let decoded_message = decoded.into_message();
 
@@ -1744,26 +1744,26 @@ mod signer_test {
             &signer
         ).unwrap();
 
-        sign_and_validate_msg(&signer, key, &cert, Message::list_query());
+        sign_and_validate_msg(&signer, key, cert.public_key(), Message::list_query());
 
         let mut rpl = ListReply::empty();
         rpl.add_element(element("rsync://localhost/ca/f1.txt", b"a"));
         rpl.add_element(element("rsync://localhost/ca/f2.txt", b"b"));
         rpl.add_element(element("rsync://localhost/ca/f3.txt", b"c"));
-        sign_and_validate_msg(&signer, key, &cert, Message::list_reply(rpl));
+        sign_and_validate_msg(&signer, key, cert.public_key(), Message::list_reply(rpl));
 
         let mut delta = PublishDelta::empty();
         delta.add_publish(publish("rsync://localhost/ca/f1.txt", b"a"));
         delta.add_update(update("rsync://localhost/ca/f2.txt", b"b", b"c"));
         delta.add_withdraw(withdraw("rsync://localhost/ca/f3.txt", b"d"));
-        sign_and_validate_msg(&signer, key, &cert, Message::delta(delta));
+        sign_and_validate_msg(&signer, key, cert.public_key(), Message::delta(delta));
 
-        sign_and_validate_msg(&signer, key, &cert, Message::success());
+        sign_and_validate_msg(&signer, key, cert.public_key(), Message::success());
 
         let mut error_reply = ErrorReply::empty();
         let error = ReportError::with_code(ReportErrorCode::PermissionFailure);
         error_reply.add_error(error);
-        sign_and_validate_msg(&signer, key, &cert, Message::error(error_reply));
+        sign_and_validate_msg(&signer, key, cert.public_key(), Message::error(error_reply));
     }
 
     #[test]
