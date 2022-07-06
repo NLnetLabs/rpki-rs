@@ -208,13 +208,13 @@ impl PublicKey {
         })
     }
 
-    /// Creates an RSA Public Key based on the given RSAPublicKey bytes.
+    /// Creates an RSA public key from the key’s bits.
     ///
-    /// Note that this is _not_ the DER-encoded public key written by for
-    /// instance the OpenSSL command line tools. These files contain the
+    /// Note that this is _not_ the DER-encoded public key written by, for
+    /// instance, the OpenSSL command line tools. These files contain the
     /// complete public key including the algorithm and need to be read
     /// with [`PublicKey::decode`].
-    pub fn rsa_from_public_key_bytes(
+    pub fn rsa_from_bits_bytes(
         bytes: Bytes
     ) -> Result<Self, bcder::decode::Error> {
         Mode::Der.decode(bytes.clone(), |cons| {
