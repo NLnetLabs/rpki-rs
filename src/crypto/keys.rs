@@ -199,19 +199,35 @@ impl PublicKey {
             exponent.encode()
         ));
 
-        Ok(PublicKey::rsa_from_public_key_bytes(
-            pub_key_sequence.to_captured(bcder::Mode::Der).into_bytes()
-        ))
+        Ok(PublicKey {
+            algorithm: PublicKeyFormat::Rsa,
+            bits: BitString::new(
+                0,
+                pub_key_sequence.to_captured(bcder::Mode::Der).into_bytes()
+            ),
+        })
     }
 
     /// Creates an RSA Public Key based on the given RSAPublicKey bytes.
+    ///
+    /// Note that this is _not_ the DER-encoded public key written by for
+    /// instance the OpenSSL command line tools. These files contain the
+    /// complete public key including the algorithm and need to be read
+    /// with [`PublicKey::decode`].
     pub fn rsa_from_public_key_bytes(
         bytes: Bytes
-    ) -> Self {
-        let algorithm = PublicKeyFormat::Rsa;
-        let bits = BitString::new(0, bytes);
-
-        PublicKey { algorithm, bits }
+    ) -> Result<Self, bcder::decode::Error> {
+        Mode::Der.decode(bytes.clone(), |cons| {
+            cons.take_sequence(|cons| {
+                let _ = bcder::Unsigned::take_from(cons)?;
+                let _ = bcder::Unsigned::take_from(cons)?;
+                Ok(())
+            })
+        })?;
+        Ok(PublicKey {
+            algorithm: PublicKeyFormat::Rsa,
+            bits: BitString::new(0, bytes)
+        })
     }
     
     /// Returns the algorithm of this public key.
@@ -433,5 +449,17 @@ mod test {
         let de: PublicKey = serde_json::from_str(&ser).unwrap();
 
         assert_eq!(pub_key, &de);
+    }
+
+    #[test]
+    fn rsa_from_public_key_bytes() {
+        let key = PublicKey::decode(
+            include_bytes!("../../test-data/rsa-key.public.der").as_ref(),
+        ).unwrap();
+        assert!(
+            PublicKey::rsa_from_public_key_bytes(
+                key.bits_bytes()
+            ).is_ok()
+        );
     }
 }
