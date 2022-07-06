@@ -60,7 +60,8 @@ impl OpenSslSigner {
 
     fn delete_key(&self, key: KeyId) -> Result<(), KeyError<io::Error>> {
         let mut keys = self.keys.write().unwrap();
-        match keys.get_mut(key.0) {
+        let key = keys.get_mut(key.0);
+        match key {
             Some(key) => {
                 if key.is_some() {
                     *key = None;

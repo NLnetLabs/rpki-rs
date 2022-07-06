@@ -83,6 +83,7 @@ impl IpResources {
     ///
     /// On success, the function returns a pair of optional IP resources,
     /// the first for IPv4, the second for IPv6.
+    #[allow(clippy::type_complexity)]
     pub fn take_families_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<(Option<Self>, Option<Self>), DecodeError<S::Error>> {
@@ -1339,18 +1340,18 @@ impl Prefix {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, DecodeError<S::Error>> {
-        Ok(Self::from_bit_string(
+        Self::from_bit_string(
             &BitString::take_from(cons)?
-        ).map_err(|err| cons.content_err(err))?)
+        ).map_err(|err| cons.content_err(err))
     }
 
     /// Parses the content of a prefix.
     pub fn parse_content<S: decode::Source>(
         content: &mut decode::Content<S>
     ) -> Result<Self, DecodeError<S::Error>> {
-        Ok(Self::from_bit_string(
+        Self::from_bit_string(
             &BitString::from_content(content)?
-        ).map_err(|err| content.content_err(err))?)
+        ).map_err(|err| content.content_err(err))
     }
 
     pub fn parse_content_with_family<S: decode::Source>(

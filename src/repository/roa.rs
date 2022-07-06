@@ -232,7 +232,7 @@ impl RouteOriginAttestation {
             if blocks.is_empty() {
                 return Err(VerificationError::new(
                     "no IPv6 ROA prefix covered by certificate"
-                ).into())
+                ))
             }
             for addr in self.v6_addrs.iter() {
                 if !blocks.contains_roa(&addr) {
