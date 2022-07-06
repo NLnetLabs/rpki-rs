@@ -32,6 +32,8 @@ New
 * Added support for RFC 8181 Publication Protocol exchanges. ([#208])
 * Added support for RFC 6492 exchanges between issuer and subject of
   resources. ([#208])
+* RSA public keys can now be created from their components and raw key
+  bits. ([#212])
 
 Bug Fixes
 
@@ -39,6 +41,7 @@ Other Changes
 
 [#208]: https://github.com/NLnetLabs/rpki-rs/pull/208
 [#210]: https://github.com/NLnetLabs/rpki-rs/pull/210
+[#212]: https://github.com/NLnetLabs/rpki-rs/pull/212
 
 
 
