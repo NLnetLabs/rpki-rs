@@ -457,7 +457,7 @@ mod test {
             include_bytes!("../../test-data/rsa-key.public.der").as_ref(),
         ).unwrap();
         assert!(
-            PublicKey::rsa_from_public_key_bytes(
+            PublicKey::rsa_from_bits_bytes(
                 key.bits_bytes()
             ).is_ok()
         );
