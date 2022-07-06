@@ -1,7 +1,4 @@
-//! Support basic identity certificates as used in the remote access
-//! protocol CMS messages and XML exchanges.
-
-//! Support for building RPKI Certificates and Objects
+//! Identity certificates used in the remote access protocol.
 
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Oid, Tag};
@@ -17,7 +14,9 @@ use crate::crypto::{
     SignatureVerificationError, Signer, SigningError,
 };
 use crate::repository::cert::TbsCert;
-use crate::repository::error::{ValidationError, VerificationError};
+use crate::repository::error::{
+    InspectionError, ValidationError, VerificationError,
+};
 use crate::repository::x509::{
     encode_extension, Name, Serial, SignedData, Time, Validity,
 };
@@ -145,8 +144,9 @@ impl IdCert {
     }
 
     pub fn validate_ta_at(&self, now: Time) -> Result<(), ValidationError> {
-        self.validate_basics(now)?;
-        self.validate_ca_basics()?;
+        self.inspect_basics()?;
+        self.inspect_ca_basics()?;
+        self.verify_validity(now)?;
 
         // RFC 8183 does not use clear normative language but it refers to the
         // "BPKI TA" certificates as 'self-signed' in many cases. As it turns
@@ -191,8 +191,9 @@ impl IdCert {
     pub fn validate_ee_at(
         &self, issuer_key: &PublicKey, now: Time,
     ) -> Result<(), ValidationError> {
-        self.validate_basics(now)?;
-        self.validate_issuer_key(issuer_key)?;
+        self.inspect_basics()?;
+        self.verify_validity(now)?;
+        self.verify_issuer_key(issuer_key)?;
 
         // Basic Constraints: Must not be a CA cert.
         if let Some(basic_ca) = self.basic_ca {
@@ -204,7 +205,7 @@ impl IdCert {
         }
 
         // Verify that this is signed by the issuer
-        self.validate_signature(issuer_key).map_err(VerificationError::new)?;
+        self.verify_signature(issuer_key).map_err(VerificationError::new)?;
         Ok(())
     }
 
@@ -213,20 +214,47 @@ impl IdCert {
     /// Validates basic compliance with RFC8183 and RFC6492
     ///
     /// Note the the standards are pretty permissive in this context.
-    fn validate_basics(&self, now: Time) -> Result<(), ValidationError> {
-        // Validity. Check according to RFC 5280.
-        self.validity.verify_at(now).map_err(VerificationError::from)?;
-
+    fn inspect_basics(&self) -> Result<(), InspectionError> {
         // Subject Key Identifier must match the subjectPublicKey.
         if self.subject_key_id
             != self.subject_public_key_info.key_identifier()
         {
-            return Err(VerificationError::new(
+            return Err(InspectionError::new(
                 "Subject Key Identifier mismatch"
-            ).into());
+            ));
         }
 
         Ok(())
+    }
+
+    /// Validates that the certificate is a valid CA certificate.
+    ///
+    /// Checks the parts that are common in normal and trust anchor CA
+    /// certificates.
+    fn inspect_ca_basics(&self) -> Result<(), InspectionError> {
+        // 4.8.1. Basic Constraints: For a CA it must be present (RFC6487)
+        // und the “cA” flag must be set (RFC5280).
+        if let Some(ca) = self.basic_ca {
+            if !ca {
+                return Err(InspectionError::new(
+                    "Basic Contraints with cA flag set to false"
+                ))
+            }
+        }
+        else {
+            return Err(InspectionError::new(
+                "missing Basic Contraints extension"
+            ))
+        }
+
+        Ok(())
+    }
+
+    /// Verifies that the certificate is valid at the given time.
+    pub fn verify_validity(
+        &self, now: Time,
+    ) -> Result<(), VerificationError> {
+        self.validity.verify_at(now).map_err(Into::into)
     }
 
     /// Validates that the certificate AKI matches the issuer's SKI
@@ -237,51 +265,28 @@ impl IdCert {
     ///
     /// This check assumes for now that we are always dealing with V3
     /// certificates and AKI and SKI have to match.
-    fn validate_issuer_key(
+    fn verify_issuer_key(
         &self, issuer_key: &PublicKey,
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(), VerificationError> {
         // Authority Key Identifier. Must be present and match the
         // Subject Key Identifier of the issuer.
         if let Some(aki) = self.authority_key_id {
             if aki != issuer_key.key_identifier() {
                 return Err(VerificationError::new(
                     "Authority Key Identifier doesn’t match issuer key"
-                ).into());
+                ));
             }
         } else {
             return Err(VerificationError::new(
                 "missing Authority Key Identifier extension"
-            ).into());
-        }
-
-        Ok(())
-    }
-
-    /// Validates that the certificate is a valid CA certificate.
-    ///
-    /// Checks the parts that are common in normal and trust anchor CA
-    /// certificates.
-    fn validate_ca_basics(&self) -> Result<(), ValidationError> {
-        // 4.8.1. Basic Constraints: For a CA it must be present (RFC6487)
-        // und the “cA” flag must be set (RFC5280).
-        if let Some(ca) = self.basic_ca {
-            if !ca {
-                return Err(VerificationError::new(
-                    "Basic Contraints with cA flag set to false"
-                ).into())
-            }
-        }
-        else {
-            return Err(VerificationError::new(
-                "missing Basic Contraints extension"
-            ).into())
+            ));
         }
 
         Ok(())
     }
 
     /// Validates the certificate’s signature.
-    fn validate_signature(
+    fn verify_signature(
         &self, public_key: &PublicKey,
     ) -> Result<(), SignatureVerificationError> {
         self.signed_data.verify_signature(public_key)
