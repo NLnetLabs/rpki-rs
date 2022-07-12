@@ -586,7 +586,7 @@ impl SignedMessageTbsCrl {
                     Ok(())
                 } else {
                     Err(VerificationError::new(
-                        "Authority Key Identifer differs from issuer key"
+                        "CRL AKI differs from issuer's Key Identifier"
                     ).into())
                 }
             }
