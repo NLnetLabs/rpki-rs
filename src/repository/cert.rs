@@ -180,6 +180,10 @@ impl Cert {
         self.validate_ta_at(tal, strict, Time::now())
     }
 
+    /// Validates the certificate as a trust anchor at the given time.
+    ///
+    /// This is identical to [Cert::validate_ta] with an explicitly given
+    /// value for the current time.
     pub fn validate_ta_at(
         self,
         tal: Arc<TalInfo>,
@@ -204,6 +208,10 @@ impl Cert {
         self.validate_ca_at(issuer, strict, Time::now())
     }
 
+    /// Validates the certificate as a CA certificate at the given time.
+    ///
+    /// This is identical to [Cert::validate_ca] with an explicitly given
+    /// value for the current time.
     pub fn validate_ca_at(
         self,
         issuer: &ResourceCert,
@@ -216,13 +224,16 @@ impl Cert {
 
     /// Validates the certificate as an EE RPKI-internal certificate.
     ///
+    /// Such a certificate can be found as part of signed objects published
+    /// via RPKI repositories.
+    ///
     /// For validation to succeed, the certificate needs to have been signed
     /// by the provided `issuer` certificate.
     ///
     /// Note that this does _not_ check the CRL.
     ///
     /// Note further that this method should not be used for router
-    /// certificates. Use `validate_router` for that.
+    /// certificates. Use [`Cert::validate_router]` for those.
     pub fn validate_ee(
         self,
         issuer: &ResourceCert,
@@ -231,6 +242,10 @@ impl Cert {
         self.validate_ee_at(issuer, strict, Time::now())
     }
 
+    /// Validates the certificate as an RPKI EE certificate at a time.
+    ///
+    /// This is identical to [Cert::validate_ee] with an explicitly given
+    /// value for the current time.
     pub fn validate_ee_at(
         self,
         issuer: &ResourceCert,
@@ -241,6 +256,15 @@ impl Cert {
         self.verify_ee_at(issuer, strict, now).map_err(Into::into)
     }
 
+    /// Validates the certificate as a detached EE certficate.
+    ///
+    /// Such a certificate is used by signed objects that are not published
+    /// through RPKI repositories.
+    ///
+    /// For validation to succeed, the certificate needs to have been signed
+    /// by the provided `issuer` certificate.
+    ///
+    /// Note that this does _not_ check the CRL.
     pub fn validate_detached_ee(
         self,
         issuer: &ResourceCert,
@@ -249,6 +273,10 @@ impl Cert {
         self.validate_detached_ee_at(issuer, strict, Time::now())
     }
 
+    /// Validates the certificate as a detached EE certificate at a given time.
+    ///
+    /// This is identical to [Cert::validate_detached_ee] with an explicitly
+    /// given value for the current time.
     pub fn validate_detached_ee_at(
         self,
         issuer: &ResourceCert,
@@ -259,6 +287,12 @@ impl Cert {
         self.verify_ee_at(issuer, strict, now).map_err(Into::into)
     }
 
+    /// Validates the certificate as a BGPsec router certificate.
+    ///
+    /// For validation to succeed, the certificate needs to have been signed
+    /// by the provided `issuer` certificate.
+    ///
+    /// Note that this does _not_ check the CRL.
     pub fn validate_router(
         &self,
         issuer: &ResourceCert,
@@ -267,6 +301,10 @@ impl Cert {
         self.validate_router_at(issuer, strict, Time::now())
     }
 
+    /// Validates the certificate as a BGPsec router certificate at a time.
+    ///
+    /// This is identical to [Cert::validate_router] with an explicitly
+    /// given value for the current time.
     pub fn validate_router_at(
         &self,
         issuer: &ResourceCert,
@@ -280,6 +318,10 @@ impl Cert {
 
     //--- Inspection
 
+    /// Inspects the certificate as a trust anchor.
+    ///
+    /// Checks that the certificate fulfills the formal requirements of a
+    /// RPKI trust anchor certificate.
     pub fn inspect_ta(
         &self, strict: bool,
     ) -> Result<(), InspectionError> {
@@ -321,12 +363,20 @@ impl Cert {
         Ok(())
     }
 
+    /// Inspects the certificate as a CA certificate.
+    ///
+    /// Checks that the certificate fulfills the formal requirements of a
+    /// CA certificate.
     pub fn inspect_ca(&self, strict: bool) -> Result<(), InspectionError> {
         self.inspect_basics(strict)?;
         self.inspect_ca_basics(strict)?;
         self.inspect_issued(strict)
     }
 
+    /// Validates the certificate as an EE RPKI-internal certificate.
+    ///
+    /// Checks that the certificate fulfills all formal requirements of such
+    /// a certificate.
     pub fn inspect_ee(&self, strict: bool) -> Result<(), InspectionError> {
         self.inspect_basics(strict)?;
         self.inspect_issued(strict)?;
@@ -372,6 +422,10 @@ impl Cert {
         Ok(())
     }
 
+    /// Inspects the certificate as a detached EE certficate.
+    ///
+    /// Checks that the certificate fulfills all formal requirements of such
+    /// a certificate.
     pub fn inspect_detached_ee(
         &self, strict: bool
     ) -> Result<(), InspectionError> {
@@ -413,6 +467,10 @@ impl Cert {
         Ok(())
     }
 
+    /// Inspects the certificate as a BGPsec router certificate.
+    ///
+    /// Checks that the certificate fulfills all formal requirements of such
+    /// a certificate.
     pub fn inspect_router(
         &self, strict: bool
     ) -> Result<(), InspectionError> {
@@ -539,12 +597,14 @@ impl Cert {
 
     //--- Verification
 
+    /// Verifies a trust anchor certificate. 
     pub fn verify_ta(
         self, tal: Arc<TalInfo>, strict: bool,
     ) -> Result<ResourceCert, VerificationError> {
         self.verify_ta_at(tal, strict, Time::now())
     }
 
+    /// Verifies a trust anchor certificate at the given time. 
     pub fn verify_ta_at(
         self, tal: Arc<TalInfo>, _strict: bool, now: Time,
     ) -> Result<ResourceCert, VerificationError> {
@@ -556,14 +616,16 @@ impl Cert {
             self.v4_resources.clone()
         ).map_err(|_| {
             VerificationError::new(
-                "inherited IPv4 resources in trust anchor certificate"
+                "inherited IPv4 resources not allowed \
+                 in trust anchor certificate"
             )
         })?;
         let v6_resources = IpBlocks::from_resources(
             self.v6_resources.clone()
         ).map_err(|_| {
             VerificationError::new(
-                "inherited IPv6 resources in trust anchor certificate"
+                "inherited IPv6 resources not allowed \
+                 in trust anchor certificate"
             )
         })?;
 
@@ -574,7 +636,8 @@ impl Cert {
             self.as_resources.clone()
         ).map_err(|_| {
             VerificationError::new(
-                "inherited AS resources in trust anchor certificate"
+                "inherited AS resources not allowed \
+                 in trust anchor certificate"
             )
         })?;
 
@@ -598,6 +661,7 @@ impl Cert {
         self.verify_ta_ref_at(strict, Time::now())
     }
 
+    /// Verify a trust anchor certificate without converting it at a time.
     pub fn verify_ta_ref_at(
         &self, _strict: bool, now: Time,
     ) -> Result<(), VerificationError> {
@@ -607,19 +671,22 @@ impl Cert {
         // 4.8.10. IP Resources. If present, mustn’t be "inherit".
         if self.v4_resources.is_inherited() {
             return Err(VerificationError::new(
-                "inherited IPv4 resources in trust anchor certificate"
+                "inherited IPv4 resources not allowed \
+                 in trust anchor certificate"
             ))
         }
         if self.v6_resources.is_inherited() {
             return Err(VerificationError::new(
-                "inherited IPv6 resources in trust anchor certificate"
+                "inherited IPv6 resources not allowed \
+                 in trust anchor certificate"
             ))
         }
 
         // 4.8.11.  AS Resources. If present, mustn’t be "inherit".
         if self.as_resources.is_inherited() {
             return Err(VerificationError::new(
-                "inherited AS resources in trust anchor certificate"
+                "inherited AS resources not allowed \
+                 in trust anchor certificate"
             ))
         }
 
@@ -630,12 +697,20 @@ impl Cert {
         Ok(())
     }
 
+    /// Verifies the certificate as an issued CA certificate.
+    ///
+    /// Checks that the certificate has been correctly issued by `issuer` as
+    /// a CA certificate.
     pub fn verify_ca(
         self, issuer: &ResourceCert, strict: bool
     ) -> Result<ResourceCert, VerificationError> {
         self.verify_ca_at(issuer, strict, Time::now())
     }
 
+    /// Verifies the certificate as an issued CA certificate at a given time.
+    ///
+    /// This is identical to [`Cert::verify_ca`] with an explicitly
+    /// given value for the current time.
     pub fn verify_ca_at(
         self, issuer: &ResourceCert, strict: bool, now: Time,
     ) -> Result<ResourceCert, VerificationError> {
@@ -645,12 +720,20 @@ impl Cert {
         self.verify_resources(issuer, strict)
     }
 
+    /// Verifies the certificate as an RPKI EE certificate.
+    ///
+    /// Checks that the certificate has been correctly issued by `issuer` as
+    /// an RPKI EE certificate.
     pub fn verify_ee(
         self, issuer: &ResourceCert, strict: bool,
     ) -> Result<ResourceCert, VerificationError> {
         self.verify_ee_at(issuer, strict, Time::now())
     }
 
+    /// Verifies the certificate as an RPKI EE certificate at a time.
+    ///
+    /// This is identical to [`Cert::verify_ee`] with an explicitly
+    /// given value for the current time.
     pub fn verify_ee_at(
         self, issuer: &ResourceCert, strict: bool, now: Time,
     ) -> Result<ResourceCert, VerificationError> {
@@ -660,12 +743,20 @@ impl Cert {
         self.verify_resources(issuer, strict)
     }
 
+    /// Verifies the certificate as a BGPsec router certificate.
+    ///
+    /// Checks that the certificate has been correctly issued by `issuer` as
+    /// an router certificate.
     pub fn verify_router(
         &self, issuer: &ResourceCert, strict: bool,
     ) -> Result<(), VerificationError> {
         self.verify_router_at(issuer, strict, Time::now())
     }
 
+    /// Verifies the certificate as a router certificate at a given time.
+    ///
+    /// This is identical to [`Cert::verify_router`] with an explicitly
+    /// given value for the current time.
     pub fn verify_router_at(
         &self, issuer: &ResourceCert, strict: bool, now: Time,
     ) -> Result<(), VerificationError> {
@@ -711,7 +802,7 @@ impl Cert {
         // 4.7 Subject Public Key Info: limited algorithms.
         if !self.subject_public_key_info().allow_rpki_cert() {
             return Err(InspectionError::new(
-                "invalid algorithm for public key"
+                "public key algorithm not allowed for RPKI certificates"
             ))
         }
 
@@ -739,7 +830,7 @@ impl Cert {
         if self.extended_key_usage().is_some() {
             return Err(InspectionError::new(
                 "Extended Key Usage extension \
-                 not allowed in RPKI certifcates"
+                 not allowed in RPKI certificates"
             ))
         }
 
@@ -804,7 +895,7 @@ impl Cert {
         // parsing already.
         if self.key_usage() != KeyUsage::Ca {
             return Err(InspectionError::new(
-                "invalid Key Usage in CA certifcate"
+                "invalid Key Usage in CA certificate"
             ))
         }
 
@@ -1607,7 +1698,7 @@ impl TbsCert {
                 rpki_notify,
                 overclaim: overclaim.ok_or_else(|| {
                     cons.content_err(
-                        "missing Certificate Policy extenstion"
+                        "missing Certificate Policies extension"
                     )
                 })?,
                 v4_resources: v4_resources.unwrap_or_else(

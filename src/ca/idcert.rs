@@ -233,7 +233,7 @@ impl IdCert {
     /// certificates.
     fn inspect_ca_basics(&self) -> Result<(), InspectionError> {
         // 4.8.1. Basic Constraints: For a CA it must be present (RFC6487)
-        // und the “cA” flag must be set (RFC5280).
+        // and the “cA” flag must be set (RFC5280).
         if let Some(ca) = self.basic_ca {
             if !ca {
                 return Err(InspectionError::new(

@@ -469,7 +469,7 @@ impl SignedAttrs {
         })?;
         if raw.len() > 0xFFFF {
             return Err(cons.content_err(
-                "signed attributes over 65536 bytes not supported"
+                "signed attributes over 65535 bytes not supported"
             ))
         }
         let message_digest = match message_digest {

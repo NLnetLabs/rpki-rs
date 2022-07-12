@@ -104,7 +104,7 @@ impl Name {
                         if id == oid::AT_COMMON_NAME {
                             if cn {
                                 return Err(cons.content_err(
-                                    "invalid name"
+                                    "multiple common names"
                                 ))
                             }
                             let _ = PrintableString::take_from(cons)?;
@@ -113,7 +113,7 @@ impl Name {
                         else if id == oid::AT_SERIAL_NUMBER {
                             if sn {
                                 return Err(cons.content_err(
-                                    "invalid name"
+                                    "multiple serial numbers"
                                 ))
                             }
                             let _ = PrintableString::take_from(cons)?;
@@ -130,16 +130,14 @@ impl Name {
                 Ok(())
             }
             else {
-                Err(cons.content_err("invalid name"))
+                Err(cons.content_err("missing common name"))
             }
         }
 
         if strict {
             self.0.clone().decode(
                 inspect_strict
-            ).map_err(|_| {
-                InspectionError::new("invalid name")
-            })?
+            ).map_err(InspectionError::new)?
         }
         Ok(())
     }
@@ -160,7 +158,7 @@ impl Name {
                         if id == oid::AT_COMMON_NAME {
                             if cn {
                                 return Err(cons.content_err(
-                                    "invalid router subject"
+                                    "multiple common names"
                                 ))
                             }
                             Name::skip_router_string(cons)?;
@@ -169,7 +167,7 @@ impl Name {
                         else if id == oid::AT_SERIAL_NUMBER {
                             if sn {
                                 return Err(cons.content_err(
-                                    "invalid router subject"
+                                    "multiple serial numbers"
                                 ))
                             }
                             Name::skip_router_string(cons)?;
@@ -186,16 +184,14 @@ impl Name {
                 Ok(())
             }
             else {
-                Err(cons.content_err("invalid router subject"))
+                Err(cons.content_err("missing common name"))
             }
         }
 
         if strict {
             self.0.clone().decode(
                 inspect_strict
-            ).map_err(|_| {
-                InspectionError::new("invalid name")
-            })?
+            ).map_err(InspectionError::new)?
         }
         Ok(())
     }
@@ -212,7 +208,9 @@ impl Name {
                 Utf8String::from_content(content).map(|_| ())
             }
             else {
-                Err(content.content_err("invalid router subject"))
+                Err(content.content_err(
+                    "unpermitted string variant in common name"
+                ))
             }
         })
     }

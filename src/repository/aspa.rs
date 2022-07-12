@@ -187,7 +187,7 @@ impl ProviderAsSet {
                         if let Some(last_as_id) = last {
                             if last_as_id >= current_as_id {
                                 return Err(cons.content_err(
-                                    "provider AS set not in order"
+                                    "provider AS set is not ordered"
                                 ));
                             }
                         }

@@ -675,7 +675,7 @@ impl AsBlock {
 }
 
 impl AsBlock {
-    /// Takes an optional AS bock from the beginning of an encoded value.
+    /// Takes an optional AS block from the beginning of an encoded value.
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, DecodeError<S::Error>> {

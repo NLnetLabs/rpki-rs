@@ -433,7 +433,7 @@ impl SignedMessageCrl {
     ) -> Result<(), VerificationError> {
         if self.tbs.revoked_certs.contains(id_cert.serial_number()) {
             Err(VerificationError::new(
-                "signed object EE cert revoked"
+                "signed object EE certificate revoked"
             ))
         } else {
             Ok(())
@@ -586,7 +586,8 @@ impl SignedMessageTbsCrl {
                     Ok(())
                 } else {
                     Err(VerificationError::new(
-                        "CRL AKI differs from issuer's Key Identifier"
+                        "CRL's Authority Key Identifier doesn't match \
+                        issuer key"
                     ).into())
                 }
             }
