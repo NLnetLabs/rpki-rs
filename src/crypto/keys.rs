@@ -4,7 +4,7 @@ use std::{error, fmt, io};
 use std::convert::{Infallible, TryFrom};
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, Oid, Tag};
-use bcder::decode::{ContentError, DecodeError, IntoSource};
+use bcder::decode::{ContentError, DecodeError, IntoSource, Source};
 use bcder::int::{InvalidInteger, Unsigned};
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
@@ -297,9 +297,9 @@ impl PublicKey {
 /// structures. As these contain the same information as `PublicKey`,
 /// it can be decoded from and encoded to such sequences.
 impl PublicKey {
-    pub fn decode<S: decode::Source>(
+    pub fn decode<S: decode::IntoSource>(
         source: S
-    ) -> Result<Self, DecodeError<S::Error>> {
+    ) -> Result<Self, DecodeError<<S::Source as Source>::Error>> {
         Mode::Der.decode(source, Self::take_from)
     }
 
