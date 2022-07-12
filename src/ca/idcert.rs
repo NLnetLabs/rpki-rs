@@ -199,7 +199,7 @@ impl IdCert {
         if let Some(basic_ca) = self.basic_ca {
             if basic_ca {
                 return Err(VerificationError::new(
-                    "Basic Constraints extions in end entity cert"
+                    "Basic Constraints with cA true not allowed in EE cert"
                 ).into());
             }
         }
