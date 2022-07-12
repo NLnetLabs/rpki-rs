@@ -1,4 +1,4 @@
-//! Identity certificates used in the remote access protocol.
+//! Identity certificates used in RFC 6492, 8181 and 8183.
 
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, OctetString, Oid, Tag};
