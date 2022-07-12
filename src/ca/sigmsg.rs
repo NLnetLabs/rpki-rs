@@ -433,7 +433,7 @@ impl SignedMessageCrl {
     ) -> Result<(), VerificationError> {
         if self.tbs.revoked_certs.contains(id_cert.serial_number()) {
             Err(VerificationError::new(
-                "revoked certificate"
+                "signed object EE cert revoked"
             ))
         } else {
             Ok(())
