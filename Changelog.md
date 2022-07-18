@@ -48,12 +48,14 @@ Bug Fixes
 Other Changes
 
 * Updated `uuid` crate to version 1.1. ([#215])
+* Updated `quick-xml` crate to version 0.23. ([#216])
 
 [#208]: https://github.com/NLnetLabs/rpki-rs/pull/208
 [#210]: https://github.com/NLnetLabs/rpki-rs/pull/210
 [#211]: https://github.com/NLnetLabs/rpki-rs/pull/211
 [#212]: https://github.com/NLnetLabs/rpki-rs/pull/212
 [#215]: https://github.com/NLnetLabs/rpki-rs/pull/215
+[#216]: https://github.com/NLnetLabs/rpki-rs/pull/216
 
 
 
