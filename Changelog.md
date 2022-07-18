@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased next version
+## 0.15.0
+
+Released 2022-07-18.
 
 Breaking Changes
 
@@ -42,8 +44,6 @@ New
   resources. ([#208])
 * RSA public keys can now be created from their components and raw key
   bits. ([#212])
-
-Bug Fixes
 
 Other Changes
 
