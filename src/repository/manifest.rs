@@ -10,18 +10,20 @@
 //! [`Manifest`]: struct.Manifest.html
 //! [`ManifestContent`]: struct.ManifestContent.html
 
-use std::{borrow, ops};
+use std::{borrow, fmt, ops};
 use bcder::{decode, encode};
 use bcder::{
-    BitString, Captured, Ia5String, Mode, OctetString, Oid, Tag, xerr
+    BitString, Captured, Ia5String, Mode, OctetString, Oid, Tag,
 };
+use bcder::decode::{DecodeError, IntoSource, Source};
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use crate::{oid, uri};
 use crate::crypto::{DigestAlgorithm, Signer, SigningError};
 use super::cert::{Cert, ResourceCert};
+use super::error::{ValidationError, VerificationError};
 use super::sigobj::{SignedObject, SignedObjectBuilder};
-use super::x509::{Serial, Time, ValidationError};
+use super::x509::{Serial, Time};
 
 
 //------------ Manifest ------------------------------------------------------
@@ -39,17 +41,16 @@ pub struct Manifest {
 
 impl Manifest {
     /// Decodes a manifest from a source.
-    pub fn decode<S: decode::Source>(
+    pub fn decode<S: IntoSource>(
         source: S,
         strict: bool
-    ) -> Result<Self, S::Err> {
-        let signed = SignedObject::decode(source, strict)?;
-        if signed.content_type().ne(&oid::CT_RPKI_MANIFEST) {
-            return Err(decode::Malformed.into())
-        }
+    ) -> Result<Self, DecodeError<<S::Source as Source>::Error>> {
+        let signed = SignedObject::decode_if_type(
+            source, &oid::CT_RPKI_MANIFEST, strict
+        )?;
         let content = signed.decode_content(
             |cons| ManifestContent::take_from(cons)
-        )?;
+        ).map_err(DecodeError::convert)?;
         Ok(Manifest { signed, content })
     }
 
@@ -73,22 +74,6 @@ impl Manifest {
         now: Time
     ) -> Result<(ResourceCert, ManifestContent), ValidationError> {
         let cert = self.signed.validate_at(cert, strict, now)?;
-
-        // RFC 6486, section 4.4:
-        //
-        // |   1. The eContentType in the EncapsulatedContentInfo is
-        // |      id-ad-rpkiManifest (OID 1.2.840.113549.1.9.16.1.26).
-        // |
-        // |   2. The version of the rpkiManifest is 0.
-        //
-        // Both checked during parsing.
-        //
-        // |   3. In the rpkiManifest, thisUpdate precedes nextUpdate.
-
-        if self.content.this_update >= self.content.next_update {
-            return Err(ValidationError)
-        }
-
         Ok((cert, self.content))
     }
 
@@ -322,7 +307,7 @@ impl ManifestContent {
     /// Takes the content from the beginning of an encoded constructed value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(|cons| {
             cons.take_opt_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(0))?;
             let manifest_number = Serial::take_from(cons)?;
@@ -330,7 +315,9 @@ impl ManifestContent {
             let next_update = Time::take_from(cons)?;
             let file_hash_alg = DigestAlgorithm::take_oid_from(cons)?;
             if this_update > next_update {
-                xerr!(return Err(decode::Malformed.into()));
+                return Err(cons.content_err(
+                    "thisUpdate after nextUpdate"
+                ));
             }
 
             let mut len = 0;
@@ -432,7 +419,7 @@ impl FileAndHash<Bytes, Bytes> {
     /// Skips over an optional value in a constructed value.
     fn skip_opt_in<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<()>, S::Err> {
+    ) -> Result<Option<()>, DecodeError<S::Error>> {
         cons.take_opt_sequence(|cons| {
             cons.take_value_if(
                 Tag::IA5_STRING,
@@ -446,7 +433,7 @@ impl FileAndHash<Bytes, Bytes> {
     /// Takes an optional value from the beginning of a constructed value.
     fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Err> {
+    ) -> Result<Option<Self>, DecodeError<S::Error>> {
         cons.take_opt_sequence(|cons| {
             Ok(FileAndHash {
                 file: Ia5String::take_from(cons)?.into_bytes(),
@@ -498,11 +485,11 @@ impl ManifestHash {
     pub fn verify<T: AsRef<[u8]>>(
         &self,
         t: T
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(), ManifestHashMismatch> {
         ring::constant_time::verify_slices_are_equal(
             self.hash.as_ref(),
             self.algorithm.digest(t.as_ref()).as_ref()
-        ).map_err(|_| ValidationError)
+        ).map_err(|_| ManifestHashMismatch(()))
     }
 
     /// Returns the digest algorithm of the hash.
@@ -513,6 +500,25 @@ impl ManifestHash {
     /// Returns the hash value as a bytes slice.
     pub fn as_slice(&self) -> &[u8] {
         self.hash.as_ref()
+    }
+}
+
+
+//============ Errors ========================================================
+
+/// A manifest hash didn’t match an object’s hash.
+#[derive(Clone, Copy, Debug)]
+pub struct ManifestHashMismatch(());
+
+impl fmt::Display for ManifestHashMismatch {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("manifest hash mismatch")
+    }
+}
+
+impl From<ManifestHashMismatch> for VerificationError {
+    fn from(_: ManifestHashMismatch) -> VerificationError {
+        VerificationError::new("manifest hash mismatch")
     }
 }
 

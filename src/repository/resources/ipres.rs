@@ -14,13 +14,15 @@ use std::net::{AddrParseError, IpAddr, Ipv4Addr, Ipv6Addr};
 use std::num::ParseIntError;
 use std::str::FromStr;
 use bcder::{decode, encode};
-use bcder::{BitString, Mode, OctetString, Tag, xerr};
+use bcder::{BitString, Mode, OctetString, Tag};
+use bcder::decode::{ContentError, DecodeError};
 use bcder::encode::{Nothing, PrimitiveContent};
 use super::super::cert::Overclaim;
+use super::super::error::VerificationError;
 use super::super::roa::RoaIpAddress;
-use super::super::x509::{encode_extension, ValidationError};
+use super::super::x509::encode_extension;
 use super::chain::{Block, SharedChain};
-use super::choice::ResourcesChoice;
+use super::choice::{InheritedResources, ResourcesChoice};
 
 
 //------------ IpResources ---------------------------------------------------
@@ -69,8 +71,10 @@ impl IpResources {
     }
 
     /// Converts the resources into blocks or returns an error.
-    pub fn to_blocks(&self) -> Result<IpBlocks, ValidationError> {
-        self.0.to_blocks()
+    ///
+    /// The method returns an error for inherited resources.
+    pub fn to_blocks(&self) -> Result<IpBlocks, InheritedIpResources> {
+        self.0.to_blocks().map_err(Into::into)
     }
 }
 
@@ -79,9 +83,10 @@ impl IpResources {
     ///
     /// On success, the function returns a pair of optional IP resources,
     /// the first for IPv4, the second for IPv6.
+    #[allow(clippy::type_complexity)]
     pub fn take_families_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<(Option<Self>, Option<Self>), S::Err> {
+    ) -> Result<(Option<Self>, Option<Self>), DecodeError<S::Error>> {
         cons.take_sequence(|cons| {
             let mut v4 = None;
             let mut v6 = None;
@@ -90,13 +95,17 @@ impl IpResources {
                 match af {
                     AddressFamily::Ipv4 => {
                         if v4.is_some() {
-                            xerr!(return Err(decode::Malformed.into()));
+                            return Err(cons.content_err(
+                                "multiple IPv4 resourcess"
+                            ));
                         }
                         v4 = Some(Self::take_from(cons, AddressFamily::Ipv4)?);
                     }
                     AddressFamily::Ipv6 => {
                         if v6.is_some() {
-                            xerr!(return Err(decode::Malformed.into()));
+                            return Err(cons.content_err(
+                                "multiple IPv6 resources"
+                            ));
                         }
                         v6 = Some(Self::take_from(cons, AddressFamily::Ipv6)?);
                     }
@@ -104,7 +113,9 @@ impl IpResources {
                 Ok(())
             })? { }
             if v4.is_none() && v6.is_none() {
-                xerr!(return Err(decode::Malformed.into()));
+                return Err(cons.content_err(
+                    "no address family in IP resources"
+                ));
             }
             Ok((v4, v6))
         })
@@ -114,7 +125,7 @@ impl IpResources {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         family: AddressFamily,
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_value(|tag, content| {
             if tag == Tag::NULL {
                 content.to_null()?;
@@ -125,7 +136,7 @@ impl IpResources {
                     .map(ResourcesChoice::Blocks)
             }
             else {
-                xerr!(Err(decode::Error::Malformed.into()))
+                Err(content.content_err("invalid IP resources"))
             }
         }).map(IpResources)
     }
@@ -298,10 +309,10 @@ impl IpBlocks {
     /// If the resources are of the inherited variant, returns an error.
     pub fn from_resources(
         res: IpResources
-    ) -> Result<Self, ValidationError> {
+    ) -> Result<Self, InheritedIpResources> {
         match res.0 {
             ResourcesChoice::Missing => Ok(IpBlocks::empty()),
-            ResourcesChoice::Inherit => Err(ValidationError),
+            ResourcesChoice::Inherit => Err(InheritedIpResources(())),
             ResourcesChoice::Blocks(some) => Ok(some),
         }
     }
@@ -317,11 +328,11 @@ impl IpBlocks {
     }
 
     /// Validates IP resources issued under these blocks.
-    pub fn validate_issued(
+    pub fn verify_issued(
         &self,
         res: &IpResources,
         mode: Overclaim,
-    ) -> Result<IpBlocks, ValidationError> {
+    ) -> Result<IpBlocks, OverclaimedIpResources> {
         match res.0 {
             ResourcesChoice::Missing => Ok(Self::empty()),
             ResourcesChoice::Inherit => Ok(self.clone()),
@@ -332,7 +343,9 @@ impl IpBlocks {
                             Ok(blocks.clone())
                         }
                         else {
-                            Err(ValidationError)
+                            Err(OverclaimedIpResources::new(
+                                self.clone(), blocks.clone(),
+                            ))
                         }
                     }
                     Overclaim::Trim => {
@@ -350,14 +363,16 @@ impl IpBlocks {
     pub fn verify_covered(
         &self,
         issuer: &IpResources
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(), OverclaimedIpResources> {
         match issuer.0 {
             ResourcesChoice::Missing => {
                 if self.0.is_empty() {
                     Ok(())
                 }
                 else {
-                    Err(ValidationError)
+                    Err(OverclaimedIpResources::new(
+                        IpBlocks::empty(), self.clone(),
+                    ))
                 }
             }
             ResourcesChoice::Inherit => Ok(()),
@@ -366,7 +381,9 @@ impl IpBlocks {
                     Ok(())
                 }
                 else {
-                    Err(ValidationError)
+                    Err(OverclaimedIpResources::new(
+                        blocks.clone(), self.clone(),
+                    ))
                 }
             }
         }
@@ -448,7 +465,7 @@ impl IpBlocks {
 impl IpBlocks {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(|cons| {
             // The family is here only for checking the lengths of
             // bitstrings. Since we don’t care, IPv6 will work.
@@ -459,7 +476,7 @@ impl IpBlocks {
     pub fn take_from_with_family<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         family: AddressFamily
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(|cons| {
             Self::parse_cons_content(cons, family)
         })
@@ -469,7 +486,7 @@ impl IpBlocks {
     fn parse_content<S: decode::Source>(
         content: &mut decode::Content<S>,
         family: AddressFamily,
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         let cons = content.as_constructed()?;
         Self::parse_cons_content(cons, family)
     }
@@ -477,7 +494,7 @@ impl IpBlocks {
     fn parse_cons_content<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         family: AddressFamily,
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         let mut err = None;
 
         let res = iter::repeat_with(||
@@ -708,7 +725,7 @@ impl IpBlock {
     /// Takes an optional address block from the beginning of encoded value.
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Err> {
+    ) -> Result<Option<Self>, DecodeError<S::Error>> {
         cons.take_opt_value(|tag, content| {
             if tag == Tag::BIT_STRING {
                 Prefix::parse_content(content).map(IpBlock::Prefix)
@@ -717,7 +734,7 @@ impl IpBlock {
                 AddressRange::parse_content(content).map(IpBlock::Range)
             }
             else {
-                xerr!(Err(decode::Malformed.into()))
+                Err(content.content_err("invalid IP resources"))
             }
         })
     }
@@ -725,7 +742,7 @@ impl IpBlock {
     pub fn take_opt_from_with_family<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         family: AddressFamily,
-    ) -> Result<Option<Self>, S::Err> {
+    ) -> Result<Option<Self>, DecodeError<S::Error>> {
         cons.take_opt_value(|tag, content| {
             if tag == Tag::BIT_STRING {
                 Prefix::parse_content_with_family(
@@ -738,7 +755,7 @@ impl IpBlock {
                 ).map(IpBlock::Range)
             }
             else {
-                xerr!(Err(decode::Malformed.into()))
+                Err(content.content_err("invalid IP resources"))
             }
         })
     }
@@ -1024,7 +1041,7 @@ impl AddressRange {
 impl AddressRange {
     fn parse_content<S: decode::Source>(
         content: &mut decode::Content<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         let cons = content.as_constructed()?;
         Ok(AddressRange {
             min: Prefix::take_from(cons)?.min(),
@@ -1035,11 +1052,15 @@ impl AddressRange {
     fn parse_content_with_family<S: decode::Source>(
         content: &mut decode::Content<S>,
         family: AddressFamily,
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         let cons = content.as_constructed()?;
         
-        let min = Self::check_len(Prefix::take_from(cons)?, family)?;
-        let max = Self::check_len(Prefix::take_from(cons)?, family)?;
+        let min = Self::check_len(
+            Prefix::take_from(cons)?, family,
+        ).map_err(|err| cons.content_err(err))?;
+        let max = Self::check_len(
+            Prefix::take_from(cons)?, family,
+        ).map_err(|err| cons.content_err(err))?;
 
         Ok(AddressRange {
             min: min.min(),
@@ -1053,9 +1074,9 @@ impl AddressRange {
     /// for the address family.
     fn check_len(
         addr: Prefix, family: AddressFamily
-     ) -> Result<Prefix, decode::Error> {
+     ) -> Result<Prefix, ContentError> {
         if addr.addr_len() > family.max_addr_len() {
-            Err(decode::Malformed)
+            Err("invalid range in IP resources".into())
         }
         else {
             Ok(addr)
@@ -1074,7 +1095,7 @@ impl AddressRange {
     /// going back to Krill version 0.3.0.
     fn check_len(
         mut addr: Prefix, family: AddressFamily
-    ) -> Result<Prefix, decode::Error> {
+    ) -> Result<Prefix, ContentError> {
         addr.len = std::cmp::min(addr.len, family.max_addr_len());
         Ok(addr)
     }
@@ -1083,7 +1104,7 @@ impl AddressRange {
     /// Skips over the address range at the beginning of a value.
     fn skip_opt_in<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<()>, S::Err> {
+    ) -> Result<Option<()>, S::Error> {
         Self::take_opt_from(cons).map(|x| x.map(|_| ()))
     }
     */
@@ -1196,9 +1217,11 @@ impl Prefix {
     }
 
     /// Creates a new prefix from its encoding as a BIT STRING.
-    pub fn from_bit_string(src: &BitString) -> Result<Self, decode::Error> {
+    pub fn from_bit_string(
+        src: &BitString
+    ) -> Result<Self, DecodePrefixError> {
         if src.octet_len() > 16 {
-            xerr!(return Err(decode::Malformed))
+            return Err(DecodePrefixError(()))
         }
         let mut addr = 0;
         for octet in src.octets() {
@@ -1316,28 +1339,30 @@ impl Prefix {
     /// Takes an encoded prefix from a source.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
-        Ok(Self::from_bit_string(&BitString::take_from(cons)?)?)
+    ) -> Result<Self, DecodeError<S::Error>> {
+        Self::from_bit_string(
+            &BitString::take_from(cons)?
+        ).map_err(|err| cons.content_err(err))
     }
 
     /// Parses the content of a prefix.
     pub fn parse_content<S: decode::Source>(
         content: &mut decode::Content<S>
-    ) -> Result<Self, S::Err> {
-        Ok(Self::from_bit_string(
+    ) -> Result<Self, DecodeError<S::Error>> {
+        Self::from_bit_string(
             &BitString::from_content(content)?
-        )?)
+        ).map_err(|err| content.content_err(err))
     }
 
     pub fn parse_content_with_family<S: decode::Source>(
         content: &mut decode::Content<S>,
         family: AddressFamily,
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         let res = Self::from_bit_string(
             &BitString::from_content(content)?
-        )?;
+        ).map_err(|err| content.content_err(err))?;
         if res.addr_len() > family.max_addr_len() {
-            return Err(decode::Malformed.into())
+            return Err(content.content_err("invalid prefix in IP resources"))
         }
         Ok(res)
     }
@@ -1580,19 +1605,23 @@ impl AddressFamily {
     /// Takes a single address family from the beginning of a value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         let octet_string = OctetString::take_from(cons)?;
-        let afi = Self::decode_octet_string(octet_string)?;
+        let afi = Self::decode_octet_string(
+            octet_string
+        ).map_err(|err| cons.content_err(err))?;
         Ok(afi)
     }
 
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Err> {
+    ) -> Result<Option<Self>, DecodeError<S::Error>> {
         match OctetString::take_opt_from(cons)? {
             None => Ok(None),
             Some(octet_string) => {
-                let afi = Self::decode_octet_string(octet_string)?;
+                let afi = Self::decode_octet_string(
+                    octet_string
+                ).map_err(|err| cons.content_err(err))?;
                 Ok(Some(afi))
             }
         }
@@ -1600,27 +1629,29 @@ impl AddressFamily {
 
     pub fn skip_opt_in<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<()>, S::Err> {
+    ) -> Result<Option<()>, DecodeError<S::Error>> {
         Self::take_opt_from(cons).map(|opt| opt.map(|_| ()))
     }
 
-    fn decode_octet_string(octet_string: OctetString) -> Result<AddressFamily, decode::Error> {
+    fn decode_octet_string(
+        octet_string: OctetString
+    ) -> Result<AddressFamily, DecodeFamilyError> {
         let mut octets = octet_string.octets();
         let first = match octets.next() {
             Some(first) => first,
-            None => xerr!(return Err(decode::Malformed))
+            None => return Err(DecodeFamilyError(())),
         };
         let second = match octets.next() {
             Some(second) => second,
-            None => xerr!(return Err(decode::Malformed))
+            None => return Err(DecodeFamilyError(())),
         };
         if octets.next().is_some() {
-            xerr!(return Err(decode::Malformed))
+            return Err(DecodeFamilyError(()))
         }
         match (first, second) {
             (0, 1) => Ok(AddressFamily::Ipv4),
             (0, 2) => Ok(AddressFamily::Ipv6),
-            _ => xerr!(Err(decode::Malformed)),
+            _ => Err(DecodeFamilyError(())),
         }
     }
 
@@ -1815,6 +1846,48 @@ impl std::ops::Deref for Ipv6Blocks {
 }
 
 
+//------------ DecodePrefixError ---------------------------------------------
+
+#[derive(Clone, Copy, Debug)]
+pub struct DecodePrefixError(());
+
+impl From<DecodePrefixError> for ContentError {
+    fn from(_: DecodePrefixError) -> Self {
+        ContentError::from_static(
+            "invalid prefix in IP resources"
+        )
+    }
+}
+
+impl fmt::Display for DecodePrefixError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("invalid prefix in IP resources")
+    }
+}
+
+
+//------------ DecodeFamilyError ---------------------------------------------
+
+#[derive(Clone, Copy, Debug)]
+pub struct DecodeFamilyError(());
+
+impl From<DecodeFamilyError> for ContentError {
+    fn from(_: DecodeFamilyError) -> Self {
+        ContentError::from_static(
+            "invalid address family in IP resources"
+        )
+    }
+}
+
+impl fmt::Display for DecodeFamilyError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("invalid address family in IP resources")
+    }
+}
+
+
+//============ Errors ========================================================
+
 //------------ FromStrError --------------------------------------------------
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1855,6 +1928,105 @@ impl fmt::Display for FromStrError {
 }
 
 impl error::Error for FromStrError { }
+
+
+//------------ InheritedIpResources ------------------------------------------
+
+/// Inherited AS resources encountered where they are not allowed.
+#[derive(Clone, Copy, Debug)]
+pub struct InheritedIpResources(());
+
+impl From<InheritedResources> for InheritedIpResources {
+    fn from(_: InheritedResources) -> InheritedIpResources {
+        InheritedIpResources(())
+    }
+}
+
+impl fmt::Display for InheritedIpResources {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("inherited IP resources")
+    }
+}
+
+impl error::Error for InheritedIpResources { }
+
+impl From<InheritedIpResources> for VerificationError {
+    fn from(_: InheritedIpResources) -> Self {
+        VerificationError::new("inherited IP resources")
+    }
+}
+
+
+//------------ OverclaimedIpResources ----------------------------------------
+
+/// The AS resources of a certificate are not covered by its issuer.
+#[derive(Clone, Debug)]
+pub struct OverclaimedIpResources {
+    issuer: IpBlocks,
+    subject: IpBlocks,
+}
+
+impl OverclaimedIpResources {
+    fn new(issuer: IpBlocks, subject: IpBlocks) -> Self {
+        OverclaimedIpResources { issuer, subject }
+    }
+
+    pub fn v4(self) -> OverclaimedIpv4Resources {
+        OverclaimedIpv4Resources(self)
+    }
+
+    pub fn v6(self) -> OverclaimedIpv6Resources {
+        OverclaimedIpv6Resources(self)
+    }
+}
+
+
+//------------ OverclaimedIpv4Resources --------------------------------------
+
+/// The AS resources of a certificate are not covered by its issuer.
+#[derive(Clone, Debug)]
+pub struct OverclaimedIpv4Resources(OverclaimedIpResources);
+
+
+impl fmt::Display for OverclaimedIpv4Resources {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "overclaimed IPv4 resources: {}",
+            Ipv4Blocks(self.0.subject.difference(&self.0.issuer))
+        )
+    }
+}
+
+impl error::Error for OverclaimedIpv4Resources { }
+
+impl From<OverclaimedIpv4Resources> for VerificationError {
+    fn from(err: OverclaimedIpv4Resources) -> Self {
+        ContentError::from_boxed(Box::new(err)).into()
+    }
+}
+
+
+//------------ OverclaimedIpv6Resources --------------------------------------
+
+/// The AS resources of a certificate are not covered by its issuer.
+#[derive(Clone, Debug)]
+pub struct OverclaimedIpv6Resources(OverclaimedIpResources);
+
+
+impl fmt::Display for OverclaimedIpv6Resources {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "overclaimed IPv6 resources: {}",
+            Ipv6Blocks(self.0.subject.difference(&self.0.issuer))
+        )
+    }
+}
+
+impl error::Error for OverclaimedIpv6Resources { }
+
+impl From<OverclaimedIpv6Resources> for VerificationError {
+    fn from(err: OverclaimedIpv6Resources) -> Self {
+        ContentError::from_boxed(Box::new(err)).into()
+    }
+}
 
 
 //============ Tests =========================================================

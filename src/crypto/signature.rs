@@ -1,8 +1,9 @@
 //! Signature algorithms and operations.
 
 use bcder::{decode, encode};
-use bcder::encode::PrimitiveContent;
 use bcder::{ConstOid, Oid, Tag};
+use bcder::decode::DecodeError;
+use bcder::encode::PrimitiveContent;
 use bytes::Bytes;
 use crate::oid;
 use super::keys::PublicKeyFormat;
@@ -26,7 +27,7 @@ pub trait SignatureAlgorithm: Sized {
     /// Takes the algorithm identifier from a DER value in X.509 signed data.
     fn x509_take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err>;
+    ) -> Result<Self, DecodeError<S::Error>>;
 
     /// Returns a DER encoder.
     fn x509_encode(&self) -> Self::Encoder;
@@ -102,7 +103,7 @@ impl RpkiSignatureAlgorithm {
     /// Parses the algorithm identifier for X.509 objects.
     fn x509_from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         oid::SHA256_WITH_RSA_ENCRYPTION.skip_if(cons)?;
         let has_parameter = cons.take_opt_primitive_if(
             Tag::NULL, |_| Ok(())
@@ -116,18 +117,20 @@ impl RpkiSignatureAlgorithm {
     /// or if it isn’t correctly encoded.
     pub fn cms_take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(Self::cms_from_constructed)
     }
 
     /// Parses the algorithm identifier for CMS objects.
     fn cms_from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         let oid = Oid::take_from(cons)?;
-        if oid != oid::RSA_ENCRYPTION && oid != oid::SHA256_WITH_RSA_ENCRYPTION
+        if
+            oid != oid::RSA_ENCRYPTION
+            && oid != oid::SHA256_WITH_RSA_ENCRYPTION
         {
-            return Err(decode::Malformed.into())
+            return Err(cons.content_err("invalid signature algorithm"))
         }
         let has_parameter = cons.take_opt_primitive_if(
             Tag::NULL, |_| Ok(())
@@ -175,7 +178,7 @@ impl SignatureAlgorithm for RpkiSignatureAlgorithm {
 
     fn x509_take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(Self::x509_from_constructed)
     }
 
@@ -205,7 +208,7 @@ impl BgpsecSignatureAlgorithm {
     /// Parses the algorithm identifier for X.509 objects.
     fn x509_from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         oid::ECDSA_WITH_SHA256.skip_if(cons)?;
         Ok(BgpsecSignatureAlgorithm(()))
     }
@@ -220,7 +223,7 @@ impl SignatureAlgorithm for BgpsecSignatureAlgorithm {
 
     fn x509_take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(Self::x509_from_constructed)
     }
 

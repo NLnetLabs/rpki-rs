@@ -1,9 +1,11 @@
 //! Types and parameters of keys.
 
 use std::{error, fmt, io};
-use std::convert::TryFrom;
+use std::convert::{Infallible, TryFrom};
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, Oid, Tag};
+use bcder::decode::{ContentError, DecodeError, IntoSource, Source};
+use bcder::int::{InvalidInteger, Unsigned};
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use ring::{digest, signature};
@@ -91,14 +93,14 @@ impl PublicKeyFormat{
     /// algorithms or if the value isn’t correctly encoded.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(Self::from_constructed)
     }
 
     /// Parses the algorithm identifier from the contents of its sequence.
     fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         let alg = Oid::take_from(cons)?;
         if alg == oid::RSA_ENCRYPTION {
             cons.take_opt_null()?;
@@ -109,7 +111,7 @@ impl PublicKeyFormat{
             Ok(PublicKeyFormat::EcdsaP256)
         }
         else {
-            Err(decode::Error::Malformed.into())
+            Err(cons.content_err("invalid public key format"))
         }
     }
 
@@ -140,7 +142,7 @@ impl PublicKeyFormat{
         bits: Input<'_>,
         message: Input<'_>,
         signature: Input<'_>,
-    ) -> Result<(), VerificationError> {
+    ) -> Result<(), SignatureVerificationError> {
         match self {
             PublicKeyFormat::Rsa => {
                 signature::RSA_PKCS1_2048_8192_SHA256.verify(
@@ -190,11 +192,11 @@ impl PublicKey {
     pub fn rsa_from_components(
         modulus: &[u8], // n
         exponent: &[u8] // e 
-    ) -> Result<Self, bcder::decode::Error> {
-        let modulus = bcder::Unsigned::from_slice(modulus)?;
-        let exponent = bcder::Unsigned::from_slice(exponent)?;
+    ) -> Result<Self, InvalidInteger> {
+        let modulus = Unsigned::from_slice(modulus)?;
+        let exponent = Unsigned::from_slice(exponent)?;
 
-        let pub_key_sequence = bcder::encode::sequence((
+        let pub_key_sequence = encode::sequence((
             modulus.encode(),
             exponent.encode()
         ));
@@ -203,7 +205,7 @@ impl PublicKey {
             algorithm: PublicKeyFormat::Rsa,
             bits: BitString::new(
                 0,
-                pub_key_sequence.to_captured(bcder::Mode::Der).into_bytes()
+                pub_key_sequence.to_captured(Mode::Der).into_bytes()
             ),
         })
     }
@@ -216,7 +218,7 @@ impl PublicKey {
     /// with [`PublicKey::decode`].
     pub fn rsa_from_bits_bytes(
         bytes: Bytes
-    ) -> Result<Self, bcder::decode::Error> {
+    ) -> Result<Self, DecodeError<Infallible>> {
         Mode::Der.decode(bytes.clone(), |cons| {
             cons.take_sequence(|cons| {
                 let _ = bcder::Unsigned::take_from(cons)?;
@@ -276,9 +278,9 @@ impl PublicKey {
     /// Verifies a signature using this public key.
     pub fn verify<Alg: SignatureAlgorithm>(
         &self, message: &[u8], signature: &Signature<Alg>
-    ) -> Result<(), VerificationError> {
+    ) -> Result<(), SignatureVerificationError> {
         if signature.algorithm().public_key_format() != self.algorithm {
-            return Err(VerificationError)
+            return Err(SignatureVerificationError(()))
         }
         self.algorithm.verify(
             Input::from(self.bits()),
@@ -295,13 +297,15 @@ impl PublicKey {
 /// structures. As these contain the same information as `PublicKey`,
 /// it can be decoded from and encoded to such sequences.
 impl PublicKey {
-    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
+    pub fn decode<S: decode::IntoSource>(
+        source: S
+    ) -> Result<Self, DecodeError<<S::Source as Source>::Error>> {
         Mode::Der.decode(source, Self::take_from)
     }
 
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(|cons| {
             Ok(PublicKey {
                 algorithm: PublicKeyFormat::take_from(cons)?,
@@ -372,7 +376,7 @@ impl<'de> serde::Deserialize<'de> for PublicKey {
         let string = String::deserialize(deserializer)?;
         let decoded = base64::decode(&string).map_err(de::Error::custom)?;
         let bytes = Bytes::from(decoded);
-        PublicKey::decode(bytes).map_err(de::Error::custom)
+        PublicKey::decode(bytes.into_source()).map_err(de::Error::custom)
     }
 }
 
@@ -406,27 +410,33 @@ impl PrimitiveContent for PublicKeyCn {
 }
 
 
-//------------ VerificationError ---------------------------------------------
+//------------ SignatureVerificationError ------------------------------------
 
 /// An error happened while verifying a signature.
 ///
 /// No further information is provided. This is on purpose.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct VerificationError;
+pub struct SignatureVerificationError(());
 
-impl From<Unspecified> for VerificationError {
+impl From<Unspecified> for SignatureVerificationError {
     fn from(_: Unspecified) -> Self {
-        VerificationError
+        SignatureVerificationError(())
     }
 }
 
-impl fmt::Display for VerificationError {
+impl From<SignatureVerificationError> for ContentError {
+    fn from(_: SignatureVerificationError) -> Self {
+        ContentError::from_static("signature verification failed")
+    }
+}
+
+impl fmt::Display for SignatureVerificationError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("signature verification failed")
     }
 }
 
-impl error::Error for VerificationError { }
+impl error::Error for SignatureVerificationError { }
 
 
 //============ Tests =========================================================
@@ -454,7 +464,9 @@ mod test {
     #[test]
     fn rsa_from_public_key_bytes() {
         let key = PublicKey::decode(
-            include_bytes!("../../test-data/rsa-key.public.der").as_ref(),
+            include_bytes!(
+                "../../test-data/rsa-key.public.der"
+            ).as_ref().into_source(),
         ).unwrap();
         assert!(
             PublicKey::rsa_from_bits_bytes(

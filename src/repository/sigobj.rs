@@ -2,9 +2,10 @@
 //
 // See RFC 6488 and RFC 5652.
 
-use std::{cmp, io};
+use std::{cmp, fmt, io};
 use bcder::{decode, encode};
-use bcder::{Captured, Mode, OctetString, Oid, Tag, xerr};
+use bcder::{Captured, Mode, OctetString, Oid, Tag};
+use bcder::decode::{ContentError, DecodeError, IntoSource, Source};
 use bcder::encode::PrimitiveContent;
 use bcder::string::OctetStringSource;
 use bytes::Bytes;
@@ -14,11 +15,14 @@ use crate::crypto::{
     RpkiSignatureAlgorithm, Signer, SigningError
 };
 use super::cert::{Cert, KeyUsage, Overclaim, ResourceCert, TbsCert};
+use super::error::{
+    InspectionError, ValidationError, VerificationError
+};
 use super::resources::{
     AsBlocksBuilder, AsResources, AsResourcesBuilder, IpBlocksBuilder,
     IpResources, IpResourcesBuilder
 };
-use super::x509::{Name, Serial, Time, ValidationError, Validity, update_once};
+use super::x509::{Name, Serial, Time, Validity};
 
 
 //------------ SignedObject --------------------------------------------------
@@ -60,11 +64,13 @@ impl SignedObject {
     }
 
     /// Decodes the object’s content.
-    pub fn decode_content<F, T>(&self, op: F) -> Result<T, decode::Error>
-    where F: FnOnce(&mut decode::Constructed<OctetStringSource>)
-                    -> Result<T, decode::Error> {
-        // XXX Let’s see if using DER here at least holds.
-        Mode::Der.decode(self.content.to_source(), op)
+    pub fn decode_content<F, T>(
+        &self, op: F
+    ) -> Result<T, DecodeError<<OctetStringSource as decode::Source>::Error>>
+    where F: FnOnce(
+        &mut decode::Constructed<OctetStringSource>
+    ) -> Result<T, DecodeError<<OctetStringSource as decode::Source>::Error>> {
+        Mode::Der.decode(self.content.clone(), op)
     }
 
     /// Returns a reference to the certificate the object is signed with.
@@ -87,19 +93,37 @@ impl SignedObject {
 ///
 impl SignedObject {
     /// Decodes a signed object from the given source.
-    pub fn decode<S: decode::Source>(
+    pub fn decode<S: IntoSource>(
         source: S,
         strict: bool
-    ) -> Result<Self, S::Err> {
-        if strict { Mode::Der }
-        else { Mode::Ber }
-            .decode(source, Self::take_from)
+    ) -> Result<Self, DecodeError<<S::Source as Source>::Error>> {
+        if strict {
+            Mode::Der
+        }
+        else {
+            Mode::Ber
+        }.decode(source.into_source(), Self::take_from)
+    }
+
+    /// Decodes a signed object if it has the correct content type.
+    pub fn decode_if_type<S: IntoSource>(
+        source: S,
+        content_type: &impl PartialEq<Oid>,
+        strict: bool,
+    ) -> Result<Self, DecodeError<<S::Source as Source>::Error>> {
+        let res = Self::decode(source, strict)?;
+        if content_type.ne(res.content_type()) {
+            return Err(DecodeError::content(
+                "invalid content type", Default::default()
+            ))
+        }
+        Ok(res)
     }
 
     /// Takes a signed object from an encoded constructed value.
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(|cons| { // ContentInfo
             oid::SIGNED_DATA.skip_if(cons)?; // contentType
             cons.take_constructed_if(Tag::CTX_0, |cons| { // content
@@ -134,11 +158,16 @@ impl SignedObject {
                                 )?;
                                 let alg = DigestAlgorithm::take_from(cons)?;
                                 if alg != digest_algorithm {
-                                    return Err(decode::Malformed.into())
+                                    return Err(cons.content_err(
+                                        "digest algorithm mismatch"
+                                    ))
                                 }
                                 let attrs = SignedAttrs::take_from(cons)?;
                                 if attrs.2 != content_type {
-                                    return Err(decode::Malformed.into())
+                                    return Err(cons.content_err(
+                                        "content type in signed attributes \
+                                        differs"
+                                    ))
                                 }
                                 let signature = RpkiSignature::new(
                                     RpkiSignatureAlgorithm::cms_take_from(
@@ -200,25 +229,27 @@ impl SignedObject {
         strict: bool,
         now: Time,
     ) -> Result<ResourceCert, ValidationError> {
-        self.verify_compliance(strict)?;
-        self.verify_signature(strict)?;
-        self.cert.validate_ee_at(issuer, strict, now)
+        self.inspect(strict)?;
+        self.verify(strict)?;
+        self.cert.validate_ee_at(issuer, strict, now).map_err(Into::into)
     }
 
     /// Validates that the signed object complies with the specification.
     ///
     /// This is item 1 of [RFC 6488]`s section 3.
-    fn verify_compliance(
+    fn inspect(
         &self,
         _strict: bool
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(), InspectionError> {
         // Sub-items a, b, d, e, f, g, h, i, j, k, l have been validated while
         // parsing. This leaves these:
         //
         // c. cert is an EE cert with the SubjectKeyIdentifier matching
         //    the sid field of the SignerInfo.
         if self.sid != self.cert.subject_key_identifier() {
-            return Err(ValidationError)
+            return Err(InspectionError::new(
+                "Subject Key Identifier mismatch in signed object"
+            ))
         }
         Ok(())
     }
@@ -226,14 +257,18 @@ impl SignedObject {
     /// Verifies the signature of the object against contained certificate.
     ///
     /// This is item 2 of [RFC 6488]’s section 3.
-    fn verify_signature(&self, _strict: bool) -> Result<(), ValidationError> {
+    fn verify(
+        &self, _strict: bool
+    ) -> Result<(), VerificationError> {
         let digest = {
             let mut context = self.digest_algorithm.start();
             self.content.iter().for_each(|x| context.update(x));
             context.finish()
         };
         if digest.as_ref() != self.message_digest.as_ref() {
-            return Err(ValidationError)
+            return Err(VerificationError::new(
+                "message digest mismatch in signed object"
+            ))
         }
         let msg = self.signed_attrs.encode_verify();
         self.cert.subject_public_key_info().verify(
@@ -398,7 +433,7 @@ impl SignedAttrs {
         strict: bool
     ) -> Result<
         (Self, MessageDigest, Oid<Bytes>, Option<Time>, Option<u64>),
-        S::Err
+        DecodeError<S::Error>
     > {
         let mut message_digest = None;
         let mut content_type = None;
@@ -426,22 +461,32 @@ impl SignedAttrs {
                     else if !strict {
                         cons.skip_all()
                     } else {
-                        xerr!(Err(decode::Malformed.into()))
+                        Err(cons.content_err(InvalidSignedAttr::new(oid)))
                     }
                 })? { }
                 Ok(())
             })
         })?;
         if raw.len() > 0xFFFF {
-            return Err(decode::Unimplemented.into())
+            return Err(cons.content_err(
+                "signed attributes over 65535 bytes not supported"
+            ))
         }
         let message_digest = match message_digest {
             Some(some) => MessageDigest(some.into_bytes()),
-            None => return Err(decode::Malformed.into())
+            None => {
+                return Err(cons.content_err(
+                    "missing message digest in signed attributes"
+                ))
+            }
         };
         let content_type = match content_type {
             Some(some) => some,
-            None => return Err(decode::Malformed.into())
+            None => {
+                return Err(cons.content_err(
+                    "missing content type in signed attributes",
+                ))
+            }
         };
         Ok((
             Self(raw), message_digest, content_type, signing_time,
@@ -460,7 +505,7 @@ impl SignedAttrs {
         cons: &mut decode::Constructed<S>
     ) -> Result<
         (Self, MessageDigest, Oid<Bytes>, Option<Time>, Option<u64>),
-        S::Err
+        DecodeError<S::Error>
     > {
         Self::take_from_with_mode(cons, true)
     }
@@ -480,7 +525,7 @@ impl SignedAttrs {
         cons: &mut decode::Constructed<S>
     ) -> Result<
         (Self, MessageDigest, Oid<Bytes>, Option<Time>, Option<u64>),
-        S::Err
+        DecodeError<S::Error>
     > {
         Self::take_from_with_mode(cons, false)
     }
@@ -492,37 +537,61 @@ impl SignedAttrs {
     fn take_content_type<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         content_type: &mut Option<Oid<Bytes>>
-    ) -> Result<(), S::Err> {
-        update_once(content_type, || {
-            cons.take_set(|cons| Oid::take_from(cons))
-        })
+    ) -> Result<(), DecodeError<S::Error>> {
+        if content_type.is_some() {
+            Err(cons.content_err("duplicate Content Type attribute"))
+        }
+        else {
+            *content_type = Some(
+                cons.take_set(|cons| Oid::take_from(cons))?
+            );
+            Ok(())
+        }
     }
 
     fn take_message_digest<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         message_digest: &mut Option<OctetString>
-    ) -> Result<(), S::Err> {
-        update_once(message_digest, || {
-            cons.take_set(|cons| OctetString::take_from(cons))
-        })
+    ) -> Result<(), DecodeError<S::Error>> {
+        if message_digest.is_some() {
+            Err(cons.content_err("duplicate Message Digest attribute"))
+        }
+        else {
+            *message_digest = Some(
+                cons.take_set(|cons| OctetString::take_from(cons))?
+            );
+            Ok(())
+        }
     }
 
     fn take_signing_time<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         signing_time: &mut Option<Time>
-    ) -> Result<(), S::Err> {
-        update_once(signing_time, || {
-            cons.take_set(Time::take_from)
-        })
+    ) -> Result<(), DecodeError<S::Error>> {
+        if signing_time.is_some() {
+            Err(cons.content_err("duplicate Signing Time attribute"))
+        }
+        else {
+            *signing_time = Some(
+                cons.take_set(Time::take_from)?
+            );
+            Ok(())
+        }
     }
 
     fn take_bin_signing_time<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         bin_signing_time: &mut Option<u64>
-    ) -> Result<(), S::Err> {
-        update_once(bin_signing_time, || {
-            cons.take_set(|cons| cons.take_u64())
-        })
+    ) -> Result<(), DecodeError<S::Error>> {
+        if bin_signing_time.is_some() {
+            Err(cons.content_err("duplicate Binary Signing Time attribute"))
+        }
+        else {
+            *bin_signing_time = Some(
+                cons.take_set(|cons| cons.take_u64())?
+            );
+            Ok(())
+        }
     }
 
     pub fn encode_ref(&self) -> impl encode::Values + '_ {
@@ -940,6 +1009,35 @@ impl io::Write for StartOfValue {
 
     fn flush(&mut self) -> Result<(), io::Error> {
         Ok(())
+    }
+}
+
+
+//============ Error Types ===================================================
+
+//------------ InvalidSignedAttr ---------------------------------------------
+
+/// An invalid signed attribute was encountered.
+#[derive(Clone, Debug)]
+pub(crate) struct InvalidSignedAttr {
+    oid: Oid<Bytes>,
+}
+
+impl InvalidSignedAttr {
+    fn new(oid: Oid<Bytes>) -> Self {
+        InvalidSignedAttr { oid }
+    }
+}
+
+impl From<InvalidSignedAttr> for ContentError {
+    fn from(err: InvalidSignedAttr) -> Self {
+        ContentError::from_boxed(Box::new(err))
+    }
+}
+
+impl fmt::Display for InvalidSignedAttr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "invalid extension {}", self.oid)
     }
 }
 

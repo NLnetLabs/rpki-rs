@@ -11,15 +11,16 @@ use std::fmt;
 use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, Oid, Tag};
+use bcder::decode::{DecodeError, IntoSource, SliceSource, Source};
 use bcder::encode::Values;
 use crate::oid;
 use crate::crypto::{Signer, SigningError};
 use super::cert::{Cert, ResourceCert};
+use super::error::{ValidationError, VerificationError};
 use super::resources::{
     AddressFamily, AsBlock, AsBlocks, AsBlocksBuilder, Asn, AsResources
 };
 use super::sigobj::{SignedObject, SignedObjectBuilder};
-use super::x509::ValidationError;
 
 
 //------------ Aspa ----------------------------------------------------------
@@ -30,17 +31,16 @@ pub struct Aspa {
 }
 
 impl Aspa {
-    pub fn decode<S: decode::Source>(
+    pub fn decode<S: IntoSource>(
         source: S,
         strict: bool
-    ) -> Result<Self, S::Err> {
-        let signed = SignedObject::decode(source, strict)?;
-        if signed.content_type().ne(&oid::CT_ASPA) {
-            return Err(decode::Malformed.into())
-        }
+    ) -> Result<Self, DecodeError<<S::Source as Source>::Error>> {
+        let signed = SignedObject::decode_if_type(
+            source, &oid::CT_ASPA, strict
+        )?;
         let content = signed.decode_content(|cons| {
             AsProviderAttestation::take_from(cons)
-        })?;
+        }).map_err(DecodeError::convert)?;
         Ok(Aspa { signed, content })
     }
 
@@ -113,7 +113,7 @@ pub struct AsProviderAttestation {
 impl AsProviderAttestation {
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         // version [0] EXPLICIT INTEGER DEFAULT 0
         cons.take_opt_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(0))?;
                 
@@ -133,7 +133,9 @@ impl AsProviderAttestation {
         cert: &ResourceCert
     ) -> Result<(), ValidationError> {
         if !cert.as_resources().contains(&self.as_blocks()) {
-            return Err(ValidationError);
+            return Err(VerificationError::new(
+                "customer AS not covered by certificate"
+            ).into());
         }
         Ok(())
     }
@@ -167,12 +169,12 @@ pub struct ProviderAsSet(Captured);
 
 impl ProviderAsSet {
     pub fn iter(&self) -> ProviderAsIter {
-        ProviderAsIter(self.0.as_ref())
+        ProviderAsIter(self.0.as_slice().into_source())
     }
 
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(|cons| {
             cons.capture(|cons| {
                 let mut last: Option<Asn> = None;
@@ -184,7 +186,9 @@ impl ProviderAsSet {
                         let current_as_id = provider_as.provider();
                         if let Some(last_as_id) = last {
                             if last_as_id >= current_as_id {
-                                return Err(decode::Malformed.into());
+                                return Err(cons.content_err(
+                                    "provider AS set is not ordered"
+                                ));
                             }
                         }
                         last = Some(provider_as.provider());
@@ -203,7 +207,7 @@ impl ProviderAsSet {
 //------------ ProviderAsIter ------------------------------------------------
 
 #[derive(Clone, Debug)]
-pub struct ProviderAsIter<'a>(&'a [u8]);
+pub struct ProviderAsIter<'a>(SliceSource<'a>);
 
 impl<'a> Iterator for ProviderAsIter<'a> {
     type Item = ProviderAs;
@@ -264,7 +268,7 @@ impl ProviderAs {
     /// Takes an optional ProviderAS from the beginning of an encoded value.
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Err> {
+    ) -> Result<Option<Self>, DecodeError<S::Error>> {
         cons.take_opt_sequence(|cons|{
             let provider = Asn::take_from(cons)?;
             let afi_limit = AddressFamily::take_opt_from(cons)?;
@@ -275,7 +279,7 @@ impl ProviderAs {
     /// Skips over a ProviderAs if it is present.
     pub fn skip_opt_in<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<()>, S::Err> {
+    ) -> Result<Option<()>, DecodeError<S::Error>> {
         Self::take_opt_from(cons).map(|opt| opt.map(|_| ()))
     }
 

@@ -1,24 +1,24 @@
 //! Support RFC 6492 Provisioning Protocol (aka up-down)
 
-use std::convert::TryFrom;
+use std::convert::{Infallible, TryFrom};
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::{fmt, io};
 
+use bcder::decode::DecodeError;
 use bytes::Bytes;
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::crypto::{KeyIdentifier, PublicKey, Signer, SigningError};
+use crate::repository::cert::Cert;
+use crate::repository::error::ValidationError;
 use crate::repository::resources::{
     AsBlocks, Ipv4Blocks, Ipv6Blocks, ResourceSet
 };
-use crate::repository::x509::Time;
-use crate::repository::x509::ValidationError;
-use crate::repository::x509::Validity;
-use crate::repository::Cert;
+use crate::repository::x509::{Time, Validity};
 use crate::uri;
 use crate::xml;
 use crate::xml::decode::{Content, Error as XmlError};
@@ -87,8 +87,9 @@ impl ProvisioningCms {
 
     /// Decodes the CMS and enclosed publication Message from the source.
     pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
-        let signed_msg =
-            SignedMessage::decode(bytes, false).map_err(|e| Error::CmsDecode(e.to_string()))?;
+        let signed_msg = SignedMessage::decode(
+            bytes, false
+        ).map_err(Error::CmsDecode)?;
 
         let content = signed_msg.content().to_bytes();
         let message = Message::decode(content.as_ref())?;
@@ -1767,7 +1768,7 @@ pub enum Error {
     InvalidPayloadType(PayloadTypeError),
     InvalidCsrSyntax(String),
     CertSyntax(String),
-    CmsDecode(String),
+    CmsDecode(DecodeError<Infallible>),
     Validation(ValidationError),
     Limit(ResourceSet, RequestResourceLimit),
 }

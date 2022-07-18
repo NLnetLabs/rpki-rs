@@ -2,13 +2,14 @@
 
 use std::{fmt, str};
 use std::cmp::Ordering;
-use std::convert::TryFrom;
+use std::convert::{Infallible, TryFrom};
 use std::fs::{read_dir, DirEntry, File, ReadDir};
 use std::io::{self, Read};
 use std::path::Path;
 use std::sync::Arc;
 use bytes::Bytes;
 use bcder::decode;
+use bcder::decode::IntoSource;
 use log::{debug, error};
 use crate::uri;
 use crate::crypto::PublicKey;
@@ -60,7 +61,7 @@ impl Tal {
             else { Some(*b) }
         ).collect();
         let key_info = base64::decode(&data)?;
-        let key_info = PublicKey::decode(key_info.as_ref())?;
+        let key_info = PublicKey::decode(key_info.as_slice().into_source())?;
         Ok(Tal {
             uris,
             key_info,
@@ -274,7 +275,7 @@ pub enum ReadError {
     UnexpectedEof,
     BadUri(uri::Error),
     BadKeyInfoEncoding(base64::DecodeError),
-    BadKeyInfo(decode::Error),
+    BadKeyInfo(decode::DecodeError<Infallible>),
 }
 
 impl From<io::Error> for ReadError {
@@ -295,8 +296,8 @@ impl From<base64::DecodeError> for ReadError {
     }
 }
 
-impl From<decode::Error> for ReadError {
-    fn from(err: decode::Error) -> ReadError {
+impl From<decode::DecodeError<Infallible>> for ReadError {
+    fn from(err: decode::DecodeError<Infallible>) -> ReadError {
         ReadError::BadKeyInfo(err)
     }
 }

@@ -18,13 +18,15 @@ use std::cmp::Ordering;
 use std::iter::FromIterator;
 use std::str::FromStr;
 use bcder::{decode, encode};
-use bcder::{Tag, xerr};
+use bcder::Tag;
+use bcder::decode::{ContentError, DecodeError};
 use bcder::encode::{PrimitiveContent, Nothing};
 use routecore::asn::ParseAsnError;
 use super::super::cert::Overclaim;
-use super::super::x509::{encode_extension, ValidationError};
+use super::super::x509::encode_extension;
+use super::super::error::VerificationError;
 use super::chain::{Block, SharedChain};
-use super::choice::ResourcesChoice;
+use super::choice::{InheritedResources, ResourcesChoice};
 
 
 //------------ Re-exports ----------------------------------------------------
@@ -88,8 +90,8 @@ impl AsResources {
     }
 
     /// Converts the resources into blocks or returns an error.
-    pub fn to_blocks(&self) -> Result<AsBlocks, ValidationError> {
-        self.0.to_blocks()
+    pub fn to_blocks(&self) -> Result<AsBlocks, InheritedAsResources> {
+        self.0.to_blocks().map_err(Into::into)
     }
 }
 
@@ -131,7 +133,7 @@ impl AsResources {
     /// [RFC 6487]: https://tools.ietf.org/html/rfc6487
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(|cons| {
             cons.take_constructed_if(Tag::CTX_0, |cons| {
                 cons.take_value(|tag, content| {
@@ -144,7 +146,7 @@ impl AsResources {
                             .map(ResourcesChoice::Blocks)
                     }
                     else {
-                        xerr!(Err(decode::Error::Malformed.into()))
+                        Err(content.content_err("invalid AS resources"))
                     }
                 })
             })
@@ -300,10 +302,10 @@ impl AsBlocks {
     /// is returned.
     pub fn from_resources(
         res: AsResources
-    ) -> Result<Self, ValidationError> {
+    ) -> Result<Self, InheritedAsResources> {
         match res.0 {
             ResourcesChoice::Missing => Ok(AsBlocks::empty()),
-            ResourcesChoice::Inherit => Err(ValidationError),
+            ResourcesChoice::Inherit => Err(InheritedAsResources(())),
             ResourcesChoice::Blocks(some) => Ok(some),
         }
     }
@@ -324,11 +326,11 @@ impl AsBlocks {
     }
 
     /// Validates AS resources issued under these blocks.
-    pub fn validate_issued(
+    pub fn verify_issued(
         &self,
         res: &AsResources,
         mode: Overclaim,
-    ) -> Result<AsBlocks, ValidationError> {
+    ) -> Result<AsBlocks, OverclaimedAsResources> {
         match res.0 {
             ResourcesChoice::Missing => Ok(Self::empty()),
             ResourcesChoice::Inherit => Ok(self.clone()),
@@ -339,7 +341,9 @@ impl AsBlocks {
                             Ok(blocks.clone())
                         }
                         else {
-                            Err(ValidationError)
+                            Err(OverclaimedAsResources::new(
+                                self.clone(), blocks.clone(),
+                            ))
                         }
                     }
                     Overclaim::Trim => {
@@ -360,14 +364,16 @@ impl AsBlocks {
     pub fn verify_covered(
         &self,
         issuer: &AsResources
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(), OverclaimedAsResources> {
         match issuer.0 {
             ResourcesChoice::Missing => {
                 if self.0.is_empty() {
                     Ok(())
                 }
                 else {
-                    Err(ValidationError)
+                    Err(OverclaimedAsResources::new(
+                        AsBlocks::empty(), self.clone(),
+                    ))
                 }
             }
             ResourcesChoice::Inherit => Ok(()),
@@ -376,7 +382,9 @@ impl AsBlocks {
                     Ok(())
                 }
                 else {
-                    Err(ValidationError)
+                    Err(OverclaimedAsResources::new(
+                        blocks.clone(), self.clone(),
+                    ))
                 }
             }
         }
@@ -426,21 +434,21 @@ impl AsBlocks {
 impl AsBlocks {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(Self::parse_cons_content)
     }
 
     /// Parses the content of a AS ID blocks sequence.
     fn parse_content<S: decode::Source>(
         content: &mut decode::Content<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         let cons = content.as_constructed()?;
         Self::parse_cons_content(cons)
     }
 
     fn parse_cons_content<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         let mut err = None;
 
         let res = iter::repeat_with(||
@@ -511,7 +519,6 @@ impl FromIterator<AsBlock> for AsBlocks {
 
 impl fmt::Display for AsBlocks {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-
         let mut iter = self.iter();
 
         if let Some(el) = iter.next() {
@@ -668,10 +675,10 @@ impl AsBlock {
 }
 
 impl AsBlock {
-    /// Takes an optional AS bock from the beginning of an encoded value.
+    /// Takes an optional AS block from the beginning of an encoded value.
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Err> {
+    ) -> Result<Option<Self>, DecodeError<S::Error>> {
         cons.take_opt_value(|tag, content| {
             if tag == Tag::INTEGER {
                 Asn::parse_content(content).map(AsBlock::Id)
@@ -680,7 +687,7 @@ impl AsBlock {
                 AsRange::parse_content(content).map(AsBlock::Range)
             }
             else {
-                xerr!(Err(decode::Error::Malformed.into()))
+                Err(content.content_err("invalid AS resources"))
             }
         })
     }
@@ -688,7 +695,7 @@ impl AsBlock {
     /// Skips over the AS block at the beginning of an encoded value.
     pub fn skip_opt_in<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<()>, S::Err> {
+    ) -> Result<Option<()>, DecodeError<S::Error>> {
         cons.take_opt_value(|tag, content| {
             if tag == Tag::INTEGER {
                 Asn::skip_content(content)
@@ -697,7 +704,7 @@ impl AsBlock {
                 AsRange::skip_content(content)
             }
             else {
-                xerr!(Err(decode::Error::Malformed.into()))
+                Err(content.content_err("invalid AS resources"))
             }
         })
     }
@@ -893,7 +900,7 @@ impl AsRange {
     /// Parses the content of an AS range value.
     fn parse_content<S: decode::Source>(
         content: &mut decode::Content<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         let cons = content.as_constructed()?;
         Ok(AsRange {
             min: Asn::take_from(cons)?,
@@ -904,7 +911,7 @@ impl AsRange {
     /// Skips over the content of an AS range value.
     fn skip_content<S: decode::Source>(
         content: &mut decode::Content<S>
-    ) -> Result<(), S::Err> {
+    ) -> Result<(), DecodeError<S::Error>> {
         let cons = content.as_constructed()?;
         Asn::skip_in(cons)?;
         Asn::skip_in(cons)?;
@@ -955,6 +962,8 @@ impl fmt::Display for AsRange {
 }
 
 
+//============ Errors ========================================================
+
 //------------ FromStrError --------------------------------------------------
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -985,6 +994,65 @@ impl fmt::Display for FromStrError {
 }
 
 impl error::Error for FromStrError { }
+
+
+//------------ InheritedAsResources ------------------------------------------
+
+/// Inherited AS resources encountered where they are not allowed.
+#[derive(Clone, Copy, Debug)]
+pub struct InheritedAsResources(());
+
+impl From<InheritedResources> for InheritedAsResources {
+    fn from(_: InheritedResources) -> InheritedAsResources {
+        InheritedAsResources(())
+    }
+}
+
+impl fmt::Display for InheritedAsResources {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("inherited AS resources")
+    }
+}
+
+impl error::Error for InheritedAsResources { }
+
+impl From<InheritedAsResources> for VerificationError {
+    fn from(_: InheritedAsResources) -> Self {
+        VerificationError::new("inherited AS resources")
+    }
+}
+
+
+//------------ OverclaimedAsResources ----------------------------------------
+
+/// The AS resources of a certificate are not covered by its issuer.
+#[derive(Clone, Debug)]
+pub struct OverclaimedAsResources {
+    issuer: AsBlocks,
+    subject: AsBlocks,
+}
+
+impl OverclaimedAsResources {
+    fn new(issuer: AsBlocks, subject: AsBlocks) -> Self {
+        OverclaimedAsResources { issuer, subject }
+    }
+}
+
+impl fmt::Display for OverclaimedAsResources {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "overclaimed AS resources: {}",
+            self.subject.difference(&self.issuer)
+        )
+    }
+}
+
+impl error::Error for OverclaimedAsResources { }
+
+impl From<OverclaimedAsResources> for VerificationError {
+    fn from(err: OverclaimedAsResources) -> Self {
+        ContentError::from_boxed(Box::new(err)).into()
+    }
+}
 
 
 //============ Tests =========================================================

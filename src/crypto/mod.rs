@@ -6,7 +6,7 @@
 
 pub use self::digest::{Digest, DigestAlgorithm};
 pub use self::keys::{
-    KeyIdentifier, PublicKey, PublicKeyFormat, VerificationError
+    KeyIdentifier, PublicKey, PublicKeyFormat, SignatureVerificationError,
 };
 pub use self::signer::{Signer, SigningError};
 pub use self::signature::{

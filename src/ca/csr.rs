@@ -19,19 +19,22 @@
 //! - a signature (to prove possession of the public key)
 //!
 
-use bcder::{decode, encode, xerr, ConstOid};
+use std::fmt;
+use bcder::{decode, encode, ConstOid};
 use bcder::{BitString, Captured, Mode, OctetString, Oid, Tag};
+use bcder::decode::{ContentError, DecodeError, IntoSource, Source};
 use bcder::encode::{PrimitiveContent, Constructed};
+use bytes::Bytes;
 use crate::{oid, uri};
 use crate::repository::cert::{
-    ExtendedKeyUsage, KeyUsage, Sia, TbsCert
+    ExtendedKeyUsage, InvalidExtension, KeyUsage, Sia, TbsCert
 };
 use crate::crypto::{
     BgpsecSignatureAlgorithm, RpkiSignatureAlgorithm, PublicKey,
-    SignatureAlgorithm
+    SignatureAlgorithm, SignatureVerificationError,
 };
 use crate::crypto::signer::{Signer, SigningError};
-use crate::repository::x509::{Name, SignedData, ValidationError};
+use crate::repository::x509::{Name, SignedData};
 
 
 //------------ Csr -----------------------------------------------------------
@@ -118,29 +121,33 @@ impl<Alg> Csr<Alg, RpkiCaCsrAttributes> {
 ///
 impl<Alg: SignatureAlgorithm, Attrs: CsrAttributes> Csr<Alg, Attrs> {
     /// Parse as a source as a certificate signing request.
-    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
-        Mode::Der.decode(source, Self::take_from)
+    pub fn decode<S: IntoSource>(
+        source: S
+    ) -> Result<Self, DecodeError<<S::Source as Source>::Error>> {
+        Mode::Der.decode(source.into_source(), Self::take_from)
     }
 
     /// Takes an encoded CSR from the beginning of a constructed value.
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(Self::from_constructed)
     }
 
     /// Parses the content of a certificate signing request.
     fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         let signed_data = SignedData::from_constructed(cons)?;
-        let content = signed_data.data().clone().decode(CsrContent::take_from)?;
+        let content = signed_data.data().clone().decode(
+            CsrContent::take_from
+        ).map_err(DecodeError::convert)?;
 
         Ok(Self { signed_data, content })
     }
 
     /// Validates a CSR against its internal public key.
-    pub fn validate(&self) -> Result<(), ValidationError> {
+    pub fn verify_signature(&self) -> Result<(), SignatureVerificationError> {
         self.signed_data.verify_signature(self.public_key())
     }
 }
@@ -290,7 +297,7 @@ impl<Attrs: CsrAttributes> CsrContent<Attrs> {
     /// Takes a value from the beginning of an encoded constructed value.
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(|cons| {
             cons.skip_u8_if(0)?; // version MUST be 0, cause v1
             let subject = Name::take_from(cons)?;
@@ -307,7 +314,7 @@ impl<Attrs: CsrAttributes> CsrContent<Attrs> {
 pub trait CsrAttributes: Sized {
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err>;
+    ) -> Result<Self, DecodeError<S::Error>>;
 }
 
 
@@ -324,7 +331,7 @@ pub struct RpkiCaCsrAttributes {
 impl CsrAttributes for RpkiCaCsrAttributes {
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_constructed_if(Tag::CTX_0, |cons| {
             let mut basic_ca = None;
             let mut key_usage = None;
@@ -342,7 +349,7 @@ impl CsrAttributes for RpkiCaCsrAttributes {
 
                             let value = OctetString::take_from(cons)?;
 
-                            Mode::Der.decode(value.to_source(), |content| {
+                            Mode::Der.decode(value.into_source(), |content| {
                                 if id == oid::CE_BASIC_CONSTRAINTS {
                                     TbsCert::take_basic_constraints(
                                         content, &mut basic_ca
@@ -360,9 +367,11 @@ impl CsrAttributes for RpkiCaCsrAttributes {
                                         content, &mut sia
                                     )
                                 } else {
-                                    xerr!(Err(decode::Malformed))
+                                    Err(content.content_err(
+                                        InvalidExtension::new(id)
+                                    ))
                                 }
-                            })?;
+                            }).map_err(DecodeError::convert)?;
 
 
                             Ok(())
@@ -370,13 +379,21 @@ impl CsrAttributes for RpkiCaCsrAttributes {
                         Ok(())
                     })})
                 } else {
-                    xerr!(Err(decode::Malformed).map_err(Into::into))
+                    Err(cons.content_err(InvalidAttribute::new(id)))
                 }
             })?;
 
-            let basic_ca = basic_ca.ok_or(decode::Malformed)?;
-            let key_usage = key_usage.ok_or(decode::Malformed)?;
-            let sia = sia.ok_or(decode::Malformed)?;
+            let basic_ca = basic_ca.ok_or_else(|| {
+                cons.content_err("missing Basic Constraints extension")
+            })?;
+            let key_usage = key_usage.ok_or_else(|| {
+                cons.content_err("missing Key Usage extension")
+            })?;
+            let sia = sia.ok_or_else(|| {
+                cons.content_err(
+                    "missing Subject Information Access extension"
+                )
+            })?;
 
             Ok(RpkiCaCsrAttributes {
                     basic_ca, key_usage, extended_key_usage, sia
@@ -402,7 +419,7 @@ impl BgpsecCsrAttributes {
 impl CsrAttributes for BgpsecCsrAttributes {
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_constructed_if(Tag::CTX_0, |cons| {
             let mut basic_ca = None;
             let mut key_usage = None;
@@ -420,7 +437,7 @@ impl CsrAttributes for BgpsecCsrAttributes {
 
                             let value = OctetString::take_from(cons)?;
 
-                            Mode::Der.decode(value.to_source(), |content| {
+                            Mode::Der.decode(value.into_source(), |content| {
                                 if id == oid::CE_BASIC_CONSTRAINTS {
                                     TbsCert::take_basic_constraints(
                                         content, &mut basic_ca
@@ -438,9 +455,11 @@ impl CsrAttributes for BgpsecCsrAttributes {
                                         content, &mut sia
                                     )
                                 } else {
-                                    xerr!(Err(decode::Malformed))
+                                    Err(content.content_err(
+                                        InvalidExtension::new(id)
+                                    ))
                                 }
-                            })?;
+                            }).map_err(DecodeError::convert)?;
 
 
                             Ok(())
@@ -448,7 +467,7 @@ impl CsrAttributes for BgpsecCsrAttributes {
                         Ok(())
                     })})
                 } else {
-                    xerr!(Err(decode::Malformed).map_err(Into::into))
+                    Err(cons.content_err(InvalidAttribute::new(id)))
                 }
             })?;
 
@@ -458,11 +477,40 @@ impl CsrAttributes for BgpsecCsrAttributes {
             // Extended Key Usage, if present, must include
             // id-kp-bgpsec-router.
             if let Some(eku) = extended_key_usage.as_ref() {
-                eku.inspect_router().map_err(|_| xerr!(decode::Malformed))?;
+                eku.inspect_router().map_err(|err| cons.content_err(err))?;
             }
 
             Ok(BgpsecCsrAttributes { extended_key_usage })
         })
+    }
+}
+
+
+//============ Error Types ===================================================
+
+//------------ InvalidAttribute ----------------------------------------------
+
+/// An invalid CSR attribute was encountered.
+#[derive(Clone, Debug)]
+pub struct InvalidAttribute {
+    oid: Oid<Bytes>,
+}
+
+impl InvalidAttribute {
+    pub(crate) fn new(oid: Oid<Bytes>) -> Self {
+        InvalidAttribute { oid }
+    }
+}
+
+impl From<InvalidAttribute> for ContentError {
+    fn from(err: InvalidAttribute) -> Self {
+        ContentError::from_boxed(Box::new(err))
+    }
+}
+
+impl fmt::Display for InvalidAttribute {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "invalid attribute {}", self.oid)
     }
 }
 
@@ -487,7 +535,7 @@ mod test {
     fn parse_drl_csr() {
         let bytes = include_bytes!("../../test-data/drl-csr.der");
         let csr = RpkiCaCsr::decode(bytes.as_ref()).unwrap();
-        csr.validate().unwrap();
+        csr.verify_signature().unwrap();
 
         assert!(csr.basic_ca());
 
@@ -511,7 +559,7 @@ mod test {
     fn parse_router_csr() {
         let bytes = include_bytes!("../../test-data/router-csr.der");
         let csr = BgpsecCsr::decode(bytes.as_ref()).unwrap();
-        csr.validate().unwrap();
+        csr.verify_signature().unwrap();
 
         assert!(RpkiCaCsr::decode(bytes.as_ref()).is_err());
     }
@@ -540,7 +588,7 @@ mod test {
         ).unwrap();
 
         let csr = RpkiCaCsr::decode(enc.as_slice()).unwrap();
-        csr.validate().unwrap();
+        csr.verify_signature().unwrap();
 
         let pub_key = signer.get_key_info(&key).unwrap();
 
@@ -584,7 +632,7 @@ mod signer_test {
 
         let bytes = include_bytes!("../../test-data/router-csr.der");
         let csr = BgpsecCsr::decode(bytes.as_ref()).unwrap();
-        csr.validate().unwrap();
+        csr.verify_signature().unwrap();
 
         let signer = OpenSslSigner::new();
         let ca_key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
