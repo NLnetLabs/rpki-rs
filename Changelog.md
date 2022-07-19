@@ -1,6 +1,19 @@
 # Changelog
 
-## Unreleased next version
+## Unreleased future version
+
+Breaking Changes
+
+New
+
+Bug Fixes
+
+Other Changes
+
+
+## 0.15.0
+
+Released 2022-07-18.
 
 Breaking Changes
 
@@ -24,11 +37,12 @@ Breaking Changes
     CSRs into a newtype around the wrapping capture.
   * Add missing functionality to `TbsCert` and `CertBuilder` to be able to
     generate router certificates.
-* Completely redesigned error handling ([#211])
+* Completely redesigned error handling ([#211]):
   * Switch decoding errors to the new errors defined in bcder 0.7.
-  * Rename `rpki::crypto::VerificationError` to `SignatureVerificationError`
-    for better clarity.
-  * Introduce a number of new error types for specific validation issues.
+  * Define dedicated error types for the inspection and verification
+    phases of object validation with `ValidationError` an umbrella type
+    for all three phases.
+  * All errors now format into an explanation of the issue.
 * In the `repository` module, renamed various methods from `validate_*` to
   either `inspect_*` or `verify_*` for consistency. ([#211])
 
@@ -42,14 +56,17 @@ New
 * RSA public keys can now be created from their components and raw key
   bits. ([#212])
 
-Bug Fixes
-
 Other Changes
+
+* Updated `uuid` crate to version 1.1. ([#215])
+* Updated `quick-xml` crate to version 0.23. ([#216])
 
 [#208]: https://github.com/NLnetLabs/rpki-rs/pull/208
 [#210]: https://github.com/NLnetLabs/rpki-rs/pull/210
 [#211]: https://github.com/NLnetLabs/rpki-rs/pull/211
 [#212]: https://github.com/NLnetLabs/rpki-rs/pull/212
+[#215]: https://github.com/NLnetLabs/rpki-rs/pull/215
+[#216]: https://github.com/NLnetLabs/rpki-rs/pull/216
 
 
 

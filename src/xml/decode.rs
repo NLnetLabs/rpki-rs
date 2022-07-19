@@ -3,6 +3,7 @@ use std::{error, fmt, io, str};
 use std::borrow::Cow;
 use bytes::Bytes;
 use quick_xml::events::{BytesStart, Event};
+use quick_xml::events::attributes::AttrError;
 
 /// An XML reader.
 ///
@@ -460,6 +461,7 @@ impl<'a> Text<'a> {
 #[derive(Debug)]
 pub enum Error {
     Xml(quick_xml::Error),
+    XmlAttr(AttrError),
     Malformed,
 }
 
@@ -469,10 +471,17 @@ impl From<quick_xml::Error> for Error {
     }
 }
 
+impl From<AttrError> for Error {
+    fn from(err: AttrError) -> Self {
+        Error::XmlAttr(err)
+    }
+}
+
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::Xml(ref err) => err.fmt(f),
+            Error::XmlAttr(ref err) => err.fmt(f),
             Error::Malformed => f.write_str("malformed XML"),
         }
     }
