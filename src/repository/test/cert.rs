@@ -1,5 +1,13 @@
-//! Test data for RPKI certificates.
-#![cfg(feature = "softkeys")]
+//! Testing validation of RPKI certificates.
+//!
+//! The test herein verifies that complete certificates are correctly accepted
+//! and rejected based primarily on the extensions they have or have not. It
+//! does _not_ test the correct encoding of individual components. This is
+//! done in test modules of the respective modules.
+//!
+//! The [`generate_certs`] function below creates a list of certificates and
+//! the expected test results. The module’s test function then checks that
+//! these test results are actually achieved.
 
 use std::collections::HashMap;
 use std::io;
@@ -13,94 +21,112 @@ use bcder::decode::IntoSource;
 use bcder::encode::PrimitiveContent;
 use bytes::Bytes;
 use crate::oid;
-use crate::crypto::Signer;
-use crate::crypto::keys::{PublicKey, PublicKeyFormat};
+use crate::crypto::keys::PublicKey;
 use crate::crypto::signature::RpkiSignatureAlgorithm;
-use crate::crypto::softsigner::OpenSslSigner;
 use crate::repository::cert::{Cert, KeyUsage, ResourceCert};
 use crate::repository::resources::Prefix;
 use crate::repository::tal::TalInfo;
 use crate::repository::x509::Time;
+use super::crypto::{KeyRing, RpkiKey};
+
+
+//------------ generate_certs ------------------------------------------------
+
+/// Generates the test certificates.
+fn generate_certs() -> Vec<TestCertificate> {
+    let key_ring = KeyRing::new();
+
+    // First, let’s make a bunch of key pairs.
+    let ta_key = key_ring.create_rpki_key();
+    let ca_key = key_ring.create_rpki_key();
+    let ee_key = key_ring.create_rpki_key();
+
+    // Create and return a list of certificates.
+    vec![
+        // A TA certificate that successfully validates.
+        //
+        // This certificate contains the full address and AS ranges.
+        TestCertificate::sign_tbs("working-ta",
+            TbsBuilder::ta("My First Trust Anchor", &ta_key)
+                .ip_resources(
+                    Some(DerData::sequence(&[ip_address("0.0.0.0/0")])),
+                    Some(DerData::sequence(&[ip_address("::/0")])),
+                )
+                .as_resources(
+                    DerData::sequence(&[as_range(0, u32::MAX)])
+                )
+                .finalize(),
+            &ta_key,
+            None,
+            CertificateClass::Ta, Fail::None, true
+        ),
+
+        // A working CA certificate.
+        //
+        // This is issued by `working-ta` and contains all the documentation
+        // addresses and ASNs.
+        TestCertificate::sign_tbs("working-ca-doc-resources",
+            TbsBuilder::ca(
+                "My First CA", "My First Trust Anchor",
+                &ca_key, &ta_key
+            )
+                .ip_resources(
+                    Some(DerData::sequence(&[
+                        ip_address("192.0.2.0/24"),
+                        ip_address("198.51.100.0/24"),
+                        ip_address("203.0.113.0/24"),
+                    ])),
+                    Some(DerData::sequence(&[
+                        ip_address("2001:db8::/32"),
+                    ])),
+                )
+                .as_resources(
+                    DerData::sequence(&[
+                        as_range(64496, 64511),
+                        as_range(65536, 65551),
+                    ])
+                )
+                .finalize(),
+            &ta_key,
+            Some("working-ta"),
+            CertificateClass::Ca, Fail::None, true
+        ),
+
+        // A working EE certificate.
+        //
+        // This is issued by `working-ca-doc-resources` and uses some of
+        // its resources.
+        TestCertificate::sign_tbs("working-ee",
+            TbsBuilder::ee(
+                "My First End Entitiy", "My First CA",
+                &ee_key, &ca_key
+            )
+                .ip_resources(
+                    Some(DerData::sequence(&[
+                        ip_address("198.51.100.0/24"),
+                        ip_address("203.0.113.0/24"),
+                    ])),
+                    None
+                )
+                .as_resources(
+                    DerData::sequence(&[
+                        as_id(65537),
+                    ])
+                )
+                .finalize(),
+            &ca_key,
+            Some("working-ca-doc-resources"),
+            CertificateClass::Ee, Fail::None, true
+        ),
+
+    ]
+}
 
 //------------ Test Function(s) ----------------------------------------------
 
 #[test]
 fn validate_certs() {
     CertMap::new(generate_certs()).test()
-}
-
-
-//------------ generate_certs ------------------------------------------------
-
-/// Generates the test certificates.
-///
-/// Each item in the returned vec contains the raw data of the certificate,
-/// the type of certificate,
-/// and whether parsing should succeed.
-fn generate_certs() -> Vec<TestCertificate> {
-    let signer = OpenSslSigner::new();
-    let ta_key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
-    let ca_key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
-    vec![
-        TestCertificate::sign_tbs("working-ta",
-            TbsBuilder::v3()
-                .serial_number(&12u8.to_be_bytes())
-                .issuer(rpki_name("My First Trust Anchor", None))
-                .subject(rpki_name("My First Trust Anchor", None))
-                .public_key(signer.get_key_info(&ta_key).unwrap())
-                .basic_constraints(true)
-                .subject_key_id(signer.get_key_info(&ta_key).unwrap())
-                .authority_key_id(signer.get_key_info(&ta_key).unwrap())
-                .key_usage(KeyUsage::Ca)
-                .rpki_ca_subject_info_access(
-                    "rsync://example.com/module/dir",
-                    "rsync://example.com/module/dir/manifest.mft",
-                )
-                .rpki_cert_policies()
-                .ip_resources(
-                    Some(DerData::sequence(&[ip_address("0.0.0.0/0")])),
-                    Some(DerData::sequence(&[ip_address("::/0")])),
-                )
-                .as_resources(
-                    DerData::sequence(&[as_range(0, u32::MAX)])
-                )
-                .finalize(),
-            &signer, &ta_key,
-            None,
-            CertificateClass::Ta, Fail::None, true
-        ),
-        TestCertificate::sign_tbs("working-ca-top",
-            TbsBuilder::v3()
-                .serial_number(&13u8.to_be_bytes())
-                .issuer(rpki_name("My First Trust Anchor", None))
-                .subject(rpki_name("My First CA", None))
-                .public_key(signer.get_key_info(&ca_key).unwrap())
-                .basic_constraints(true)
-                .subject_key_id(signer.get_key_info(&ca_key).unwrap())
-                .authority_key_id(signer.get_key_info(&ta_key).unwrap())
-                .key_usage(KeyUsage::Ca)
-                .crl_uri("rsync://example.com/module/dir/ca.crl")
-                .rpki_authority_info_access(
-                    "rsync://example.com/module/dir",
-                )
-                .rpki_ca_subject_info_access(
-                    "rsync://example.com/module/dir",
-                    "rsync://example.com/module/dir/manifest.mft",
-                )
-                .rpki_cert_policies()
-                .ip_resources(
-                    Some(DerData::sequence(&[ip_address("0.0.0.0/0")])),
-                    Some(DerData::sequence(&[ip_address("::/0")])),
-                )
-                .as_resources(
-                    DerData::sequence(&[as_range(0, u32::MAX)])
-                )
-                .finalize(),
-            &signer, &ta_key,
-            Some("working-ta"),
-            CertificateClass::Ca, Fail::None, true
-        ),
-    ]
 }
 
 
@@ -139,7 +165,6 @@ impl CertMap {
     }
 
     fn test_cert(&mut self, name: &'static str) {
-        println!("Trying '{}'", name);
         let cert = match self.certs.get(name).unwrap() {
             Ok(cert) => cert.clone(),
             Err(_) => return, // cert has been done already.
@@ -153,6 +178,7 @@ impl CertMap {
             }
             None => None
         };
+        println!("Testing '{}'", name);
         let res = cert.test(issuer, Time::now());
         self.certs.insert(name, Err(res));
     }
@@ -187,18 +213,16 @@ pub struct TestCertificate {
 
 impl TestCertificate {
     /// Creates and signes a test certificate from the encoded TBS part.
-    pub fn sign_tbs<S: Signer>(
+    pub fn sign_tbs(
         name: &'static str,
         tbs: DerData,
-        signer: &S, key: &S::KeyId,
+        key: &RpkiKey,
         issuer: Option<&'static str>,
         class: CertificateClass,
         fail: Fail,
         strict: bool,
     ) -> Self {
-        let (alg, signature) = signer.sign(
-            key, RpkiSignatureAlgorithm::default(), &tbs
-        ).unwrap().unwrap();
+        let (alg, signature) = key.sign(&tbs).unwrap();
         let signature = BitString::new(0, signature);
         TestCertificate {
             name,
@@ -494,12 +518,81 @@ impl Default for TbsBuilder {
 }
 
 impl TbsBuilder {
-    pub fn v3(
-    ) -> Self {
+    pub fn v3() -> Self {
         TbsBuilder {
             version: Some(DerData::encode(2u8.encode())),
             .. Default::default()
         }
+    }
+
+    pub fn ta(
+        subject_cn: &str,
+        key: &RpkiKey,
+    ) -> Self {
+        TbsBuilder::v3()
+            .serial_number(&12u8.to_be_bytes())
+            .issuer(rpki_name(subject_cn, None))
+            .subject(rpki_name(subject_cn, None))
+            .public_key(key.key_info())
+            .basic_constraints(true)
+            .subject_key_id(key.key_info())
+            .authority_key_id(key.key_info())
+            .key_usage(KeyUsage::Ca)
+            .rpki_ca_subject_info_access(
+                "rsync://example.com/module/ta/",
+                "rsync://example.com/module/ta/manifest.mft",
+            )
+            .rpki_cert_policies()
+    }
+
+    pub fn ca(
+        subject_cn: &str,
+        issuer_cn: &str,
+        subject_key: &RpkiKey,
+        issuer_key: &RpkiKey,
+    ) -> Self {
+        TbsBuilder::v3()
+            .serial_number(&13u8.to_be_bytes())
+            .issuer(rpki_name(issuer_cn, None))
+            .subject(rpki_name(subject_cn, None))
+            .public_key(subject_key.key_info())
+            .basic_constraints(true)
+            .subject_key_id(subject_key.key_info())
+            .authority_key_id(issuer_key.key_info())
+            .key_usage(KeyUsage::Ca)
+            .crl_uri("rsync://example.com/module/ca/ca.crl")
+            .rpki_authority_info_access(
+                "rsync://example.com/module/ca/ca.cer",
+            )
+            .rpki_ca_subject_info_access(
+                "rsync://example.com/module/ca",
+                "rsync://example.com/module/ca/manifest.mft",
+            )
+            .rpki_cert_policies()
+    }
+
+    pub fn ee(
+        subject_cn: &str,
+        issuer_cn: &str,
+        subject_key: &RpkiKey,
+        issuer_key: &RpkiKey,
+    ) -> Self {
+            TbsBuilder::v3()
+                .serial_number(&14u8.to_be_bytes())
+                .issuer(rpki_name(issuer_cn, None))
+                .subject(rpki_name(subject_cn, None))
+                .public_key(subject_key.key_info())
+                .subject_key_id(subject_key.key_info())
+                .authority_key_id(issuer_key.key_info())
+                .key_usage(KeyUsage::Ee)
+                .crl_uri("rsync://example.com/module/ca/ca.crl")
+                .rpki_authority_info_access(
+                    "rsync://example.com/module/ca/ca.cer",
+                )
+                .rpki_ee_subject_info_access(
+                    "rsync://example.com/module/ca/random.obj",
+                )
+                .rpki_cert_policies()
     }
 
     pub fn finalize(self) -> DerData {
