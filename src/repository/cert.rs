@@ -2165,35 +2165,44 @@ impl TbsCert {
                 }),
 
                 // Subject Information Access
-                encode_extension(
-                    &oid::PE_SUBJECT_INFO_ACCESS, false,
-                    encode::sequence((
-                        self.ca_repository.as_ref().map(|uri| {
-                            encode::sequence((
-                                oid::AD_CA_REPOSITORY.encode(),
-                                uri.encode_general_name()
-                            ))
-                        }),
-                        self.rpki_manifest.as_ref().map(|uri| {
-                            encode::sequence((
-                                oid::AD_RPKI_MANIFEST.encode(),
-                                uri.encode_general_name()
-                            ))
-                        }),
-                        self.signed_object.as_ref().map(|uri| {
-                            encode::sequence((
-                                oid::AD_SIGNED_OBJECT.encode(),
-                                uri.encode_general_name()
-                            ))
-                        }),
-                        self.rpki_notify.as_ref().map(|uri| {
-                            encode::sequence((
-                                oid::AD_RPKI_NOTIFY.encode(),
-                                uri.encode_general_name()
-                            ))
-                        })
+                if self.ca_repository.is_some()
+                    || self.rpki_manifest.is_some()
+                    || self.signed_object.is_some()
+                    || self.rpki_notify.is_some()
+                {
+                    Some(encode_extension(
+                        &oid::PE_SUBJECT_INFO_ACCESS, false,
+                        encode::sequence((
+                            self.ca_repository.as_ref().map(|uri| {
+                                encode::sequence((
+                                    oid::AD_CA_REPOSITORY.encode(),
+                                    uri.encode_general_name()
+                                ))
+                            }),
+                            self.rpki_manifest.as_ref().map(|uri| {
+                                encode::sequence((
+                                    oid::AD_RPKI_MANIFEST.encode(),
+                                    uri.encode_general_name()
+                                ))
+                            }),
+                            self.signed_object.as_ref().map(|uri| {
+                                encode::sequence((
+                                    oid::AD_SIGNED_OBJECT.encode(),
+                                    uri.encode_general_name()
+                                ))
+                            }),
+                            self.rpki_notify.as_ref().map(|uri| {
+                                encode::sequence((
+                                    oid::AD_RPKI_NOTIFY.encode(),
+                                    uri.encode_general_name()
+                                ))
+                            })
+                        ))
                     ))
-                ),
+                }
+                else {
+                    None
+                },
 
                 // Certificate Policies
                 encode_extension(
@@ -2272,6 +2281,9 @@ where F: FnMut(Bytes) -> Result<T, E> {
     })
 }
 
+
+//------------ Sia -----------------------------------------------------------
+
 /// Internal helper type for parsing Subject Information Access.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Sia {
@@ -2296,10 +2308,11 @@ impl Sia {
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, DecodeError<S::Error>> {
         let mut sia = Sia::default();
-        let mut others_seen = false;
+        let mut any_seen = false;
         cons.take_sequence(|cons| {
             while let Some(()) = cons.take_opt_sequence(|cons| {
                 let oid = Oid::take_from(cons)?;
+                any_seen = true;
                 if oid == oid::AD_CA_REPOSITORY {
                     update_first(&mut sia.ca_repository, || {
                         take_general_name(
@@ -2329,7 +2342,6 @@ impl Sia {
                     })
                 }
                 else {
-                    others_seen = true;
                     // XXX Presumably it is fine to just skip over
                     //     these things. Since this is DER, it can’t
                     //     be tricked into reading forever.
@@ -2338,7 +2350,14 @@ impl Sia {
             })? { }
             Ok(())
         })?;
-        Ok(sia)
+        if any_seen {
+            Ok(sia)
+        }
+        else {
+            Err(cons.content_err(
+                "empty Subject Information Access extension"
+            ))
+        }
     }
 }
 
