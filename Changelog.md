@@ -1,19 +1,16 @@
 # Changelog
 
-## Unreleased future version
+## 0.15.1
 
-Breaking Changes
-
-New
+Released 2022-07-22.
 
 Bug Fixes
 
 * Don’t produce or allow empty Subject Information Access certificate
   extensions. ([#220])
 
-Other Changes
-
 [#220]: https://github.com/NLnetLabs/rpki-rs/pull/220
+
 
 ## 0.15.0
 
