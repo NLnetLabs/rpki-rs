@@ -515,3 +515,59 @@ impl TextEscape {
         Ok(())
     }
 }
+
+//============ Tests =========================================================
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    const ROOT_TAG: Name = Name::unqualified(b"root");
+    const CHILD_TAG: Name = Name::unqualified(b"child");
+
+    #[test]
+    fn xml_doc_should_not_be_wrapped_with_whitespace() -> io::Result<()> {
+        let mut buf = Vec::<u8>::new();
+        let mut writer = Writer::new(&mut buf);
+
+        writer.element(ROOT_TAG)?;
+        writer.done()?;
+
+        assert_eq!("<root/>", std::str::from_utf8(&buf).unwrap());
+        Ok(())
+    }
+
+    #[test]
+    fn non_inline_child_element_should_be_wrapped_with_whitespace() -> io::Result<()> {
+        let mut buf = Vec::<u8>::new();
+        let mut writer = Writer::new(&mut buf);
+
+        writer
+            .element(ROOT_TAG)?
+            .content(|content| {
+                content.element(CHILD_TAG)?;
+                Ok(())
+            })?;
+        writer.done()?;
+
+        assert_eq!("<root>\n  <child/>\n</root>", std::str::from_utf8(&buf).unwrap());
+        Ok(())
+    }
+
+    #[test]
+    fn inline_child_element_should_not_be_wrapped_with_whitespace() -> io::Result<()> {
+        let mut buf = Vec::<u8>::new();
+        let mut writer = Writer::new(&mut buf);
+
+        writer
+            .element(ROOT_TAG)?
+            .content(|content| {
+                Element::start(&mut content.writer, CHILD_TAG, true)?;
+                Ok(())
+            })?; 
+        writer.done()?;
+
+        assert_eq!("<root><child/></root>", std::str::from_utf8(&buf).unwrap());
+        Ok(())
+    }
+}
