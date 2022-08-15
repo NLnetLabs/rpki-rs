@@ -13,7 +13,7 @@ pub struct Writer<W> {
     /// The wrapped writer.
     wrapped: W,
 
-    /// A place to store an error for delayer error handling.
+    /// A place to store an error for delayed error handling.
     ///
     /// This is necessary so we can use `Drop` for elements which doesn’t
     /// allow us to return an error.
