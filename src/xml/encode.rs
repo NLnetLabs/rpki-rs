@@ -1,5 +1,4 @@
-use std::fmt;
-use std::io;
+use std::{fmt, io};
 use std::io::Write as _;
 use std::fmt::Write as _;
 use super::decode::Name;
@@ -60,7 +59,7 @@ impl<W: io::Write> Writer<W> {
     pub fn element<'s>(
         &'s mut self, tag: Name<'static, 'static>,
     ) -> Result<Element<'s, W>, io::Error> {
-        Element::start(self, tag, false)
+        Element::start(self, tag)
     }
 
     /// Concludes writing and returns the writer.
@@ -145,11 +144,6 @@ pub struct Element<'a, W: io::Write> {
     /// The tag.
     tag: Name<'static, 'static>,
 
-    /// Is this an inline element?
-    ///
-    /// Inline elements keep all there content on the same line.
-    inline: bool,
-
     /// Is the element still empty?
     ///
     /// We have to keep this because of the different way empty elements are
@@ -164,19 +158,14 @@ impl<'a, W: io::Write> Element<'a, W> {
     /// element.
     fn start(
         writer: &'a mut Writer<W>, tag: Name<'static, 'static>,
-        inline: bool,
     ) -> Result<Self, io::Error> {
-        if !inline {
-            writer.write_all(b"\n")?;
-            writer.write_indent()?;
-        }
         writer.write_all(b"<")?;
         if let Some(ns) = tag.namespace() {
             writer.write_all(ns)?;
             writer.write_all(b":")?;
         }
         writer.write_all(tag.local())?;
-        Ok(Element { writer, tag, inline, empty: true })
+        Ok(Element { writer, tag, empty: true })
     }
 
     /// Write an attribute.
@@ -210,7 +199,7 @@ impl<'a, W: io::Write> Element<'a, W> {
         self.empty = false;
         self.writer.write_all(b">")?;
         self.writer.indent();
-        op(&mut Content { writer: self.writer, inline: self.inline})?;
+        op(&mut Content { writer: self.writer})?;
         self.writer.dedent();
         Ok(self)
     }
@@ -221,10 +210,8 @@ impl<'a, W: io::Write> Element<'a, W> {
             self.writer.write_all(b"/>")?;
         }
         else {
-            if !self.inline {
-                self.writer.write_all(b"\n")?;
-                self.writer.write_indent()?;
-            }
+            self.writer.write_all(b"\n")?;
+            self.writer.write_indent()?;
             self.writer.write_all(b"</")?;
             if let Some(ns) = self.tag.namespace() {
                 self.writer.write_all(ns)?;
@@ -256,9 +243,6 @@ impl<'a, W: io::Write> Drop for Element<'a, W> {
 pub struct Content<'a, W> {
     /// The wrapped writer.
     writer: &'a mut Writer<W>,
-
-    /// Is this content of an inline element?
-    inline: bool,
 }
 
 impl<'a, W: io::Write> Content<'a, W> {
@@ -272,7 +256,9 @@ impl<'a, W: io::Write> Content<'a, W> {
     pub fn element<'s>(
         &'s mut self, tag: Name<'static, 'static>
     ) -> Result<Element<'s, W>, io::Error> {
-        Element::start(self.writer, tag, self.inline)
+        self.writer.write_all(b"\n")?;
+        self.writer.write_indent()?;
+        Element::start(self.writer, tag)
     }
 
     /// Add an optional element with the given tag if the given option
@@ -297,10 +283,8 @@ impl<'a, W: io::Write> Content<'a, W> {
     pub fn pcdata(
         &mut self, text: &(impl Text + ?Sized)
     ) -> Result<(), io::Error> {
-        if !self.inline {
-            self.writer.write_all(b"\n")?;
-            self.writer.write_indent()?;
-        }
+        self.writer.write_all(b"\n")?;
+        self.writer.write_indent()?;
         text.write_escaped(TextEscape::Pcdata, &mut self.writer)
     }
 
@@ -310,10 +294,8 @@ impl<'a, W: io::Write> Content<'a, W> {
     pub fn raw(
         &mut self, text: &(impl Text + ?Sized)
     ) -> Result<(), io::Error> {
-        if !self.inline {
-            self.writer.write_all(b"\n")?;
-            self.writer.write_indent()?;
-        }
+        self.writer.write_all(b"\n")?;
+        self.writer.write_indent()?;
         text.write_raw(&mut self.writer)
     }
 
@@ -321,10 +303,8 @@ impl<'a, W: io::Write> Content<'a, W> {
     pub fn base64(
         &mut self, data: &(impl Text + ?Sized)
     ) -> Result<(), io::Error> {
-        if !self.inline {
-            self.writer.write_all(b"\n")?;
-            self.writer.write_indent()?;
-        }
+        self.writer.write_all(b"\n")?;
+        self.writer.write_indent()?;
         data.write_base64(&mut self.writer)
     }
 }
@@ -523,7 +503,8 @@ mod test {
     use super::*;
 
     const ROOT_TAG: Name = Name::unqualified(b"root");
-    const CHILD_TAG: Name = Name::unqualified(b"child");
+    const OUTER_TAG: Name = Name::unqualified(b"outer");
+    const INNER_TAG: Name = Name::unqualified(b"inner");
 
     #[test]
     fn xml_doc_should_not_be_wrapped_with_whitespace() -> io::Result<()> {
@@ -538,36 +519,29 @@ mod test {
     }
 
     #[test]
-    fn non_inline_child_element_should_be_wrapped_with_whitespace() -> io::Result<()> {
+    fn test_indent() -> io::Result<()> {
         let mut buf = Vec::<u8>::new();
         let mut writer = Writer::new(&mut buf);
 
         writer
             .element(ROOT_TAG)?
             .content(|content| {
-                content.element(CHILD_TAG)?;
+                content.element(OUTER_TAG)?.content(|content| {
+                    content.element(INNER_TAG)?;
+                    Ok(())
+                })?;
                 Ok(())
             })?;
         writer.done()?;
 
-        assert_eq!("<root>\n  <child/>\n</root>", std::str::from_utf8(&buf).unwrap());
-        Ok(())
-    }
-
-    #[test]
-    fn inline_child_element_should_not_be_wrapped_with_whitespace() -> io::Result<()> {
-        let mut buf = Vec::<u8>::new();
-        let mut writer = Writer::new(&mut buf);
-
-        writer
-            .element(ROOT_TAG)?
-            .content(|content| {
-                Element::start(&mut content.writer, CHILD_TAG, true)?;
-                Ok(())
-            })?; 
-        writer.done()?;
-
-        assert_eq!("<root><child/></root>", std::str::from_utf8(&buf).unwrap());
+        assert_eq!(
+            "<root>\
+            \n  <outer>\
+            \n    <inner/>\
+            \n  </outer>\
+            \n</root>",
+            std::str::from_utf8(&buf).unwrap()
+        );
         Ok(())
     }
 }
