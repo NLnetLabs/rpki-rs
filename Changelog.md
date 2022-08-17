@@ -8,7 +8,12 @@ New
 
 Bug Fixes
 
+* The XML encoder doesn’t insert an initial line feed before any other
+  data anymore. ([#222])
+
 Other Changes
+
+[#222]: https://github.com/NLnetLabs/rpki-rs/pull/222
 
 
 ## 0.15.1
