@@ -1,17 +1,13 @@
 # Changelog
 
-## Unreleased future version
+## 0.15.2
 
-Breaking Changes
-
-New
+Released 2022-08-18.
 
 Bug Fixes
 
 * The XML encoder doesn’t insert an initial line feed before any other
   data anymore. ([#222])
-
-Other Changes
 
 [#222]: https://github.com/NLnetLabs/rpki-rs/pull/222
 
