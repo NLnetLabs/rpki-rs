@@ -651,7 +651,11 @@ impl IpBlock {
             Prefix::from_v4_str_sep(s, sep).map(IpBlock::Prefix)
         }
         else if let Some(sep) = s.find('-') {
-            AddressRange::from_v4_str_sep(s, sep).map(IpBlock::Range)
+            let range = AddressRange::from_v4_str_sep(s, sep)?;
+            match range.into_prefix() {
+                Ok(prefix) => Ok(IpBlock::Prefix(prefix)),
+                Err(range) => Ok(IpBlock::Range(range))
+            }
         }
         else {
             let addr = Addr::from(Ipv4Addr::from_str(s)?);
@@ -665,7 +669,11 @@ impl IpBlock {
             Prefix::from_v6_str_sep(s, sep).map(IpBlock::Prefix)
         }
         else if let Some(sep) = s.find('-') {
-            AddressRange::from_v6_str_sep(s, sep).map(IpBlock::Range)
+            let range = AddressRange::from_v6_str_sep(s, sep)?;
+            match range.into_prefix() {
+                Ok(prefix) => Ok(IpBlock::Prefix(prefix)),
+                Err(range) => Ok(IpBlock::Range(range))
+            }
         }
         else {
             let addr = Ipv6Addr::from_str(s)?.into();
@@ -933,8 +941,8 @@ impl AddressRange {
     /// Creates a new range from an IPv4 string with known separator.
     fn from_v4_str_sep(s: &str, sep: usize) -> Result<Self, FromStrError> {
         Ok(Self::new(
-            Ipv4Addr::from_str(&s[..sep])?.into(),
-            Addr::from(Ipv4Addr::from_str(&s[sep + 1..])?).to_max(32)
+            Ipv4Addr::from_str(s[..sep].trim())?.into(),
+            Addr::from(Ipv4Addr::from_str(s[sep + 1..].trim())?).to_max(32)
         ))
     }
 
@@ -947,8 +955,8 @@ impl AddressRange {
     /// Creates a new range from an IPv6 string with known separator.
     fn from_v6_str_sep(s: &str, sep: usize) -> Result<Self, FromStrError> {
         Ok(Self::new(
-            Ipv6Addr::from_str(&s[..sep])?.into(),
-            Ipv6Addr::from_str(&s[sep + 1..])?.into()
+            Ipv6Addr::from_str(s[..sep].trim())?.into(),
+            Ipv6Addr::from_str(s[sep + 1..].trim())?.into()
         ))
     }
 
@@ -2041,6 +2049,22 @@ mod test {
         let expected_str = "10.0.0.0, 10.1.0.0-10.1.2.255, 192.168.0.0/16";
         let blocks = IpBlocks::from_str(expected_str).unwrap();
         assert_eq!(expected_str, &blocks.as_v4().to_string())
+    }
+    
+    #[test]
+    fn parse_ipv4range_as_prefix_if_possible() {
+        let range_str = "10.0.0.0-10.0.0.255";
+        let prefix_str = "10.0.0.0/24";
+        let blocks = IpBlocks::from_str(range_str).unwrap();
+        assert_eq!(prefix_str, &blocks.as_v4().to_string())
+    }
+
+    #[test]
+    fn parse_ipv6range_as_prefix_if_possible() {
+        let range_str = "2001:db8:0:0:0:0:0:0 - 2001:db8:ffff:ffff:ffff:ffff:ffff:ffff";
+        let prefix_str = "2001:db8::/32";
+        let blocks = IpBlocks::from_str(range_str).unwrap();
+        assert_eq!(prefix_str, &blocks.as_v6().to_string())
     }
 
     #[test]
