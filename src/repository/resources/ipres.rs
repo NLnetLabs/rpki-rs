@@ -777,7 +777,12 @@ impl IpBlock {
                 encode::Choice2::One(inner.encode())
             }
             IpBlock::Range(inner) => {
-                encode::Choice2::Two(inner.encode())
+                // If the range is in fact a prefix then this should still
+                // be encoded as a prefix.
+                match inner.into_prefix() {
+                    Ok(prefix) => encode::Choice2::One(prefix.encode()),
+                    Err(range) => encode::Choice2::Two(range.encode())
+                }
             }
         }
     }
