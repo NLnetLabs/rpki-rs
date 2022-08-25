@@ -295,6 +295,12 @@ impl<'a> fmt::Display for IpBlocksForFamily<'a> {
 //------------ IpBlocks ------------------------------------------------------
 
 /// A sequence of address ranges for one address family.
+///
+/// Values of this type are guaranteed to contain a sequence of `IpBlocks`
+/// that fulfills the requirements of RFC 3779. Specifically, the blocks will
+/// not overlap, will not be consecutive (i.e., there’s at least one address
+/// between neighbouring blocks), will be in order, and anything that can be
+/// addressed as a prefix will be.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IpBlocks(SharedChain<IpBlock>);
 
@@ -595,6 +601,8 @@ impl FromStr for IpBlocks {
 
 impl FromIterator<IpBlock> for IpBlocks {
     fn from_iter<I: IntoIterator<Item = IpBlock>>(iter: I) -> Self {
+        // SharedChain::from_iter does the hard work of ensuring the returned
+        // value is correct.
         Self(SharedChain::from_iter(iter))
     }
 }
@@ -615,6 +623,7 @@ impl IpBlocksBuilder {
     }
 
     pub fn finalize(self) -> IpBlocks {
+        // collect here runs IpBlocks::from_iter to create a correct IpBlocks
         self.0.into_iter().collect()
     }
 }
