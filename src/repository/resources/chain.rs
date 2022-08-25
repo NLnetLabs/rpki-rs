@@ -21,6 +21,9 @@ pub trait Block: Clone {
     type Item: Copy + Eq + Ord;
 
     /// Creates a new block from the minimum and maximum.
+    ///
+    /// This function is also used to convert a block into its canonical
+    /// form.
     fn new(min: Self::Item, max: Self::Item) -> Self;
 
     /// Returns the smallest item that is part of the block.
@@ -610,10 +613,15 @@ impl<T: Block> iter::FromIterator<T> for OwnedChain<T> {
                     *res.last_mut().unwrap() = T::new(last_min, block.max())
                 }
                 else {
+                    // We need to re-create the block from its boundaries so
+                    // it can assume its cannonical form. This is important
+                    // for IP addresses where anything that can be expressed
+                    // as a prefix must be expressed as a prefix.
                     res.push(T::new(block.min(), block.max()))
                 }
             }
             else {
+                // Convert the block into its canonical form.
                 res.push(T::new(block.min(), block.max()))
             }
         }
@@ -670,6 +678,7 @@ fn merge_or_add_block<T: Block>(res: &mut Vec<T>, block: T) {
             return
         }
     }
+    // Convert the block into its canonical form.
     res.push(T::new(block.min(), block.max()))
 }
 
