@@ -610,11 +610,11 @@ impl<T: Block> iter::FromIterator<T> for OwnedChain<T> {
                     *res.last_mut().unwrap() = T::new(last_min, block.max())
                 }
                 else {
-                    res.push(block)
+                    res.push(T::new(block.min(), block.max()))
                 }
             }
             else {
-                res.push(block)
+                res.push(T::new(block.min(), block.max()))
             }
         }
         unsafe { Self::from_vec_unchecked(res) }
@@ -670,7 +670,7 @@ fn merge_or_add_block<T: Block>(res: &mut Vec<T>, block: T) {
             return
         }
     }
-    res.push(block)
+    res.push(T::new(block.min(), block.max()))
 }
 
 
