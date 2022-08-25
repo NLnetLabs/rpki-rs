@@ -2078,10 +2078,22 @@ mod test {
         let input = "10.20.0.0, 10.0.0.0/16, 10.30.0.0-10.30.0.255, \
                      10.0.10.0/24";
         let output = "10.0.0.0/16, 10.20.0.0, 10.30.0.0/24";
+        let encoded = [
+            0x30, 18,
+                0x03, 3, 0, 10, 0,
+                0x03, 5, 0, 10, 20, 0, 0,
+                0x03, 4, 0, 10, 30, 0
+        ];
+
+        let blocks = IpBlocks::from_str(input).unwrap();
 
         assert_eq!(
-            IpBlocks::from_str(input).unwrap().as_v4().to_string(),
+            blocks.as_v4().to_string(),
             output
+        );
+        assert_eq!(
+            blocks.encode().to_captured(Mode::Der).as_slice(),
+            &encoded
         );
     }
 
