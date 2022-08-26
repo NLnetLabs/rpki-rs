@@ -295,6 +295,12 @@ impl<'a> fmt::Display for IpBlocksForFamily<'a> {
 //------------ IpBlocks ------------------------------------------------------
 
 /// A sequence of address ranges for one address family.
+///
+/// Values of this type are guaranteed to contain a sequence of `IpBlocks`
+/// that fulfills the requirements of RFC 3779. Specifically, the blocks will
+/// not overlap, will not be consecutive (i.e., there’s at least one address
+/// between neighbouring blocks), will be in order, and anything that can be
+/// addressed as a prefix will be.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IpBlocks(SharedChain<IpBlock>);
 
@@ -595,6 +601,8 @@ impl FromStr for IpBlocks {
 
 impl FromIterator<IpBlock> for IpBlocks {
     fn from_iter<I: IntoIterator<Item = IpBlock>>(iter: I) -> Self {
+        // SharedChain::from_iter does the hard work of ensuring the returned
+        // value is correct.
         Self(SharedChain::from_iter(iter))
     }
 }
@@ -615,6 +623,7 @@ impl IpBlocksBuilder {
     }
 
     pub fn finalize(self) -> IpBlocks {
+        // collect here runs IpBlocks::from_iter to create a correct IpBlocks
         self.0.into_iter().collect()
     }
 }
@@ -1307,13 +1316,19 @@ impl Prefix {
     /// Formats the prefix as an IPv4 prefix.
     pub fn fmt_v4(self, f: &mut fmt::Formatter) -> fmt::Result {
         self.addr.fmt_v4(f)?;
-        write!(f, "/{}", self.len)
+        if self.len != 32 {
+            write!(f, "/{}", self.len)?
+        }
+        Ok(())
     }
 
     /// Formats the prefix as an IPv4 prefix.
     pub fn fmt_v6(self, f: &mut fmt::Formatter) -> fmt::Result {
         self.addr.fmt_v6(f)?;
-        write!(f, "/{}", self.len)
+        if self.len != 128 {
+            write!(f, "/{}", self.len)?
+        }
+        Ok(())
     }
 
     /// Returns the range of addresses covered by this prefix.
@@ -2048,6 +2063,62 @@ mod test {
         let expected_str = "::1, 2001:db8::/32";
         let blocks = IpBlocks::from_str(expected_str).unwrap();
         assert_eq!(expected_str, &blocks.as_v6().to_string())
+    }
+
+    #[test]
+    fn parse_v4range_as_prefix_if_possible() {
+        let range_str = "10.0.0.0-10.0.0.255";
+        let prefix_str = "10.0.0.0/24";
+        let blocks = IpBlocks::from_str(range_str).unwrap();
+        assert_eq!(prefix_str, &blocks.as_v4().to_string())
+    }
+
+    #[test]
+    fn parse_v6range_as_prefix_if_possible() {
+        let range_str = "2001:db8:0:0:0:0:0:0-\
+                         2001:db8:ffff:ffff:ffff:ffff:ffff:ffff";
+        let prefix_str = "2001:db8::/32";
+        let blocks = IpBlocks::from_str(range_str).unwrap();
+        assert_eq!(prefix_str, &blocks.as_v6().to_string())
+    }
+
+    #[test]
+    fn parse_overlapping_v4() {
+        let input = "10.20.0.0, 10.0.0.0/16, 10.30.0.0-10.30.0.255, \
+                     10.0.10.0/24";
+        let output = "10.0.0.0/16, 10.20.0.0, 10.30.0.0/24";
+        let encoded = [
+            0x30, 18,
+                0x03, 3, 0, 10, 0,
+                0x03, 5, 0, 10, 20, 0, 0,
+                0x03, 4, 0, 10, 30, 0
+        ];
+
+        let blocks = IpBlocks::from_str(input).unwrap();
+
+        assert_eq!(
+            blocks.as_v4().to_string(),
+            output
+        );
+        assert_eq!(
+            blocks.encode().to_captured(Mode::Der).as_slice(),
+            &encoded
+        );
+    }
+
+    #[test]
+    fn parse_overlapping_v6() {
+        let input = "2001:db8:0:20::, \
+                     2001:db8:0:10::/64, \
+                     2001:db8:0:30::-2001:db8:0:30::FF, \
+                     2001:db8:0:10::/72";
+        let output = "2001:db8:0:10::/64, 2001:db8:0:20::, \
+                      2001:db8:0:30::/120"; 
+
+        assert_eq!(
+            IpBlocks::from_str(input).unwrap().as_v6().to_string(),
+            output
+        );
     }
 
     #[test]
