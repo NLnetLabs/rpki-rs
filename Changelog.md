@@ -6,6 +6,10 @@ Breaking Changes
 
 New
 
+* Added a associated function `all` to types describing certificate
+  resources – most prominently `IpBlocks` and `AsBlocks` – in order to create
+  values covering all available resources. ([#226])
+
 Bug Fixes
 
 * When creating certificate IP resources, ranges that can be expressed as
@@ -15,6 +19,7 @@ Bug Fixes
 Other Changes
 
 [#225]: https://github.com/NLnetLabs/rpki-rs/pull/225
+[#226]: https://github.com/NLnetLabs/rpki-rs/pull/226
 
 
 ## 0.15.2
