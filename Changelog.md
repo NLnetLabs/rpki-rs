@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased future version
+## 0.15.3
 
-Breaking Changes
+Released 2022-08-26.
 
 New
 
@@ -15,8 +15,6 @@ Bug Fixes
 * When creating certificate IP resources, ranges that can be expressed as
   prefixes are now converted into prefixes as required by RFC 3779.
   ([#225])
-
-Other Changes
 
 [#225]: https://github.com/NLnetLabs/rpki-rs/pull/225
 [#226]: https://github.com/NLnetLabs/rpki-rs/pull/226
