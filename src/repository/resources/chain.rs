@@ -566,7 +566,7 @@ impl<T: Block> Eq for Chain<T> {}
 pub struct OwnedChain<T: Block>(Vec<T>);
 
 impl<T: Block> OwnedChain<T> {
-    unsafe fn from_vec_unchecked(vec: Vec<T>) -> Self {
+    pub unsafe fn from_vec_unchecked(vec: Vec<T>) -> Self {
         OwnedChain(vec)
     }
 

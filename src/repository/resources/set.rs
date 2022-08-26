@@ -45,11 +45,11 @@ impl ResourceSet {
     }
 
     pub fn all() -> ResourceSet {
-        let asns = "0-4294967295";
-        let v4 = "0.0.0.0-255.255.255.255";
-        let v6 = "::0/0";
-
-        ResourceSet::from_strs(asns, v4, v6).unwrap()
+        ResourceSet {
+            asn: AsBlocks::all(),
+            ipv4: Ipv4Blocks::all(),
+            ipv6: Ipv6Blocks::all(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
