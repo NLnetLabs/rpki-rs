@@ -8,7 +8,13 @@ New
 
 Bug Fixes
 
+* When creating certificate IP resources, ranges that can be expressed as
+  prefixes are now converted into prefixes as required by RFC 3779.
+  ([#225])
+
 Other Changes
+
+[#225]: https://github.com/NLnetLabs/rpki-rs/pull/225
 
 
 ## 0.15.2
