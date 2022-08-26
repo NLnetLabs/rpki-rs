@@ -25,7 +25,7 @@ use routecore::asn::ParseAsnError;
 use super::super::cert::Overclaim;
 use super::super::x509::encode_extension;
 use super::super::error::VerificationError;
-use super::chain::{Block, SharedChain};
+use super::chain::{Block, OwnedChain, SharedChain};
 use super::choice::{InheritedResources, ResourcesChoice};
 
 
@@ -294,6 +294,17 @@ impl AsBlocks {
     /// Creates empty AS blocks.
     pub fn empty() -> Self {
         AsBlocks(SharedChain::empty())
+    }
+
+    /// Creates a value covering all ASNs.
+    pub fn all() -> Self {
+        AsBlocks(SharedChain::from_owned(
+            unsafe {
+                OwnedChain::from_vec_unchecked(vec![
+                    AsBlock::all()
+                ])
+            }
+        ))
     }
 
     /// Creates AS blocks from AS resources.
@@ -603,6 +614,11 @@ pub enum AsBlock {
 }
 
 impl AsBlock {
+    /// Returns an AS block covering all ASNs.
+    pub fn all() -> AsBlock {
+        AsBlock::Range(AsRange::all())
+    }
+
     /// The smallest AS number that is part of this block.
     pub fn min(&self) -> Asn {
         match *self {
@@ -885,6 +901,11 @@ impl AsRange {
         AsRange { min, max }
     }
 
+    /// Returns an AS block covering all ASNs.
+    pub fn all() -> AsRange {
+        AsRange::new(Asn::MIN, Asn::MAX)
+    }
+
     /// Returns the smallest AS number that is part of this range.
     pub fn min(self) -> Asn {
         self.min
@@ -1060,6 +1081,11 @@ impl From<OverclaimedAsResources> for VerificationError {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn as_blocks_all() {
+        assert_eq!(AsBlocks::all().to_string(), "AS0-AS4294967295");
+    }
 
     #[test]
     fn as_block_from_str() {

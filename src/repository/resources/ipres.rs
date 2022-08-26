@@ -21,7 +21,7 @@ use super::super::cert::Overclaim;
 use super::super::error::VerificationError;
 use super::super::roa::RoaIpAddress;
 use super::super::x509::encode_extension;
-use super::chain::{Block, SharedChain};
+use super::chain::{Block, OwnedChain, SharedChain};
 use super::choice::{InheritedResources, ResourcesChoice};
 
 
@@ -308,6 +308,17 @@ impl IpBlocks {
     /// Creates an empty address blocks.
     pub fn empty() -> Self {
         IpBlocks(SharedChain::empty())
+    }
+
+    /// Creates a value covering all addresses.
+    pub fn all() -> Self {
+        IpBlocks(SharedChain::from_owned(
+            unsafe {
+                OwnedChain::from_vec_unchecked(vec![
+                    IpBlock::all()
+                ])
+            }
+        ))
     }
 
     /// Creates address blocks from address resources.
@@ -654,6 +665,11 @@ pub enum IpBlock {
 }
 
 impl IpBlock {
+    /// Creates a new block covering all addresses.
+    pub fn all() -> Self {
+        IpBlock::Prefix(Prefix::all())
+    }
+
     /// Creates a new block from an IPv4 representation.
     pub fn from_v4_str(s: &str) -> Result<Self, FromStrError> {
         if let Some(sep) = s.find('/') {
@@ -1225,6 +1241,11 @@ impl Prefix {
         }
     }
 
+    /// Creates a prefix covering all addresses.
+    pub fn all() -> Self {
+        Prefix::new(0, 0)
+    }
+
     /// Creates a new prefix from its encoding as a BIT STRING.
     pub fn from_bit_string(
         src: &BitString
@@ -1702,6 +1723,11 @@ impl Ipv4Blocks {
         Ipv4Blocks(IpBlocks::empty())
     }
 
+    /// Creates a value covering all addresses.
+    pub fn all() -> Self {
+        Ipv4Blocks(IpBlocks::all())
+    }
+
     pub fn to_ip_resources(&self) -> IpResources {
         IpResources::blocks(self.0.clone())
     }
@@ -1786,6 +1812,11 @@ pub struct Ipv6Blocks(IpBlocks);
 impl Ipv6Blocks {
     pub fn empty() -> Self {
         Ipv6Blocks(IpBlocks::empty())
+    }
+
+    /// Creates a value covering all addresses.
+    pub fn all() -> Self {
+        Ipv6Blocks(IpBlocks::all())
     }
 
     pub fn to_ip_resources(&self) -> IpResources {
@@ -2050,6 +2081,12 @@ impl From<OverclaimedIpv6Resources> for VerificationError {
 mod test {
     use bcder::encode::Values;
     use super::*;
+
+    #[test]
+    fn ip_blocks_all() {
+        assert_eq!(Ipv4Blocks::all().to_string(), "0.0.0.0/0");
+        assert_eq!(Ipv6Blocks::all().to_string(), "::/0");
+    }
 
     #[test]
     fn ip_blocks_to_v4_str() {
