@@ -2294,6 +2294,7 @@ pub(crate) struct Sia {
     rpki_notify: Option<uri::Https>,
 }
 
+#[cfg(feature = "ca")]
 impl Sia {
     pub(crate) fn ca_repository(&self) -> Option<&uri::Rsync> {
         self.ca_repository.as_ref()
@@ -2304,7 +2305,9 @@ impl Sia {
     pub(crate) fn rpki_notify(&self) -> Option<&uri::Https> {
         self.rpki_notify.as_ref()
     }
+}
 
+impl Sia {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, DecodeError<S::Error>> {
@@ -2626,6 +2629,7 @@ pub(crate) struct InvalidExtension {
 }
 
 impl InvalidExtension {
+    #[cfg(feature = "ca")]
     pub(crate) fn new(oid: Oid<Bytes>) -> Self {
         InvalidExtension { oid }
     }

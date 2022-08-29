@@ -1504,7 +1504,7 @@ impl error::Error for ProcessError { }
 
 #[cfg(test)]
 mod test {
-    use std::str::from_utf8_unchecked;
+    use std::str::{FromStr, from_utf8_unchecked};
 
     use super::*;
 

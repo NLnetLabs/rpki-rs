@@ -4,7 +4,7 @@ use std::{error, fmt, io};
 use std::convert::{Infallible, TryFrom};
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, Oid, Tag};
-use bcder::decode::{ContentError, DecodeError, IntoSource, Source};
+use bcder::decode::{ContentError, DecodeError, Source};
 use bcder::int::{InvalidInteger, Unsigned};
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
@@ -372,6 +372,7 @@ impl<'de> serde::Deserialize<'de> for PublicKey {
         deserializer: D
     ) -> Result<Self, D::Error> {
         use serde::de;
+        use bcder::decode::IntoSource;
 
         let string = String::deserialize(deserializer)?;
         let decoded = base64::decode(&string).map_err(de::Error::custom)?;
@@ -444,9 +445,10 @@ impl error::Error for SignatureVerificationError { }
 #[cfg(test)]
 mod test {
     use super::*;
+    use bcder::decode::IntoSource;
 
     #[test]
-    #[cfg(feature = "serde")]
+    #[cfg(all(feature = "serde", feature = "repository"))]
     fn serde_pub_key() {
         use crate::repository::Cert;
 

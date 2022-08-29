@@ -2,6 +2,7 @@ use std::convert::TryFrom;
 use std::fmt;
 use std::str::FromStr;
 
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use routecore::asn::Asn;
@@ -16,14 +17,15 @@ use crate::repository::{
 //------------ ResourceSet ---------------------------------------------------
 
 /// A set of ASN, IPv4 and IPv6 resources.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct ResourceSet {
     asn: AsBlocks,
 
-    #[serde(alias = "v4")]
+    #[cfg_attr(feature = "serde", serde(alias = "v4"))]
     ipv4: Ipv4Blocks,
 
-    #[serde(alias = "v6")]
+    #[cfg_attr(feature = "serde", serde(alias = "v6"))]
     ipv6: Ipv6Blocks,
 }
 
@@ -228,7 +230,8 @@ impl TryFrom<&Cert> for ResourceSet {
 
 //------------ ResourceDiff --------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct ResourceDiff {
     added: ResourceSet,
     removed: ResourceSet,
@@ -431,6 +434,7 @@ mod tests {
         assert_eq!(set_1, set_2);
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn serialize_deserialize_resource_set() {
         let asns = "AS65000-AS65003, AS65005";
