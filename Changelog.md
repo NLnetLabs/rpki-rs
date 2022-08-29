@@ -1,17 +1,15 @@
 # Changelog
 
-## Unreleased future version
+## 0.15.4
 
-Breaking Changes
-
-New
+Released 2022-08-29
 
 Bug Fixes
 
 * Fix missing conditional compilation attributes that caused errors and
-  warnings for certain combinations of features.
+  warnings for certain combinations of features. ([#228])
 
-Other Changes
+[#228]: https://github.com/NLnetLabs/rpki-rs/pull/228
 
 
 ## 0.15.3
