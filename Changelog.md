@@ -8,6 +8,9 @@ New
 
 Bug Fixes
 
+* Fix missing conditional compilation attributes that caused errors and
+  warnings for certain combinations of features.
+
 Other Changes
 
 
