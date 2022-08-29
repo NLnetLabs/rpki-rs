@@ -445,9 +445,10 @@ impl error::Error for SignatureVerificationError { }
 #[cfg(test)]
 mod test {
     use super::*;
+    use bcder::decode::IntoSource;
 
     #[test]
-    #[cfg(feature = "serde")]
+    #[cfg(all(feature = "serde", feature = "repository"))]
     fn serde_pub_key() {
         use crate::repository::Cert;
 

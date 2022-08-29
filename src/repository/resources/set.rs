@@ -434,6 +434,7 @@ mod tests {
         assert_eq!(set_1, set_2);
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn serialize_deserialize_resource_set() {
         let asns = "AS65000-AS65003, AS65005";
