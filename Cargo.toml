@@ -47,7 +47,7 @@ crypto     = [ "bcder", "ring", "untrusted", "routecore/bcder" ]
 repository = [ "bcder", "crypto", "routecore/bcder" ]
 rrdp       = [ "xml", "ring" ]
 rtr        = [ "futures-util", "tokio", "tokio-stream" ]
-slurm      = [ "serde-support", "serde_json" ]
+slurm      = [ "rtr", "serde-support", "serde_json" ]
 
 # Feature that provides compatibility with (technically incorrect) objects
 # produced by earlier versions of this library, which are rejected now.
@@ -58,7 +58,7 @@ xml = [ "quick-xml" ]
 
 # Extra features provided.
 serde-support = ["serde", "routecore/serde"]
-softkeys = [ "repository", "openssl" ]
+softkeys = [ "openssl" ]
 
 # Dummy features for Windows CI runs where we don’t want to have to deal
 # with OpenSSL
