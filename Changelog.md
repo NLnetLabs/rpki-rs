@@ -1,23 +1,19 @@
 # Changelog
 
-## Unreleased future version
+## 0.15.5
 
-Breaking Changes
-
-New
+Released 2022-09-08.
 
 Bug Fixes
 
 * Accept missing trailing slash in RFC 8183 XML namespaces. ([#230])
-
-Other Changes
 
 [#230]: https://github.com/NLnetLabs/rpki-rs/pull/228
 
 
 ## 0.15.4
 
-Released 2022-08-29
+Released 2022-08-29.
 
 Bug Fixes
 
