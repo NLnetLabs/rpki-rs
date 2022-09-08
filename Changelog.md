@@ -8,7 +8,11 @@ New
 
 Bug Fixes
 
+* Accept missing trailing slash in RFC 8183 XML namespaces. ([#230])
+
 Other Changes
+
+[#230]: https://github.com/NLnetLabs/rpki-rs/pull/228
 
 
 ## 0.15.4
