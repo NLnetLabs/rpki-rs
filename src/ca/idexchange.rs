@@ -27,20 +27,22 @@ use crate::xml::decode::{Error as XmlError, Name};
 // Constants for the RFC 8183 XML
 const VERSION: &str = "1";
 const NS: &[u8] = b"http://www.hactrn.net/uris/rpki/rpki-setup/";
+// The following is technically wrong, but was used in Krill < 0.10.0
+const NS_NO_SLASH: &[u8] = b"http://www.hactrn.net/uris/rpki/rpki-setup";
 
-const CHILD_REQUEST: Name = Name::qualified(NS, b"child_request");
-const CHILD_BPKI_TA: Name = Name::qualified(NS, b"child_bpki_ta");
+const CHILD_REQUEST: Name = Name::unqualified(b"child_request");
+const CHILD_BPKI_TA: Name = Name::unqualified(b"child_bpki_ta");
 
-const PUBLISHER_REQUEST: Name = Name::qualified(NS, b"publisher_request");
-const PUBLISHER_BPKI_TA: Name = Name::qualified(NS, b"publisher_bpki_ta");
+const PUBLISHER_REQUEST: Name = Name::unqualified(b"publisher_request");
+const PUBLISHER_BPKI_TA: Name = Name::unqualified(b"publisher_bpki_ta");
 
-const PARENT_RESPONSE: Name = Name::qualified(NS, b"parent_response");
-const PARENT_BPKI_TA: Name = Name::qualified(NS, b"parent_bpki_ta");
-const PARENT_REFERRAL: Name = Name::qualified(NS, b"referral");
-const PARENT_OFFER: Name = Name::qualified(NS, b"offer");
+const PARENT_RESPONSE: Name = Name::unqualified(b"parent_response");
+const PARENT_BPKI_TA: Name = Name::unqualified(b"parent_bpki_ta");
+const PARENT_REFERRAL: Name = Name::unqualified(b"referral");
+const PARENT_OFFER: Name = Name::unqualified(b"offer");
 
-const REPOSITORY_RESPONSE: Name = Name::qualified(NS, b"repository_response");
-const REPOSITORY_BPKI_TA: Name = Name::qualified(NS, b"repository_bpki_ta");
+const REPOSITORY_RESPONSE: Name = Name::unqualified(b"repository_response");
+const REPOSITORY_BPKI_TA: Name = Name::unqualified(b"repository_bpki_ta");
 
 //------------ Handle --------------------------------------------------------
 
@@ -369,7 +371,17 @@ impl ChildRequest {
         let mut tag: Option<String> = None;
 
         let mut outer = reader.start(|element| {
-            if element.name() != CHILD_REQUEST {
+            // Check that the namespace, if present, matches the RFC 8183
+            // definition - except.. we want to be forgiving regarding leaving
+            // out the trailing slash as Krill < 0.10 does.
+            if let Some(ns) = element.name().namespace() {
+                if ns != NS && ns != NS_NO_SLASH {
+                    debug!("invalid namespace in child request");
+                    return Err(XmlError::Malformed);
+                }
+            }
+
+            if element.name().into_unqualified() != CHILD_REQUEST {
                 return Err(XmlError::Malformed);
             }
 
@@ -396,10 +408,12 @@ impl ChildRequest {
 
         // We expect a single element 'child_bpki_ta' to be present which
         // will contain the child id_cert.
-        let mut content = outer.take_element(&mut reader, |element| match element.name() {
-            CHILD_BPKI_TA => Ok(()),
-            _ => Err(XmlError::Malformed),
-        })?;
+        let mut content = outer.take_element(&mut reader, |element|
+            match element.name().into_unqualified() {
+                CHILD_BPKI_TA => Ok(()),
+                _ => Err(XmlError::Malformed),
+            }
+        )?;
 
         // Do base64 decoding of the certificate to ensure that it CAN be
         // decoded.
@@ -435,14 +449,14 @@ impl ChildRequest {
         let mut writer = xml::encode::Writer::new(writer);
 
         writer
-            .element(CHILD_REQUEST.into_unqualified())?
+            .element(CHILD_REQUEST)?
             .attr("xmlns", NS)?
             .attr("version", VERSION)?
             .attr("child_handle", self.child_handle())?
             .attr_opt("tag", self.tag())?
             .content(|content| {
                 content
-                    .element(CHILD_BPKI_TA.into_unqualified())?
+                    .element(CHILD_BPKI_TA)?
                     .content(|content| content.raw(&self.id_cert))?;
                 Ok(())
             })?;
@@ -550,7 +564,17 @@ impl ParentResponse {
         let mut tag: Option<String> = None;
 
         let mut outer = reader.start(|element| {
-            if element.name() != PARENT_RESPONSE {
+            // Check that the namespace, if present, matches the RFC 8183
+            // definition - except.. we want to be forgiving regarding leaving
+            // out the trailing slash as Krill < 0.10 does.
+            if let Some(ns) = element.name().namespace() {
+                if ns != NS && ns != NS_NO_SLASH {
+                    debug!("invalid namespace in parent response");
+                    return Err(XmlError::Malformed);
+                }
+            }
+
+            if element.name().into_unqualified() != PARENT_RESPONSE {
                 return Err(XmlError::Malformed);
             }
 
@@ -587,6 +611,7 @@ impl ParentResponse {
             })
         })?;
 
+
         let service_uri = service_uri.ok_or(XmlError::Malformed)?;
         let parent_handle = parent_handle.ok_or(XmlError::Malformed)?;
         let child_handle = child_handle.ok_or(XmlError::Malformed)?;
@@ -604,14 +629,16 @@ impl ParentResponse {
 
         loop {
             let mut bpki_ta_element_found = false;
-            let inner = outer.take_opt_element(&mut reader, |element| match element.name() {
-                PARENT_BPKI_TA => {
-                    bpki_ta_element_found = true;
-                    Ok(())
+            let inner = outer.take_opt_element(&mut reader, |element| 
+                match element.name().into_unqualified() {
+                    PARENT_BPKI_TA => {
+                        bpki_ta_element_found = true;
+                        Ok(())
+                    },
+                    PARENT_OFFER | PARENT_REFERRAL => Ok(()),
+                    _ => Err(XmlError::Malformed),
                 }
-                PARENT_OFFER | PARENT_REFERRAL => Ok(()),
-                _ => Err(XmlError::Malformed),
-            })?;
+            )?;
 
             // Break out of loop if we got no element, get the
             // actual element if we can.
@@ -659,7 +686,7 @@ impl ParentResponse {
         let mut writer = xml::encode::Writer::new(writer);
 
         writer
-            .element(PARENT_RESPONSE.into_unqualified())?
+            .element(PARENT_RESPONSE)?
             .attr("xmlns", NS)?
             .attr("version", VERSION)?
             .attr("parent_handle", self.parent_handle())?
@@ -668,7 +695,7 @@ impl ParentResponse {
             .attr_opt("tag", self.tag())?
             .content(|content| {
                 content
-                    .element(PARENT_BPKI_TA.into_unqualified())?
+                    .element(PARENT_BPKI_TA)?
                     .content(|content| content.raw(&self.id_cert))?;
                 Ok(())
             })?;
@@ -767,7 +794,17 @@ impl PublisherRequest {
         let mut tag: Option<String> = None;
 
         let mut outer = reader.start(|element| {
-            if element.name() != PUBLISHER_REQUEST {
+            // Check that the namespace, if present, matches the RFC 8183
+            // definition - except.. we want to be forgiving regarding leaving
+            // out the trailing slash as Krill < 0.10 does.
+            if let Some(ns) = element.name().namespace() {
+                if ns != NS && ns != NS_NO_SLASH {
+                    debug!("invalid namespace in publisher request");
+                    return Err(XmlError::Malformed);
+                }
+            }
+
+            if element.name().into_unqualified() != PUBLISHER_REQUEST {
                 return Err(XmlError::Malformed);
             }
 
@@ -794,10 +831,12 @@ impl PublisherRequest {
 
         // We expect a single element 'child_bpki_ta' to be present which
         // will contain the child id_cert.
-        let mut content = outer.take_element(&mut reader, |element| match element.name() {
-            PUBLISHER_BPKI_TA => Ok(()),
-            _ => Err(XmlError::Malformed),
-        })?;
+        let mut content = outer.take_element(&mut reader, |element|
+            match element.name().into_unqualified() {
+                PUBLISHER_BPKI_TA => Ok(()),
+                _ => Err(XmlError::Malformed),
+            }
+        )?;
 
         // Do base64 decoding of the certificate to ensure that it CAN be
         // decoded.
@@ -835,14 +874,14 @@ impl PublisherRequest {
         let mut writer = xml::encode::Writer::new(writer);
 
         writer
-            .element(PUBLISHER_REQUEST.into_unqualified())?
+            .element(PUBLISHER_REQUEST)?
             .attr("xmlns", NS)?
             .attr("version", VERSION)?
             .attr("publisher_handle", self.publisher_handle())?
             .attr_opt("tag", self.tag())?
             .content(|content| {
                 content
-                    .element(PUBLISHER_BPKI_TA.into_unqualified())?
+                    .element(PUBLISHER_BPKI_TA)?
                     .content(|content| content.raw(&self.id_cert))?;
                 Ok(())
             })?;
@@ -971,7 +1010,17 @@ impl RepositoryResponse {
         let mut rrdp_notification_uri: Option<uri::Https> = None;
 
         let mut outer = reader.start(|element| {
-            if element.name() != REPOSITORY_RESPONSE {
+            // Check that the namespace, if present, matches the RFC 8183
+            // definition - except.. we want to be forgiving regarding leaving
+            // out the trailing slash as Krill < 0.10 does.
+            if let Some(ns) = element.name().namespace() {
+                if ns != NS && ns != NS_NO_SLASH {
+                    debug!("invalid namespace in repository response");
+                    return Err(XmlError::Malformed);
+                }
+            }
+
+            if element.name().into_unqualified() != REPOSITORY_RESPONSE {
                 return Err(XmlError::Malformed);
             }
 
@@ -1019,10 +1068,12 @@ impl RepositoryResponse {
 
         // We expect a single element 'child_bpki_ta' to be present which
         // will contain the child id_cert.
-        let mut content = outer.take_element(&mut reader, |element| match element.name() {
-            REPOSITORY_BPKI_TA => Ok(()),
-            _ => Err(XmlError::Malformed),
-        })?;
+        let mut content = outer.take_element(&mut reader, |element|
+            match element.name().into_unqualified() {
+                REPOSITORY_BPKI_TA => Ok(()),
+                _ => Err(XmlError::Malformed),
+            }
+        )?;
 
         // Do base64 decoding of the certificate to ensure that it CAN be
         // decoded.
@@ -1055,7 +1106,7 @@ impl RepositoryResponse {
         let mut writer = xml::encode::Writer::new(writer);
 
         writer
-            .element(REPOSITORY_RESPONSE.into_unqualified())?
+            .element(REPOSITORY_RESPONSE)?
             .attr("xmlns", NS)?
             .attr("version", VERSION)?
             .attr("publisher_handle", self.publisher_handle())?
@@ -1065,7 +1116,7 @@ impl RepositoryResponse {
             .attr_opt("tag", self.tag())?
             .content(|content| {
                 content
-                    .element(REPOSITORY_BPKI_TA.into_unqualified())?
+                    .element(REPOSITORY_BPKI_TA)?
                     .content(|content| content.raw(&self.id_cert))?;
                 Ok(())
             })?;
@@ -1264,6 +1315,18 @@ mod tests {
     }
 
     #[test]
+    fn parent_response_krill_0_9() {
+        let xml = include_str!("../../test-data/ca/rfc8183/krill-0-9-parent-response.xml");
+        let req = ParentResponse::parse(xml.as_bytes()).unwrap();
+
+        let re_encoded_xml = req.to_xml_string();
+        let re_decoded =
+            ParentResponse::parse(re_encoded_xml.as_bytes()).unwrap();
+
+        assert_eq!(req, re_decoded);
+    }
+
+    #[test]
     fn parent_response_parse_rpkid_referral() {
         let xml = include_str!("../../test-data/ca/rfc8183/rpkid-parent-response-referral.xml");
         let _req = ParentResponse::parse(xml.as_bytes()).unwrap();
@@ -1290,6 +1353,18 @@ mod tests {
     #[test]
     fn repository_response_codec() {
         let xml = include_str!("../../test-data/ca/rfc8183/apnic-repository-response.xml");
+        let req = RepositoryResponse::parse(xml.as_bytes()).unwrap();
+
+        let re_encoded_xml = req.to_xml_string();
+        let re_decoded =
+            RepositoryResponse::parse(re_encoded_xml.as_bytes()).unwrap();
+
+        assert_eq!(req, re_decoded);
+    }
+
+    #[test]
+    fn repository_response_krill_0_9() {
+        let xml = include_str!("../../test-data/ca/rfc8183/krill-0-9-repository-response.xml");
         let req = RepositoryResponse::parse(xml.as_bytes()).unwrap();
 
         let re_encoded_xml = req.to_xml_string();
