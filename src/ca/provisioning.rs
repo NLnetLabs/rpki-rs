@@ -1408,9 +1408,9 @@ impl ResourceClassEntitlements {
             .element("class".into())?
             .attr("class_name", &self.class_name)?
             .attr("cert_url", &self.signing_cert.url)?
-            .attr_opt("resource_set_as", self.resource_set.asn_opt())?
-            .attr_opt("resource_set_ipv4", self.resource_set.ipv4_opt())?
-            .attr_opt("resource_set_ipv6", self.resource_set.ipv6_opt())?
+            .attr("resource_set_as", self.resource_set.asn())?
+            .attr("resource_set_ipv4", self.resource_set.ipv4())?
+            .attr("resource_set_ipv6", self.resource_set.ipv6())?
             .attr("resource_set_notafter", &not_after)?
             .content(|nested| {
                 for issued in &self.issued_certs {
