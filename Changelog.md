@@ -1,17 +1,13 @@
 # Changelog
 
-## Unreleased future version
+## 0.15.6
 
-Breaking Changes
-
-New
+Released 2022-09-10.
 
 Bug Fixes
 
 * Include all `resource_set_*` types in Resource Class List Response.
   ([#232])
-
-Other Changes
 
 [#232]: https://github.com/NLnetLabs/rpki-rs/pull/232
 
