@@ -8,7 +8,12 @@ New
 
 Bug Fixes
 
+* Include all `resource_set_*` types in Resource Class List Response.
+  ([#232])
+
 Other Changes
+
+[#232]: https://github.com/NLnetLabs/rpki-rs/pull/232
 
 
 ## 0.15.5
@@ -19,7 +24,7 @@ Bug Fixes
 
 * Accept missing trailing slash in RFC 8183 XML namespaces. ([#230])
 
-[#230]: https://github.com/NLnetLabs/rpki-rs/pull/228
+[#230]: https://github.com/NLnetLabs/rpki-rs/pull/230
 
 
 ## 0.15.4
