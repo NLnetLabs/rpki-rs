@@ -486,7 +486,7 @@ impl SignedMessageCrl {
         let this_update = validity.not_before();
         let next_update = validity.not_after();
         
-        let revoked_certs = SignedMessageRevokedCertificates::empty();
+        let revoked_certs = RevokedCertificates::empty();
         
         let authority_key_id = Some(issuing_pub_key.key_identifier());
         
@@ -546,7 +546,7 @@ struct SignedMessageTbsCrl {
     next_update: Time,
 
     /// The list of revoked certificates.
-    revoked_certs: SignedMessageRevokedCertificates,
+    revoked_certs: RevokedCertificates,
 
     /// Authority Key Identifier, may be included.. if it is included
     /// then we should validate that it matches the issuing certificate.
@@ -609,7 +609,7 @@ impl SignedMessageTbsCrl {
             let issuer = Name::take_from(cons)?;
             let this_update = Time::take_from(cons)?;
             let next_update = Time::take_from(cons)?;
-            let revoked_certs = SignedMessageRevokedCertificates::take_from(cons)?;
+            let revoked_certs = RevokedCertificates::take_from(cons)?;
 
             let mut authority_key_id = None;
             let mut crl_number = None;
@@ -728,7 +728,7 @@ impl SignedMessageTbsCrl {
 }
 
 
-//------------ SignedMessageRevokedCertificates ------------------------------
+//------------ RevokedCertificates -------------------------------------------
 
 /// The list of revoked certificates.
 ///
@@ -736,16 +736,15 @@ impl SignedMessageTbsCrl {
 /// check whether a certain serial number is part of this list via the
 /// `contains` method.
 /// 
-/// Note that this almost, but not quite, like the [`RevokedCertificates`]
-/// found in RPKI CRLs - as RFC 6492 and RFC 8181 is more permissive than
-/// RFC 6487.
+/// Note that this almost like the type by the same name in the _repositories_
+/// module. The only difference is that it ignores all extensions.
 #[derive(Clone, Debug)]
-pub struct SignedMessageRevokedCertificates(Captured);
+struct RevokedCertificates(Captured);
 
-impl SignedMessageRevokedCertificates {
+impl RevokedCertificates {
     /// Create an empty RevokedCertificates.
     pub fn empty() -> Self {
-        let entries: Vec<SignedMessageCrlEntry> = vec![];
+        let entries: Vec<CrlEntry> = vec![];
         Self::from_iter(entries)
     }
 
@@ -755,11 +754,11 @@ impl SignedMessageRevokedCertificates {
     ) -> Result<Self, DecodeError<S::Error>> {
         let res = cons.take_opt_sequence(|cons| {
             cons.capture(|cons| {
-                while SignedMessageCrlEntry::take_opt_from(cons)?.is_some() { }
+                while CrlEntry::take_opt_from(cons)?.is_some() { }
                 Ok(())
             })
         })?;
-        Ok(SignedMessageRevokedCertificates(match res {
+        Ok(RevokedCertificates(match res {
             Some(res) => res,
             None => Captured::empty(Mode::Der)
         }))
@@ -772,18 +771,13 @@ impl SignedMessageRevokedCertificates {
     pub fn contains(&self, serial: Serial) -> bool {
         Mode::Der.decode(self.0.as_ref(), |cons| {
             while let Some(entry) = 
-                SignedMessageCrlEntry::take_opt_from(cons).unwrap() {
+                CrlEntry::take_opt_from(cons).unwrap() {
                 if entry.user_certificate == serial {
                     return Ok(true)
                 }
             }
             Ok(false)
         }).unwrap()
-    }
-
-    /// Returns an iterator over the entries in the list.
-    pub fn iter(&self) -> SignedMessageRevokedCertificatesIter {
-        SignedMessageRevokedCertificatesIter(self.0.clone())
     }
 
     /// Returns a value encoder for a reference to the value.
@@ -797,29 +791,14 @@ impl SignedMessageRevokedCertificates {
     /// requirement on `I::IntoIter`
     fn from_iter<I>(iter: I) -> Self
     where
-        I: IntoIterator<Item = SignedMessageCrlEntry>,
+        I: IntoIterator<Item = CrlEntry>,
         <I as IntoIterator>::IntoIter: Clone
     {
-        SignedMessageRevokedCertificates(Captured::from_values(
+        RevokedCertificates(Captured::from_values(
             Mode::Der, encode::iter(
-                iter.into_iter().map(SignedMessageCrlEntry::encode)
+                iter.into_iter().map(CrlEntry::encode)
             )
         ))
-    }
-}
-
-
-//------------ SignedMessageRevokedCertificatesIter --------------------------
-
-/// An iterator over the entries in the list of revoked certificates.
-#[derive(Clone, Debug)]
-pub struct SignedMessageRevokedCertificatesIter(Captured);
-
-impl Iterator for SignedMessageRevokedCertificatesIter {
-    type Item = SignedMessageCrlEntry;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.decode_partial(|cons| SignedMessageCrlEntry::take_opt_from(cons)).unwrap()
     }
 }
 
@@ -828,7 +807,7 @@ impl Iterator for SignedMessageRevokedCertificatesIter {
 
 /// An entry in the revoked certificates list.
 #[derive(Clone, Copy, Debug)]
-pub struct SignedMessageCrlEntry {
+struct CrlEntry {
     /// The serial number of the revoked certificate.
     user_certificate: Serial,
 
@@ -836,19 +815,7 @@ pub struct SignedMessageCrlEntry {
     revocation_date: Time,
 }
 
-impl SignedMessageCrlEntry {
-    /// Creates a new CrlEntry for inclusion on a new Crl
-    pub fn new(user_certificate: Serial, revocation_date: Time) -> Self {
-        SignedMessageCrlEntry { user_certificate, revocation_date }
-    }
-
-    /// Takes a single CRL entry from the beginning of a constructed value.
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, DecodeError<S::Error>> {
-        cons.take_sequence(Self::from_constructed)
-    }
-
+impl CrlEntry {
     /// Takes an optional CRL entry from the beginning of a constructed value.
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
@@ -860,7 +827,7 @@ impl SignedMessageCrlEntry {
     pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, DecodeError<S::Error>> {
-        let entry = SignedMessageCrlEntry {
+        let entry = CrlEntry {
             user_certificate: Serial::take_from(cons)?,
             revocation_date: Time::take_from(cons)?,
         };
