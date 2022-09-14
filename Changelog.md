@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased future version
+
+Breaking changes
+
+New
+
+Bug fixes
+
+Other changes
+
+
 ## 0.15.7
 
 Released 2022-09-14.
