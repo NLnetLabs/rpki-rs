@@ -1,6 +1,6 @@
 # Changelog
 
-## Unrelease future version
+## Unreleased future version
 
 Breaking Changes
 
@@ -8,7 +8,13 @@ New
 
 Bug Fixes
 
+* Allow and ignore extension in CRLs and CRL entries used in the `ca`
+  module. Handling of CRLs for the RPKI in the `repository` module is
+  unchanged. ([#234])
+
 Other Changes
+
+[#234]: https://github.com/NLnetLabs/rpki-rs/pull/234
 
 
 ## 0.15.6
