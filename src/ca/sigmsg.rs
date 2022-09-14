@@ -11,7 +11,6 @@ use crate::crypto::{
     DigestAlgorithm, KeyIdentifier, RpkiSignature, RpkiSignatureAlgorithm,
     SignatureAlgorithm, Signer, SigningError, PublicKey
 };
-use crate::repository::crl;
 use crate::repository::error::{
     InspectionError, ValidationError, VerificationError
 };
@@ -487,7 +486,7 @@ impl SignedMessageCrl {
         let this_update = validity.not_before();
         let next_update = validity.not_after();
         
-        let revoked_certs = crl::RevokedCertificates::empty();
+        let revoked_certs = RevokedCertificates::empty();
         
         let authority_key_id = Some(issuing_pub_key.key_identifier());
         
@@ -547,7 +546,7 @@ struct SignedMessageTbsCrl {
     next_update: Time,
 
     /// The list of revoked certificates.
-    revoked_certs: crl::RevokedCertificates,
+    revoked_certs: RevokedCertificates,
 
     /// Authority Key Identifier, may be included.. if it is included
     /// then we should validate that it matches the issuing certificate.
@@ -610,7 +609,8 @@ impl SignedMessageTbsCrl {
             let issuer = Name::take_from(cons)?;
             let this_update = Time::take_from(cons)?;
             let next_update = Time::take_from(cons)?;
-            let revoked_certs = crl::RevokedCertificates::take_from(cons)?;
+            let revoked_certs = RevokedCertificates::take_from(cons)?;
+
             let mut authority_key_id = None;
             let mut crl_number = None;
             cons.take_constructed_if(Tag::CTX_0, |cons| {
@@ -631,12 +631,10 @@ impl SignedMessageTbsCrl {
                                 )
                             }
                             else {
-                                // RFC 6487 says that no other extensions are
-                                // allowed. So we fail even if there is only
-                                // non-critical extension.
-                                Err(content.content_err(
-                                    crl::InvalidExtension::new(id)
-                                ))
+                                // RFC 6492 and 8181 are under-specified.
+                                // Just skip extensions as they are very
+                                // unlikely to be relevant in any way.
+                                content.skip_all()
                             }
                         }).map_err(DecodeError::convert)
                     })? { }
@@ -728,6 +726,127 @@ impl SignedMessageTbsCrl {
         ))
     }
 }
+
+
+//------------ RevokedCertificates -------------------------------------------
+
+/// The list of revoked certificates.
+///
+/// A value of this type wraps the bytes of the DER encoded list. You can
+/// check whether a certain serial number is part of this list via the
+/// `contains` method.
+/// 
+/// Note that this almost like the type by the same name in the _repositories_
+/// module. The only difference is that it ignores all extensions.
+#[derive(Clone, Debug)]
+struct RevokedCertificates(Captured);
+
+impl RevokedCertificates {
+    /// Create an empty RevokedCertificates.
+    pub fn empty() -> Self {
+        let entries: Vec<CrlEntry> = vec![];
+        Self::from_iter(entries)
+    }
+
+    /// Takes a revoked certificates list from the beginning of a value.
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, DecodeError<S::Error>> {
+        let res = cons.take_opt_sequence(|cons| {
+            cons.capture(|cons| {
+                while CrlEntry::take_opt_from(cons)?.is_some() { }
+                Ok(())
+            })
+        })?;
+        Ok(RevokedCertificates(match res {
+            Some(res) => res,
+            None => Captured::empty(Mode::Der)
+        }))
+    }
+
+    /// Returns whether the given serial number is contained on this list.
+    ///
+    /// The method walks over the list, decoding it on the fly and checking
+    /// each entry.
+    pub fn contains(&self, serial: Serial) -> bool {
+        Mode::Der.decode(self.0.as_ref(), |cons| {
+            while let Some(entry) = 
+                CrlEntry::take_opt_from(cons).unwrap() {
+                if entry.user_certificate == serial {
+                    return Ok(true)
+                }
+            }
+            Ok(false)
+        }).unwrap()
+    }
+
+    /// Returns a value encoder for a reference to the value.
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
+        encode::sequence(&self.0)
+    }
+
+    /// Create a value from an iterator over CRL entries.
+    ///
+    /// This can’t be the `FromIterator` trait because of the `Clone`
+    /// requirement on `I::IntoIter`
+    fn from_iter<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = CrlEntry>,
+        <I as IntoIterator>::IntoIter: Clone
+    {
+        RevokedCertificates(Captured::from_values(
+            Mode::Der, encode::iter(
+                iter.into_iter().map(CrlEntry::encode)
+            )
+        ))
+    }
+}
+
+
+//------------ CrlEntry ------------------------------------------------------
+
+/// An entry in the revoked certificates list.
+#[derive(Clone, Copy, Debug)]
+struct CrlEntry {
+    /// The serial number of the revoked certificate.
+    user_certificate: Serial,
+
+    /// The time of revocation.
+    revocation_date: Time,
+}
+
+impl CrlEntry {
+    /// Takes an optional CRL entry from the beginning of a constructed value.
+    pub fn take_opt_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Option<Self>, DecodeError<S::Error>> {
+        cons.take_opt_sequence(Self::from_constructed)
+    }
+
+    /// Parses the content of a CRL entry.
+    pub fn from_constructed<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, DecodeError<S::Error>> {
+        let entry = CrlEntry {
+            user_certificate: Serial::take_from(cons)?,
+            revocation_date: Time::take_from(cons)?,
+        };
+        // skip the extensions, they are allowed by the spec which is rather
+        // under-specified, but there isn't anything useful we can do with
+        // with these.
+        cons.take_opt_sequence(|cons| cons.skip_all())?;
+        Ok(entry)
+    }
+
+    /// Returns a value encoder for the entry.
+    pub fn encode(self) -> impl encode::Values {
+        encode::sequence((
+            self.user_certificate.encode(),
+            self.revocation_date.encode_varied(),
+        ))
+    }
+}
+
 
 //------------ Tests ---------------------------------------------------------
 

@@ -1861,6 +1861,16 @@ mod tests {
     }
 
     #[test]
+    fn parse_apnic_response_sept_2022() {
+        extract_xml(include_bytes!("../../test-data/ca/rfc6492/apnic-response.der"));
+    }
+
+    #[test]
+    fn parse_apnic_testbed_response_sept_2022() {
+        extract_xml(include_bytes!("../../test-data/ca/rfc6492/apnic-testbed-response.der"));
+    }
+
+    #[test]
     fn parse_and_encode_list_response() {
         let xml = extract_xml(include_bytes!(
             "../../test-data/ca/rfc6492/list-response.ber"
