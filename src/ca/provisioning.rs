@@ -1866,6 +1866,11 @@ mod tests {
     }
 
     #[test]
+    fn parse_afrinic_response_sept_2022() {
+        extract_xml(include_bytes!("../../test-data/ca/rfc6492/afrinic-response.der"));
+    }
+
+    #[test]
     fn parse_apnic_testbed_response_sept_2022() {
         extract_xml(include_bytes!("../../test-data/ca/rfc6492/apnic-testbed-response.der"));
     }
