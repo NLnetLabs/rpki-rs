@@ -8,7 +8,12 @@ New
 
 Bug fixes
 
+* Accept all options for the Authority Key Identifier extension in ID
+  certificates. ([#236])
+
 Other changes
+
+[#236]: https://github.com/NLnetLabs/rpki-rs/pull/236
 
 
 ## 0.15.7
