@@ -1786,7 +1786,7 @@ impl TbsCert {
     /// Must be present except in self-signed CA certificates where it is
     /// optional. The keyIdentifier field must be present, the other must not
     /// be.
-    pub(crate) fn take_authority_key_identifier<S: decode::Source>(
+    fn take_authority_key_identifier<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         authority_key_id: &mut Option<KeyIdentifier>,
     ) -> Result<(), DecodeError<S::Error>> {

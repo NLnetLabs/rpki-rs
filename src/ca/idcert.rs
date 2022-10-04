@@ -547,7 +547,7 @@ impl TbsIdCert {
     /// 
     /// We only care about 'keyIdentifier' if it is present on CMS *EE* certs
     /// then we will insist that it matches the SKI of the issuing cert.
-    pub(crate) fn take_authority_key_identifier<S: decode::Source>(
+    fn take_authority_key_identifier<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         authority_key_id: &mut Option<KeyIdentifier>,
     ) -> Result<(), DecodeError<S::Error>> {
