@@ -170,9 +170,6 @@ impl IdCert {
             }
         }
 
-        // // Normally the AKI should be left out - if it is set though, then
-        // // we should insist that it matches the SKI.
-
         Ok(())
     }
 
@@ -237,13 +234,13 @@ impl IdCert {
         if let Some(ca) = self.basic_ca {
             if !ca {
                 return Err(InspectionError::new(
-                    "Basic Contraints with cA flag set to false"
+                    "Basic Constraints with cA flag set to false"
                 ))
             }
         }
         else {
             return Err(InspectionError::new(
-                "missing Basic Contraints extension"
+                "missing Basic Constraints extension"
             ))
         }
 
@@ -257,32 +254,28 @@ impl IdCert {
         self.validity.verify_at(now).map_err(Into::into)
     }
 
-    /// Validates that the certificate AKI matches the issuer's SKI
+    /// Validates that the certificate AKI matches the issuer's SKI.
     ///
-    /// Note this check is used to check that an EE certificate in an RFC8183,
-    /// or RFC6492 message is validly signed by the TA certificate that was
-    /// exchanged.
-    ///
-    /// This check assumes for now that we are always dealing with V3
-    /// certificates and AKI and SKI have to match.
+    /// If there is no AKI, then this will just return Ok(()). We cannot be
+    /// sure that the extension for this is set for ID certificates. But if
+    /// it *is*, then we insist that the AKI matches the issuer's SKI.
+    /// 
+    /// Note that we still *always* check the signature as well of course,
+    /// even if the AKI is not set.
     fn verify_issuer_key(
         &self, issuer_key: &PublicKey,
     ) -> Result<(), VerificationError> {
-        // Authority Key Identifier. Must be present and match the
-        // Subject Key Identifier of the issuer.
         if let Some(aki) = self.authority_key_id {
             if aki != issuer_key.key_identifier() {
-                return Err(VerificationError::new(
+                Err(VerificationError::new(
                     "Authority Key Identifier doesn’t match issuer key"
-                ));
+                ))
+            } else {
+                Ok(())
             }
         } else {
-            return Err(VerificationError::new(
-                "missing Authority Key Identifier extension"
-            ));
+            Ok(())
         }
-
-        Ok(())
     }
 
     /// Validates the certificate’s signature.
@@ -470,14 +463,15 @@ impl TbsIdCert {
             let subject = Name::take_from(cons)?;
             let subject_public_key_info = PublicKey::take_from(cons)?;
 
-            // issuerUniqueID and subjectUniqueID must not be present in
-            // resource certificates. So extension is next.
+            // There may, or may not, be extensions.
 
+            // issuerUniqueID and subjectUniqueID is not expected as it must
+            // not be present in resource certificates. So extension is next.
             let mut basic_ca = None;
             let mut subject_key_id = None;
             let mut authority_key_id = None;
-
-            cons.take_constructed_if(Tag::CTX_3, |c| {
+            
+            cons.take_opt_constructed_if(Tag::CTX_3, |c| {
                 c.take_sequence(|cons| {
                     while let Some(()) = cons.take_opt_sequence(|cons| {
                         let id = Oid::take_from(cons)?;
@@ -493,7 +487,7 @@ impl TbsIdCert {
                                     content, &mut subject_key_id
                                 )
                             } else if id == oid::CE_AUTHORITY_KEY_IDENTIFIER {
-                                TbsCert::take_authority_key_identifier(
+                                TbsIdCert::take_authority_key_identifier(
                                     content,
                                     &mut authority_key_id,
                                 )
@@ -531,6 +525,43 @@ impl TbsIdCert {
                 authority_key_id,
             })
         })
+    }
+
+    /// Parses the Authority Key Identifier extension.
+    ///
+    /// ```text
+    /// AuthorityKeyIdentifier ::= SEQUENCE {
+    ///   keyIdentifier             [0] KeyIdentifier           OPTIONAL,
+    ///   authorityCertIssuer       [1] GeneralNames            OPTIONAL,
+    ///   authorityCertSerialNumber [2] CertificateSerialNumber OPTIONAL  }
+    /// ```
+    ///
+    /// The specs for ID certificates are not very clear, and we see a lot
+    /// of variance in how certificates are constructed. For RPKI (RFC 6487)
+    /// certificates we can insist that this is extension is present and that
+    /// it contains 'keyIdentifier' only.
+    /// 
+    /// Unfortunately, for ID certificate this may or may not be present, and
+    /// if it is present it may or may not contain any of the three possible
+    /// values.
+    /// 
+    /// We only care about 'keyIdentifier' if it is present on CMS *EE* certs
+    /// then we will insist that it matches the SKI of the issuing cert.
+    fn take_authority_key_identifier<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+        authority_key_id: &mut Option<KeyIdentifier>,
+    ) -> Result<(), DecodeError<S::Error>> {
+        // We got here, so we expect at least a sequence, even if it could
+        // be empty.
+        cons.take_sequence(|cons| {
+            *authority_key_id = cons
+                .take_opt_value_if(Tag::CTX_0, KeyIdentifier::from_content)?;
+            
+            cons.skip_all()?;
+            Ok(())
+        })?;
+
+        Ok(())
     }
 
     /// Returns an encoder for the value.
