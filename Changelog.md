@@ -1,17 +1,13 @@
 # Changelog
 
-## Unreleased future version
+## 0.15.8
 
-Breaking changes
-
-New
+Released 2022-10-11.
 
 Bug fixes
 
 * Accept all options for the Authority Key Identifier extension in ID
   certificates. ([#236])
-
-Other changes
 
 [#236]: https://github.com/NLnetLabs/rpki-rs/pull/236
 
