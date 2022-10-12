@@ -103,6 +103,10 @@ pub const PE_SUBJECT_INFO_ACCESS: Oid<&[u8]>
 pub const ROUTE_ORIGIN_AUTHZ: ConstOid
     = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 16, 1, 24]);
 
+/// https://datatracker.ietf.org/doc/draft-ietf-sidrops-signed-tal/
+pub const TRUST_ANCHOR_KEY: ConstOid
+    = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 16, 1, 50]);
+
 /// [RFC 2985](https://tools.ietf.org/html/rfc2985) `extensionRequest`
 pub const EXTENSION_REQUEST: ConstOid
     = Oid(&[42, 134, 72, 134, 247, 13, 1, 9, 14]);
