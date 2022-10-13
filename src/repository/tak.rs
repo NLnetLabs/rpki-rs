@@ -76,8 +76,8 @@ impl TakContent {
         encode::sequence((
             // version is default
             self.current.encode_ref(),
-            self.predecessor.as_ref().map(|k| k.encode_ref_as(Tag::CTX_0)),
-            self.successor.as_ref().map(|k| k.encode_ref_as(Tag::CTX_1)),
+            self.predecessor.as_ref().map(|k| k.encode_ref().explicit(Tag::CTX_0)),
+            self.successor.as_ref().map(|k| k.encode_ref().explicit(Tag::CTX_1)),
         ))
     }
 }
@@ -116,15 +116,10 @@ impl TaKey {
     pub fn rsync_uris(&self) -> Vec<&uri::Rsync> {
         self.certificate_uris.iter().flat_map(|uri| uri.as_rsync_opt()).collect()
     }
-    
-    pub fn encode_ref(&self) -> impl encode::Values + '_ {
-        self.encode_ref_as(Tag::SEQUENCE)
-    }
 
     #[allow(clippy::clone_double_ref)]
-    fn encode_ref_as(&self, tag: Tag) -> impl encode::Values + '_ {
-        encode::sequence_as(
-            tag,
+    pub fn encode_ref(&self) -> impl encode::Values + '_ {
+        encode::sequence(
             (
                 encode::sequence(
                     encode::slice(
@@ -252,7 +247,7 @@ mod signer_test {
             &ta_signing_key
         ).unwrap();
 
-        // let bytes = tak.to_captured().into_bytes();
+        // let bytes = _tak.to_captured().into_bytes();
         // panic!("{}", base64::encode(&bytes));
     }
 }
