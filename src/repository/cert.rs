@@ -1740,12 +1740,13 @@ impl TbsCert {
             Err(cons.content_err("duplicate Basic Contraints extension"))
         }
         else {
-            *basic_ca = Some(
-                cons.take_sequence(|cons| {
-                    cons.take_opt_bool()
-                })?.unwrap_or(false)
-            );
-            Ok(())
+            cons.take_sequence(|cons| {
+                *basic_ca = Some(cons.take_opt_bool()?.unwrap_or(false));
+                println!("basic ca: {:?}", basic_ca);
+                let _path_len_constraint = cons.take_opt_u64()?;
+                println!("path len: {:?}", _path_len_constraint);
+                Ok(())
+            })
         }
     }
 

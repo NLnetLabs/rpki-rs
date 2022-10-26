@@ -702,12 +702,13 @@ impl ParentResponse {
         writer.done()
     }
 
-    /// Validates and return the IdCert if it is correct and valid.
+    /// Validates the IdCert and returns it if it is valid.
     pub fn validate(&self) -> Result<IdCert, Error> {
         self.validate_at(Time::now())
     }
 
-    fn validate_at(&self, when: Time) -> Result<IdCert, Error> {
+    /// Validates the IdCert at the given date, and returns it if it is valid.
+    pub fn validate_at(&self, when: Time) -> Result<IdCert, Error> {
         validate_idcert_at(&self.id_cert, when)
     }
 

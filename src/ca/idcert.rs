@@ -464,7 +464,7 @@ impl TbsIdCert {
             let subject_public_key_info = PublicKey::take_from(cons)?;
 
             // There may, or may not, be extensions.
-
+            
             // issuerUniqueID and subjectUniqueID is not expected as it must
             // not be present in resource certificates. So extension is next.
             let mut basic_ca = None;
@@ -509,6 +509,7 @@ impl TbsIdCert {
                     Ok(())
                 })
             })?;
+
 
             Ok(TbsIdCert {
                 serial_number,
@@ -681,6 +682,14 @@ pub mod tests {
         let data = include_bytes!("../../test-data/ca/id_ta.cer");
         let idcert = IdCert::decode(Bytes::from_static(data)).unwrap();
         let idcert_moment = Time::utc(2012, 1, 1, 0, 0, 0);
+        idcert.validate_ta_at(idcert_moment).unwrap();
+    }
+
+    #[test]
+    fn parse_afrinic_ta_id_cert() {
+        let data = include_bytes!("../../test-data/ca/id_afrinic.cer");
+        let idcert = IdCert::decode(Bytes::from_static(data)).unwrap();
+        let idcert_moment = Time::utc(2022, 10, 25, 15, 0, 0);
         idcert.validate_ta_at(idcert_moment).unwrap();
     }
 }
