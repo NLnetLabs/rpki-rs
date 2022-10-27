@@ -1742,9 +1742,7 @@ impl TbsCert {
         else {
             cons.take_sequence(|cons| {
                 *basic_ca = Some(cons.take_opt_bool()?.unwrap_or(false));
-                println!("basic ca: {:?}", basic_ca);
                 let _path_len_constraint = cons.take_opt_u64()?;
-                println!("path len: {:?}", _path_len_constraint);
                 Ok(())
             })
         }
