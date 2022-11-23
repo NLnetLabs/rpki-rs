@@ -1316,6 +1316,20 @@ mod tests {
     }
 
     #[test]
+    fn afrinic_parent_response_codec() {
+        let xml = include_str!("../../test-data/ca/rfc8183/afrinic-parent-response.xml");
+        let req = ParentResponse::parse(xml.as_bytes()).unwrap();
+
+        let re_encoded_xml = req.to_xml_string();
+        let re_decoded =
+            ParentResponse::parse(re_encoded_xml.as_bytes()).unwrap();
+
+        assert_eq!(req, re_decoded);
+
+        let _ta_cert = req.validate().unwrap();
+    }
+
+    #[test]
     fn parent_response_krill_0_9() {
         let xml = include_str!("../../test-data/ca/rfc8183/krill-0-9-parent-response.xml");
         let req = ParentResponse::parse(xml.as_bytes()).unwrap();
