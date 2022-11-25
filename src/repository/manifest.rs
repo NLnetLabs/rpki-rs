@@ -150,7 +150,7 @@ impl<'de> serde::Deserialize<'de> for Manifest {
         use serde::de;
 
         let string = String::deserialize(deserializer)?;
-        let decoded = base64::decode(&string).map_err(de::Error::custom)?;
+        let decoded = base64::decode(string).map_err(de::Error::custom)?;
         let bytes = Bytes::from(decoded);
         Manifest::decode(bytes, true).map_err(de::Error::custom)
     }

@@ -338,7 +338,7 @@ impl<'de> serde::Deserialize<'de> for IdCert {
         use serde::de;
 
         let some = String::deserialize(deserializer)?;
-        let dec = base64::decode(&some).map_err(de::Error::custom)?;
+        let dec = base64::decode(some).map_err(de::Error::custom)?;
         let b = Bytes::from(dec);
         IdCert::decode(b).map_err(de::Error::custom)
     }

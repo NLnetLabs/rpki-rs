@@ -1087,7 +1087,7 @@ impl<'de> serde::Deserialize<'de> for Cert {
         use serde::de;
 
         let string = String::deserialize(deserializer)?;
-        let decoded = base64::decode(&string).map_err(de::Error::custom)?;
+        let decoded = base64::decode(string).map_err(de::Error::custom)?;
         let bytes = Bytes::from(decoded);
         Cert::decode(bytes).map_err(de::Error::custom)
     }

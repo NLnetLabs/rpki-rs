@@ -1457,7 +1457,7 @@ impl encode::PrimitiveContent for Prefix {
             target.write_all(&addr[..(self.len / 8) as usize])
         }
         else {
-            target.write_all(&[(8 - self.len % 8) as u8])?;
+            target.write_all(&[8 - (self.len % 8)])?;
             target.write_all(&addr[..(self.len / 8 + 1) as usize])
         }
     }
