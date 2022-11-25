@@ -1744,7 +1744,8 @@ impl TbsCert {
                 *basic_ca = Some(cons.take_opt_bool()?.unwrap_or(false));
                 if cons.take_opt_u64()?.is_some() {
                     Err(cons.content_err(
-                        "Basic Constraints extension most not use pathLenConstraint"
+                        "Basic Constraints extension most not use \
+                         pathLenConstraint"
                     ))
                 } else {
                     Ok(())
