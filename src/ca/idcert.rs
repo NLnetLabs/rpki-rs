@@ -479,7 +479,7 @@ impl TbsIdCert {
                         let value = OctetString::take_from(cons)?;
                         Mode::Der.decode(value.into_source(), |content| {
                             if id == oid::CE_BASIC_CONSTRAINTS {
-                                TbsCert::take_basic_constraints(
+                                TbsIdCert::take_basic_constraints(
                                     content, &mut basic_ca
                                 )
                             } else if id == oid::CE_SUBJECT_KEY_IDENTIFIER {
@@ -525,6 +525,32 @@ impl TbsIdCert {
                 authority_key_id,
             })
         })
+    }
+
+    /// Parses the Basic Constraints extension.
+    ///
+    /// ```text
+    /// BasicConstraints        ::= SEQUENCE {
+    ///     cA                      BOOLEAN DEFAULT FALSE,
+    ///     pathLenConstraint       INTEGER (0..MAX) OPTIONAL
+    /// }
+    /// ```
+    /// Contrary to RFC 6487 the pathLenConstraint is not forbidden
+    /// in identity certificates.
+    fn take_basic_constraints<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+        basic_ca: &mut Option<bool>,
+    ) -> Result<(), DecodeError<S::Error>> {
+        if basic_ca.is_some() {
+            Err(cons.content_err("duplicate Basic Constraints extension"))
+        }
+        else {
+            cons.take_sequence(|cons| {
+                *basic_ca = Some(cons.take_opt_bool()?.unwrap_or(false));
+                let _path_len_constraint = cons.take_opt_u64()?;
+                Ok(())
+            })
+        }
     }
 
     /// Parses the Authority Key Identifier extension.
