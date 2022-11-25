@@ -721,6 +721,7 @@ impl Time {
         Self::years_from_date(years, Utc::now())
     }
 
+    #[allow(deprecated)]
     pub fn utc(
         year: i32, month: u32, day: u32, hour: u32, min: u32, sec: u32
     ) -> Self {
@@ -826,6 +827,7 @@ impl Time {
         })
     }
 
+    #[allow(deprecated)]
     fn from_parts(
         parts: (i32, u32, u32, u32, u32, u32)
     ) -> Result<Self, ContentError> {
