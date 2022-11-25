@@ -755,7 +755,7 @@ impl RequestResourceLimit {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.asn == None && self.ipv4 == None && self.ipv6 == None
+        self.asn.is_none() && self.ipv4.is_none() && self.ipv6.is_none()
     }
 
     pub fn with_asn(&mut self, asn: AsBlocks) {
