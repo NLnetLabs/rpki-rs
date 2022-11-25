@@ -277,7 +277,7 @@ where
         use serde::de;
 
         let string = String::deserialize(deserializer)?;
-        let decoded = base64::decode(&string).map_err(de::Error::custom)?;
+        let decoded = base64::decode(string).map_err(de::Error::custom)?;
         let bytes = bytes::Bytes::from(decoded);
         Csr::decode(bytes).map_err(de::Error::custom)
     }

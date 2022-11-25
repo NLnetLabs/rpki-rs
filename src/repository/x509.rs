@@ -280,7 +280,7 @@ impl<'de> serde::Deserialize<'de> for Name {
         use serde::de;
 
         let string = String::deserialize(deserializer)?;
-        let decoded = base64::decode(&string).map_err(de::Error::custom)?;
+        let decoded = base64::decode(string).map_err(de::Error::custom)?;
         let bytes = bytes::Bytes::from(decoded);
 
         Mode::Der.decode(bytes, Name::take_from).map_err(de::Error::custom)

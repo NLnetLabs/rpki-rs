@@ -375,7 +375,7 @@ impl<'de> serde::Deserialize<'de> for PublicKey {
         use bcder::decode::IntoSource;
 
         let string = String::deserialize(deserializer)?;
-        let decoded = base64::decode(&string).map_err(de::Error::custom)?;
+        let decoded = base64::decode(string).map_err(de::Error::custom)?;
         let bytes = Bytes::from(decoded);
         PublicKey::decode(bytes.into_source()).map_err(de::Error::custom)
     }
