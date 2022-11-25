@@ -464,7 +464,7 @@ impl TbsIdCert {
             let subject_public_key_info = PublicKey::take_from(cons)?;
 
             // There may, or may not, be extensions.
-            
+
             // issuerUniqueID and subjectUniqueID is not expected as it must
             // not be present in resource certificates. So extension is next.
             let mut basic_ca = None;
@@ -509,7 +509,6 @@ impl TbsIdCert {
                     Ok(())
                 })
             })?;
-
 
             Ok(TbsIdCert {
                 serial_number,
