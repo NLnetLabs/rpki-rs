@@ -402,7 +402,7 @@ impl<Sock: Socket, Source: PayloadSource> Connection<Sock, Source> {
                     self.version(), state, timing
                 ).write(&mut self.sock).await?;
                 self.sock.flush().await?;
-                self.sock.update(state, true);
+                self.sock.update(state, false);
                 Ok(())
             }
             None => {
