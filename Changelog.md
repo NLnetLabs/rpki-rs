@@ -9,10 +9,13 @@ New
 Bug Fixes
 
 * RTR server: Report the right type of query in Socket::update. ([#239])
+* Allow pathLenConstraint in Basic Constraints extension in ID
+  certificates. ([#241])
 
 Other Changes
 
 [#239]: https://github.com/NLnetLabs/rpki-rs/pull/239
+[#241]: https://github.com/NLnetLabs/rpki-rs/pull/241
 
 
 ## 0.15.8
