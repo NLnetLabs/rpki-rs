@@ -8,7 +8,11 @@ New
 
 Bug Fixes
 
+* RTR server: Report the right type of query in Socket::update. ([#239])
+
 Other Changes
+
+[#239]: https://github.com/NLnetLabs/rpki-rs/pull/239
 
 
 ## 0.15.8
