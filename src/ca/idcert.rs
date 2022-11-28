@@ -479,7 +479,7 @@ impl TbsIdCert {
                         let value = OctetString::take_from(cons)?;
                         Mode::Der.decode(value.into_source(), |content| {
                             if id == oid::CE_BASIC_CONSTRAINTS {
-                                TbsIdCert::take_basic_constraints(
+                                Self::take_basic_constraints(
                                     content, &mut basic_ca
                                 )
                             } else if id == oid::CE_SUBJECT_KEY_IDENTIFIER {
@@ -487,7 +487,7 @@ impl TbsIdCert {
                                     content, &mut subject_key_id
                                 )
                             } else if id == oid::CE_AUTHORITY_KEY_IDENTIFIER {
-                                TbsIdCert::take_authority_key_identifier(
+                                Self::take_authority_key_identifier(
                                     content,
                                     &mut authority_key_id,
                                 )
