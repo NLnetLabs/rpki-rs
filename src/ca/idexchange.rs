@@ -702,12 +702,13 @@ impl ParentResponse {
         writer.done()
     }
 
-    /// Validates and return the IdCert if it is correct and valid.
+    /// Validates the IdCert and returns it if it is valid.
     pub fn validate(&self) -> Result<IdCert, Error> {
         self.validate_at(Time::now())
     }
 
-    fn validate_at(&self, when: Time) -> Result<IdCert, Error> {
+    /// Validates the IdCert at the given date, and returns it if it is valid.
+    pub fn validate_at(&self, when: Time) -> Result<IdCert, Error> {
         validate_idcert_at(&self.id_cert, when)
     }
 
@@ -1312,6 +1313,20 @@ mod tests {
             ParentResponse::parse(re_encoded_xml.as_bytes()).unwrap();
 
         assert_eq!(req, re_decoded);
+    }
+
+    #[test]
+    fn afrinic_parent_response_codec() {
+        let xml = include_str!("../../test-data/ca/rfc8183/afrinic-parent-response.xml");
+        let req = ParentResponse::parse(xml.as_bytes()).unwrap();
+
+        let re_encoded_xml = req.to_xml_string();
+        let re_decoded =
+            ParentResponse::parse(re_encoded_xml.as_bytes()).unwrap();
+
+        assert_eq!(req, re_decoded);
+
+        let _ta_cert = req.validate().unwrap();
     }
 
     #[test]

@@ -1737,15 +1737,19 @@ impl TbsCert {
         basic_ca: &mut Option<bool>,
     ) -> Result<(), DecodeError<S::Error>> {
         if basic_ca.is_some() {
-            Err(cons.content_err("duplicate Basic Contraints extension"))
+            Err(cons.content_err("duplicate Basic Constraints extension"))
         }
         else {
-            *basic_ca = Some(
-                cons.take_sequence(|cons| {
-                    cons.take_opt_bool()
-                })?.unwrap_or(false)
-            );
-            Ok(())
+           cons.take_sequence(|cons| {
+                *basic_ca = Some(cons.take_opt_bool()?.unwrap_or(false));
+                if cons.take_opt_u64()?.is_some() {
+                    Err(cons.content_err(
+                        "pathLenConstraint in Basic Constraints extension"
+                    ))
+                } else {
+                    Ok(())
+                }
+            })
         }
     }
 
