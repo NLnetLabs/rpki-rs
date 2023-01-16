@@ -1,18 +1,14 @@
 # Changelog
 
-## Unreleased future version
+## 0.15.9
 
-Breaking Changes
-
-New
+Released 2023-01-16.
 
 Bug Fixes
 
-* RTR server: Report the right type of query in Socket::update. ([#239])
-* Allow pathLenConstraint in Basic Constraints extension in ID
+* RTR server: Report the right type of query in `Socket::update`. ([#239])
+* Allow `pathLenConstraint` in Basic Constraints extension in ID
   certificates. ([#241])
-
-Other Changes
 
 [#239]: https://github.com/NLnetLabs/rpki-rs/pull/239
 [#241]: https://github.com/NLnetLabs/rpki-rs/pull/241
