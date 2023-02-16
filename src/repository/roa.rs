@@ -347,7 +347,7 @@ impl RoaIpAddress {
         self.prefix.range()
     }
 
-    pub fn max_length(&self) -> Option<u8> {
+    pub fn max_length(self) -> Option<u8> {
         self.max_length
     }
 }
