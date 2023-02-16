@@ -150,7 +150,7 @@ impl<Listener, Source> Server<Listener, Source> {
         Source: PayloadSource,
     {
         while let Some(sock) = self.listener.next().await {
-            let _ = spawn(
+            spawn(
                 Connection::new(
                     sock?, self.notify.subscribe(), self.source.clone()
                 ).run()
