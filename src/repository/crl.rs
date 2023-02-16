@@ -722,7 +722,7 @@ impl CrlStore {
 
     /// Returns a reference to a CRL if it is available in the store.
     pub fn get(&self, uri: &uri::Rsync) -> Option<&Crl> {
-        for &(ref stored_uri, ref crl) in &self.crls {
+        for (stored_uri, crl) in &self.crls {
             if *stored_uri == *uri {
                 return Some(crl)
             }

@@ -2039,7 +2039,7 @@ impl TbsCert {
             *overclaim = Some(
                 cons.take_sequence(|cons| {
                     cons.take_sequence(|cons| {
-                        let res = Overclaim::from_policy::<S>(
+                        let res = Overclaim::from_policy(
                             &Oid::take_from(cons)?
                         ).map_err(|err| cons.content_err(err))?;
 
@@ -2561,7 +2561,7 @@ pub enum Overclaim {
 }
 
 impl Overclaim {
-    fn from_policy<S: decode::Source>(
+    fn from_policy(
         oid: &Oid
     ) -> Result<Self, ContentError> {
         if oid == &oid::CP_IPADDR_ASNUMBER {
