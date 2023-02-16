@@ -6,9 +6,13 @@ Breaking Changes
 
 New
 
+* Added `RoaIpAddress::max_length`. (#245])
+
 Bug Fixes
 
 Other Changes
+
+[#245]: https://github.com/NLnetLabs/rpki-rs/pull/245
 
 
 ## 0.15.9
