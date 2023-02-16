@@ -346,6 +346,10 @@ impl RoaIpAddress {
     pub fn range(self) -> (Addr, Addr) {
         self.prefix.range()
     }
+
+    pub fn max_length(&self) -> Option<u8> {
+        self.max_length
+    }
 }
 
 impl RoaIpAddress {
