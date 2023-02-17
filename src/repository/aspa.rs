@@ -159,6 +159,14 @@ impl AsProviderAttestation {
             &self.provider_as_set.0,
         ))
     }
+
+    pub fn customer_as(&self) -> Asn {
+        self.customer_as
+    }
+
+    pub fn provider_as_set(&self) -> &ProviderAsSet {
+        &self.provider_as_set
+    }
 }
 
 
