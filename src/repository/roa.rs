@@ -22,8 +22,8 @@ use super::sigobj::{SignedObject, SignedObjectBuilder};
 
 #[derive(Clone, Debug)]
 pub struct Roa {
-    signed: SignedObject,
-    content: RouteOriginAttestation,
+    pub signed: SignedObject,
+    pub content: RouteOriginAttestation,
 }
 
 impl Roa {
