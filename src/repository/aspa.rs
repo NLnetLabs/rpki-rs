@@ -26,8 +26,8 @@ use super::sigobj::{SignedObject, SignedObjectBuilder};
 //------------ Aspa ----------------------------------------------------------
 #[derive(Clone, Debug)]
 pub struct Aspa {
-    signed: SignedObject,
-    content: AsProviderAttestation,
+    pub signed: SignedObject,
+    pub content: AsProviderAttestation,
 }
 
 impl Aspa {
