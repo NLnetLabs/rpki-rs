@@ -68,7 +68,6 @@ impl Roa {
         self.signed.cert()
     }
 
-
     /// Returns a reference to the content of the ROA object
     pub fn content(&self) -> &RouteOriginAttestation {
         &self.content
