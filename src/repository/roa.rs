@@ -22,8 +22,8 @@ use super::sigobj::{SignedObject, SignedObjectBuilder};
 
 #[derive(Clone, Debug)]
 pub struct Roa {
-    pub signed: SignedObject,
-    pub content: RouteOriginAttestation,
+    signed: SignedObject,
+    content: RouteOriginAttestation,
 }
 
 impl Roa {
@@ -66,6 +66,12 @@ impl Roa {
     /// Returns a reference to the EE certificate of this ROA.
     pub fn cert(&self) -> &Cert {
         self.signed.cert()
+    }
+
+
+    /// Returns a reference to the content of the ROA object
+    pub fn content(&self) -> &RouteOriginAttestation {
+        &self.content
     }
 }
 

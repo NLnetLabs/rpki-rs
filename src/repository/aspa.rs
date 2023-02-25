@@ -26,8 +26,8 @@ use super::sigobj::{SignedObject, SignedObjectBuilder};
 //------------ Aspa ----------------------------------------------------------
 #[derive(Clone, Debug)]
 pub struct Aspa {
-    pub signed: SignedObject,
-    pub content: AsProviderAttestation,
+    signed: SignedObject,
+    content: AsProviderAttestation,
 }
 
 impl Aspa {
@@ -70,6 +70,11 @@ impl Aspa {
     /// Returns a reference to the EE certificate of this ROA.
     pub fn cert(&self) -> &Cert {
         self.signed.cert()
+    }
+
+    /// Returns a reference to the content of the ASPA object
+    pub fn content(&self) -> &AsProviderAttestation {
+        &self.content
     }
 }
 
