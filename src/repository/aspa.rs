@@ -71,6 +71,11 @@ impl Aspa {
     pub fn cert(&self) -> &Cert {
         self.signed.cert()
     }
+
+    /// Returns a reference to the content of the ASPA object
+    pub fn content(&self) -> &AsProviderAttestation {
+        &self.content
+    }
 }
 
 
