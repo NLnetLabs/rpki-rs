@@ -6,13 +6,17 @@ Breaking Changes
 
 New
 
-* Added `RoaIpAddress::max_length`. (#245])
+* Added `RoaIpAddress::max_length`. ([#245])
+* Added `content` methods to `Roa` and `Aspa` allowing access to the
+  content before validation. ([#248] by [@digizeph])
 
 Bug Fixes
 
 Other Changes
 
 [#245]: https://github.com/NLnetLabs/rpki-rs/pull/245
+[#248]: https://github.com/NLnetLabs/rpki-rs/pull/248
+[@digizeph]: https://github.com/digizeph
 
 
 ## 0.15.9
