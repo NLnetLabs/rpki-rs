@@ -1,18 +1,14 @@
 # Changelog
 
-## Unreleased next version
+## 0.15.10
 
-Breaking Changes
+Released 2023-02-28.
 
 New
 
 * Added `RoaIpAddress::max_length`. ([#245])
 * Added `content` methods to `Roa` and `Aspa` allowing access to the
   content before validation. ([#248] by [@digizeph])
-
-Bug Fixes
-
-Other Changes
 
 [#245]: https://github.com/NLnetLabs/rpki-rs/pull/245
 [#248]: https://github.com/NLnetLabs/rpki-rs/pull/248
