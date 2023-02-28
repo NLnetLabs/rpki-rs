@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased next version
+
+Breaking changes
+
+New
+
+Bug fixes
+
+Other changes
+
+
 ## 0.15.10
 
 Released 2023-02-28.
