@@ -501,6 +501,18 @@ impl ManifestHash {
     pub fn as_slice(&self) -> &[u8] {
         self.hash.as_ref()
     }
+
+    /// Hex encodes the hash value for reporting purposes.
+    /// Note that this matches the hex encoded hashes used in RRDP.
+    pub fn hex_encode(&self) -> String {
+        use core::fmt::Write;
+        
+        let mut s = String::with_capacity(2 * self.hash.len());
+        for byte in self.as_slice() {
+            write!(s, "{byte:02X}").unwrap();
+        }
+        s
+    }
 }
 
 
