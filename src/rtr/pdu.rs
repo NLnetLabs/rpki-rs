@@ -12,6 +12,7 @@ use std::marker::Unpin;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use bytes::Bytes;
 use routecore::addr::{MaxLenPrefix, Prefix};
+use routecore::asn::Asn;
 use tokio::io::{
     AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt
 };
@@ -183,7 +184,7 @@ macro_rules! concrete {
 //------------ SerialNotify --------------------------------------------------
 
 /// A serial notify informs a client that a cache has new data.
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[repr(packed)]
 #[allow(dead_code)]
 pub struct SerialNotify {
@@ -212,7 +213,7 @@ concrete!(SerialNotify);
 //------------ SerialQuery ---------------------------------------------------
 
 /// A serial query requests all updates since a router’s last update.
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[repr(packed)]
 #[allow(dead_code)]
 pub struct SerialQuery {
@@ -243,7 +244,7 @@ concrete!(SerialQuery);
 /// The payload of a serial query.
 ///
 /// This the serial query PDU without the header.
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[repr(packed)]
 pub struct SerialQueryPayload {
     serial: u32
@@ -278,7 +279,7 @@ common!(SerialQueryPayload);
 //------------ ResetQuery ----------------------------------------------------
 
 /// A reset query requests the complete current set of data.
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[repr(packed)]
 pub struct ResetQuery {
     header: Header
@@ -302,7 +303,7 @@ concrete!(ResetQuery);
 //------------ CacheResponse -------------------------------------------------
 
 /// The cache response starts a sequence of payload PDUs with data.
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[repr(packed)]
 pub struct CacheResponse {
     header: Header
@@ -326,7 +327,7 @@ concrete!(CacheResponse);
 //------------ Ipv4Prefix ----------------------------------------------------
 
 /// An IPv4 prefix is the payload PDU for route origin authorisation in IPv4.
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[repr(packed)]
 #[allow(dead_code)]
 pub struct Ipv4Prefix {
@@ -350,7 +351,7 @@ impl Ipv4Prefix {
         prefix_len: u8,
         max_len: u8,
         prefix: Ipv4Addr,
-        asn: u32
+        asn: Asn,
     ) -> Self {
         Ipv4Prefix {
             header: Header::new(version, Self::PDU, 0, 20),
@@ -359,7 +360,7 @@ impl Ipv4Prefix {
             max_len,
             zero: 0,
             prefix: u32::from(prefix).to_be(),
-            asn: asn.to_be()
+            asn: asn.into_u32().to_be()
         }
     }
 
@@ -387,8 +388,8 @@ impl Ipv4Prefix {
     }
 
     /// Returns the autonomous system number.
-    pub fn asn(&self) -> u32 {
-        u32::from_be(self.asn)
+    pub fn asn(&self) -> Asn {
+        u32::from_be(self.asn).into()
     }
 }
 
@@ -398,7 +399,7 @@ concrete!(Ipv4Prefix);
 //------------ Ipv6Prefix ----------------------------------------------------
 
 /// An IPv6 prefix is the payload PDU for route origin authorisation in IPv46.
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[repr(packed)]
 #[allow(dead_code)]
 pub struct Ipv6Prefix {
@@ -422,7 +423,7 @@ impl Ipv6Prefix {
         prefix_len: u8,
         max_len: u8,
         prefix: Ipv6Addr,
-        asn: u32
+        asn: Asn,
     ) -> Self {
         Ipv6Prefix {
             header: Header::new(version, Self::PDU, 0, 32),
@@ -431,7 +432,7 @@ impl Ipv6Prefix {
             max_len,
             zero: 0,
             prefix: u128::from(prefix).to_be(),
-            asn: asn.to_be()
+            asn: asn.into_u32().to_be()
         }
     }
 
@@ -459,8 +460,8 @@ impl Ipv6Prefix {
     }
 
     /// Returns the autonomous system number.
-    pub fn asn(&self) -> u32 {
-        u32::from_be(self.asn)
+    pub fn asn(&self) -> Asn {
+        u32::from_be(self.asn).into()
     }
 }
 
@@ -470,12 +471,13 @@ concrete!(Ipv6Prefix);
 //------------ RouterKey -----------------------------------------------------
 
 /// A BGPsec router key.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct RouterKey {
     fixed: RouterKeyFixed,
     key_info: RouterKeyInfo,
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[repr(packed)]
 struct RouterKeyFixed {
     header: Header,
@@ -502,7 +504,7 @@ impl RouterKey {
         version: u8,
         flags: u8,
         key_identifier: [u8; 20],
-        asn: u32,
+        asn: Asn,
         key_info: RouterKeyInfo,
     ) -> Self {
         // We know it fits but let’s be sure.
@@ -520,7 +522,7 @@ impl RouterKey {
                     len
                 ),
                 key_identifier,
-                asn: asn.to_be(),
+                asn: asn.into_u32().to_be(),
             },
             key_info
         }
@@ -555,8 +557,8 @@ impl RouterKey {
     }
 
     /// Returns the ASN.
-    pub fn asn(&self) -> u32 {
-        u32::from_be(self.fixed.asn)
+    pub fn asn(&self) -> Asn {
+        u32::from_be(self.fixed.asn).into()
     }
 
     /// Returns a reference to the subject key info
@@ -585,28 +587,14 @@ impl RouterKey {
     pub async fn read<Sock: AsyncRead + Unpin>(
         sock: &mut Sock 
     ) -> Result<Self, io::Error> {
-        let mut fixed = RouterKeyFixed::default();
-        sock.read_exact(fixed.header.as_mut()).await?;
-        if fixed.header.pdu() != Self::PDU {
+        let header = Header::read(sock).await?;
+        if header.pdu() != Self::PDU {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "PDU type mismatch when expecting router key"
             ))
         }
-        let info_len = match
-            (fixed.header.length() as usize).checked_sub(fixed.as_ref().len())
-        {
-            Some(len) => len,
-            None => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "invalid length for router key"
-                ))
-            }
-        };
-        sock.read_exact(&mut fixed.as_mut()[Header::LEN..]).await?;
-        let key_info = RouterKeyInfo::read(sock, info_len).await?;
-        Ok(RouterKey { fixed, key_info })
+        Self::read_payload(header, sock).await
     }
 
     /// Reads only the payload part of a value from a reader.
@@ -614,9 +602,7 @@ impl RouterKey {
         header: Header, sock: &mut Sock
     ) -> Result<Self, io::Error> {
         let info_len = match
-            (header.length() as usize).checked_sub(
-                mem::size_of::<RouterKeyFixed>()
-            )
+            header.pdu_len()?.checked_sub(mem::size_of::<RouterKeyFixed>())
         {
             Some(len) => len,
             None => {
@@ -627,6 +613,7 @@ impl RouterKey {
             }
         };
         let mut fixed = RouterKeyFixed::default();
+        fixed.header = header;
         sock.read_exact(&mut fixed.as_mut()[Header::LEN..]).await?;
         let key_info = RouterKeyInfo::read(sock, info_len).await?;
         Ok(RouterKey { fixed, key_info })
@@ -780,9 +767,256 @@ impl fmt::Debug for RouterKeyInfo{
 }
 
 
+//------------ Aspa ----------------------------------------------------------
+
+/// The PDU for ASPA.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Aspa {
+    fixed: AspaFixed,
+    providers: ProviderAsns,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+#[repr(packed)]
+struct AspaFixed {
+    header: Header,
+    flags: u8,
+    afi_flags: u8,
+
+    #[allow(dead_code)]
+    provider_count: u16,
+    customer: u32,
+}
+
+impl Aspa {
+    /// The PDU type of an ASPA PDU.
+    pub const PDU: u8 = 11;
+
+    /// Creates a new ASPA PDU.
+    ///
+    /// # Panics
+    ///
+    ///
+    /// This function panics if the length of the resulting PDU doesn’t fit
+    /// in a `u32`.
+    pub fn new(
+        version: u8,
+        flags: u8,
+        afi: payload::Afi,
+        customer: Asn,
+        providers: ProviderAsns,
+    ) -> Self {
+        let len = u32::try_from(
+            mem::size_of::<AspaFixed>().checked_add(
+                providers.len()
+            ).expect("ASPA RTR PDU size overflow")
+        ).expect("ASPA RTR PDU size overflow");
+        Aspa {
+            fixed: AspaFixed {
+                header: Header::new(version, Self::PDU, 0, len),
+                flags,
+                afi_flags: afi.into_u8(),
+                provider_count: providers.asn_count().to_be(),
+                customer: customer.into_u32().to_be(),
+            },
+            providers
+        }
+    }
+
+    /// Returns the value of the version field of the header.
+    pub fn version(&self) -> u8 {
+        self.fixed.header.version()
+    }
+
+    /// Returns the PDU size.
+    ///
+    /// The size is returned as a `u32` since that type is used in
+    /// the header.
+    pub fn size(&self) -> u32 {
+        u32::try_from(
+            mem::size_of::<AspaFixed>() + self.providers.len()
+        ).expect("long ASPA PDU")
+    }
+
+    /// Returns the flags field.
+    ///
+    /// The only flag currently used is the least significant bit that is
+    /// 1 for an announcement and 0 for a withdrawal.
+    pub fn flags(&self) -> u8 {
+        self.fixed.flags
+    }
+
+    /// Returns the AFI field.
+    pub fn afi(&self) -> payload::Afi {
+        payload::Afi::from_u8(self.fixed.afi_flags)
+    }
+
+    /// Returns the customer ASN.
+    pub fn customer(&self) -> Asn {
+        u32::from_be(self.fixed.customer).into()
+    }
+
+    /// Returns a reference to the provider ASNs.
+    pub fn providers(&self) -> &ProviderAsns {
+        &self.providers
+    }
+
+    /// Converts the PDU into the provider ASNs.
+    pub fn into_providers(self) -> ProviderAsns {
+        self.providers
+    }
+
+    /// Writes a value to a writer.
+    pub async fn write<A: AsyncWrite + Unpin>(
+        &self,
+        a: &mut A
+    ) -> Result<(), io::Error> {
+        a.write_all(self.fixed.as_ref()).await?;
+        a.write_all(self.providers.as_ref()).await
+    }
+
+    /// Reads a value from a reader.
+    ///
+    /// If a value with a different PDU type is received, returns an
+    /// error.
+    pub async fn read<Sock: AsyncRead + Unpin>(
+        sock: &mut Sock 
+    ) -> Result<Self, io::Error> {
+        let header = Header::read(sock).await?;
+        if header.pdu() != Self::PDU {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "PDU type mismatch when expecting ASPA PDU"
+            ))
+        }
+        Self::read_payload(header, sock).await
+    }
+
+    /// Reads only the payload part of a value from a reader.
+    pub async fn read_payload<Sock: AsyncRead + Unpin>(
+        header: Header, sock: &mut Sock
+    ) -> Result<Self, io::Error> {
+        let provider_len = match
+            header.pdu_len()?.checked_sub(mem::size_of::<AspaFixed>())
+        {
+            Some(len) => len,
+            None => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "invalid length for ASPA PDU"
+                ))
+            }
+        };
+        eprintln!("{}", provider_len);
+        let mut fixed = AspaFixed::default();
+        fixed.header = header;
+        sock.read_exact(&mut fixed.as_mut()[Header::LEN..]).await?;
+        if provider_len
+            != usize::from(
+                u16::from_be(fixed.provider_count)
+            ) * mem::size_of::<u32>()
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid length for ASPA PDU"
+            ))
+        }
+        let providers = ProviderAsns::read(sock, provider_len).await?;
+        Ok(Aspa { fixed, providers })
+    }
+}
+
+impl AsRef<[u8]> for AspaFixed {
+    fn as_ref(&self) -> &[u8] {
+        unsafe {
+            slice::from_raw_parts(
+                self as *const Self as *const u8,
+                mem::size_of::<Self>()
+            )
+        }
+    }
+}
+
+impl AsMut<[u8]> for AspaFixed {
+    fn as_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            slice::from_raw_parts_mut(
+                self as *mut Self as *mut u8,
+                mem::size_of::<Self>()
+            )
+        }
+    }
+}
+
+
+//------------ ProviderAsns --------------------------------------------------
+
+/// The provider ASNs of an ASPA PDU.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ProviderAsns(Bytes);
+
+impl ProviderAsns {
+    /// The maximum length in octets for a valid value.
+    const MAX_LEN: usize = (u16::MAX as usize) * mem::size_of::<u32>();
+
+    /// Creates a new value from an iterator over ASNs.
+    ///
+    /// # Panics
+    ///
+    /// The function panics if the iterator produces more than 65,535 items.
+    pub fn from_asns(iter: impl IntoIterator<Item = Asn>) -> Self {
+        let iter = iter.into_iter();
+        let mut providers = Vec::with_capacity(iter.size_hint().0);
+        iter.into_iter().for_each(|item| {
+            providers.extend_from_slice(&item.into_u32().to_be_bytes());
+        });
+        assert!(providers.len() <= Self::MAX_LEN);
+        ProviderAsns(providers.into())
+    }
+
+    pub fn asn_count(&self) -> u16 {
+        u16::try_from(
+            self.0.len() / mem::size_of::<u32>()
+        ).expect("ASPA RTR PDU size overflow")
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = Asn> + '_ {
+        self.0.as_ref().chunks(mem::size_of::<u32>()).map(|chunk| {
+            u32::from_be_bytes(
+                TryFrom::try_from(chunk).expect("bad ASPA RDU size")
+            ).into()
+        })
+    }
+
+    /// Reads a value of the given length from the buffer.
+    async fn read<Sock: AsyncRead + Unpin>(
+        sock: &mut Sock, len: usize,
+    ) -> Result<Self, io::Error> {
+        let mut providers = vec![0u8; len];
+        sock.read_exact(providers.as_mut()).await?;
+        Ok(ProviderAsns(providers.into()))
+    }
+}
+
+impl AsRef<[u8]> for ProviderAsns {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+
 //------------ Payload -------------------------------------------------------
 
 /// All possible payload types.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[non_exhaustive]
 pub enum Payload {
     /// An IPv4 prefix.
@@ -793,10 +1027,13 @@ pub enum Payload {
 
     /// A router key.
     RouterKey(RouterKey),
+
+    /// An ASPA unit.
+    Aspa(Aspa),
 }
 
 impl Payload {
-    /// Creates an payload value for the given payload.
+    /// Creates a payload PDU for the given payload.
     pub fn new(version: u8, flags: u8, payload: &payload::Payload) -> Self {
         match payload {
             payload::Payload::Origin(origin) => {
@@ -831,6 +1068,29 @@ impl Payload {
                     key.key_info.clone()
                 ))
             }
+            payload::Payload::Aspa(aspa) => {
+                Payload::Aspa(Aspa::new(
+                    version, flags,
+                    aspa.afi, aspa.customer, aspa.providers.clone()
+                ))
+            }
+        }
+    }
+
+    /// Creates a payload PDU if it is supported in the given version.
+    pub fn new_if_supported(
+        version: u8, flags: u8, payload: &payload::Payload
+    ) -> Option<Self> {
+        let min_version = match payload {
+            payload::Payload::Origin(_) => 0,
+            payload::Payload::RouterKey(_) => 1,
+            payload::Payload::Aspa(_) => 2,
+        };
+        if min_version > version {
+            None
+        }
+        else {
+            Some(Self::new(version, flags, payload))
         }
     }
 
@@ -845,8 +1105,9 @@ impl Payload {
     /// received, an error is returned.
     ///
     /// The reason we are just not returning unsupported payload types is that
-    /// router keys are variable length and we would need to allocate data.
-    /// Which is a bit wasteful if we then just proceed to throw it away.
+    /// router keys and ASPA PDUs are variable length and we would need to
+    /// allocate data. Which is a bit wasteful if we then just proceed to
+    /// throw it away.
     pub async fn read<Sock: AsyncRead + Unpin>(
         sock: &mut Sock
     ) -> Result<Result<Option<Self>, EndOfData>, io::Error> {
@@ -867,6 +1128,11 @@ impl Payload {
                     Ok(Some(Payload::RouterKey(res)))
                 })
             }
+            Aspa::PDU => {
+                Aspa::read_payload(header, sock).await.map(|res| {
+                    Ok(Some(Payload::Aspa(res)))
+                })
+            }
             EndOfData::PDU => {
                 EndOfData::read_payload(header, sock).await.map(Err)
             }
@@ -885,6 +1151,7 @@ impl Payload {
             Payload::V4(ref data) => data.version(),
             Payload::V6(ref data) => data.version(),
             Payload::RouterKey(ref key) => key.version(),
+            Payload::Aspa(ref aspa) => aspa.version(),
         }
     }
 
@@ -894,6 +1161,7 @@ impl Payload {
             Payload::V4(ref data) => data.flags(),
             Payload::V6(ref data) => data.flags(),
             Payload::RouterKey(ref key) => key.flags(),
+            Payload::Aspa(ref aspa) => aspa.flags(),
         }
     }
 
@@ -906,6 +1174,7 @@ impl Payload {
             Payload::V4(ref data) => data.write(a).await,
             Payload::V6(ref data) => data.write(a).await,
             Payload::RouterKey(ref data) => data.write(a).await,
+            Payload::Aspa(ref aspa) => aspa.write(a).await,
         }
     }
 
@@ -947,6 +1216,12 @@ impl Payload {
                         key.key_info().clone()
                     ))
                 }
+                Payload::Aspa(aspa) => {
+                    Ok(payload::Payload::aspa(
+                        aspa.customer(), aspa.afi(),
+                        aspa.providers().clone()
+                    ))
+                }
             }
         }
 
@@ -966,6 +1241,7 @@ impl Payload {
             Payload::V4(ref prefix) => prefix.as_ref(),
             Payload::V6(ref prefix) => prefix.as_ref(),
             Payload::RouterKey(ref key) => key.fixed.as_ref(),
+            Payload::Aspa(ref aspa) => aspa.fixed.as_ref(),
         }
     }
 }
@@ -978,6 +1254,7 @@ impl Payload {
 /// This PDU differs between version 0 and 1 of RTR. Consequently, this
 /// generic version is an enum that can be both, depending on the version
 /// requested.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum EndOfData {
     V0(EndOfDataV0),
     V1(EndOfDataV1),
@@ -1104,7 +1381,7 @@ impl AsMut<[u8]> for EndOfData {
 /// End-of-data marks the end of sequence of payload PDUs.
 ///
 /// This type is the version used in protocol version 0.
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[repr(packed)]
 pub struct EndOfDataV0 {
     header: Header,
@@ -1137,7 +1414,7 @@ concrete!(EndOfDataV0);
 /// End-of-data marks the end of sequence of payload PDUs.
 ///
 /// This type is the version used beginning with protocol version 1.
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[repr(packed)]
 pub struct EndOfDataV1 {
     header: Header,
@@ -1191,7 +1468,7 @@ concrete!(EndOfDataV1);
 /// If a cache doesn’t have information available that reaches back to the
 /// serial number indicated in the serial query, it responds with a cache
 /// reset.
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[repr(packed)]
 pub struct CacheReset {
     header: Header
@@ -1220,7 +1497,7 @@ concrete!(CacheReset);
 /// PDU and some diagnostic error text. Because of this, values of this type
 /// are not fixed size byte arrays but rather are allocated according to the
 /// contents of these two fields.
-#[derive(Default)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Error {
     octets: Vec<u8>,
 }
@@ -1305,7 +1582,7 @@ impl AsMut<[u8]> for Error {
 //------------ Header --------------------------------------------------------
 
 /// The header portion of an RTR PDU.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[repr(packed)]
 pub struct Header {
     /// The version of the PDU.
@@ -1363,11 +1640,24 @@ impl Header {
         u16::from_be(self.session)
     }
 
-    /// Returns the length of the PDU.
+    /// Returns the length of the PDU as a `u32`.
     ///
     /// This is the length of the full PDU including the header.
     pub fn length(self) -> u32 {
         u32::from_be(self.length)
+    }
+
+    /// Returns the length of the PDU as a `usize`.
+    ///
+    /// Since at least in theory `usize` may only be 16 bit long, the
+    /// conversion can fail.
+    pub fn pdu_len(self) -> Result<usize, io::Error> {
+        usize::try_from(self.length()).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "PDU too large for this system to handle",
+            )
+        })
     }
 }
 
@@ -1387,4 +1677,164 @@ impl fmt::Display for KeyInfoError {
 }
 
 impl error::Error for KeyInfoError { }
+
+
+//============ Tests =========================================================
+
+#[cfg(all(test, feature = "tokio"))]
+mod test {
+    use super::*;
+
+    const STATE: State = State::from_parts(0x1234, Serial(0xdead_beef));
+
+    macro_rules! read_write {
+        ( $ty:ident, $value:expr, $binary:expr $(,)? ) => {{
+            let mut written = Vec::new();
+            $value.write(&mut written).await.unwrap();
+            assert_eq!(written, $binary);
+            assert_eq!(
+                $ty::read(&mut written.as_slice()).await.unwrap(),
+                $value
+            );
+        }}
+    }
+
+    #[tokio::test]
+    async fn read_write_serial_notify() {
+        read_write!(
+            SerialNotify,
+            SerialNotify::new(1, STATE),
+            [0x01, 0x00, 0x12, 0x34,   0, 0, 0, 12,   0xde, 0xad, 0xbe, 0xef]
+        );
+    }
+
+    #[tokio::test]
+    async fn read_write_serial_query() {
+        read_write!(
+            SerialQuery,
+            SerialQuery::new(1, STATE),
+            [0x01, 0x01, 0x12, 0x34,   0, 0, 0, 12,   0xde, 0xad, 0xbe, 0xef]
+        );
+    }
+
+    #[tokio::test]
+    async fn read_write_reset_query() {
+        read_write!(
+            ResetQuery,
+            ResetQuery::new(1),
+            [0x01, 0x02, 0, 0,   0, 0, 0, 8]
+        );
+    }
+
+    #[tokio::test]
+    async fn read_write_cache_response() {
+        read_write!(
+            CacheResponse,
+            CacheResponse::new(1, STATE),
+            [0x01, 0x03, 0x12, 0x34,   0, 0, 0, 8]
+        );
+    }
+
+    #[tokio::test]
+    async fn read_write_ipv4_prefix() {
+        read_write!(
+            Ipv4Prefix,
+            Ipv4Prefix::new(
+                1, 1, 23, 26, Ipv4Addr::new(192, 0, 2, 10),
+                Asn::from_u32(0x1000f),
+            ),
+            [
+                1, 4, 0, 0,      0, 0, 0, 20,  1, 23, 26, 0,
+                192, 0, 2, 10,   0, 1, 0, 0x0f
+            ],
+        );
+    }
+
+    #[tokio::test]
+    async fn read_write_ipv6_prefix() {
+        read_write!(
+            Ipv6Prefix,
+            Ipv6Prefix::new(
+                1, 1, 23, 26,
+                Ipv6Addr::new(0x2001, 0xdb8, 0, 2, 10, 0, 0xdead, 0xbeef),
+                Asn::from_u32(0x1000f),
+            ),
+            [
+                1, 6, 0, 0,             0, 0, 0, 32,  1, 23, 26, 0,
+                0x20, 0x01, 0xd, 0xb8,  0, 0, 0, 2,
+                0, 10, 0, 0,            0xde, 0xad, 0xbe, 0xef,
+                0, 1, 0, 0x0f
+            ],
+        );
+    }
+
+    #[tokio::test]
+    async fn read_write_router_key() {
+        read_write!(
+            RouterKey,
+            RouterKey::new(
+                1, 1,
+                [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20],
+                Asn::from_u32(0x1000f),
+                RouterKeyInfo::new(Bytes::from_static(&[21,22,23,24])).unwrap()
+            ),
+            [
+                1, 9, 1, 0,      0, 0, 0, 36,
+                1, 2, 3, 4,      5, 6, 7, 8,
+                9, 10, 11, 12,   13, 14, 15, 16,
+                17, 18, 19, 20,  0, 1, 0, 15,
+                21, 22, 23, 24,
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn read_write_aspa() {
+        read_write!(
+            Aspa,
+            Aspa::new(
+                2, 1, payload::Afi::ipv6(), Asn::from_u32(0x1000f),
+                ProviderAsns::from_asns([
+                    Asn::from_u32(0x1000d), Asn::from_u32(0x1000e)
+                ])
+            ),
+            [
+                2, 11, 0, 0,    0, 0, 0, 24,
+                1, 1, 0, 2,     0, 1, 0, 15,
+                0, 1, 0, 13,    0, 1, 0, 14,
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn read_write_end_of_data_v0() {
+        read_write!(
+            EndOfDataV0,
+            EndOfDataV0::new(STATE),
+            [0, 7, 0x12, 0x34,   0, 0, 0, 12,  0xde, 0xad, 0xbe, 0xef]
+        );
+    }
+
+    #[tokio::test]
+    async fn read_write_end_of_data_v1() {
+        read_write!(
+            EndOfDataV1,
+            EndOfDataV1::new(1, STATE, Default::default()),
+            [
+                1, 7, 0x12, 0x34,         0, 0, 0, 24,
+                0xde, 0xad, 0xbe, 0xef,   0x00, 0x00, 0x0e, 0x10,
+                0x00, 0x00, 0x02, 0x58,   0x00, 0x00, 0x1c, 0x20,
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn read_write_cache_reset() {
+        read_write!(
+            CacheReset,
+            CacheReset::new(1),
+            [1, 8, 0, 0,   0, 0, 0, 8]
+        );
+    }
+}
 

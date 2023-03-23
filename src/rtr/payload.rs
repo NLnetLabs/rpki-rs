@@ -13,7 +13,7 @@ use std::time::Duration;
 use routecore::addr::MaxLenPrefix;
 use routecore::asn::Asn;
 use routecore::bgpsec::KeyIdentifier;
-use super::pdu::RouterKeyInfo;
+use super::pdu::{RouterKeyInfo, ProviderAsns};
 
 
 //------------ RouteOrigin ---------------------------------------------------
@@ -115,6 +115,30 @@ impl RouterKey {
 }
 
 
+//------------ Aspa ----------------------------------------------------------
+
+/// An ASPA ... unit.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Aspa {
+    /// The customer ASN.
+    pub customer: Asn,
+
+    /// The address family this ASPA pertains to.
+    pub afi: Afi,
+
+    /// The provider ASNs.
+    pub providers: ProviderAsns,
+}
+
+impl Aspa {
+    /// Crates a new ASPA unt from its components.
+    pub fn new(
+        customer: Asn, afi: Afi, providers: ProviderAsns,
+    ) -> Self {
+        Self { customer, afi, providers }
+    }
+}
+
 
 //------------ Payload -------------------------------------------------------
 
@@ -126,6 +150,9 @@ pub enum Payload {
 
     /// A BGPsec router key.
     RouterKey(RouterKey),
+
+    /// An ASPA unit.
+    Aspa(Aspa),
 }
 
 impl Payload {
@@ -141,6 +168,13 @@ impl Payload {
         Payload::RouterKey(RouterKey::new(key_identifier, asn, key_info))
     }
 
+    /// Creates a new ASPA unit.
+    pub fn aspa(
+        customer: Asn, afi: Afi, providers: ProviderAsns,
+    ) -> Self {
+        Payload::Aspa(Aspa::new(customer, afi, providers))
+    }
+
     /// Returns the origin prefix if the value is of the origin variant.
     pub fn to_origin(&self) -> Option<RouteOrigin> {
         match *self {
@@ -153,6 +187,14 @@ impl Payload {
     pub fn as_router_key(&self) -> Option<&RouterKey> {
         match *self {
             Payload::RouterKey(ref key) => Some(key),
+            _ => None
+        }
+    }
+
+    /// Returns the ASPA unit if the value is of the ASPA variant.
+    pub fn as_aspa(&self) -> Option<&Aspa> {
+        match *self {
+            Payload::Aspa(ref key) => Some(key),
             _ => None
         }
     }
@@ -216,6 +258,39 @@ impl Action {
             Action::Announce => 1,
             Action::Withdraw => 0
         }
+    }
+}
+
+
+//------------ Afi -----------------------------------------------------------
+
+/// The RTR represenation of an address family.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Afi(u8);
+
+impl Afi {
+    pub fn ipv4() -> Self {
+        Self(0)
+    }
+
+    pub fn ipv6() -> Self {
+        Self(1)
+    }
+
+    pub fn is_ipv4(self) -> bool {
+        self.0 & 0x01 == 0
+    }
+
+    pub fn is_ipv6(self) -> bool {
+        self.0 & 0x01 == 1
+    }
+
+    pub fn into_u8(self) -> u8 {
+        self.0
+    }
+
+    pub fn from_u8(src: u8) -> Self {
+        Self(src)
     }
 }
 

@@ -63,7 +63,7 @@ impl State {
     }
 
     /// Creates a new state value from its components.
-    pub fn from_parts(session: u16, serial: Serial) -> Self {
+    pub const fn from_parts(session: u16, serial: Serial) -> Self {
         State { session, serial }
     }
 
@@ -117,11 +117,11 @@ impl Default for State {
 pub struct Serial(pub u32);
 
 impl Serial {
-    pub fn from_be(value: u32) -> Self {
+    pub const fn from_be(value: u32) -> Self {
         Serial(u32::from_be(value))
     }
 
-    pub fn to_be(self) -> u32 {
+    pub const fn to_be(self) -> u32 {
         self.0.to_be()
     }
 

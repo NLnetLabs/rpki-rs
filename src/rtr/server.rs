@@ -334,13 +334,13 @@ where Sock: AsyncRead + Unpin {
                 Ok(())
             }
         }
-        else if header.version() > 1 {
+        else if header.version() > 2 {
             Err(Query::Error(
                 pdu::Error::new(
                     header.version(),
                     4,
                     header,
-                    "only versions 0 and 1 supported"
+                    "only versions 0 to 2 supported"
                 )
             ))
         }
@@ -393,9 +393,11 @@ impl<Sock: Socket, Source: PayloadSource> Connection<Sock, Source> {
                     self.version(), state,
                 ).write(&mut self.sock).await?;
                 while let Some((payload, action)) = diff.next() {
-                    pdu::Payload::new(
+                    if let Some(pdu) = pdu::Payload::new_if_supported(
                         self.version(), action.into_flags(), payload
-                    ).write(&mut self.sock).await?;
+                    ) {
+                        pdu.write(&mut self.sock).await?;
+                    }
                 }
                 let timing = self.source.timing();
                 pdu::EndOfData::new(
@@ -429,9 +431,11 @@ impl<Sock: Socket, Source: PayloadSource> Connection<Sock, Source> {
             self.version(), state
         ).write(&mut self.sock).await?;
         while let Some(payload) = iter.next() {
-            pdu::Payload::new(
+            if let Some(pdu) = pdu::Payload::new_if_supported(
                 self.version(), Action::Announce.into_flags(), payload
-            ).write(&mut self.sock).await?;
+            ) {
+                pdu.write(&mut self.sock).await?;
+            }
         }
         let timing = self.source.timing();
         pdu::EndOfData::new(
