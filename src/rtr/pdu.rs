@@ -612,8 +612,7 @@ impl RouterKey {
                 ))
             }
         };
-        let mut fixed = RouterKeyFixed::default();
-        fixed.header = header;
+        let mut fixed = RouterKeyFixed { header, .. Default::default() };
         sock.read_exact(&mut fixed.as_mut()[Header::LEN..]).await?;
         let key_info = RouterKeyInfo::read(sock, info_len).await?;
         Ok(RouterKey { fixed, key_info })
@@ -908,8 +907,7 @@ impl Aspa {
             }
         };
         eprintln!("{}", provider_len);
-        let mut fixed = AspaFixed::default();
-        fixed.header = header;
+        let mut fixed = AspaFixed { header, .. Default::default() };
         sock.read_exact(&mut fixed.as_mut()[Header::LEN..]).await?;
         if provider_len
             != usize::from(
@@ -1045,7 +1043,7 @@ impl Payload {
                             origin.prefix.prefix_len(),
                             origin.prefix.resolved_max_len(),
                             addr,
-                            origin.asn.into()
+                            origin.asn,
                         ))
                     }
                     IpAddr::V6(addr) => {
@@ -1055,7 +1053,7 @@ impl Payload {
                             origin.prefix.prefix_len(),
                             origin.prefix.resolved_max_len(),
                             addr,
-                            origin.asn.into()
+                            origin.asn,
                         ))
                     }
                 }
@@ -1064,7 +1062,7 @@ impl Payload {
                 Payload::RouterKey(RouterKey::new(
                     version, flags,
                     key.key_identifier.into(),
-                    key.asn.into(),
+                    key.asn,
                     key.key_info.clone()
                 ))
             }
@@ -1196,7 +1194,7 @@ impl Payload {
                             )?,
                             Some(data.max_len())
                         )?,
-                        data.asn().into()
+                        data.asn(),
                     ))
                 }
                 Payload::V6(data) => {
@@ -1207,12 +1205,12 @@ impl Payload {
                             )?,
                             Some(data.max_len())
                         )?,
-                        data.asn().into()
+                        data.asn(),
                     ))
                 }
                 Payload::RouterKey(key) => {
                     Ok(payload::Payload::router_key(
-                        key.key_identifier().into(), key.asn().into(),
+                        key.key_identifier().into(), key.asn(),
                         key.key_info().clone()
                     ))
                 }
