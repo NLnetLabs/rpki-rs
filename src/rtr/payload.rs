@@ -131,7 +131,7 @@ pub struct Aspa {
 }
 
 impl Aspa {
-    /// Crates a new ASPA unt from its components.
+    /// Creates a new ASPA unit from its components.
     pub fn new(
         customer: Asn, afi: Afi, providers: ProviderAsns,
     ) -> Self {
@@ -264,7 +264,7 @@ impl Action {
 
 //------------ Afi -----------------------------------------------------------
 
-/// The RTR represenation of an address family.
+/// The RTR representation of an address family.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Afi(u8);
 

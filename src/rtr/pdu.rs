@@ -398,7 +398,7 @@ concrete!(Ipv4Prefix);
 
 //------------ Ipv6Prefix ----------------------------------------------------
 
-/// An IPv6 prefix is the payload PDU for route origin authorisation in IPv46.
+/// An IPv6 prefix is the payload PDU for route origin authorisation in IPv6.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[repr(packed)]
 #[allow(dead_code)]
@@ -989,7 +989,7 @@ impl ProviderAsns {
     pub fn iter(&self) -> impl Iterator<Item = Asn> + '_ {
         self.0.as_ref().chunks(mem::size_of::<u32>()).map(|chunk| {
             u32::from_be_bytes(
-                TryFrom::try_from(chunk).expect("bad ASPA RDU size")
+                TryFrom::try_from(chunk).expect("bad ASPA PDU size")
             ).into()
         })
     }
