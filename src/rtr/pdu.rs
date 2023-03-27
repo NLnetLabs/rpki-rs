@@ -964,7 +964,7 @@ impl ProviderAsns {
     pub fn from_asns(iter: impl IntoIterator<Item = Asn>) -> Self {
         let iter = iter.into_iter();
         let mut providers = Vec::with_capacity(iter.size_hint().0);
-        iter.into_iter().for_each(|item| {
+        iter.for_each(|item| {
             providers.extend_from_slice(&item.into_u32().to_be_bytes());
         });
         assert!(providers.len() <= Self::MAX_LEN);
