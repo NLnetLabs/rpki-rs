@@ -4,11 +4,22 @@
 
 Breaking changes
 
+* Changes the type of ASNs as arguments and return types in the `rtr::pdu`
+  module to `Asn`. ([#250])
+
 New
+
+* Adds support for protocol version 2 of RTR. Specifically, adds support
+  for ASPA PDUs and payload. ([#250])
 
 Bug fixes
 
+* Fixes a bug in the RTR server where it would include router key PDUs
+  even if the negotiated protocol version was 0. ([#250])
+
 Other changes
+
+[#250]: https://github.com/NLnetLabs/rpki-rs/pull/250
 
 
 ## 0.15.10
