@@ -194,7 +194,7 @@ impl Payload {
     /// Returns the ASPA unit if the value is of the ASPA variant.
     pub fn as_aspa(&self) -> Option<&Aspa> {
         match *self {
-            Payload::Aspa(ref key) => Some(key),
+            Payload::Aspa(ref aspa) => Some(aspa),
             _ => None
         }
     }

@@ -906,7 +906,6 @@ impl Aspa {
                 ))
             }
         };
-        eprintln!("{}", provider_len);
         let mut fixed = AspaFixed { header, .. Default::default() };
         sock.read_exact(&mut fixed.as_mut()[Header::LEN..]).await?;
         if provider_len
