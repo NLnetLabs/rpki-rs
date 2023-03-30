@@ -955,7 +955,7 @@ impl ProviderAsns {
     ///
     /// Returns an error if there are too many items in the iterator to fit
     /// into an RTR PDU.
-    pub fn from_iter(
+    pub fn try_from_iter(
         iter: impl IntoIterator<Item = Asn>
     ) -> Result<Self, ProviderAsnsError> {
         let iter = iter.into_iter();
@@ -1810,7 +1810,7 @@ mod test {
             Aspa,
             Aspa::new(
                 2, 1, payload::Afi::ipv6(), Asn::from_u32(0x1000f),
-                ProviderAsns::from_iter([
+                ProviderAsns::try_from_iter([
                     Asn::from_u32(0x1000d), Asn::from_u32(0x1000e)
                 ]).unwrap(),
             ),
@@ -1825,19 +1825,19 @@ mod test {
     #[test]
     fn provider_count() {
         assert_eq!(
-            ProviderAsns::from_iter(
+            ProviderAsns::try_from_iter(
                 iter::repeat(Asn::from(0)).take(usize::from(u16::MAX - 1))
             ).unwrap().asn_count(),
             u16::MAX - 1
         );
         assert_eq!(
-            ProviderAsns::from_iter(
+            ProviderAsns::try_from_iter(
                 iter::repeat(Asn::from(0)).take(usize::from(u16::MAX))
             ).unwrap().asn_count(),
             u16::MAX
         );
         assert!(
-            ProviderAsns::from_iter(
+            ProviderAsns::try_from_iter(
                 iter::repeat(Asn::from(0)).take(usize::from(u16::MAX) + 1)
             ).is_err()
         );
