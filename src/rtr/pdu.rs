@@ -13,9 +13,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use bytes::Bytes;
 use routecore::addr::{MaxLenPrefix, Prefix};
 use routecore::asn::Asn;
-use tokio::io::{
-    AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt
-};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use super::payload;
 use super::state::{Serial, State};
 
@@ -953,22 +951,24 @@ impl AsMut<[u8]> for AspaFixed {
 pub struct ProviderAsns(Bytes);
 
 impl ProviderAsns {
-    /// The maximum length in octets for a valid value.
-    const MAX_LEN: usize = (u16::MAX as usize) * mem::size_of::<u32>();
-
     /// Creates a new value from an iterator over ASNs.
     ///
-    /// # Panics
-    ///
-    /// The function panics if the iterator produces more than 65,535 items.
-    pub fn from_asns(iter: impl IntoIterator<Item = Asn>) -> Self {
+    /// Returns an error if there are too many items in the iterator to fit
+    /// into an RTR PDU.
+    pub fn from_iter(
+        iter: impl IntoIterator<Item = Asn>
+    ) -> Result<Self, ProviderAsnsError> {
         let iter = iter.into_iter();
         let mut providers = Vec::with_capacity(iter.size_hint().0);
-        iter.for_each(|item| {
+        iter.enumerate().try_for_each(|(idx, item)| {
+            if idx >= usize::from(u16::MAX) {
+                eprintln!("{}", idx);
+                return Err(ProviderAsnsError(()))
+            }
             providers.extend_from_slice(&item.into_u32().to_be_bytes());
-        });
-        assert!(providers.len() <= Self::MAX_LEN);
-        ProviderAsns(providers.into())
+            Ok(())
+        })?;
+        Ok(ProviderAsns(providers.into()))
     }
 
     pub fn asn_count(&self) -> u16 {
@@ -1068,7 +1068,8 @@ impl Payload {
             payload::Payload::Aspa(aspa) => {
                 Payload::Aspa(Aspa::new(
                     version, flags,
-                    aspa.afi, aspa.customer, aspa.providers.clone()
+                    aspa.afi, aspa.customer,
+                    aspa.providers.clone(),
                 ))
             }
         }
@@ -1216,7 +1217,7 @@ impl Payload {
                 Payload::Aspa(aspa) => {
                     Ok(payload::Payload::aspa(
                         aspa.customer(), aspa.afi(),
-                        aspa.providers().clone()
+                        aspa.providers().clone(),
                     ))
                 }
             }
@@ -1663,6 +1664,8 @@ common!(Header);
 
 //============ ErrorTypes ====================================================
 
+//------------ KeyInfoError --------------------------------------------------
+
 /// The key info of a router key was too large.
 #[derive(Clone, Copy, Debug)]
 pub struct KeyInfoError;
@@ -1676,11 +1679,27 @@ impl fmt::Display for KeyInfoError {
 impl error::Error for KeyInfoError { }
 
 
+//------------ ProviderAsnsError ---------------------------------------------
+
+/// The provider ASNs of an ASPA unit were too large.
+#[derive(Clone, Copy, Debug)]
+pub struct ProviderAsnsError(());
+
+impl fmt::Display for ProviderAsnsError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("provider ASNs size overflow")
+    }
+}
+
+impl error::Error for ProviderAsnsError { }
+
+
 //============ Tests =========================================================
 
 #[cfg(all(test, feature = "tokio"))]
 mod test {
     use super::*;
+    use std::iter;
 
     const STATE: State = State::from_parts(0x1234, Serial(0xdead_beef));
 
@@ -1791,15 +1810,36 @@ mod test {
             Aspa,
             Aspa::new(
                 2, 1, payload::Afi::ipv6(), Asn::from_u32(0x1000f),
-                ProviderAsns::from_asns([
+                ProviderAsns::from_iter([
                     Asn::from_u32(0x1000d), Asn::from_u32(0x1000e)
-                ])
+                ]).unwrap(),
             ),
             [
                 2, 11, 0, 0,    0, 0, 0, 24,
                 1, 1, 0, 2,     0, 1, 0, 15,
                 0, 1, 0, 13,    0, 1, 0, 14,
             ]
+        );
+    }
+
+    #[test]
+    fn provider_count() {
+        assert_eq!(
+            ProviderAsns::from_iter(
+                iter::repeat(Asn::from(0)).take(usize::from(u16::MAX - 1))
+            ).unwrap().asn_count(),
+            u16::MAX - 1
+        );
+        assert_eq!(
+            ProviderAsns::from_iter(
+                iter::repeat(Asn::from(0)).take(usize::from(u16::MAX))
+            ).unwrap().asn_count(),
+            u16::MAX
+        );
+        assert!(
+            ProviderAsns::from_iter(
+                iter::repeat(Asn::from(0)).take(usize::from(u16::MAX) + 1)
+            ).is_err()
         );
     }
 

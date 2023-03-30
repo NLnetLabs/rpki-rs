@@ -13,7 +13,7 @@ use std::time::Duration;
 use routecore::addr::MaxLenPrefix;
 use routecore::asn::Asn;
 use routecore::bgpsec::KeyIdentifier;
-use super::pdu::{RouterKeyInfo, ProviderAsns};
+use super::pdu::{ProviderAsns, RouterKeyInfo};
 
 
 //------------ RouteOrigin ---------------------------------------------------
@@ -31,7 +31,7 @@ pub struct RouteOrigin {
     pub prefix: MaxLenPrefix,
 
     /// The autonomous system allowed to announce the prefixes.
-    pub asn: Asn, 
+    pub asn: Asn,
 }
 
 impl RouteOrigin {
