@@ -962,7 +962,6 @@ impl ProviderAsns {
         let mut providers = Vec::with_capacity(iter.size_hint().0);
         iter.enumerate().try_for_each(|(idx, item)| {
             if idx >= usize::from(u16::MAX) {
-                eprintln!("{}", idx);
                 return Err(ProviderAsnsError(()))
             }
             providers.extend_from_slice(&item.into_u32().to_be_bytes());
