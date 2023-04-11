@@ -10,7 +10,7 @@ Breaking changes
 New
 
 * Adds support for protocol version 2 of RTR. Specifically, adds support
-  for ASPA PDUs and payload. ([#250])
+  for ASPA PDUs and payload. ([#250], [#251])
 
 Bug fixes
 
@@ -20,6 +20,7 @@ Bug fixes
 Other changes
 
 [#250]: https://github.com/NLnetLabs/rpki-rs/pull/250
+[#251]: https://github.com/NLnetLabs/rpki-rs/pull/251
 
 
 ## 0.15.10
