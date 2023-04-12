@@ -1184,7 +1184,9 @@ impl RepoInfo {
     pub fn ca_repository(&self, name_space: &str) -> uri::Rsync {
         match name_space {
             "" => self.sia_base.clone(),
-            _ => self.sia_base.join(name_space.as_ref()).unwrap(),
+            _ => self.sia_base
+                    .join(format!("{}/", name_space).as_bytes())
+                    .unwrap(),
         }
     }
 
