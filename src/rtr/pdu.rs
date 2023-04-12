@@ -951,6 +951,11 @@ impl AsMut<[u8]> for AspaFixed {
 pub struct ProviderAsns(Bytes);
 
 impl ProviderAsns {
+    /// Returns an empty value.
+    pub fn empty() -> Self {
+        Self(Bytes::new())
+    }
+
     /// Creates a new value from an iterator over ASNs.
     ///
     /// Returns an error if there are too many items in the iterator to fit
@@ -1031,9 +1036,9 @@ pub enum Payload {
 
 impl Payload {
     /// Creates a payload PDU for the given payload.
-    pub fn new(version: u8, flags: u8, payload: &payload::Payload) -> Self {
+    pub fn new(version: u8, flags: u8, payload: payload::PayloadRef) -> Self {
         match payload {
-            payload::Payload::Origin(origin) => {
+            payload::PayloadRef::Origin(origin) => {
                 match origin.prefix.addr() {
                     IpAddr::V4(addr) => {
                         Payload::V4(Ipv4Prefix::new(
@@ -1057,7 +1062,7 @@ impl Payload {
                     }
                 }
             }
-            payload::Payload::RouterKey(key) => {
+            payload::PayloadRef::RouterKey(key) => {
                 Payload::RouterKey(RouterKey::new(
                     version, flags,
                     key.key_identifier.into(),
@@ -1065,7 +1070,7 @@ impl Payload {
                     key.key_info.clone()
                 ))
             }
-            payload::Payload::Aspa(aspa) => {
+            payload::PayloadRef::Aspa(aspa) => {
                 Payload::Aspa(Aspa::new(
                     version, flags,
                     aspa.afi, aspa.customer,
@@ -1077,12 +1082,12 @@ impl Payload {
 
     /// Creates a payload PDU if it is supported in the given version.
     pub fn new_if_supported(
-        version: u8, flags: u8, payload: &payload::Payload
+        version: u8, flags: u8, payload: payload::PayloadRef
     ) -> Option<Self> {
         let min_version = match payload {
-            payload::Payload::Origin(_) => 0,
-            payload::Payload::RouterKey(_) => 1,
-            payload::Payload::Aspa(_) => 2,
+            payload::PayloadRef::Origin(_) => 0,
+            payload::PayloadRef::RouterKey(_) => 1,
+            payload::PayloadRef::Aspa(_) => 2,
         };
         if min_version > version {
             None

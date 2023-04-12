@@ -7,7 +7,7 @@
 //! The types are currently not very rich. They will receive more methods as
 //! they become necessary. So don’t hesitate to ask for them!
 
-use std::hash;
+use std::{fmt, hash};
 use std::cmp::Ordering;
 use std::time::Duration;
 use routecore::addr::MaxLenPrefix;
@@ -38,6 +38,11 @@ impl RouteOrigin {
     /// Creates a new value from a prefix and an ASN.
     pub fn new(prefix: MaxLenPrefix, asn: Asn) -> Self {
         RouteOrigin { prefix, asn }
+    }
+
+    /// Returns whether this is an IPv4 origin.
+    pub fn is_v4(self) -> bool {
+        self.prefix.prefix().is_v4()
     }
 }
 
@@ -137,6 +142,27 @@ impl Aspa {
     ) -> Self {
         Self { customer, afi, providers }
     }
+
+    /// Returns the ‘key’ of the ASPA.
+    pub fn key(&self) -> (Asn, Afi) {
+        (self.customer, self.afi)
+    }
+
+    /// Returns a new ASPA with an empty provider set.
+    pub fn withdraw(&self) -> Self {
+        Self::new(self.customer, self.afi, ProviderAsns::empty())
+    }
+}
+
+
+//------------ PayloadType ---------------------------------------------------
+
+/// The type of a payload item.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PayloadType {
+    Origin,
+    RouterKey,
+    Aspa
 }
 
 
@@ -173,6 +199,24 @@ impl Payload {
         customer: Asn, afi: Afi, providers: ProviderAsns,
     ) -> Self {
         Payload::Aspa(Aspa::new(customer, afi, providers))
+    }
+
+    /// Converts a reference to payload into a payload reference.
+    pub fn as_ref(&self) -> PayloadRef {
+        match self {
+            Payload::Origin(origin) => PayloadRef::Origin(*origin),
+            Payload::RouterKey(key) => PayloadRef::RouterKey(key),
+            Payload::Aspa(aspa) => PayloadRef::Aspa(aspa),
+        }
+    }
+
+    /// Returns the payload type of the value.
+    pub fn payload_type(&self) -> PayloadType {
+        match self {
+            Payload::Origin(_) => PayloadType::Origin,
+            Payload::RouterKey(_) => PayloadType::RouterKey,
+            Payload::Aspa(_) => PayloadType::Aspa,
+        }
     }
 
     /// Returns the origin prefix if the value is of the origin variant.
@@ -212,6 +256,56 @@ impl From<RouteOrigin> for Payload {
 impl From<RouterKey> for Payload {
     fn from(src: RouterKey) -> Self {
         Payload::RouterKey(src)
+    }
+}
+
+impl From<Aspa> for Payload {
+    fn from(src: Aspa) -> Self {
+        Payload::Aspa(src)
+    }
+}
+
+
+//------------ PayloadRef ----------------------------------------------------
+
+/// All payload types but as references.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PayloadRef<'a> {
+    /// A route origin authorisation.
+    ///
+    /// This isn’t a reference because it is `Copy`.
+    Origin(RouteOrigin),
+
+    /// A BGPsec router key.
+    RouterKey(&'a RouterKey),
+
+    /// An ASPA unit.
+    Aspa(&'a Aspa),
+}
+
+//--- From
+
+impl<'a> From<RouteOrigin> for PayloadRef<'a> {
+    fn from(src: RouteOrigin) -> Self {
+        PayloadRef::Origin(src)
+    }
+}
+
+impl<'a> From<&'a RouteOrigin> for PayloadRef<'a> {
+    fn from(src: &'a RouteOrigin) -> Self {
+        PayloadRef::Origin(*src)
+    }
+}
+
+impl<'a> From<&'a RouterKey> for PayloadRef<'a> {
+    fn from(src: &'a RouterKey) -> Self {
+        PayloadRef::RouterKey(src)
+    }
+}
+
+impl<'a> From<&'a Aspa> for PayloadRef<'a> {
+    fn from(src: &'a Aspa) -> Self {
+        PayloadRef::Aspa(src)
     }
 }
 
@@ -291,6 +385,17 @@ impl Afi {
 
     pub fn from_u8(src: u8) -> Self {
         Self(src)
+    }
+}
+
+impl fmt::Display for Afi {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.is_ipv4() {
+            f.write_str("ipv4")
+        }
+        else {
+            f.write_str("ipv6")
+        }
     }
 }
 

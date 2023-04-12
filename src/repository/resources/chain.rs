@@ -104,6 +104,19 @@ impl<T: Block> Chain<T> {
         unsafe { mem::transmute::<&[T], _>(&[]) }
     }
 
+    /// Checks whether `self` contains a given item.
+    pub fn contains_item(&self, item: T::Item) -> bool {
+        for block in &self.0 {
+            if block.min() > item {
+                return false
+            }
+            if block.contains(item) {
+                return true
+            }
+        }
+        false
+    }
+
     /// Checks whether `self` is encompassed by `other`.
     ///
     /// The chain `other` needs to be equal to or bigger than `self`.
@@ -878,6 +891,36 @@ mod test {
             ).as_slice(),
             &[(0, 1), (3, 9), (20, 22)][..]
         );
+    }
+
+    #[test]
+    fn contains_item() {
+        let chain = OwnedChain::from([(1,4), (11,18), (23,48)].as_ref());
+        assert!(!chain.contains_item(0));
+
+        assert!(chain.contains_item(1));
+        assert!(chain.contains_item(2));
+        assert!(chain.contains_item(4));
+
+        assert!(!chain.contains_item(5));
+        assert!(!chain.contains_item(8));
+        assert!(!chain.contains_item(10));
+
+        assert!(chain.contains_item(11));
+        assert!(chain.contains_item(14));
+        assert!(chain.contains_item(18));
+
+        assert!(!chain.contains_item(19));
+        assert!(!chain.contains_item(21));
+        assert!(!chain.contains_item(22));
+
+        assert!(chain.contains_item(23));
+        assert!(chain.contains_item(30));
+        assert!(chain.contains_item(48));
+
+        assert!(!chain.contains_item(49));
+        assert!(!chain.contains_item(100));
+        assert!(!chain.contains_item(255));
     }
 
     #[test]

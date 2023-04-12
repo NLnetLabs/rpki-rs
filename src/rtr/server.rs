@@ -16,7 +16,7 @@ use tokio::sync::broadcast;
 use tokio::task::spawn;
 use tokio_stream::{Stream, StreamExt};
 use super::pdu;
-use super::payload::{Action, Payload, Timing};
+use super::payload::{Action, PayloadRef, Timing};
 use super::state::State;
 
 
@@ -77,13 +77,13 @@ pub trait PayloadSource: Clone + Sync + Send + 'static {
 /// A type providing access to a complete payload set.
 pub trait PayloadSet: Sync + Send + 'static {
     /// Returns the next element in the payload set.
-    fn next(&mut self) -> Option<&Payload>;
+    fn next(&mut self) -> Option<PayloadRef>;
 }
 
 /// A type providing access to a diff between payload sets.
 pub trait PayloadDiff: Sync + Send + 'static {
     /// Returns the next element in the diff.
-    fn next(&mut self) -> Option<(&Payload, Action)>;
+    fn next(&mut self) -> Option<(PayloadRef, Action)>;
 }
 
 

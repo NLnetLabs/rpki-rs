@@ -326,6 +326,11 @@ impl AsBlocks {
         self.0.is_empty()
     }
 
+    /// Returns the number of ASNs covered by this value.
+    pub fn asn_count(&self) -> u32 {
+        self.iter().map(|block| block.asn_count()).sum()
+    }
+
     /// Returns an iterator over the ASN blocks.
     pub fn iter(&self) -> impl Iterator<Item = AsBlock> + '_ {
         self.0.iter().copied()
@@ -405,6 +410,11 @@ impl AsBlocks {
 /// # Set operations
 ///
 impl AsBlocks {
+    /// Returns whether this AsBlocks contains an ASN.
+    pub fn contains_asn(&self, asn: Asn) -> bool {
+        self.0.contains_item(asn)
+    }
+
     /// Returns whether this AsBlocks contains the other in its entirety.
     pub fn contains(&self, other: &Self) -> bool {
         other.0.is_encompassed(&self.0)
@@ -632,6 +642,14 @@ impl AsBlock {
         match *self {
             AsBlock::Id(id) => id,
             AsBlock::Range(ref range) => range.max(),
+        }
+    }
+
+    /// Returns the number of ASNs covered by this value.
+    pub fn asn_count(self) -> u32 {
+        match self {
+            AsBlock::Id(_) => 1,
+            AsBlock::Range(range) => range.asn_count()
         }
     }
 
@@ -914,6 +932,11 @@ impl AsRange {
     /// Returns the largest AS number that is still part of this range.
     pub fn max(self) -> Asn {
         self.max
+    }
+
+    /// Returns the number of ASNs covered by this value.
+    pub fn asn_count(self) -> u32 {
+        u32::from(self.max) - u32::from(self.min) + 1
     }
 }
 
