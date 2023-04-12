@@ -222,6 +222,11 @@ impl Rsync {
         &self.as_str()[self.path_start..]
     }
 
+    /// Returns whether the URI's path resolves to a directory.
+    pub fn path_is_dir(&self) -> bool {
+        self.path().is_empty() || self.path().ends_with("/")
+    }
+
     /// Returns the URI’s path as a bytes slice.
     pub fn path_bytes(&self) -> &[u8] {
         &self.bytes[self.path_start..]
