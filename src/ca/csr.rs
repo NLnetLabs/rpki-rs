@@ -19,6 +19,7 @@
 //! - a signature (to prove possession of the public key)
 //!
 
+use std::borrow::Cow;
 use std::fmt;
 use bcder::{decode, encode, ConstOid};
 use bcder::{BitString, Captured, Mode, OctetString, Oid, Tag};
@@ -183,6 +184,12 @@ impl Csr<(), ()> {
         rpki_notify: Option<&uri::Https>
     ) -> Result<Captured, SigningError<S::Error>> {
         let pub_key = signer.get_key_info(key)?;
+
+        let ca_repository = if ca_repository.path_is_dir() {
+            Cow::Borrowed(ca_repository)
+        } else {
+            Cow::Owned(ca_repository.join(b"/").unwrap())
+        };
 
         let content = Captured::from_values(Mode::Der, encode::sequence((
             0_u32.encode(),
