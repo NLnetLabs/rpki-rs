@@ -410,7 +410,7 @@ impl AsBlocks {
 /// # Set operations
 ///
 impl AsBlocks {
-    /// Returns whether this AsBlocks contains an ASN.
+    /// Returns whether this AsBlocks contains a given ASN.
     pub fn contains_asn(&self, asn: Asn) -> bool {
         self.0.contains_item(asn)
     }
