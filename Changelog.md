@@ -6,11 +6,14 @@ Breaking changes
 
 * Changes the type of ASNs as arguments and return types in the `rtr::pdu`
   module to `Asn`. ([#250])
+* Changes the RTR server traits to use a new `PayloadRef` type that allows
+  a user to keep the various payload types separatedly. ([#252])
 
 New
 
 * Adds support for protocol version 2 of RTR. Specifically, adds support
-  for ASPA PDUs and payload. ([#250], [#251])
+  for ASPA PDUs and payload. ([#250], [#251], [#252])
+* Added some useful methods to `AsBlocks`. ([#252])
 
 Bug fixes
 
@@ -21,6 +24,7 @@ Other changes
 
 [#250]: https://github.com/NLnetLabs/rpki-rs/pull/250
 [#251]: https://github.com/NLnetLabs/rpki-rs/pull/251
+[#252]: https://github.com/NLnetLabs/rpki-rs/pull/252
 
 
 ## 0.15.10
