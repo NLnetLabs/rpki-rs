@@ -137,7 +137,7 @@ impl AsProviderAttestation {
         &mut self,
         cert: &ResourceCert
     ) -> Result<(), ValidationError> {
-        if !cert.as_resources().contains(&self.as_blocks()) {
+        if !cert.as_resources().contains_asn(self.customer_as) {
             return Err(VerificationError::new(
                 "customer AS not covered by certificate"
             ).into());
@@ -153,6 +153,10 @@ impl AsProviderAttestation {
         builder.finalize()
     }
 
+    /// Returns the AS resources required by this provider attestation.
+    ///
+    /// The attestation requires resources covering the customer ASN, so
+    /// the method constructs a value containing this ASN.
     pub fn as_resources(&self) -> AsResources {
         AsResources::blocks(self.as_blocks())
     }
@@ -267,6 +271,19 @@ impl ProviderAs {
         self.afi_limit
     }
 
+    pub fn includes_v4(&self) -> bool {
+        match self.afi_limit {
+            Some(limit) => matches!(limit, AddressFamily::Ipv4),
+            None => true
+        }
+    }
+
+    pub fn includes_v6(&self) -> bool {
+        match self.afi_limit {
+            Some(limit) => matches!(limit, AddressFamily::Ipv6),
+            None => true
+        }
+    }
 }
 
 impl ProviderAs {

@@ -30,7 +30,7 @@
 #![cfg(feature = "rtr")]
 
 pub use self::client::Client;
-pub use self::payload::{Action, Payload, Timing};
+pub use self::payload::{Action, Payload, PayloadRef, PayloadType, Timing};
 pub use self::server::Server;
 pub use self::state::{State, Serial};
 

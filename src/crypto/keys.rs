@@ -347,6 +347,8 @@ impl PublicKey {
     }
 
     /// Returns a bytes values of the encoded the *subjectPublicKeyInfo*.
+    ///
+    /// This returns a newly “allocated” bytes object.
     pub fn to_info_bytes(&self) -> Bytes {
         self.encode_ref().to_captured(Mode::Der).into_bytes()
     }
