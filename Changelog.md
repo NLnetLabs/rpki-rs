@@ -14,6 +14,8 @@ New
 * Adds support for protocol version 2 of RTR. Specifically, adds support
   for ASPA PDUs and payload. ([#250], [#251], [#252])
 * Added some useful methods to `AsBlocks`. ([#252])
+* The CA repository URI of a CSR is now forced to end with a trailing
+  slash. ([#253])
 
 Bug fixes
 
@@ -25,6 +27,7 @@ Other changes
 [#250]: https://github.com/NLnetLabs/rpki-rs/pull/250
 [#251]: https://github.com/NLnetLabs/rpki-rs/pull/251
 [#252]: https://github.com/NLnetLabs/rpki-rs/pull/252
+[#253]: https://github.com/NLnetLabs/rpki-rs/pull/253
 
 
 ## 0.15.10
