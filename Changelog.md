@@ -1,9 +1,12 @@
 # Changelog
 
-## Unreleased next version
+## 0.16.0
+
+Released 2023-04-17.
 
 Breaking changes
 
+* The minimal supported Rust version is now 1.65.
 * Changes the type of ASNs as arguments and return types in the `rtr::pdu`
   module to `Asn`. ([#250])
 * Changes the RTR server traits to use a new `PayloadRef` type that allows
@@ -21,8 +24,6 @@ Bug fixes
 
 * Fixes a bug in the RTR server where it would include router key PDUs
   even if the negotiated protocol version was 0. ([#250])
-
-Other changes
 
 [#250]: https://github.com/NLnetLabs/rpki-rs/pull/250
 [#251]: https://github.com/NLnetLabs/rpki-rs/pull/251
