@@ -318,7 +318,7 @@ impl<'a> From<&'a Aspa> for PayloadRef<'a> {
 //------------ Action --------------------------------------------------------
 
 /// What to do with a given payload.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum Action {
     /// Announce the payload.
@@ -366,7 +366,6 @@ impl Action {
 
 /// The RTR representation of an address family.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Afi(u8);
 
 impl Afi {
@@ -403,6 +402,22 @@ impl fmt::Display for Afi {
         else {
             f.write_str("ipv6")
         }
+    }
+}
+
+#[cfg(feature = "arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for Afi {
+    fn arbitrary(
+        u: &mut arbitrary::Unstructured<'a>
+    ) -> arbitrary::Result<Self> {
+        bool::arbitrary(u).map(|val| {
+            if val {
+                Self::ipv4()
+            }
+            else {
+                Self::ipv6()
+            }
+        })
     }
 }
 

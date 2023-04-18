@@ -294,6 +294,7 @@ impl<'de> serde::Deserialize<'de> for Name {
 //
 //  We encode the serial number in 20 octets left padded.
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Serial([u8; 20]);
 
 impl Serial {
@@ -658,6 +659,7 @@ impl<'a, Alg> PrimitiveContent for SignatureValueContent<'a, Alg> {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Time(DateTime<Utc>);
 
 impl Time {
@@ -1051,6 +1053,7 @@ impl PrimitiveContent for GeneralizedTime {
 
 #[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Validity {
     not_before: Time,
     not_after: Time,
