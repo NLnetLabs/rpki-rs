@@ -59,7 +59,7 @@ compat = [ ]
 xml = [ "quick-xml" ]
 
 # Extra features provided.
-arbitrary = ["dep:arbitrary", "routecore/arbitrary"]
+arbitrary = ["dep:arbitrary", "chrono/arbitrary", "routecore/arbitrary"]
 serde-support = ["serde", "routecore/serde"]
 softkeys = [ "openssl" ]
 
