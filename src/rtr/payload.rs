@@ -327,7 +327,7 @@ pub enum Action {
     Announce,
 
     /// Withdraw the payload.
-    /// In other words, re move the payload to your set of VRPs.
+    /// In other words, remove the payload from your set of VRPs.
     Withdraw,
 }
 
