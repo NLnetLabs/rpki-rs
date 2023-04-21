@@ -17,6 +17,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
+arbitrary       = { version = "1", optional = true, features = ["derive"] }
 base64          = "0.13.0"
 bcder           = { version = "0.7", optional = true }
 bytes           = "1.0"
@@ -26,7 +27,7 @@ log             = "0.4.7"
 openssl         = { version = "0.10.23", optional = true }
 quick-xml       = { version = "0.23.0", optional = true }
 ring            = { version = "0.16.11", optional = true }
-routecore       = "0.2"
+routecore       = { git = "https://github.com/NLnetLabs/routecore.git" }
 serde           = { version = "1.0.103", optional = true, features = [ "derive" ] }
 serde_json      = { version = "1.0.40", optional = true }
 tokio           = { version = "1.0", optional = true, features = ["io-util",  "net", "rt", "sync", "time"] }
@@ -58,6 +59,7 @@ compat = [ ]
 xml = [ "quick-xml" ]
 
 # Extra features provided.
+arbitrary = ["dep:arbitrary", "chrono/arbitrary", "routecore/arbitrary"]
 serde-support = ["serde", "routecore/serde"]
 softkeys = [ "openssl" ]
 

@@ -26,6 +26,7 @@ use super::pdu::{ProviderAsns, RouterKeyInfo};
 /// The type includes authorizations for both IPv4 and IPv6 prefixes which
 /// are separate payload types in RTR.
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct RouteOrigin {
     /// The address prefix to authorize.
     pub prefix: MaxLenPrefix,
@@ -99,6 +100,7 @@ impl hash::Hash for RouteOrigin {
 
 /// A BGPsec router key.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct RouterKey {
     /// The subject key identifier of the router key.
     pub key_identifier: KeyIdentifier,
@@ -124,6 +126,7 @@ impl RouterKey {
 
 /// An ASPA ... unit.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Aspa {
     /// The customer ASN.
     pub customer: Asn,
@@ -159,6 +162,7 @@ impl Aspa {
 
 /// The type of a payload item.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum PayloadType {
     Origin,
     RouterKey,
@@ -170,6 +174,7 @@ pub enum PayloadType {
 
 /// All payload types supported by RTR and this crate.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum Payload {
     /// A route origin authorisation.
     Origin(RouteOrigin),
@@ -313,7 +318,8 @@ impl<'a> From<&'a Aspa> for PayloadRef<'a> {
 //------------ Action --------------------------------------------------------
 
 /// What to do with a given payload.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum Action {
     /// Announce the payload.
     ///
@@ -321,7 +327,7 @@ pub enum Action {
     Announce,
 
     /// Withdraw the payload.
-    /// In other words, re move the payload to your set of VRPs.
+    /// In other words, remove the payload from your set of VRPs.
     Withdraw,
 }
 
@@ -396,6 +402,22 @@ impl fmt::Display for Afi {
         else {
             f.write_str("ipv6")
         }
+    }
+}
+
+#[cfg(feature = "arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for Afi {
+    fn arbitrary(
+        u: &mut arbitrary::Unstructured<'a>
+    ) -> arbitrary::Result<Self> {
+        bool::arbitrary(u).map(|val| {
+            if val {
+                Self::ipv4()
+            }
+            else {
+                Self::ipv6()
+            }
+        })
     }
 }
 

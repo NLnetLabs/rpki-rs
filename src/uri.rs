@@ -915,6 +915,96 @@ impl fmt::Display for Error {
 impl error::Error for Error { }
 
 
+//------------ Arbitrary -----------------------------------------------------
+
+#[cfg(feature = "arbitrary")]
+mod arbitrary {
+    use std::fmt::Write;
+    use arbitrary::{Arbitrary, Unstructured};
+
+    const MAX_SEGMENTS: u8 = 20;
+    const MAX_SEGMENT_LEN: u8 = 64;
+
+    impl<'a> Arbitrary<'a> for super::Rsync {
+        fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+            let mut res = String::from("rsync://");
+            append_host(&mut res, u)?;
+            let module_start = res.len() + 1;
+            append_path_segment(&mut res, u)?;
+            let path_start = res.len() + 1;
+            for _ in 0..(u8::arbitrary(u)? % MAX_SEGMENTS){
+                append_path_segment(&mut res, u)?;
+            }
+            if bool::arbitrary(u)? {
+                res.push('/');
+            }
+            Ok(Self {
+                bytes: res.into(),
+                module_start, path_start
+            })
+        }
+    }
+
+    impl<'a> Arbitrary<'a> for super::Https {
+        fn arbitrary(u: &mut Unstructured) -> arbitrary::Result<Self> {
+            let mut res = String::from("https://");
+            append_host(&mut res, u)?;
+            let path_idx = res.len();
+            for _ in 0..(u8::arbitrary(u)? % MAX_SEGMENTS){
+                append_path_segment(&mut res, u)?;
+            }
+            if bool::arbitrary(u)? {
+                res.push('/');
+            }
+            Ok(Self {
+                uri: res.into(),
+                path_idx
+            })
+        }
+    }
+
+    fn append_host(
+        res: &mut String, u: &mut Unstructured
+    ) -> arbitrary::Result<()> {
+        // Up to 255 characters of [.0-9A-Za-z-].
+        for _ in 1..u8::arbitrary(u)? {
+            append_char(res, u)?;
+        }
+
+        // Optionally append a port.
+        if bool::arbitrary(u)? {
+            res.push(':');
+            write!(res, "{}", u16::arbitrary(u)?).unwrap();
+        }
+        Ok(())
+    }
+
+    fn append_path_segment(
+        res: &mut String, u: &mut Unstructured
+    ) -> arbitrary::Result<()> {
+        res.push('/');
+        for _ in 1..u8::arbitrary(u)? % MAX_SEGMENT_LEN {
+            append_char(res, u)?;
+        }
+        Ok(())
+    }
+
+    fn append_char(
+        res: &mut String, u: &mut Unstructured
+    ) -> arbitrary::Result<()> {
+        const CHARS: [char; 64] = [
+            '-', '.', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+            'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+            'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+            'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+            'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+        ];
+
+        res.push(CHARS[usize::arbitrary(u)? % CHARS.len()]);
+        Ok(())
+    }
+}
+
 
 //------------ Tests ---------------------------------------------------------
 

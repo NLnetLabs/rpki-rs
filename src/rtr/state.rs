@@ -30,6 +30,7 @@ use std::time::SystemTime;
 /// [`new`]: #method.new
 /// [`inc`]: #method.inc
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct State {
     session: u16,
     serial: Serial
@@ -114,6 +115,7 @@ impl Default for State {
 ///
 /// [RFC 1982]: https://tools.ietf.org/html/rfc1982
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Serial(pub u32);
 
 impl Serial {

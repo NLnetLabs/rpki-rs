@@ -764,6 +764,19 @@ impl fmt::Debug for RouterKeyInfo{
 }
 
 
+//--- Arbitrary
+
+#[cfg(feature = "arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for RouterKeyInfo {
+    fn arbitrary(
+        u: &mut arbitrary::Unstructured<'a>
+    ) -> arbitrary::Result<Self> {
+        let size = usize::arbitrary(u)? % (RouterKey::max_key_info_size() + 1);
+        Ok(Self(Bytes::copy_from_slice(u.bytes(size)?)))
+    }
+}
+
+
 //------------ Aspa ----------------------------------------------------------
 
 /// The PDU for ASPA.
@@ -1004,6 +1017,18 @@ impl ProviderAsns {
         let mut providers = vec![0u8; len];
         sock.read_exact(providers.as_mut()).await?;
         Ok(ProviderAsns(providers.into()))
+    }
+}
+
+#[cfg(feature = "arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for ProviderAsns {
+    fn arbitrary(
+        u: &mut arbitrary::Unstructured<'a>
+    ) -> arbitrary::Result<Self> {
+        let size = (
+            usize::arbitrary(u)? % usize::from(u16::MAX)
+        ) * mem::size_of::<Asn>();
+        Ok(Self(Bytes::copy_from_slice(u.bytes(size)?)))
     }
 }
 

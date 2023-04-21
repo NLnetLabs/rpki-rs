@@ -248,6 +248,7 @@ impl fmt::Display for TalUri {
 //------------ TalInfo -------------------------------------------------------
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct TalInfo {
     name: String,
 }
