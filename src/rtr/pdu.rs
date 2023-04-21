@@ -1026,7 +1026,7 @@ impl<'a> arbitrary::Arbitrary<'a> for ProviderAsns {
         u: &mut arbitrary::Unstructured<'a>
     ) -> arbitrary::Result<Self> {
         let size = (
-            usize::arbitrary(u)? % usize::from(u16::MAX
+            usize::arbitrary(u)? % usize::from(u16::MAX)
         ) * mem::size_of::<Asn>();
         Ok(Self(Bytes::copy_from_slice(u.bytes(size)?)))
     }
