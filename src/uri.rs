@@ -947,7 +947,7 @@ mod arbitrary {
 
     impl<'a> Arbitrary<'a> for super::Https {
         fn arbitrary(u: &mut Unstructured) -> arbitrary::Result<Self> {
-            let mut res = String::from("rsync://");
+            let mut res = String::from("https://");
             append_host(&mut res, u)?;
             let path_idx = res.len();
             for _ in 0..(u8::arbitrary(u)? % MAX_SEGMENTS){
@@ -967,7 +967,7 @@ mod arbitrary {
         res: &mut String, u: &mut Unstructured
     ) -> arbitrary::Result<()> {
         // Up to 255 characters of [.0-9A-Za-z-].
-        for _ in 0..u8::arbitrary(u)? {
+        for _ in 1..u8::arbitrary(u)? {
             append_char(res, u)?;
         }
 

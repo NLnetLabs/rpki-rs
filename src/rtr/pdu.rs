@@ -771,7 +771,7 @@ impl<'a> arbitrary::Arbitrary<'a> for RouterKeyInfo {
     fn arbitrary(
         u: &mut arbitrary::Unstructured<'a>
     ) -> arbitrary::Result<Self> {
-        let size = usize::arbitrary(u)? % RouterKey::max_key_info_size();
+        let size = usize::arbitrary(u)? % (RouterKey::max_key_info_size() + 1);
         Ok(Self(Bytes::copy_from_slice(u.bytes(size)?)))
     }
 }
@@ -1025,9 +1025,9 @@ impl<'a> arbitrary::Arbitrary<'a> for ProviderAsns {
     fn arbitrary(
         u: &mut arbitrary::Unstructured<'a>
     ) -> arbitrary::Result<Self> {
-        let size = usize::arbitrary(u)? % (
-            usize::from(u16::MAX) * mem::size_of::<Asn>()
-        );
+        let size = (
+            usize::arbitrary(u)? % usize::from(u16::MAX
+        ) * mem::size_of::<Asn>();
         Ok(Self(Bytes::copy_from_slice(u.bytes(size)?)))
     }
 }
