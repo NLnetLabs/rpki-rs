@@ -6,9 +6,14 @@ Breaking changes
 
 New
 
+* Added implementations for the `arbitrary::Arbitrary` trait to ASN and IP
+  resource types. ([#255])
+
 Bug fixes
 
 Other changes
+
+[#255]: https://github.com/NLnetLabs/rpki-rs/pull/255
 
 
 ## 0.16.0
