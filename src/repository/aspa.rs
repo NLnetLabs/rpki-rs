@@ -8,6 +8,7 @@
 //! [draft-ietf-sidrops-aspa-verification]: https://datatracker.ietf.org/doc/draft-ietf-sidrops-aspa-verification/
 
 use std::fmt;
+use std::cmp::Ordering;
 use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, Oid, Tag};
@@ -24,6 +25,7 @@ use super::sigobj::{SignedObject, SignedObjectBuilder};
 
 
 //------------ Aspa ----------------------------------------------------------
+
 #[derive(Clone, Debug)]
 pub struct Aspa {
     signed: SignedObject,
@@ -53,7 +55,7 @@ impl Aspa {
     where F: FnOnce(&Cert) -> Result<(), ValidationError> {
         let cert = self.signed.validate(issuer, strict)?;
         check_crl(cert.as_ref())?;
-        self.content.validate(&cert)?;
+        self.content.verify(&cert)?;
         Ok((cert, self.content))
     }
 
@@ -124,7 +126,9 @@ impl AsProviderAttestation {
                 
         cons.take_sequence(|cons| {
             let customer_as = Asn::take_from(cons)?;
-            let provider_as_set = ProviderAsSet::take_from(cons)?;
+            let provider_as_set = ProviderAsSet::take_from(
+                cons, customer_as
+            )?;
 
             Ok(AsProviderAttestation {
                 customer_as,
@@ -133,15 +137,28 @@ impl AsProviderAttestation {
         })
     }
 
-    fn validate(
+    fn verify(
         &mut self,
-        cert: &ResourceCert
+        cert: &ResourceCert,
     ) -> Result<(), ValidationError> {
+        // The three bullet points from draft-ietf-sidrops-aspa-profile-12,
+        // section 4.
         if !cert.as_resources().contains_asn(self.customer_as) {
             return Err(VerificationError::new(
                 "customer AS not covered by certificate"
             ).into());
         }
+        if cert.as_cert().as_resources().is_inherited() {
+            return Err(VerificationError::new(
+                "certificate contains inherited AS resources"
+            ).into());
+        }
+        if cert.as_cert().has_ip_resources() {
+            return Err(VerificationError::new(
+                "certificate contains IP resources"
+            ).into());
+        }
+
         Ok(())
     }
 
@@ -190,28 +207,36 @@ impl ProviderAsSet {
     }
 
     fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
+        cons: &mut decode::Constructed<S>,
+        customer_as: Asn,
     ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(|cons| {
             cons.capture(|cons| {
                 let mut last: Option<Asn> = None;
-                let mut entries = true;
-                while entries {
-                    if let Some(provider_as) = ProviderAs::take_opt_from(
-                        cons
-                    )? {
-                        let current_as_id = provider_as.provider();
-                        if let Some(last_as_id) = last {
-                            if last_as_id >= current_as_id {
+                while let Some(provider_as) = ProviderAs::take_opt_from(
+                    cons
+                )? {
+                    if provider_as.provider() == customer_as {
+                        return Err(cons.content_err(
+                            "customer AS in provider AS set"
+                        ));
+                    }
+                    if let Some(last_as_id) = last {
+                        match last_as_id.cmp(&provider_as.provider()) {
+                            Ordering::Less => { }
+                            Ordering::Equal => {
+                                return Err(cons.content_err(
+                                    "duplicate provider AS"
+                                ));
+                            }
+                            Ordering::Greater => {
                                 return Err(cons.content_err(
                                     "provider AS set is not ordered"
                                 ));
                             }
                         }
-                        last = Some(provider_as.provider());
-                    } else {
-                        entries = false;
                     }
+                    last = Some(provider_as.provider());
                 }
                 
                 Ok(())
