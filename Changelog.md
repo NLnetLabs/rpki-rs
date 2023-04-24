@@ -8,12 +8,15 @@ New
 
 * Added implementations for the `arbitrary::Arbitrary` trait to ASN and IP
   resource types. ([#255])
+* Added more strict checks to validation of ASPA objects in accordance
+  with [draft-ietf-sidrops-aspa-profile12](https://datatracker.ietf.org/doc/draft-ietf-sidrops-aspa-profile/12/). ([#256])
 
 Bug fixes
 
 Other changes
 
 [#255]: https://github.com/NLnetLabs/rpki-rs/pull/255
+[#256]: https://github.com/NLnetLabs/rpki-rs/pull/256
 
 
 ## 0.16.0
