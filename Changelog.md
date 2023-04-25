@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased next version
+## 0.16.1
 
-Breaking changes
+Released 2023-04-25
 
 New
 
@@ -10,8 +10,6 @@ New
   resource types. ([#255])
 * Added more strict checks to validation of ASPA objects in accordance
   with [draft-ietf-sidrops-aspa-profile12](https://datatracker.ietf.org/doc/draft-ietf-sidrops-aspa-profile/12/). ([#256])
-
-Bug fixes
 
 Other changes
 
