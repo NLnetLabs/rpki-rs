@@ -15,8 +15,11 @@ Bug fixes
 
 Other changes
 
+* Downgraded the minimum Rust version to 1.63. ([#257])
+
 [#255]: https://github.com/NLnetLabs/rpki-rs/pull/255
 [#256]: https://github.com/NLnetLabs/rpki-rs/pull/256
+[#257]: https://github.com/NLnetLabs/rpki-rs/pull/257
 
 
 ## 0.16.0
