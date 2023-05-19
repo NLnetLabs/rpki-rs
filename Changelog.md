@@ -6,9 +6,13 @@ Breaking changes
 
 New
 
+* Made `rtr::server::NotifyReceiver` public. ([#259])
+
 Bug fixes
 
 Other changes
+
+[#259]: https://github.com/NLnetLabs/rpki-rs/pull/259
 
 
 ## 0.16.1
