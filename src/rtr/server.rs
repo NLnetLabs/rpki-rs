@@ -487,6 +487,8 @@ enum Query {
 //------------ NotifySender --------------------------------------------------
 
 /// A sender to notify a server that there are updates available.
+///
+/// This type also provides access to new receivers.
 #[derive(Clone, Debug)]
 pub struct NotifySender(broadcast::Sender<()>);
 
@@ -503,7 +505,8 @@ impl NotifySender {
         let _ = self.0.send(());
     }
 
-    fn subscribe(&self) -> NotifyReceiver {
+    /// Creates a new receiver for update notifications.
+    pub fn subscribe(&self) -> NotifyReceiver {
         NotifyReceiver(Some(self.0.subscribe()))
     }
 }
@@ -517,13 +520,17 @@ impl Default for NotifySender {
 
 //------------ NotifyReceiver ------------------------------------------------
 
-/// The receiver for notifications.
+/// A receiver for update notifications.
 ///
-/// This type is used by connections.
+/// This type is used by RTR connections but you can use it elsewhere as well
+/// to be notified of data updates.
 #[derive(Debug)]
-struct NotifyReceiver(Option<broadcast::Receiver<()>>);
+pub struct NotifyReceiver(Option<broadcast::Receiver<()>>);
 
 impl NotifyReceiver {
+    /// Waits for updates to be available.
+    ///
+    /// Waits forever if all senders are closed.
     pub async fn recv(&mut self) {
         use tokio::sync::broadcast::error::{RecvError, TryRecvError};
 
@@ -539,6 +546,7 @@ impl NotifyReceiver {
                     // I think we need to get the latest value, though, but
                     // again, we don’t care.
                     if let Err(TryRecvError::Closed) = rx.try_recv() {
+                        // Fall through.
                     }
                     else {
                         return
