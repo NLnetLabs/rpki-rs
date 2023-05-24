@@ -515,7 +515,7 @@ pub struct BgpsecAssertion {
 
     /// An optional comment.
     #[serde(skip_serializing_if = "Option::is_none")]
-    comment: Option<String>,
+    pub comment: Option<String>,
 }
 
 impl BgpsecAssertion {
