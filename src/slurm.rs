@@ -200,17 +200,13 @@ impl PrefixFilter {
         PrefixFilter { prefix, asn, comment }
     }
 
-    /// Returns whether the given payload item should be dropped.
-    pub fn drop_payload(&self, payload: &rtr::Payload) -> bool {
-        let drop_prefix = self.prefix.and_then(|self_prefix| {
-            payload.to_origin().map(|origin| {
-                self_prefix.covers(origin.prefix.prefix())
-            })
+    /// Returns whether a route origin should be dropped.
+    pub fn drop_origin(&self, origin: rtr::RouteOrigin) -> bool {
+        let drop_prefix = self.prefix.map(|self_prefix| {
+            self_prefix.covers(origin.prefix.prefix())
         });
-        let drop_asn = self.asn.and_then(|self_asn| {
-            payload.to_origin().map(|origin| {
+        let drop_asn = self.asn.map(|self_asn| {
                 self_asn == origin.asn
-            })
         });
 
         match (drop_prefix, drop_asn) {
@@ -218,6 +214,14 @@ impl PrefixFilter {
             (Some(prefix), None) => prefix,
             (None, Some(asn)) => asn,
             (None, None) => false
+        }
+    }
+
+    /// Returns whether the given payload item should be dropped.
+    pub fn drop_payload(&self, payload: &rtr::Payload) -> bool {
+        match payload {
+            rtr::Payload::Origin(origin) => self.drop_origin(*origin),
+            _ => false
         }
     }
 }
@@ -254,6 +258,31 @@ impl BgpsecFilter {
         ski: Option<KeyIdentifier>, asn: Option<Asn>, comment: Option<String>,
     ) -> Self {
         BgpsecFilter { ski, asn, comment }
+    }
+
+    /// Returns whether a router key should be dropped.
+    pub fn drop_router_key(&self, key: &rtr::RouterKey) -> bool {
+        let drop_ski = self.ski.map(|self_ski| {
+            self_ski == key.key_identifier
+        });
+        let drop_asn = self.asn.map(|self_asn| {
+                self_asn == key.asn
+        });
+
+        match (drop_ski, drop_asn) {
+            (Some(ski), Some(asn)) => ski && asn,
+            (Some(ski), None) => ski,
+            (None, Some(asn)) => asn,
+            (None, None) => false
+        }
+    }
+
+    /// Returns whether the given payload item should be dropped.
+    pub fn drop_payload(&self, payload: &rtr::Payload) -> bool {
+        match payload {
+            rtr::Payload::RouterKey(key) => self.drop_router_key(key),
+            _ => false
+        }
     }
 }
 
