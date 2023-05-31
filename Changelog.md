@@ -7,12 +7,15 @@ Breaking changes
 New
 
 * Made `rtr::server::NotifyReceiver` public. ([#259])
+* Added an exclusion check to SLURM’s router key filters and provided
+  type-specific check methods for the other types. ([#260])
 
 Bug fixes
 
 Other changes
 
 [#259]: https://github.com/NLnetLabs/rpki-rs/pull/259
+[#260]: https://github.com/NLnetLabs/rpki-rs/pull/260
 
 
 ## 0.16.1
