@@ -21,7 +21,7 @@ use bcder::{decode, encode};
 use bcder::Tag;
 use bcder::decode::{ContentError, DecodeError};
 use bcder::encode::{PrimitiveContent, Nothing};
-use routecore::asn::ParseAsnError;
+use crate::resources::asn::ParseAsnError;
 use super::super::cert::Overclaim;
 use super::super::x509::encode_extension;
 use super::super::error::VerificationError;
@@ -31,7 +31,7 @@ use super::choice::{InheritedResources, ResourcesChoice};
 
 //------------ Re-exports ----------------------------------------------------
 
-pub use routecore::asn::Asn;
+pub use crate::resources::asn::Asn;
 
 
 //------------ AsResources ---------------------------------------------------

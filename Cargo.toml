@@ -1,7 +1,7 @@
 [package]
 name = "rpki"
 version = "0.16.2-dev"
-edition = "2018"
+edition = "2021"
 rust-version = "1.63"
 authors = ["The NLnet Labs RPKI Team <rpki@nlnetlabs.nl>"]
 description = "A library for validating and creating RPKI data."
@@ -27,7 +27,6 @@ log             = "0.4.7"
 openssl         = { version = "0.10.23", optional = true }
 quick-xml       = { version = "0.23.0", optional = true }
 ring            = { version = "0.16.11", optional = true }
-routecore       = "0.3.1"
 serde           = { version = "1.0.103", optional = true, features = [ "derive" ] }
 serde_json      = { version = "1.0.40", optional = true }
 tokio           = { version = "1.0", optional = true, features = ["io-util",  "net", "rt", "sync", "time"] }
@@ -45,8 +44,8 @@ default = []
 
 # Main components of the crate.
 ca         = [ "repository", "serde-support", "rrdp" ]
-crypto     = [ "bcder", "ring", "untrusted", "routecore/bcder" ]
-repository = [ "bcder", "crypto", "routecore/bcder" ]
+crypto     = [ "bcder", "ring", "untrusted" ]
+repository = [ "bcder", "crypto" ]
 rrdp       = [ "xml", "ring" ]
 rtr        = [ "futures-util", "tokio", "tokio-stream" ]
 slurm      = [ "rtr", "serde-support", "serde_json" ]
@@ -59,8 +58,8 @@ compat = [ ]
 xml = [ "quick-xml" ]
 
 # Extra features provided.
-arbitrary = ["dep:arbitrary", "chrono/arbitrary", "routecore/arbitrary"]
-serde-support = ["serde", "routecore/serde"]
+arbitrary = ["dep:arbitrary", "chrono/arbitrary"]
+serde-support = ["serde"]
 softkeys = [ "openssl" ]
 
 # Dummy features for Windows CI runs where we don’t want to have to deal
