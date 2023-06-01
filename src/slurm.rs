@@ -12,10 +12,10 @@ use std::{borrow, error, fmt, io, ops};
 use std::convert::{TryFrom, TryInto};
 use std::str::FromStr;
 use bytes::Bytes;
-use routecore::addr::{MaxLenPrefix, Prefix};
-use routecore::bgpsec::KeyIdentifier;
-use routecore::asn::Asn;
 use serde::{Deserialize, Serialize};
+use crate::crypto::keys::KeyIdentifier;
+use crate::resources::addr::{MaxLenPrefix, Prefix};
+use crate::resources::asn::Asn;
 use crate::rtr::payload as rtr;
 use crate::rtr::pdu::{RouterKeyInfo, KeyInfoError};
 

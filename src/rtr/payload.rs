@@ -10,9 +10,9 @@
 use std::{fmt, hash};
 use std::cmp::Ordering;
 use std::time::Duration;
-use routecore::addr::MaxLenPrefix;
-use routecore::asn::Asn;
-use routecore::bgpsec::KeyIdentifier;
+use crate::crypto::keys::KeyIdentifier;
+use crate::resources::addr::MaxLenPrefix;
+use crate::resources::asn::Asn;
 use super::pdu::{ProviderAsns, RouterKeyInfo};
 
 

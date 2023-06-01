@@ -11,9 +11,9 @@ use std::convert::TryFrom;
 use std::marker::Unpin;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use bytes::Bytes;
-use routecore::addr::{MaxLenPrefix, Prefix};
-use routecore::asn::Asn;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use crate::resources::addr::{MaxLenPrefix, Prefix};
+use crate::resources::asn::Asn;
 use super::payload;
 use super::state::{Serial, State};
 

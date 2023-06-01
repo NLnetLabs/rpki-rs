@@ -5,14 +5,13 @@ use std::str::FromStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use routecore::asn::Asn;
-
 use crate::repository::resources::{AsResources, IpResources};
 use crate::repository::Cert;
 use crate::repository::{
     resources::{AsBlock, AsBlocks, AsBlocksBuilder, Ipv4Blocks, Ipv6Blocks},
     roa::RoaIpAddress,
 };
+use crate::resources::asn::Asn;
 
 //------------ ResourceSet ---------------------------------------------------
 

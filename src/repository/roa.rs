@@ -140,7 +140,7 @@ impl RouteOriginAttestation {
     pub fn iter_origins(
         &self
     ) -> impl Iterator<Item = crate::rtr::payload::RouteOrigin> + '_ {
-        use routecore::addr::{MaxLenPrefix, Prefix as PayloadPrefix};
+        use crate::resources::addr::{MaxLenPrefix, Prefix as PayloadPrefix};
         use crate::rtr::payload::RouteOrigin;
 
         self.v4_addrs.iter().filter_map(move |addr| {

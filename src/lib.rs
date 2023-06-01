@@ -35,9 +35,12 @@ pub mod ca;
 pub mod crypto;
 pub mod oid;
 pub mod repository;
+pub mod resources;
 pub mod rrdp;
 pub mod rtr;
 pub mod slurm;
 pub mod uri;
 pub mod xml;
+
+mod util;
 
