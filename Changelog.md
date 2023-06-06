@@ -4,6 +4,11 @@
 
 Breaking changes
 
+* Dropped dependency on _routecore_ again and moved all used types into
+  _rpki-rs_. The new module `resources` contains the AS and IP address
+  resources. The BGPsec key identifier is now an actual type in
+  `crypto::keys`. ([#261])
+
 New
 
 * Made `rtr::server::NotifyReceiver` public. ([#259])
@@ -16,6 +21,7 @@ Other changes
 
 [#259]: https://github.com/NLnetLabs/rpki-rs/pull/259
 [#260]: https://github.com/NLnetLabs/rpki-rs/pull/260
+[#261]: https://github.com/NLnetLabs/rpki-rs/pull/261
 
 
 ## 0.16.1
