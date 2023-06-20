@@ -20,6 +20,7 @@ use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use crate::{oid, uri};
 use crate::crypto::{DigestAlgorithm, Signer, SigningError};
+use crate::util::base64;
 use super::cert::{Cert, ResourceCert};
 use super::error::{ValidationError, VerificationError};
 use super::sigobj::{SignedObject, SignedObjectBuilder};
@@ -137,7 +138,7 @@ impl serde::Serialize for Manifest {
         serializer: S
     ) -> Result<S::Ok, S::Error> {
         let bytes = self.to_captured().into_bytes();
-        let b64 = base64::encode(&bytes);
+        let b64 = base64::Serde.encode(&bytes);
         b64.serialize(serializer)
     }
 }
@@ -149,8 +150,8 @@ impl<'de> serde::Deserialize<'de> for Manifest {
     ) -> Result<Self, D::Error> {
         use serde::de;
 
-        let string = String::deserialize(deserializer)?;
-        let decoded = base64::decode(string).map_err(de::Error::custom)?;
+        let s = String::deserialize(deserializer)?;
+        let decoded = base64::Serde.decode(&s).map_err(de::Error::custom)?;
         let bytes = Bytes::from(decoded);
         Manifest::decode(bytes, true).map_err(de::Error::custom)
     }

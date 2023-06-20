@@ -14,7 +14,7 @@ use ring::error::Unspecified;
 use ring::signature::VerificationAlgorithm;
 use untrusted::Input;
 use crate::oid;
-use crate::util::hex;
+use crate::util::{base64, hex};
 use super::signature::{RpkiSignatureAlgorithm, Signature, SignatureAlgorithm};
 
 
@@ -360,7 +360,7 @@ impl serde::Serialize for PublicKey {
         &self, serializer: S
     ) -> Result<S::Ok, S::Error> {
         let bytes = self.to_info_bytes();
-        let b64 = base64::encode(&bytes);
+        let b64 = base64::Serde.encode(&bytes);
         b64.serialize(serializer)
     }
 }
@@ -373,8 +373,8 @@ impl<'de> serde::Deserialize<'de> for PublicKey {
         use serde::de;
         use bcder::decode::IntoSource;
 
-        let string = String::deserialize(deserializer)?;
-        let decoded = base64::decode(string).map_err(de::Error::custom)?;
+        let s = String::deserialize(deserializer)?;
+        let decoded = base64::Serde.decode(&s).map_err(de::Error::custom)?;
         let bytes = Bytes::from(decoded);
         PublicKey::decode(bytes.into_source()).map_err(de::Error::custom)
     }

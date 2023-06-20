@@ -13,6 +13,7 @@ use bcder::decode::IntoSource;
 use log::{debug, error};
 use crate::uri;
 use crate::crypto::PublicKey;
+use crate::util::base64;
 
 
 //------------ Tal -----------------------------------------------------------
@@ -60,7 +61,7 @@ impl Tal {
             if b.is_ascii_whitespace() { None }
             else { Some(*b) }
         ).collect();
-        let key_info = base64::decode(data)?;
+        let key_info = base64::Xml.decode_bytes(&data)?;
         let key_info = PublicKey::decode(key_info.as_slice().into_source())?;
         Ok(Tal {
             uris,

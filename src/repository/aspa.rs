@@ -16,6 +16,7 @@ use bcder::decode::{DecodeError, IntoSource, SliceSource, Source};
 use bcder::encode::Values;
 use crate::oid;
 use crate::crypto::{Signer, SigningError};
+use crate::util::base64;
 use super::cert::{Cert, ResourceCert};
 use super::error::{ValidationError, VerificationError};
 use super::resources::{
@@ -89,7 +90,7 @@ impl serde::Serialize for Aspa {
         &self, serializer: S
     ) -> Result<S::Ok, S::Error> {
         let bytes = self.to_captured().into_bytes();
-        let b64 = base64::encode(&bytes);
+        let b64 = base64::Serde.encode(&bytes);
         b64.serialize(serializer)
     }
 }
@@ -101,8 +102,8 @@ impl<'de> serde::Deserialize<'de> for Aspa {
     ) -> Result<Self, D::Error> {
         use serde::de;
 
-        let string = String::deserialize(deserializer)?;
-        let decoded = base64::decode(string).map_err(de::Error::custom)?;
+        let s = String::deserialize(deserializer)?;
+        let decoded = base64::Serde.decode(&s).map_err(de::Error::custom)?;
         let bytes = bytes::Bytes::from(decoded);
         Aspa::decode(bytes, true).map_err(de::Error::custom)
     }

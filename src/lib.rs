@@ -40,7 +40,6 @@ pub mod rrdp;
 pub mod rtr;
 pub mod slurm;
 pub mod uri;
+pub mod util;
 pub mod xml;
-
-mod util;
 

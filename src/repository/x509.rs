@@ -20,6 +20,7 @@ use crate::crypto::{
     PublicKey, RpkiSignatureAlgorithm, Signature, SignatureAlgorithm, Signer,
     SignatureVerificationError,
 };
+use crate::util::base64;
 use super::error::{InspectionError, VerificationError};
 
 
@@ -267,7 +268,7 @@ impl serde::Serialize for Name {
         &self, serializer: S
     ) -> Result<S::Ok, S::Error> {
         let bytes = self.0.as_slice();
-        let b64 = base64::encode(bytes);
+        let b64 = base64::Serde.encode(bytes);
         b64.serialize(serializer)
     }
 }
@@ -279,8 +280,8 @@ impl<'de> serde::Deserialize<'de> for Name {
     ) -> Result<Self, D::Error> {
         use serde::de;
 
-        let string = String::deserialize(deserializer)?;
-        let decoded = base64::decode(string).map_err(de::Error::custom)?;
+        let s = String::deserialize(deserializer)?;
+        let decoded = base64::Serde.decode(&s).map_err(de::Error::custom)?;
         let bytes = bytes::Bytes::from(decoded);
 
         Mode::Der.decode(bytes, Name::take_from).map_err(de::Error::custom)

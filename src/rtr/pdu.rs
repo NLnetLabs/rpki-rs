@@ -14,6 +14,7 @@ use bytes::Bytes;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use crate::resources::addr::{MaxLenPrefix, Prefix};
 use crate::resources::asn::Asn;
+use crate::util::base64;
 use super::payload;
 use super::state::{Serial, State};
 
@@ -749,9 +750,7 @@ impl fmt::Display for RouterKeyInfo{
     ///
     /// [RFC 8416]: https://tools.ietf.org/html/rfc8416
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        base64::display::Base64Display::with_config(
-            self.0.as_ref(), base64::URL_SAFE_NO_PAD,
-        ).fmt(f)
+        base64::Slurm.display(self.0.as_ref()).fmt(f)
     }
 }
 

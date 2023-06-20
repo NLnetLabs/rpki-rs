@@ -31,6 +31,7 @@ use log::info;
 use ring::digest;
 use uuid::Uuid;
 use crate::{uri, xml};
+use crate::util::base64;
 use crate::xml::decode::{Content, Error as XmlError, Reader, Name};
 
 #[cfg(feature = "serde")] use std::str::FromStr;
@@ -1361,7 +1362,7 @@ enum Action {
 /// provides access to the decoded data via the standard `Read` trait.
 pub struct ObjectReader<'a>(
     /// The base64 encoded data.
-    base64::read::DecoderReader<'a, &'a [u8]>
+    base64::DecoderReader<&'a [u8]>
 );
 
 impl<'a> ObjectReader<'a> {
@@ -1393,9 +1394,7 @@ impl<'a> ObjectReader<'a> {
         })?.unwrap_or_default();
         let mut data_b64 = data_b64.as_slice();
         op(
-            &mut ObjectReader(base64::read::DecoderReader::new(
-                &mut data_b64, base64::STANDARD
-            ))
+            &mut ObjectReader(base64::Xml.decode_reader(&mut data_b64))
         )
     }
 }

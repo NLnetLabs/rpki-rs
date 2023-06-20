@@ -4,25 +4,25 @@ use std::borrow::Cow;
 use bytes::Bytes;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::events::attributes::AttrError;
+use quick_xml::name::Namespace;
+use crate::util::base64;
 
 /// An XML reader.
 ///
 /// This struct holds all state necessary for parsing an XML document.
 pub struct Reader<R: io::BufRead> {
-    reader: quick_xml::Reader<R>,
+    reader: quick_xml::NsReader<R>,
     buf: Vec<u8>,
-    ns_buf: Vec<u8>,
 }
 
 impl<R: io::BufRead> Reader<R> {
     /// Creates a new reader from an underlying reader.
     pub fn new(reader: R) -> Self {
-        let mut reader = quick_xml::Reader::from_reader(reader);
+        let mut reader = quick_xml::NsReader::from_reader(reader);
         reader.trim_text(true);
         Reader {
             reader,
             buf: Vec::new(),
-            ns_buf: Vec::new(),
         }
     }
 
@@ -34,9 +34,10 @@ impl<R: io::BufRead> Reader<R> {
     where F: FnOnce(Element) -> Result<(), E>, E: From<Error> {
         loop {
             self.buf.clear();
-            let (ns, event) = self.reader.read_namespaced_event(
-                &mut self.buf, &mut self.ns_buf
+            let (ns, event) = self.reader.read_resolved_event_into(
+                &mut self.buf,
             ).map_err(Into::into)?;
+            let ns = ns.try_into().map_err(Into::into)?;
             match event {
                 Event::Start(start) => {
                     op(Element::new(start, ns))?;
@@ -62,7 +63,7 @@ impl<R: io::BufRead> Reader<R> {
     pub fn end(&mut self) -> Result<(), Error> {
         loop {
             self.buf.clear();
-            match self.reader.read_event(&mut self.buf)? {
+            match self.reader.read_event_into(&mut self.buf)? {
                 Event::Eof => return Ok(()),
                 Event::Comment(_) => { }
                 _ => return Err(Error::Malformed)
@@ -77,24 +78,27 @@ impl<R: io::BufRead> Reader<R> {
 /// The start of an element.
 pub struct Element<'b, 'n> {
     start: BytesStart<'b>,
-    ns: Option<&'n [u8]>,
+    ns: Option<Namespace<'n>>,
 }
 
 impl<'b, 'n> Element<'b, 'n> {
     /// Creates a new value from the underlying components.
-    fn new(start: BytesStart<'b>, ns: Option<&'n [u8]>) -> Self {
+    fn new(start: BytesStart<'b>, ns: Option<Namespace<'n>>) -> Self {
         Element { start, ns, }
     }
 
     /// Returns the name of the element.
     pub fn name(&self) -> Name {
-        Name::new(self.ns, self.start.local_name())
+        Name::new(
+            self.ns.map(|ns| ns.0),
+            self.start.local_name().into_inner()
+        )
     }
 
     /// Processes the attributes of the element.
     ///
-    /// We don’t support qualified attributes. We will also not check for
-    /// those.
+    /// We don’t support qualified attributes. Any namespace prefixes in
+    /// attribute names will lead to an error.
     pub fn attributes<F, E>(&self, mut op: F) -> Result<(), E>
     where
         F: FnMut(&[u8], AttrValue) -> Result<(), E>,
@@ -102,10 +106,17 @@ impl<'b, 'n> Element<'b, 'n> {
     {
         for attr in self.start.attributes() {
             let attr = attr.map_err(Into::into)?;
-            if attr.key == b"xmlns" || attr.key.starts_with(b"xmlns:") {
+            if attr.key.as_namespace_binding().is_some() {
                 continue
             }
-            op(attr.key, AttrValue(attr))?;
+            if let Some(prefix) = attr.key.prefix() {
+                return Err(E::from(
+                    Error::Xml(quick_xml::Error::UnknownPrefix(
+                        prefix.as_ref().into()
+                    ))
+                ))
+            }
+            op(attr.key.local_name().as_ref(), AttrValue(attr))?;
         }
         Ok(())
     }
@@ -131,9 +142,10 @@ impl Content {
 
         loop {
             reader.buf.clear();
-            let (ns, event) = reader.reader.read_namespaced_event(
-                &mut reader.buf, &mut reader.ns_buf
+            let (ns, event) = reader.reader.read_resolved_event_into(
+                &mut reader.buf
             ).map_err(Into::into)?;
+            let ns = ns.try_into().map_err(Into::into)?;
             match event {
                 Event::Start(start) => {
                     op(Element::new(start, ns))?;
@@ -169,9 +181,10 @@ impl Content {
 
         loop {
             reader.buf.clear();
-            let (ns, event) = reader.reader.read_namespaced_event(
-                &mut reader.buf, &mut reader.ns_buf
+            let (ns, event) = reader.reader.read_resolved_event_into(
+                &mut reader.buf
             ).map_err(Into::into)?;
+            let ns = ns.try_into().map_err(Into::into)?;
             match event {
                 Event::Start(start) => {
                     op(Element::new(start, ns))?;
@@ -211,7 +224,7 @@ impl Content {
 
         loop {
             reader.buf.clear();
-            let event = reader.reader.read_event(
+            let event = reader.reader.read_event_into(
                 &mut reader.buf
             ).map_err(Into::into)?;
             match event {
@@ -234,7 +247,7 @@ impl Content {
 
         loop {
             reader.buf.clear();
-            match reader.reader.read_event(&mut reader.buf)? {
+            match reader.reader.read_event_into(&mut reader.buf)? {
                 Event::End(_) => {
                     self.empty = true;
                     return Ok(())
@@ -261,7 +274,7 @@ impl Content {
 
         loop {
             reader.buf.clear();
-            let event = reader.reader.read_event(
+            let event = reader.reader.read_event_into(
                 &mut reader.buf
             ).map_err(Into::into)?;
             match event {
@@ -294,7 +307,7 @@ impl Content {
 
         loop {
             reader.buf.clear();
-            let event = reader.reader.read_event(
+            let event = reader.reader.read_event_into(
                 &mut reader.buf
             )?;
             match event {
@@ -401,16 +414,15 @@ pub struct AttrValue<'a>(quick_xml::events::attributes::Attribute<'a>);
 
 impl<'a> AttrValue<'a> {
     pub fn ascii_into<T: str::FromStr>(self) -> Result<T, Error> {
-        let s = self.0.unescaped_value()?;
+        let s = self.0.unescape_value()?;
         if !s.is_ascii() {
             return Err(Error::Malformed)
         }
-        let s = unsafe { str::from_utf8_unchecked(s.as_ref()) };
-        T::from_str(s).map_err(|_| Error::Malformed)
+        T::from_str(s.as_ref()).map_err(|_| Error::Malformed)
     }
 
     pub fn into_ascii_bytes(self) -> Result<Bytes, Error> {
-        let s = self.0.unescaped_value()?;
+        let s = self.0.unescape_value()?;
         if !s.is_ascii() {
             return Err(Error::Malformed)
         }
@@ -425,33 +437,17 @@ pub struct Text<'a>(quick_xml::events::BytesText<'a>);
 
 impl<'a> Text<'a> {
     pub fn to_ascii(&self) -> Result<Cow<str>, Error> {
-        match self.0.unescaped()? {
-            Cow::Borrowed(s) => {
-                Ok(Cow::Borrowed(
-                    unsafe { str::from_utf8_unchecked(s) }
-                ))
-            }
-            Cow::Owned(s) => {
-                Ok(Cow::Owned(unsafe { String::from_utf8_unchecked(s) }))
-            }
-        }
+        // XXX Shouldn’t this reject non-ASCII Unicode?
+        Ok(self.0.unescape()?)
     }
 
     pub fn base64_decode(&self) -> Result<Vec<u8>, Error> {
-        // The text is supposed to be xsd:base64Binary which only allows
-        // the base64 characters plus whitespace.
-        let base64 = self.to_ascii()
-            .map(|text| {
-                text.as_bytes()
-                .iter()
-                .filter(|c| **c < 128_u8) // stuff like unicode whitespace
-                .filter(|c| !b" \n\t\r\x0b\x0c=".contains(c))
-                .copied()
-                .collect::<Vec<_>>() 
-            })?;
-        
-        base64::decode_config(base64, base64::STANDARD_NO_PAD)
-            .map_err(|_| Error::Malformed)
+        // XXX White space handling should move to the base64 module.
+        let mut base64 = String::new();
+        for s in self.to_ascii()?.split_ascii_whitespace() {
+            base64.push_str(s)
+        }
+        base64::Xml.decode(&base64).map_err(|_| Error::Malformed)
     }
 }
 
