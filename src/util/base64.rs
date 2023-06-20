@@ -12,7 +12,9 @@
 //! for.
 use std::{fmt, io, str};
 use base64::Engine;
-use base64::engine::general_purpose::{self, GeneralPurpose};
+use base64::engine::general_purpose::{
+    GeneralPurpose, GeneralPurposeConfig, STANDARD
+};
 
 pub use base64::{DecodeError, DecodeSliceError};
 
@@ -25,7 +27,7 @@ pub use base64::{DecodeError, DecodeSliceError};
 pub struct Xml;
 
 impl Xml {
-    const ENGINE: GeneralPurpose = general_purpose::STANDARD;
+    const ENGINE: GeneralPurpose = STANDARD;
 
     pub fn decode(self, input: &str) -> Result<Vec<u8>, DecodeError> {
         Self::ENGINE.decode(input)
@@ -68,7 +70,7 @@ impl Xml {
 pub struct Serde;
 
 impl Serde {
-    const ENGINE: GeneralPurpose = general_purpose::STANDARD;
+    const ENGINE: GeneralPurpose = STANDARD;
 
     pub fn decode(self, input: &str) -> Result<Vec<u8>, DecodeError> {
         Self::ENGINE.decode(input)
@@ -84,11 +86,19 @@ impl Serde {
 
 /// The flavor prescribed for some data in local exception files.
 ///
-/// Uses the URL-safe alphabet without padding and no white space allowed.
+/// Uses the URL-safe alphabet. When decoding, it accepts both padding and no
+/// padding. When encoding, it doesn’t add padding.
 pub struct Slurm;
 
 impl Slurm {
-    const ENGINE: GeneralPurpose = general_purpose::URL_SAFE_NO_PAD;
+    const ENGINE: GeneralPurpose = GeneralPurpose::new(
+        &base64::alphabet::URL_SAFE,
+        GeneralPurposeConfig::new()
+            .with_encode_padding(false)
+            .with_decode_padding_mode(
+                base64::engine::DecodePaddingMode::Indifferent
+            )
+    );
 
     pub fn decode(self, input: &str) -> Result<Vec<u8>, DecodeError> {
         Self::ENGINE.decode(input)
