@@ -1392,10 +1392,7 @@ impl<'a> ObjectReader<'a> {
                     else { Some(*b) }
             }).collect::<Vec<_>>())
         })?.unwrap_or_default();
-        let mut data_b64 = data_b64.as_slice();
-        op(
-            &mut ObjectReader(base64::Xml.decode_reader(&mut data_b64))
-        )
+        op(&mut ObjectReader(base64::Xml.decode_reader(data_b64.as_slice())))
     }
 }
 
