@@ -262,14 +262,14 @@ impl Content {
         &mut self,
         reader: &mut Reader<R>,
         op: F
-    ) -> Result<Option<T>, E>
+    ) -> Result<T, E>
     where
         R: io::BufRead,
-        F: FnOnce(Text) -> Result<T, E>,
+        F: FnOnce(Option<Text>) -> Result<T, E>,
         E: From<Error>
     {
         if self.empty {
-            return Ok(None)
+            return op(None)
         }
 
         loop {
@@ -279,13 +279,13 @@ impl Content {
             ).map_err(Into::into)?;
             match event {
                 Event::Text(text) => {
-                    let res = op(Text(text))?;
+                    let res = op(Some(Text(text)))?;
                     self.take_end(reader)?;
-                    return Ok(Some(res))
+                    return Ok(res)
                 }
                 Event::End(_) => {
                     self.empty = true;
-                    return Ok(None)
+                    return op(None)
                 }
                 Event::Comment(_) => { }
                 _ => return Err(Error::Malformed.into())
@@ -436,18 +436,19 @@ impl<'a> AttrValue<'a> {
 pub struct Text<'a>(quick_xml::events::BytesText<'a>);
 
 impl<'a> Text<'a> {
+    pub fn to_utf8(&self) -> Result<Cow<str>, Error> {
+        Ok(self.0.unescape()?)
+    }
+
     pub fn to_ascii(&self) -> Result<Cow<str>, Error> {
         // XXX Shouldn’t this reject non-ASCII Unicode?
         Ok(self.0.unescape()?)
     }
 
     pub fn base64_decode(&self) -> Result<Vec<u8>, Error> {
-        // XXX White space handling should move to the base64 module.
-        let mut base64 = String::new();
-        for s in self.to_ascii()?.split_ascii_whitespace() {
-            base64.push_str(s)
-        }
-        base64::Xml.decode(&base64).map_err(|_| Error::Malformed)
+        base64::Xml.decode(
+            &self.to_utf8()?.as_ref()
+        ).map_err(|_| Error::Malformed)
     }
 }
 
@@ -470,6 +471,12 @@ impl From<quick_xml::Error> for Error {
 impl From<AttrError> for Error {
     fn from(err: AttrError) -> Self {
         Error::XmlAttr(err)
+    }
+}
+
+impl From<base64::XmlDecodeError> for Error {
+    fn from(_: base64::XmlDecodeError) -> Self {
+        Self::Malformed
     }
 }
 

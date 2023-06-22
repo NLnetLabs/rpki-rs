@@ -1362,7 +1362,7 @@ enum Action {
 /// provides access to the decoded data via the standard `Read` trait.
 pub struct ObjectReader<'a>(
     /// The base64 encoded data.
-    base64::DecoderReader<&'a [u8]>
+    base64::XmlDecoderReader<'a>
 );
 
 impl<'a> ObjectReader<'a> {
@@ -1383,16 +1383,32 @@ impl<'a> ObjectReader<'a> {
         E: From<ProcessError>,
         F: FnOnce(&mut ObjectReader) -> Result<T, E>
     {
-        // XXX This could probably do with a bit of optimization.
-        let data_b64 = content.take_opt_final_text(reader, |text| {
-            // The text is supposed to be xsd:base64Binary which only allows
-            // the base64 characters plus whitespace.
-            Ok(text.to_ascii()?.as_bytes().iter().filter_map(|b| {
-                    if b.is_ascii_whitespace() { None }
-                    else { Some(*b) }
-            }).collect::<Vec<_>>())
-        })?.unwrap_or_default();
-        op(&mut ObjectReader(base64::Xml.decode_reader(data_b64.as_slice())))
+        // We need this extra error type to fulfil the trait bounds of the
+        // error type of the closure passed to take_opt_final_text. Or, as
+        // the German saying goes: „Von hinten durch die Brust ins Auge.“
+        enum Error<E> {
+            Xml(XmlError),
+            User(E),
+        }
+
+        impl<E> From<XmlError> for Error<E> {
+            fn from(err: XmlError) -> Self {
+                Error::Xml(err)
+            }
+        }
+
+        content.take_opt_final_text(reader, |text| {
+            let b64 = match text.as_ref() {
+                Some(text) => text.to_ascii()?,
+                None => Default::default(),
+            };
+            op(
+                &mut ObjectReader(base64::Xml.decode_reader(b64.as_ref()))
+            ).map_err(Error::User)
+        }).map_err(|err| match err {
+            Error::Xml(err) => ProcessError::Xml(err).into(),
+            Error::User(err) => err
+        })
     }
 }
 
