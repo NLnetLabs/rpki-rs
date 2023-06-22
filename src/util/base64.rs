@@ -68,9 +68,9 @@ impl Xml {
         Self::ENGINE.encode(data)
     }
 
-    pub fn decode_reader<'s>(
-        self, input: &'s str,
-    ) -> XmlDecoderReader<'s> {
+    pub fn decode_reader(
+        self, input: &str,
+    ) -> XmlDecoderReader {
         XmlDecoderReader(
             base64::read::DecoderReader::new(
                 SkipWhitespace::new(input),

@@ -447,7 +447,7 @@ impl<'a> Text<'a> {
 
     pub fn base64_decode(&self) -> Result<Vec<u8>, Error> {
         base64::Xml.decode(
-            &self.to_utf8()?.as_ref()
+            self.to_utf8()?.as_ref()
         ).map_err(|_| Error::Malformed)
     }
 }
