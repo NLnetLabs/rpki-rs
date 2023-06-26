@@ -46,6 +46,13 @@ impl Asn {
         cons.take_u32().map(Asn)
     }
 
+    /// Takes an optional AS number from the beginning of an encoded value.
+    pub fn take_opt_from<S: Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Option<Self>, DecodeError<S::Error>> {
+        cons.take_opt_u32().map(|val| val.map(Asn))
+    }
+
     /// Skips over an AS number at the beginning of an encoded value.
     pub fn skip_in<S: Source>(
         cons: &mut decode::Constructed<S>
