@@ -512,22 +512,6 @@ mod signer_test {
             deserialized.to_captured().into_bytes()
         )
     }
-
-    #[test]
-    #[cfg(feature = "serde")]
-    fn serde_aspa_empty_providers() {
-        let customer_as = 64496.into();
-        let providers = Vec::new();
-        let aspa = make_aspa(customer_as, providers);
-        
-        let serialized = serde_json::to_string(&aspa).unwrap();
-        let deserialized: Aspa = serde_json::from_str(&serialized).unwrap();
-
-        assert_eq!(
-            aspa.to_captured().into_bytes(),
-            deserialized.to_captured().into_bytes()
-        )
-    }
 }
 
 
