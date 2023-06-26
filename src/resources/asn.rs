@@ -296,6 +296,16 @@ impl fmt::Display for Asn {
 pub struct SmallAsnSet(Vec<Asn>);
 
 impl SmallAsnSet {
+    /// Creates a new ASN set from an order vec of unique ASNs.
+    ///
+    /// # Safety
+    ///
+    /// The caller must make sure that the vec passed is sorted and does not
+    /// contain any duplicates.
+    pub unsafe fn from_vec_unchecked(vec: Vec<Asn>) -> Self {
+        Self(vec)
+    }
+
     pub fn iter(&self) -> SmallSetIter {
         self.0.iter().cloned()
     }

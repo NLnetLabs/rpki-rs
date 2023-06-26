@@ -15,6 +15,7 @@ use bcder::decode::{DecodeError, IntoSource, SliceSource, Source};
 use bcder::encode::Values;
 use crate::oid;
 use crate::crypto::{Signer, SigningError};
+use crate::resources::asn::SmallAsnSet;
 use super::cert::{Cert, ResourceCert};
 use super::error::{ValidationError, VerificationError};
 use super::resources::{AsBlock, AsBlocks, AsBlocksBuilder, Asn, AsResources};
@@ -199,6 +200,14 @@ impl AsProviderAttestation {
 pub struct ProviderAsSet(Captured);
 
 impl ProviderAsSet {
+    pub fn to_set(&self) -> SmallAsnSet {
+        unsafe {
+            SmallAsnSet::from_vec_unchecked(
+                self.iter().collect()
+            )
+        }
+    }
+
     pub fn iter(&self) -> ProviderAsIter {
         ProviderAsIter(self.0.as_slice().into_source())
     }
