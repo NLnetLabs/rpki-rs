@@ -196,6 +196,11 @@ impl AsProviderAttestation {
 
 //------------ ProviderAsSet -------------------------------------------------
 
+/// The provider AS set of the ASPA object.
+///
+/// This type contains the provider AS set in encoded form. It guarantees that
+/// the AS in this set are ordered, free of duplicates and there is at least
+/// one AS.
 #[derive(Clone, Debug)]
 pub struct ProviderAsSet(Captured);
 
@@ -243,6 +248,11 @@ impl ProviderAsSet {
                         }
                     }
                     last = Some(asn);
+                }
+                if last.is_none() {
+                    return Err(cons.content_err(
+                        "empty provider AS set"
+                    ))
                 }
                 Ok(())
             })
