@@ -4,8 +4,6 @@ use std::{error, fmt, iter, ops, slice};
 use std::cmp::Ordering;
 use std::str::FromStr;
 use std::iter::Peekable;
-
-#[cfg(feature = "bcder")]
 use bcder::decode::{self, DecodeError, Source};
 
 
@@ -37,7 +35,6 @@ impl Asn {
     }
 }
 
-#[cfg(feature = "bcder")]
 impl Asn {
     /// Takes an AS number from the beginning of an encoded value.
     pub fn take_from<S: Source>(
