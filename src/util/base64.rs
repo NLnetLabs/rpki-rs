@@ -3,9 +3,9 @@
 //! This module provides various methods for decoding and encoding data in
 //! Base 64. Because there are different dialects of Base 64 and applications
 //! have slight usage differences atop those, the module provides an number
-//! of structs that that describe flavors of Base 64 used within in a certain
-//! context. That is, you don’t have to remember how an application uses
-//! Base 64 exactly but just pick your application.
+//! of structs that describe flavors of Base 64 used within in a certain
+//! context. That is, you don’t have to remember how an application uses Base
+//! 64 exactly but just pick your application.
 //!
 //! Each flavor implements a number of methods for encoding and decoding.
 //! These differ slightly between the flavors based on what they are used
@@ -22,7 +22,7 @@ pub use base64::{DecodeError, DecodeSliceError};
 
 //------------ Xml -----------------------------------------------------------
 
-/// The flavour used by `base64Binary` defined for XML.
+/// The flavor used by `base64Binary` defined for XML.
 ///
 /// This uses the standard alphabet with padding and ASCII white-space allowed
 /// between alphabet characters.
