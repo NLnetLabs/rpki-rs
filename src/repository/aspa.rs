@@ -12,7 +12,7 @@ use std::cmp::Ordering;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, Oid, Tag};
 use bcder::decode::{DecodeError, IntoSource, SliceSource, Source};
-use bcder::encode::Values;
+use bcder::encode::{PrimitiveContent, Values};
 use crate::oid;
 use crate::crypto::{Signer, SigningError};
 use crate::resources::asn::SmallAsnSet;
@@ -120,7 +120,8 @@ impl AsProviderAttestation {
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, DecodeError<S::Error>> {
         // version [0] EXPLICIT INTEGER DEFAULT 0
-        cons.take_opt_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(0))?;
+        // must be 1!
+        cons.take_opt_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(1))?;
                 
         cons.take_sequence(|cons| {
             let customer_as = Asn::take_from(cons)?;
@@ -178,7 +179,7 @@ impl AsProviderAttestation {
 
     pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence((
-            // version is DEFAULT
+            encode::sequence_as(Tag::CTX_0, 1u8.encode()),
             self.customer_as.encode(),
             &self.provider_as_set.0,
         ))
@@ -534,18 +535,21 @@ mod signer_test {
 /// It is defined as follows:
 ///
 /// ```txt
-///      id-ct-ASPA OBJECT IDENTIFIER ::= { id-ct aspa(49) }
+/// id-ct-ASPA OBJECT IDENTIFIER ::= { id-ct aspa(49) }
 ///
-///      ASProviderAttestation ::= SEQUENCE {
-///          version [0]   INTEGER DEFAULT v0,
-///          customerASID  ASID,
-///          providers     ProviderASSet
-///      }
+/// ASProviderAttestation ::= SEQUENCE {
+///     version       [0] EXPLICIT INTEGER DEFAULT 0,
+///     customerASID  ASID,
+///     providers     ProviderASSet
+/// }
 ///
-///      ProviderASSet ::= SEQUENCE (SIZE(1..MAX)) OF ASID
+/// ProviderASSet ::= SEQUENCE (SIZE(1..MAX)) OF ASID
 ///
-///      ASID           ::= INTEGER(0..4294967295)
+/// ASID           ::= INTEGER(0..4294967295)
 /// ```
 ///
-/// The _version_ must be 0.
+/// The _version_ must be 1. Yes, 1.
+///
+/// The the ASIDs in the provider AS set must be arranged in ascending order,
+/// must not contain duplicates, and must not contain the customer ASID.
 pub mod spec {}
