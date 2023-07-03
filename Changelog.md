@@ -8,6 +8,10 @@ Breaking changes
   _rpki-rs_. The new module `resources` contains the AS and IP address
   resources. The BGPsec key identifier is now an actual type in
   `crypto::keys`. ([#261])
+* Changed the implementation of ASPA objects to conform with version 15
+  of the profile draft. ([#264], [#265])
+* Changed the ASPA RTR PDU to not use the AFI flags any more and always
+  set it to 0. ([#264])
 
 New
 
@@ -22,6 +26,8 @@ Other changes
 [#259]: https://github.com/NLnetLabs/rpki-rs/pull/259
 [#260]: https://github.com/NLnetLabs/rpki-rs/pull/260
 [#261]: https://github.com/NLnetLabs/rpki-rs/pull/261
+[#264]: https://github.com/NLnetLabs/rpki-rs/pull/264
+[#265]: https://github.com/NLnetLabs/rpki-rs/pull/265
 
 
 ## 0.16.1

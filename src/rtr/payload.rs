@@ -131,9 +131,6 @@ pub struct Aspa {
     /// The customer ASN.
     pub customer: Asn,
 
-    /// The address family this ASPA pertains to.
-    pub afi: Afi,
-
     /// The provider ASNs.
     pub providers: ProviderAsns,
 }
@@ -141,19 +138,19 @@ pub struct Aspa {
 impl Aspa {
     /// Creates a new ASPA unit from its components.
     pub fn new(
-        customer: Asn, afi: Afi, providers: ProviderAsns,
+        customer: Asn, providers: ProviderAsns,
     ) -> Self {
-        Self { customer, afi, providers }
+        Self { customer, providers }
     }
 
     /// Returns the ‘key’ of the ASPA.
-    pub fn key(&self) -> (Asn, Afi) {
-        (self.customer, self.afi)
+    pub fn key(&self) -> Asn {
+        self.customer
     }
 
     /// Returns a new ASPA with an empty provider set.
     pub fn withdraw(&self) -> Self {
-        Self::new(self.customer, self.afi, ProviderAsns::empty())
+        Self::new(self.customer, ProviderAsns::empty())
     }
 }
 
@@ -201,9 +198,9 @@ impl Payload {
 
     /// Creates a new ASPA unit.
     pub fn aspa(
-        customer: Asn, afi: Afi, providers: ProviderAsns,
+        customer: Asn, providers: ProviderAsns,
     ) -> Self {
-        Payload::Aspa(Aspa::new(customer, afi, providers))
+        Payload::Aspa(Aspa::new(customer, providers))
     }
 
     /// Converts a reference to payload into a payload reference.
