@@ -20,13 +20,6 @@ use base64::engine::general_purpose::{
 pub use base64::{DecodeError, DecodeSliceError};
 
 
-//------------ Type Aliases --------------------------------------------------
-
-pub type DecoderReader<T> = base64::read::DecoderReader<
-    'static, GeneralPurpose, T
->;
-
-
 //------------ Xml -----------------------------------------------------------
 
 /// The flavour used by `base64Binary` defined for XML.
