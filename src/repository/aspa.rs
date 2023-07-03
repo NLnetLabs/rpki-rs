@@ -119,11 +119,10 @@ impl AsProviderAttestation {
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, DecodeError<S::Error>> {
-        // version [0] EXPLICIT INTEGER DEFAULT 0
-        // must be 1!
-        cons.take_opt_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(1))?;
-                
         cons.take_sequence(|cons| {
+            // version [0] EXPLICIT INTEGER DEFAULT 0
+            // must be 1!
+            cons.take_opt_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(1))?;
             let customer_as = Asn::take_from(cons)?;
             let provider_as_set = ProviderAsSet::take_from(
                 cons, customer_as
@@ -381,6 +380,26 @@ impl std::error::Error for DuplicateProviderAs { }
 
 //============ Test ==========================================================
 
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn decode_content() {
+        let content = Mode::Der.decode(
+            include_bytes!("../../test-data/aspa-content.der").as_ref(),
+            AsProviderAttestation::take_from
+        ).unwrap();
+        assert_eq!(content.customer_as(), 15562.into());
+        assert_eq!(
+            vec![2914, 8283, 51088, 206238],
+            content.provider_as_set().iter().map(|asn| {
+                asn.into_u32()
+            }).collect::<Vec<_>>(),
+        );
+    }
+}
+
 #[cfg(all(test, feature = "softkeys"))]
 mod signer_test {
     use std::str::FromStr;
@@ -392,7 +411,6 @@ mod signer_test {
     use crate::repository::tal::TalInfo;
     use crate::repository::x509::Validity;
     use super::*;
-
 
     fn make_aspa(
         customer_as: Asn,
