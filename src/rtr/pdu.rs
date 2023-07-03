@@ -806,13 +806,11 @@ impl Aspa {
     ///
     /// # Panics
     ///
-    ///
     /// This function panics if the length of the resulting PDU doesn’t fit
     /// in a `u32`.
     pub fn new(
         version: u8,
         flags: u8,
-        afi: payload::Afi,
         customer: Asn,
         providers: ProviderAsns,
     ) -> Self {
@@ -825,7 +823,7 @@ impl Aspa {
             fixed: AspaFixed {
                 header: Header::new(version, Self::PDU, 0, len),
                 flags,
-                afi_flags: afi.into_u8(),
+                afi_flags: 0,
                 provider_count: providers.asn_count().to_be(),
                 customer: customer.into_u32().to_be(),
             },
@@ -854,11 +852,6 @@ impl Aspa {
     /// 1 for an announcement and 0 for a withdrawal.
     pub fn flags(&self) -> u8 {
         self.fixed.flags
-    }
-
-    /// Returns the AFI field.
-    pub fn afi(&self) -> payload::Afi {
-        payload::Afi::from_u8(self.fixed.afi_flags)
     }
 
     /// Returns the customer ASN.
@@ -1096,9 +1089,7 @@ impl Payload {
             }
             payload::PayloadRef::Aspa(aspa) => {
                 Payload::Aspa(Aspa::new(
-                    version, flags,
-                    aspa.afi, aspa.customer,
-                    aspa.providers.clone(),
+                    version, flags, aspa.customer, aspa.providers.clone(),
                 ))
             }
         }
@@ -1245,8 +1236,7 @@ impl Payload {
                 }
                 Payload::Aspa(aspa) => {
                     Ok(payload::Payload::aspa(
-                        aspa.customer(), aspa.afi(),
-                        aspa.providers().clone(),
+                        aspa.customer(), aspa.providers().clone(),
                     ))
                 }
             }
@@ -1838,14 +1828,14 @@ mod test {
         read_write!(
             Aspa,
             Aspa::new(
-                2, 1, payload::Afi::ipv6(), Asn::from_u32(0x1000f),
+                2, 1, Asn::from_u32(0x1000f),
                 ProviderAsns::try_from_iter([
                     Asn::from_u32(0x1000d), Asn::from_u32(0x1000e)
                 ]).unwrap(),
             ),
             [
                 2, 11, 0, 0,    0, 0, 0, 24,
-                1, 1, 0, 2,     0, 1, 0, 15,
+                1, 0, 0, 2,     0, 1, 0, 15,
                 0, 1, 0, 13,    0, 1, 0, 14,
             ]
         );

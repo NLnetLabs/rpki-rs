@@ -46,6 +46,13 @@ impl Asn {
         cons.take_u32().map(Asn)
     }
 
+    /// Takes an optional AS number from the beginning of an encoded value.
+    pub fn take_opt_from<S: Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Option<Self>, DecodeError<S::Error>> {
+        cons.take_opt_u32().map(|val| val.map(Asn))
+    }
+
     /// Skips over an AS number at the beginning of an encoded value.
     pub fn skip_in<S: Source>(
         cons: &mut decode::Constructed<S>
@@ -289,6 +296,16 @@ impl fmt::Display for Asn {
 pub struct SmallAsnSet(Vec<Asn>);
 
 impl SmallAsnSet {
+    /// Creates a new ASN set from an order vec of unique ASNs.
+    ///
+    /// # Safety
+    ///
+    /// The caller must make sure that the vec passed is sorted and does not
+    /// contain any duplicates.
+    pub unsafe fn from_vec_unchecked(vec: Vec<Asn>) -> Self {
+        Self(vec)
+    }
+
     pub fn iter(&self) -> SmallSetIter {
         self.0.iter().cloned()
     }

@@ -9,18 +9,16 @@
 
 use std::fmt;
 use std::cmp::Ordering;
-use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{Captured, Mode, Oid, Tag};
 use bcder::decode::{DecodeError, IntoSource, SliceSource, Source};
 use bcder::encode::Values;
 use crate::oid;
 use crate::crypto::{Signer, SigningError};
+use crate::resources::asn::SmallAsnSet;
 use super::cert::{Cert, ResourceCert};
 use super::error::{ValidationError, VerificationError};
-use super::resources::{
-    AddressFamily, AsBlock, AsBlocks, AsBlocksBuilder, Asn, AsResources
-};
+use super::resources::{AsBlock, AsBlocks, AsBlocksBuilder, Asn, AsResources};
 use super::sigobj::{SignedObject, SignedObjectBuilder};
 
 
@@ -198,10 +196,23 @@ impl AsProviderAttestation {
 
 //------------ ProviderAsSet -------------------------------------------------
 
+/// The provider AS set of the ASPA object.
+///
+/// This type contains the provider AS set in encoded form. It guarantees that
+/// the AS in this set are ordered, free of duplicates and there is at least
+/// one AS.
 #[derive(Clone, Debug)]
 pub struct ProviderAsSet(Captured);
 
 impl ProviderAsSet {
+    pub fn to_set(&self) -> SmallAsnSet {
+        unsafe {
+            SmallAsnSet::from_vec_unchecked(
+                self.iter().collect()
+            )
+        }
+    }
+
     pub fn iter(&self) -> ProviderAsIter {
         ProviderAsIter(self.0.as_slice().into_source())
     }
@@ -213,16 +224,16 @@ impl ProviderAsSet {
         cons.take_sequence(|cons| {
             cons.capture(|cons| {
                 let mut last: Option<Asn> = None;
-                while let Some(provider_as) = ProviderAs::take_opt_from(
+                while let Some(asn) = Asn::take_opt_from(
                     cons
                 )? {
-                    if provider_as.provider() == customer_as {
+                    if asn == customer_as {
                         return Err(cons.content_err(
                             "customer AS in provider AS set"
                         ));
                     }
-                    if let Some(last_as_id) = last {
-                        match last_as_id.cmp(&provider_as.provider()) {
+                    if let Some(last) = last {
+                        match last.cmp(&asn) {
                             Ordering::Less => { }
                             Ordering::Equal => {
                                 return Err(cons.content_err(
@@ -236,9 +247,13 @@ impl ProviderAsSet {
                             }
                         }
                     }
-                    last = Some(provider_as.provider());
+                    last = Some(asn);
                 }
-                
+                if last.is_none() {
+                    return Err(cons.content_err(
+                        "empty provider AS set"
+                    ))
+                }
                 Ok(())
             })
         }).map(ProviderAsSet)
@@ -252,7 +267,7 @@ impl ProviderAsSet {
 pub struct ProviderAsIter<'a>(SliceSource<'a>);
 
 impl<'a> Iterator for ProviderAsIter<'a> {
-    type Item = ProviderAs;
+    type Item = Asn;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.0.is_empty() {
@@ -260,154 +275,9 @@ impl<'a> Iterator for ProviderAsIter<'a> {
         }
         else {
             Mode::Der.decode(&mut self.0, |cons| {
-                ProviderAs::take_opt_from(cons)
+                Asn::take_opt_from(cons)
             }).unwrap()
         }
-    }
-}
-
-
-//------------ AspaProvider ----------------------------------------------
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ProviderAs {
-    provider: Asn,
-    afi_limit: Option<AddressFamily>,
-}
-
-impl ProviderAs {
-    pub fn new(provider: Asn) -> Self {
-        ProviderAs { provider, afi_limit: None }
-    }
-
-    pub fn new_v4(provider: Asn) -> Self {
-        ProviderAs { provider, afi_limit: Some(AddressFamily::Ipv4) }
-    }
-
-    pub fn new_v6(provider: Asn) -> Self {
-        ProviderAs { provider, afi_limit: Some(AddressFamily::Ipv6) }
-    }
-
-    pub fn provider(&self) -> Asn {
-        self.provider
-    }
-
-    pub fn afi_limit(&self) -> Option<AddressFamily> {
-        self.afi_limit
-    }
-
-    pub fn includes_v4(&self) -> bool {
-        match self.afi_limit {
-            Some(limit) => matches!(limit, AddressFamily::Ipv4),
-            None => true
-        }
-    }
-
-    pub fn includes_v6(&self) -> bool {
-        match self.afi_limit {
-            Some(limit) => matches!(limit, AddressFamily::Ipv6),
-            None => true
-        }
-    }
-}
-
-impl ProviderAs {
-    //
-    //      providerAS     ::= SEQUENCE {
-    //          providerASID ::= ASID,
-    //          afiLimit     ::= OCTET STRING (SIZE (2)) OPTIONAL
-    //      }
-    //
-    //      ASID           ::= INTEGER
-        
-    /// Takes an optional ProviderAS from the beginning of an encoded value.
-    pub fn take_opt_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, DecodeError<S::Error>> {
-        cons.take_opt_sequence(|cons|{
-            let provider = Asn::take_from(cons)?;
-            let afi_limit = AddressFamily::take_opt_from(cons)?;
-            Ok(ProviderAs { provider, afi_limit })
-        })
-    }
-
-    /// Skips over a ProviderAs if it is present.
-    pub fn skip_opt_in<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Option<()>, DecodeError<S::Error>> {
-        Self::take_opt_from(cons).map(|opt| opt.map(|_| ()))
-    }
-
-    pub fn encode(self) -> impl encode::Values {
-        encode::sequence((
-            self.provider.encode(),
-            self.afi_limit.map(|v| v.encode())
-        ))
-    }
-}
-
-
-//--- FromStr
-
-impl FromStr for ProviderAs {
-    type Err = <Asn as FromStr>::Err;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // Possible options:
-        //  AS#
-        //  AS#(v4)
-        //  AS#(v6)
-        if let Some(as_str) = s.strip_suffix("(v4)") {
-            Ok(ProviderAs::new_v4(Asn::from_str(as_str)?))
-        }
-        else if let Some(as_str) = s.strip_suffix("(v6)") {
-            Ok(ProviderAs::new_v6(Asn::from_str(as_str)?))
-        }
-        else {
-            Ok(ProviderAs::new(Asn::from_str(s)?))
-        }
-    }
-}
-
-
-//--- Display
-
-impl fmt::Display for ProviderAs {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.afi_limit {
-            None => write!(f, "{}", self.provider),
-            Some(family) => {
-                let fam_str = match &family {
-                    AddressFamily::Ipv4 => "v4",
-                    AddressFamily::Ipv6 => "v6",
-                };
-                write!(f, "{}({})", self.provider, fam_str)
-            }
-        }
-    }
-}
-
-
-//--- Deserialize and Serialize
-
-#[cfg(feature = "serde")]
-impl serde::Serialize for ProviderAs {
-    fn serialize<S: serde::Serializer>(
-        &self, serializer: S
-    ) -> Result<S::Ok, S::Error> {
-        self.to_string().serialize(serializer)
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for ProviderAs {
-    fn deserialize<D: serde::Deserializer<'de>>(
-        deserializer: D
-    ) -> Result<Self, D::Error> {
-        use serde::de;
-
-        let string = String::deserialize(deserializer)?;
-        ProviderAs::from_str(&string).map_err(de::Error::custom)
     }
 }
 
@@ -416,20 +286,23 @@ impl<'de> serde::Deserialize<'de> for ProviderAs {
 
 pub struct AspaBuilder {
     customer_as: Asn,
-    providers: Vec<ProviderAs>
+    providers: Vec<Asn>
 }
 
 impl AspaBuilder {
     pub fn new(
         customer_as: Asn,
-        providers: Vec<ProviderAs>
+        providers: impl Into<Vec<Asn>>
     ) -> Result<Self, DuplicateProviderAs> {
-        let mut builder = AspaBuilder {
+        let mut providers = providers.into();
+        providers.sort_unstable();
+        if providers.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(DuplicateProviderAs)
+        }
+        Ok(AspaBuilder {
             customer_as,
             providers,
-        };
-        builder.sort_and_verify_providers()?;
-        Ok(builder)
+        })
     }
 
     pub fn empty(customer_as: Asn) -> Self {
@@ -440,28 +313,15 @@ impl AspaBuilder {
     }
 
     pub fn add_provider(
-        &mut self, provider: ProviderAs
+        &mut self, provider: Asn
     ) -> Result<(), DuplicateProviderAs> {
-        self.providers.push(provider);
-        self.sort_and_verify_providers()
-    }
-
-    fn sort_and_verify_providers(
-        &mut self
-    ) -> Result<(), DuplicateProviderAs> {
-        // sort and verify if there are any duplicates
-        if self.providers.len() > 1 {
-            self.providers.sort_by_key(|p| p.provider());
-            let mut last = self.providers.first().unwrap().provider();
-            for i in 1..self.providers.len() {
-                let new = self.providers.get(i).unwrap().provider();
-                if new == last {
-                    return Err(DuplicateProviderAs);
-                }
-                last = new;
+        match self.providers.binary_search(&provider) {
+            Ok(_) => Err(DuplicateProviderAs),
+            Err(idx) => {
+                self.providers.insert(idx, provider);
+                Ok(())
             }
         }
-        Ok(())
     }
 
     fn into_attestation(self) -> AsProviderAttestation {
@@ -535,7 +395,7 @@ mod signer_test {
 
     fn make_aspa(
         customer_as: Asn,
-        mut providers: Vec<ProviderAs>,
+        mut providers: Vec<Asn>,
     ) -> Aspa {
         let signer = OpenSslSigner::new();
 
@@ -615,7 +475,7 @@ mod signer_test {
         let decoded_providers: Vec<_> =
             attestation.provider_as_set.iter().collect();
         
-        providers.sort_by_key(|p| p.provider());
+        providers.sort();
         assert_eq!(providers, decoded_providers.as_slice());
             // Sorted vecs should match
 
@@ -624,11 +484,11 @@ mod signer_test {
 
     #[test]
     fn encode_aspa() {
-        let customer_as: Asn = 64496.into();
-        let providers: Vec<ProviderAs> = vec![
-            ProviderAs::new_v4(64498.into()),
-            ProviderAs::new(64497.into()),
-            ProviderAs::new_v6(64499.into())
+        let customer_as = 64496.into();
+        let providers = vec![
+            64498.into(),
+            64497.into(),
+            64499.into(),
         ];
         make_aspa(customer_as, providers);
     }
@@ -636,11 +496,11 @@ mod signer_test {
     #[test]
     #[cfg(feature = "serde")]
     fn serde_aspa() {
-        let customer_as: Asn = 64496.into();
-        let providers: Vec<ProviderAs> = vec![
-            ProviderAs::new_v4(64498.into()),
-            ProviderAs::new(64497.into()),
-            ProviderAs::new_v6(64499.into())
+        let customer_as = 64496.into();
+        let providers = vec![
+            64498.into(),
+            64497.into(),
+            64499.into(),
         ];
         let aspa = make_aspa(customer_as, providers);
         
@@ -650,40 +510,6 @@ mod signer_test {
         assert_eq!(
             aspa.to_captured().into_bytes(),
             deserialized.to_captured().into_bytes()
-        )
-    }
-
-    #[test]
-    #[cfg(feature = "serde")]
-    fn serde_aspa_empty_providers() {
-        let customer_as: Asn = 64496.into();
-        let providers: Vec<ProviderAs> = vec![];
-        let aspa = make_aspa(customer_as, providers);
-        
-        let serialized = serde_json::to_string(&aspa).unwrap();
-        let deserialized: Aspa = serde_json::from_str(&serialized).unwrap();
-
-        assert_eq!(
-            aspa.to_captured().into_bytes(),
-            deserialized.to_captured().into_bytes()
-        )
-    }
-
-    #[test]
-    #[cfg(feature = "serde")]
-    fn serde_provider_as() {
-        let providers: Vec<ProviderAs> = vec![
-            ProviderAs::new(64497.into()),
-            ProviderAs::new_v4(64498.into()),
-            ProviderAs::new_v6(64499.into())
-        ];
-        
-        let serialized = serde_json::to_string(&providers).unwrap();
-        let deserialized: Vec<_> = serde_json::from_str(&serialized).unwrap();
-
-        assert_eq!(
-            providers,
-            deserialized
         )
     }
 }
@@ -696,41 +522,30 @@ mod signer_test {
 /// This is a documentation-only module. It summarizes the specification for
 /// ASPAs, how they are parsed and constructed.
 ///
+/// This implementation follows the ASPA profile as specificed in draft
+/// version 15.
+///
 /// A Autonomous System Provider Authorization (ASPA) is a [signed object] that
 /// provides a means of verifying that a Customer Autonomous System holder has
 /// authorized members of Provider set to be its upstream providers and for the
 /// Providers to send prefixes received from the Customer Autonomous System in
 /// all directions including providers and peers.
 ///
-/// which is defined as follows:
+/// It is defined as follows:
 ///
 /// ```txt
-///      ct-ASPA CONTENT-TYPE ::=
-///          { ASProviderAttestation IDENTIFIED BY id-ct-ASPA }
-///
-///      id-ct-ASPA OBJECT IDENTIFIER ::= { id-ct TBD }
+///      id-ct-ASPA OBJECT IDENTIFIER ::= { id-ct aspa(49) }
 ///
 ///      ASProviderAttestation ::= SEQUENCE {
-///          version [0]   ASPAVersion DEFAULT v0,
+///          version [0]   INTEGER DEFAULT v0,
 ///          customerASID  ASID,
-///          providers     ProviderASSet,
+///          providers     ProviderASSet
 ///      }
 ///
-///      ASPAVersion    ::= INTEGER  { v0(0) }
+///      ProviderASSet ::= SEQUENCE (SIZE(1..MAX)) OF ASID
 ///
-///      ASID           ::= INTEGER
-///
-///      providerASSET  ::= SEQUENCE (SIZE(1..MAX)) OF ProviderAS }
-///
-///      providerAS     ::= SEQUENCE {
-///          providerASID ::= ASID,
-///          afiLimit     ::= OCTET STRING (SIZE (2)) OPTIONAL
-///      }
+///      ASID           ::= INTEGER(0..4294967295)
 /// ```
 ///
-/// The _version_ must be 0. The _afiLimit, if present, MUST be
-/// either `"\0\x01"` for IPv4 or `"\0\x02"` for IPv6.
-///
-/// [signed object]: ../../sigobj/spec/index.html
-/// [ASPA Profile draft]:  https://datatracker.ietf.org/doc/draft-ietf-sidrops-aspa-profile/
+/// The _version_ must be 0.
 pub mod spec {}
