@@ -707,7 +707,7 @@ mod test {
     fn serde_pub_key() {
         use crate::repository::Cert;
 
-        let der = include_bytes!("../../test-data/ta.cer");
+        let der = include_bytes!("../../test-data/repository/ta.cer");
         let cert = Cert::decode(Bytes::from_static(der)).unwrap();
 
         let pub_key = cert.subject_public_key_info();
@@ -722,7 +722,7 @@ mod test {
     fn rsa_from_public_key_bytes() {
         let key = PublicKey::decode(
             include_bytes!(
-                "../../test-data/rsa-key.public.der"
+                "../../test-data/crypto/rsa-key.public.der"
             ).as_ref().into_source(),
         ).unwrap();
         assert!(

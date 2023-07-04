@@ -388,7 +388,9 @@ mod test {
     #[test]
     fn decode_content() {
         let content = Mode::Der.decode(
-            include_bytes!("../../test-data/aspa-content.der").as_ref(),
+            include_bytes!(
+                "../../test-data/repository/aspa-content.der"
+            ).as_ref(),
             AsProviderAttestation::take_from
         ).unwrap();
         assert_eq!(content.customer_as(), 15562.into());

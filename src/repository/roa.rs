@@ -709,7 +709,9 @@ mod test {
     fn decode_roa() {
         assert!(
             Roa::decode(
-                include_bytes!("../../test-data/example-ripe.roa").as_ref(),
+                include_bytes!(
+                    "../../test-data/repository/example-ripe.roa"
+                ).as_ref(),
                 false
             ).is_ok()
         )
@@ -720,23 +722,35 @@ mod test {
         assert!(
             Roa::decode(
                 include_bytes!(
-                    "../../test-data/prefix-len-overflow.roa"
+                    "../../test-data/repository/prefix-len-overflow.roa"
                 ).as_ref(),
                 false
             ).is_err()
         );
         assert!(
             Roa::decode(
-                include_bytes!("../../test-data/maxlen-overflow.roa").as_ref(),
+                include_bytes!(
+                    "../../test-data/repository/maxlen-overflow.roa"
+                ).as_ref(),
                 false
             ).is_err()
         );
         assert!(
             Roa::decode(
-                include_bytes!("../../test-data/maxlen-underflow.roa").as_ref(),
+                include_bytes!(
+                    "../../test-data/repository/maxlen-underflow.roa"
+                ).as_ref(),
                 false
             ).is_err()
         );
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn compat_de_roa() {
+        serde_json::from_slice::<Roa>(include_bytes!(
+            "../../test-data/repository/serde-compat/roa.json"
+        )).unwrap();
     }
 }
 

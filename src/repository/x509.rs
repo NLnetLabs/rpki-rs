@@ -1247,7 +1247,7 @@ mod test {
 
     #[test]
     fn signed_data_decode_then_encode() {
-        let data = include_bytes!("../../test-data/ta.cer");
+        let data = include_bytes!("../../test-data/repository/ta.cer");
         let obj = SignedData::<RpkiSignatureAlgorithm>::decode(
             data.as_ref()
         ).unwrap();

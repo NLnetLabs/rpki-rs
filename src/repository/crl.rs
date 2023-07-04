@@ -778,17 +778,17 @@ mod test {
     #[test]
     fn decode_certs() {
         Crl::decode(
-            include_bytes!("../../test-data/ta.crl").as_ref()
+            include_bytes!("../../test-data/repository/ta.crl").as_ref()
         ).unwrap();
         Crl::decode(
-            include_bytes!("../../test-data/ca1.crl").as_ref()
+            include_bytes!("../../test-data/repository/ca1.crl").as_ref()
         ).unwrap();
     }
 
     #[test]
     #[cfg(feature = "serde")]
     fn serde_crl() {
-        let der = include_bytes!("../../test-data/ta.crl");
+        let der = include_bytes!("../../test-data/repository/ta.crl");
         let crl = Crl::decode(bytes::Bytes::from_static(der)).unwrap();
 
         let serialized = serde_json::to_string(&crl).unwrap();
@@ -798,6 +798,14 @@ mod test {
             crl.to_captured().into_bytes(),
             deser_crl.to_captured().into_bytes()
         );
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn compat_de_crl() {
+        serde_json::from_slice::<Crl>(include_bytes!(
+            "../../test-data/repository/serde-compat/crl.json"
+        )).unwrap();
     }
 }
 

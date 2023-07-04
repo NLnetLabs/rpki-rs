@@ -541,7 +541,7 @@ mod test {
 
     #[test]
     fn parse_drl_csr() {
-        let bytes = include_bytes!("../../test-data/drl-csr.der");
+        let bytes = include_bytes!("../../test-data/ca/drl-csr.der");
         let csr = RpkiCaCsr::decode(bytes.as_ref()).unwrap();
         csr.verify_signature().unwrap();
 
@@ -565,7 +565,7 @@ mod test {
 
     #[test]
     fn parse_router_csr() {
-        let bytes = include_bytes!("../../test-data/router-csr.der");
+        let bytes = include_bytes!("../../test-data/ca/router-csr.der");
         let csr = BgpsecCsr::decode(bytes.as_ref()).unwrap();
         csr.verify_signature().unwrap();
 
@@ -610,7 +610,7 @@ mod test {
     #[test]
     #[cfg(feature = "serde")]
     fn serde_csr() {
-        let bytes = include_bytes!("../../test-data/drl-csr.der");
+        let bytes = include_bytes!("../../test-data/ca/drl-csr.der");
         let csr = RpkiCaCsr::decode(bytes.as_ref()).unwrap();
 
         let csr_ser = serde_json::to_string(&csr).unwrap();
@@ -638,7 +638,7 @@ mod signer_test {
         use crate::repository::x509::Validity;
         use crate::repository::tal::TalInfo;
 
-        let bytes = include_bytes!("../../test-data/router-csr.der");
+        let bytes = include_bytes!("../../test-data/ca/router-csr.der");
         let csr = BgpsecCsr::decode(bytes.as_ref()).unwrap();
         csr.verify_signature().unwrap();
 
