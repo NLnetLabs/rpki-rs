@@ -628,5 +628,13 @@ mod signer_test {
             deser_mft.to_captured().into_bytes()
         );
     }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn compat_de_manifest() {
+        serde_json::from_slice::<Manifest>(include_bytes!(
+            "../../test-data/repository/serde-compat/manifest.json"
+        )).unwrap();
+    }
 }
 

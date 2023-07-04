@@ -737,6 +737,14 @@ mod test {
             ).is_err()
         );
     }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn compat_de_roa() {
+        serde_json::from_slice::<Roa>(include_bytes!(
+            "../../test-data/repository/serde-compat/roa.json"
+        )).unwrap();
+    }
 }
 
 #[cfg(all(test, feature="softkeys"))]

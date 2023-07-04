@@ -2770,8 +2770,18 @@ mod test {
         let serialize = serde_json::to_string(&cert).unwrap();
         let des_cert: Cert = serde_json::from_str(&serialize).unwrap();
 
-        assert_eq!(cert.to_captured().into_bytes(), des_cert.to_captured().into_bytes());
+        assert_eq!(
+            cert.to_captured().into_bytes(),
+            des_cert.to_captured().into_bytes()
+        );
+    }
 
+    #[test]
+    #[cfg(feature = "serde")]
+    fn compat_de_cert() {
+        serde_json::from_slice::<Cert>(include_bytes!(
+            "../../test-data/repository/serde-compat/cert.json"
+        )).unwrap();
     }
 }
 

@@ -798,6 +798,14 @@ mod test {
             deser_crl.to_captured().into_bytes()
         );
     }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn compat_de_crl() {
+        serde_json::from_slice::<Crl>(include_bytes!(
+            "../../test-data/repository/serde-compat/crl.json"
+        )).unwrap();
+    }
 }
 
 #[cfg(all(test, feature="softkeys"))]
