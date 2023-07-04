@@ -536,19 +536,27 @@ mod test {
         let talinfo = TalInfo::from_name("foo".into()).into_arc();
         let at = Time::utc(2019, 5, 1, 0, 0, 0);
         let issuer = Cert::decode(
-            include_bytes!("../../test-data/ta.cer").as_ref()
+            include_bytes!("../../test-data/repository/ta.cer").as_ref()
         ).unwrap();
         let issuer = issuer.validate_ta_at(talinfo, false, at).unwrap();
         let obj = Manifest::decode(
-            include_bytes!("../../test-data/ta.mft").as_ref(),
+            include_bytes!("../../test-data/repository/ta.mft").as_ref(),
             false
         ).unwrap();
         obj.validate_at(&issuer, false, at).unwrap();
         let obj = Manifest::decode(
-            include_bytes!("../../test-data/ca1.mft").as_ref(),
+            include_bytes!("../../test-data/repository/ca1.mft").as_ref(),
             false
         ).unwrap();
         assert!(obj.validate_at(&issuer, false, at).is_err());
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn compat_de_manifest() {
+        serde_json::from_slice::<Manifest>(include_bytes!(
+            "../../test-data/repository/serde-compat/manifest.json"
+        )).unwrap();
     }
 }
 

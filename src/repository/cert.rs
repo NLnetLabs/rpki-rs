@@ -2726,13 +2726,13 @@ mod test {
     #[test]
     fn decode_and_inspect_certs() {
         Cert::decode(
-            include_bytes!("../../test-data/ta.cer").as_ref()
+            include_bytes!("../../test-data/repository/ta.cer").as_ref()
         ).unwrap().inspect_ta(true).unwrap();
         Cert::decode(
-            include_bytes!("../../test-data/ca1.cer").as_ref()
+            include_bytes!("../../test-data/repository/ca1.cer").as_ref()
         ).unwrap().inspect_ca(true).unwrap();
         Cert::decode(
-            include_bytes!("../../test-data/router.cer").as_ref()
+            include_bytes!("../../test-data/repository/router.cer").as_ref()
         ).unwrap().inspect_router(true).unwrap();
     }
 
@@ -2746,7 +2746,7 @@ mod test {
     fn signature_algorithm_mismatch() {
         let roa = crate::repository::roa::Roa::decode(
             include_bytes!(
-                "../../test-data/example-ripe.roa"
+                "../../test-data/repository/example-ripe.roa"
             ).as_ref(),
             false
         ).unwrap();
@@ -2754,7 +2754,7 @@ mod test {
 
         let mft = crate::repository::manifest::Manifest::decode(
             include_bytes!(
-                "../../test-data/signature-alg-mismatch.mft"
+                "../../test-data/repository/signature-alg-mismatch.mft"
             ).as_ref(),
             false
         ).unwrap();
@@ -2764,14 +2764,24 @@ mod test {
     #[test]
     #[cfg(feature = "serde")]
     fn serde_cert() {
-        let der = include_bytes!("../../test-data/ta.cer");
+        let der = include_bytes!("../../test-data/repository/ta.cer");
         let cert = Cert::decode(Bytes::from_static(der)).unwrap();
 
         let serialize = serde_json::to_string(&cert).unwrap();
         let des_cert: Cert = serde_json::from_str(&serialize).unwrap();
 
-        assert_eq!(cert.to_captured().into_bytes(), des_cert.to_captured().into_bytes());
+        assert_eq!(
+            cert.to_captured().into_bytes(),
+            des_cert.to_captured().into_bytes()
+        );
+    }
 
+    #[test]
+    #[cfg(feature = "serde")]
+    fn compat_de_cert() {
+        serde_json::from_slice::<Cert>(include_bytes!(
+            "../../test-data/repository/serde-compat/cert.json"
+        )).unwrap();
     }
 }
 
