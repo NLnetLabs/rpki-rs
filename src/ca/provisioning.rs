@@ -1069,9 +1069,12 @@ impl KeyElement {
 /// # Encode to XML
 ///
 impl KeyElement {
-    fn write_xml<W: io::Write>(&self, content: &mut encode::Content<W>) -> Result<(), io::Error> {
-        // it's not 100% clear from the RFC whether padding is used.
-        // using no-pad makes this most likely to be accepted.
+    fn write_xml<W: io::Write>(
+        &self, content: &mut encode::Content<W>
+    ) -> Result<(), io::Error> {
+        // It's not 100% clear from the RFC whether padding is used.
+        // The base64::Slurm flavor uses no padding when writing which makes
+        // this most likely to be accepted.
         let ski = base64::Slurm.encode(self.key().as_slice());
         content
             .element("key".into())?
