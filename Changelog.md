@@ -1,5 +1,17 @@
 # Changelog
 
+
+## Unreleased next version
+
+Breaking changes
+
+New
+
+Bug fixes
+
+Other changes
+
+
 ## 0.17.0
 
 Released 2023-07-05.
