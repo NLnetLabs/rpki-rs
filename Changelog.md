@@ -18,6 +18,8 @@ New
 * Made `rtr::server::NotifyReceiver` public. ([#259])
 * Added an exclusion check to SLURM’s router key filters and provided
   type-specific check methods for the other types. ([#260])
+* Added a new module `util::base64` that provides Base 64 encoding of data
+  for various scenarios. ([#263])
 
 Bug fixes
 
@@ -26,6 +28,7 @@ Other changes
 [#259]: https://github.com/NLnetLabs/rpki-rs/pull/259
 [#260]: https://github.com/NLnetLabs/rpki-rs/pull/260
 [#261]: https://github.com/NLnetLabs/rpki-rs/pull/261
+[#263]: https://github.com/NLnetLabs/rpki-rs/pull/263
 [#264]: https://github.com/NLnetLabs/rpki-rs/pull/264
 [#265]: https://github.com/NLnetLabs/rpki-rs/pull/265
 
