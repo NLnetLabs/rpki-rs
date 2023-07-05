@@ -31,6 +31,7 @@ use log::info;
 use ring::digest;
 use uuid::Uuid;
 use crate::{uri, xml};
+use crate::util::base64;
 use crate::xml::decode::{Content, Error as XmlError, Reader, Name};
 
 #[cfg(feature = "serde")] use std::str::FromStr;
@@ -1361,7 +1362,7 @@ enum Action {
 /// provides access to the decoded data via the standard `Read` trait.
 pub struct ObjectReader<'a>(
     /// The base64 encoded data.
-    base64::read::DecoderReader<'a, &'a [u8]>
+    base64::XmlDecoderReader<'a>
 );
 
 impl<'a> ObjectReader<'a> {
@@ -1382,21 +1383,32 @@ impl<'a> ObjectReader<'a> {
         E: From<ProcessError>,
         F: FnOnce(&mut ObjectReader) -> Result<T, E>
     {
-        // XXX This could probably do with a bit of optimization.
-        let data_b64 = content.take_opt_final_text(reader, |text| {
-            // The text is supposed to be xsd:base64Binary which only allows
-            // the base64 characters plus whitespace.
-            Ok(text.to_ascii()?.as_bytes().iter().filter_map(|b| {
-                    if b.is_ascii_whitespace() { None }
-                    else { Some(*b) }
-            }).collect::<Vec<_>>())
-        })?.unwrap_or_default();
-        let mut data_b64 = data_b64.as_slice();
-        op(
-            &mut ObjectReader(base64::read::DecoderReader::new(
-                &mut data_b64, base64::STANDARD
-            ))
-        )
+        // We need this extra error type to fulfil the trait bounds of the
+        // error type of the closure passed to take_opt_final_text. Or, as
+        // the German saying goes: „Von hinten durch die Brust ins Auge.“
+        enum Error<E> {
+            Xml(XmlError),
+            User(E),
+        }
+
+        impl<E> From<XmlError> for Error<E> {
+            fn from(err: XmlError) -> Self {
+                Error::Xml(err)
+            }
+        }
+
+        content.take_opt_final_text(reader, |text| {
+            let b64 = match text.as_ref() {
+                Some(text) => text.to_ascii()?,
+                None => Default::default(),
+            };
+            op(
+                &mut ObjectReader(base64::Xml.decode_reader(b64.as_ref()))
+            ).map_err(Error::User)
+        }).map_err(|err| match err {
+            Error::Xml(err) => ProcessError::Xml(err).into(),
+            Error::User(err) => err
+        })
     }
 }
 
@@ -1562,7 +1574,9 @@ mod test {
     #[test]
     fn ripe_notification() {
         NotificationFile::parse(
-            include_bytes!("../test-data/ripe-notification.xml").as_ref()
+            include_bytes!(
+                "../test-data/rrdp/ripe-notification.xml"
+            ).as_ref()
         ).unwrap();
     }
 
@@ -1570,7 +1584,9 @@ mod test {
     fn lolz_notification() {
         assert!(
             NotificationFile::parse(
-                include_bytes!("../test-data/lolz-notification.xml").as_ref()
+                include_bytes!(
+                    "../test-data/rrdp/lolz-notification.xml"
+                ).as_ref()
             ).is_err()
         );
     }
@@ -1578,12 +1594,14 @@ mod test {
     #[test]
     fn gaps_notification() {
         let mut notification_without_gaps =  NotificationFile::parse(
-            include_bytes!("../test-data/ripe-notification.xml").as_ref()
+            include_bytes!("../test-data/rrdp/ripe-notification.xml").as_ref()
         ).unwrap();
         assert!(notification_without_gaps.sort_and_verify_deltas(None));
 
         let mut notification_with_gaps =  NotificationFile::parse(
-            include_bytes!("../test-data/ripe-notification-with-gaps.xml").as_ref()
+            include_bytes!(
+                "../test-data/rrdp/ripe-notification-with-gaps.xml"
+            ).as_ref()
         ).unwrap();
         assert!(!notification_with_gaps.sort_and_verify_deltas(None));
     }
@@ -1591,24 +1609,31 @@ mod test {
     #[test]
     fn limit_notification_deltas() {
         let mut notification_without_gaps =  NotificationFile::parse(
-            include_bytes!("../test-data/ripe-notification.xml").as_ref()
+            include_bytes!("../test-data/rrdp/ripe-notification.xml").as_ref()
         ).unwrap();
         assert!(notification_without_gaps.sort_and_verify_deltas(Some(2)));
 
         assert_eq!(2, notification_without_gaps.deltas().len());
-        assert_eq!(notification_without_gaps.deltas().first().unwrap().serial(), notification_without_gaps.serial() - 1);
-        assert_eq!(notification_without_gaps.deltas().last().unwrap().serial(), notification_without_gaps.serial());
+        assert_eq!(
+            notification_without_gaps.deltas().first().unwrap().serial(),
+            notification_without_gaps.serial() - 1
+        );
+        assert_eq!(
+            notification_without_gaps.deltas().last().unwrap().serial(),
+            notification_without_gaps.serial()
+        );
     }
-
 
     #[test]
     fn unsorted_notification() {
         let mut from_sorted = NotificationFile::parse(
-            include_bytes!("../test-data/ripe-notification.xml").as_ref()
+            include_bytes!("../test-data/rrdp/ripe-notification.xml").as_ref()
         ).unwrap();
 
         let mut from_unsorted = NotificationFile::parse(
-            include_bytes!("../test-data/ripe-notification-unsorted.xml").as_ref()
+            include_bytes!(
+                "../test-data/rrdp/ripe-notification-unsorted.xml"
+            ).as_ref()
         ).unwrap();
         
         assert_ne!(from_sorted, from_unsorted);
@@ -1627,7 +1652,7 @@ mod test {
     fn ripe_snapshot() {
         <Test as ProcessSnapshot>::process(
             &mut Test,
-            include_bytes!("../test-data/ripe-snapshot.xml").as_ref()
+            include_bytes!("../test-data/rrdp/ripe-snapshot.xml").as_ref()
         ).unwrap();
     }
 
@@ -1635,7 +1660,7 @@ mod test {
     fn ripe_delta() {
         <Test as ProcessDelta>::process(
             &mut Test,
-            include_bytes!("../test-data/ripe-delta.xml").as_ref()
+            include_bytes!("../test-data/rrdp/ripe-delta.xml").as_ref()
         ).unwrap();
     }
 
@@ -1644,7 +1669,8 @@ mod test {
         use std::str::FromStr;
 
         let string = "this is a test";
-        let sha256 = "2e99758548972a8e8822ad47fa1017ff72f06f3ff6a016851f45c398732bc50c";
+        let sha256 =
+            "2e99758548972a8e8822ad47fa1017ff72f06f3ff6a016851f45c398732bc50c";
         let hash = Hash::from_str(sha256).unwrap();
         let hash_from_data = Hash::from_data(string.as_bytes());
         assert_eq!(hash, hash_from_data);
@@ -1654,7 +1680,7 @@ mod test {
     #[test]
     fn notification_from_to_xml() {
         let notification = NotificationFile::parse(
-            include_bytes!("../test-data/ripe-notification.xml").as_ref()
+            include_bytes!("../test-data/rrdp/ripe-notification.xml").as_ref()
         ).unwrap();
 
         let mut vec = vec![];
@@ -1671,7 +1697,7 @@ mod test {
 
     #[test]
     fn snapshot_from_to_xml() {
-        let data = include_bytes!("../test-data/ripe-snapshot.xml");
+        let data = include_bytes!("../test-data/rrdp/ripe-snapshot.xml");
         let snapshot = Snapshot::parse(data.as_ref()).unwrap();
 
         let mut vec = vec![];
@@ -1688,7 +1714,7 @@ mod test {
 
     #[test]
     fn delta_from_to_xml() {
-        let data = include_bytes!("../test-data/ripe-delta.xml");
+        let data = include_bytes!("../test-data/rrdp/ripe-delta.xml");
         let delta = Delta::parse(data.as_ref()).unwrap();
 
         let mut vec = vec![];

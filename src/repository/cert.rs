@@ -32,6 +32,7 @@ use crate::crypto::{
     KeyIdentifier, PublicKey, RpkiSignatureAlgorithm, SignatureAlgorithm,
     SignatureVerificationError, Signer, SigningError,
 };
+use crate::util::base64;
 use super::error::{InspectionError, ValidationError, VerificationError};
 use super::resources::{
     AsBlock, AsBlocks, AsBlocksBuilder, AsResources, AsResourcesBuilder,
@@ -1074,7 +1075,7 @@ impl serde::Serialize for Cert {
         &self, serializer: S
     ) -> Result<S::Ok, S::Error> {
         let bytes = self.to_captured().into_bytes();
-        let b64 = base64::encode(&bytes);
+        let b64 = base64::Serde.encode(&bytes);
         b64.serialize(serializer)
     }
 }
@@ -1086,8 +1087,8 @@ impl<'de> serde::Deserialize<'de> for Cert {
     ) -> Result<Self, D::Error> {
         use serde::de;
 
-        let string = String::deserialize(deserializer)?;
-        let decoded = base64::decode(string).map_err(de::Error::custom)?;
+        let s = String::deserialize(deserializer)?;
+        let decoded = base64::Serde.decode(&s).map_err(de::Error::custom)?;
         let bytes = Bytes::from(decoded);
         Cert::decode(bytes).map_err(de::Error::custom)
     }

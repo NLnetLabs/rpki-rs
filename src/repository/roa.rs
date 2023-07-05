@@ -12,6 +12,7 @@ use bcder::decode::{
 use bcder::encode::{PrimitiveContent, Values};
 use crate::oid;
 use crate::crypto::{Signer, SigningError};
+use crate::util::base64;
 use super::cert::{Cert, ResourceCert};
 use super::error::{ValidationError, VerificationError};
 use super::resources::{Addr, AddressFamily, Asn, IpResources, Prefix};
@@ -83,7 +84,7 @@ impl serde::Serialize for Roa {
         &self, serializer: S
     ) -> Result<S::Ok, S::Error> {
         let bytes = self.to_captured().into_bytes();
-        let b64 = base64::encode(&bytes);
+        let b64 = base64::Serde.encode(&bytes);
         b64.serialize(serializer)
     }
 }
@@ -95,8 +96,8 @@ impl<'de> serde::Deserialize<'de> for Roa {
     ) -> Result<Self, D::Error> {
         use serde::de;
 
-        let string = String::deserialize(deserializer)?;
-        let decoded = base64::decode(string).map_err(de::Error::custom)?;
+        let s = String::deserialize(deserializer)?;
+        let decoded = base64::Serde.decode(&s).map_err(de::Error::custom)?;
         let bytes = bytes::Bytes::from(decoded);
         Roa::decode(bytes, true).map_err(de::Error::custom)
     }

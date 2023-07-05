@@ -23,6 +23,7 @@ use crate::repository::error::ValidationError;
 use crate::repository::x509::{Time, Validity};
 use crate::rrdp;
 use crate::uri;
+use crate::util::base64;
 use crate::xml;
 use crate::xml::decode::{
     Content, Error as XmlError
@@ -1404,12 +1405,12 @@ pub struct Base64(Arc<str>);
 
 impl Base64 {
     pub fn from_content(content: &[u8]) -> Self {
-        Base64(base64::encode(content).into())
+        Base64(base64::Xml.encode(content).into())
     }
 
     /// Decodes into bytes (e.g. for saving to disk for rsync)
     pub fn to_bytes(&self) -> Bytes {
-        Bytes::from(base64::decode(self.0.as_bytes()).unwrap())
+        Bytes::from(base64::Xml.decode(self.0.as_ref()).unwrap())
     }
 
     /// Generates the rrdp::Hash for the base64 encoded content

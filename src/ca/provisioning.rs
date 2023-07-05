@@ -20,6 +20,7 @@ use crate::repository::resources::{
 };
 use crate::repository::x509::{Time, Validity};
 use crate::uri;
+use crate::util::base64;
 use crate::xml;
 use crate::xml::decode::{Content, Error as XmlError};
 use crate::xml::encode;
@@ -1044,8 +1045,9 @@ impl KeyElement {
                 }
                 b"ski" => {
                     let base64_str: String = value.ascii_into()?;
-                    let bytes = base64::decode_config(base64_str, base64::URL_SAFE_NO_PAD)
-                        .map_err(|_| XmlError::Malformed)?;
+                    let bytes = base64::Slurm.decode(
+                        &base64_str
+                    ).map_err(|_| XmlError::Malformed)?;
 
                     let ski = KeyIdentifier::try_from(bytes.as_slice())
                         .map_err(|_| XmlError::Malformed)?;
@@ -1067,13 +1069,13 @@ impl KeyElement {
 /// # Encode to XML
 ///
 impl KeyElement {
-    fn write_xml<W: io::Write>(&self, content: &mut encode::Content<W>) -> Result<(), io::Error> {
-        let ski = base64::encode_config(
-            self.key().as_slice(),
-            // it's not 100% clear from the RFC whether padding is used.
-            // using no-pad makes this most likely to be accepted.
-            base64::URL_SAFE_NO_PAD,
-        );
+    fn write_xml<W: io::Write>(
+        &self, content: &mut encode::Content<W>
+    ) -> Result<(), io::Error> {
+        // It's not 100% clear from the RFC whether padding is used.
+        // The base64::Slurm flavor uses no padding when writing which makes
+        // this most likely to be accepted.
+        let ski = base64::Slurm.encode(self.key().as_slice());
         content
             .element("key".into())?
             .attr("class_name", self.class_name())?

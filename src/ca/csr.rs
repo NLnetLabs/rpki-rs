@@ -36,6 +36,7 @@ use crate::crypto::{
 };
 use crate::crypto::signer::{Signer, SigningError};
 use crate::repository::x509::{Name, SignedData};
+use crate::util::base64;
 
 
 //------------ Csr -----------------------------------------------------------
@@ -267,7 +268,7 @@ impl<Alg: SignatureAlgorithm, Attrs> serde::Serialize for Csr<Alg, Attrs> {
         &self, serializer: S
     ) -> Result<S::Ok, S::Error> {
         let bytes = self.to_captured().into_bytes();
-        let b64 = base64::encode(&bytes);
+        let b64 = base64::Serde.encode(&bytes);
         b64.serialize(serializer)
     }
 }
@@ -283,8 +284,8 @@ where
     ) -> Result<Self, D::Error> {
         use serde::de;
 
-        let string = String::deserialize(deserializer)?;
-        let decoded = base64::decode(string).map_err(de::Error::custom)?;
+        let s = String::deserialize(deserializer)?;
+        let decoded = base64::Serde.decode(&s).map_err(de::Error::custom)?;
         let bytes = bytes::Bytes::from(decoded);
         Csr::decode(bytes).map_err(de::Error::custom)
     }

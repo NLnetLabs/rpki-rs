@@ -20,6 +20,7 @@ use crate::repository::error::{
 use crate::repository::x509::{
     encode_extension, Name, Serial, SignedData, Time, Validity,
 };
+use crate::util::base64;
 
 //------------ IdCert --------------------------------------------------------
 
@@ -327,7 +328,7 @@ impl Eq for IdCert { }
 impl serde::Serialize for IdCert {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let bytes = self.to_captured().into_bytes();
-        let str = base64::encode(&bytes);
+        let str = base64::Serde.encode(&bytes);
         str.serialize(serializer)
     }
 }
@@ -338,7 +339,7 @@ impl<'de> serde::Deserialize<'de> for IdCert {
         use serde::de;
 
         let some = String::deserialize(deserializer)?;
-        let dec = base64::decode(some).map_err(de::Error::custom)?;
+        let dec = base64::Serde.decode(&some).map_err(de::Error::custom)?;
         let b = Bytes::from(dec);
         IdCert::decode(b).map_err(de::Error::custom)
     }

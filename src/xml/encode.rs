@@ -1,6 +1,7 @@
 use std::{fmt, io};
 use std::io::Write as _;
 use std::fmt::Write as _;
+use crate::util::base64;
 use super::decode::Name;
 
 
@@ -331,9 +332,7 @@ pub trait Text {
     fn write_base64(
         &self, target: &mut impl io::Write
     ) -> Result<(), io::Error> {
-        self.write_raw(
-            &mut base64::write::EncoderWriter::new(target, base64::STANDARD)
-        )
+        self.write_raw(&mut base64::Xml.encode_writer(target))
     }
 }
 

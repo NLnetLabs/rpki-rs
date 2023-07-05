@@ -27,6 +27,7 @@ use crate::crypto::{
     KeyIdentifier, PublicKey, RpkiSignatureAlgorithm, SignatureAlgorithm,
     Signer, SigningError,
 };
+use crate::util::base64;
 use super::error::VerificationError;
 use super::x509::{
     Name, RepresentationError, Serial, SignedData, Time, encode_extension,
@@ -176,7 +177,7 @@ impl serde::Serialize for Crl {
         &self, serializer: S
     ) -> Result<S::Ok, S::Error> {
         let bytes = self.to_captured().into_bytes();
-        let b64 = base64::encode(&bytes);
+        let b64 = base64::Serde.encode(&bytes);
         b64.serialize(serializer)
     }
 }
@@ -188,8 +189,8 @@ impl<'de> serde::Deserialize<'de> for Crl {
     ) -> Result<Self, D::Error> {
         use serde::de;
 
-        let string = String::deserialize(deserializer)?;
-        let decoded = base64::decode(string).map_err(de::Error::custom)?;
+        let s = String::deserialize(deserializer)?;
+        let decoded = base64::Serde.decode(&s).map_err(de::Error::custom)?;
         let bytes = bytes::Bytes::from(decoded);
         Crl::decode(bytes).map_err(de::Error::custom)
     }

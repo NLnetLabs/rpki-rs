@@ -18,6 +18,7 @@ use crate::resources::addr::{MaxLenPrefix, Prefix};
 use crate::resources::asn::Asn;
 use crate::rtr::payload as rtr;
 use crate::rtr::pdu::{RouterKeyInfo, KeyInfoError};
+use crate::util::base64;
 
 
 //------------ SlurmFile -----------------------------------------------------
@@ -552,10 +553,6 @@ impl BgpsecAssertion {
 #[derive(Clone, Eq, Hash)]
 pub struct Base64KeyInfo(RouterKeyInfo);
 
-impl Base64KeyInfo {
-    const BASE64_CONFIG: base64::Config = base64::URL_SAFE_NO_PAD;
-}
-
 
 //--- TryFrom and From
 
@@ -594,7 +591,7 @@ impl FromStr for Base64KeyInfo {
     type Err = ParseBase64KeyInfoError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(base64::decode_config(s, Self::BASE64_CONFIG)?.try_into()?)
+        Ok(base64::Slurm.decode(s)?.try_into()?)
     }
 }
 
@@ -635,10 +632,7 @@ impl<T: AsRef<[u8]>> PartialEq<T> for Base64KeyInfo {
 
 impl fmt::Display for Base64KeyInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        base64::display::Base64Display::with_config(
-            self.0.as_ref(),
-            Self::BASE64_CONFIG
-        ).fmt(f)
+        base64::Slurm.display(self.0.as_ref()).fmt(f)
     }
 }
 
@@ -730,16 +724,13 @@ mod serde_opt_asn {
 mod serde_key_identifier {
     use std::fmt;
     use std::convert::TryFrom;
-    use super::{Base64KeyInfo, KeyIdentifier};
+    use crate::util::base64;
+    use super::KeyIdentifier;
 
     pub fn serialize<S: serde::Serializer>(
         key_id: &KeyIdentifier, serializer: S
     ) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(
-            &base64::encode_config(
-                key_id.as_slice(), Base64KeyInfo::BASE64_CONFIG
-            )
-        )
+        serializer.serialize_str(&base64::Slurm.encode(key_id.as_slice()))
     }
 
     pub fn deserialize<'de, D: serde::Deserializer<'de>>(
@@ -766,8 +757,8 @@ mod serde_key_identifier {
 
                 // A 27 character Base64 string can contains 20 or 21 bytes.
                 let mut buf = [0u8; 21];
-                let len = base64::decode_config_slice(
-                    v, Base64KeyInfo::BASE64_CONFIG, &mut buf
+                let len = base64::Slurm.decode_slice(
+                    v, &mut buf
                 ).map_err(E::custom)?;
 
                 // If we actually get 21 bytes, KeyIdentifier::try_from will

@@ -13,6 +13,7 @@ use bcder::decode::IntoSource;
 use log::{debug, error};
 use crate::uri;
 use crate::crypto::PublicKey;
+use crate::util::base64;
 
 
 //------------ Tal -----------------------------------------------------------
@@ -60,7 +61,7 @@ impl Tal {
             if b.is_ascii_whitespace() { None }
             else { Some(*b) }
         ).collect();
-        let key_info = base64::decode(data)?;
+        let key_info = base64::Xml.decode_bytes(&data)?;
         let key_info = PublicKey::decode(key_info.as_slice().into_source())?;
         Ok(Tal {
             uris,
@@ -275,7 +276,7 @@ pub enum ReadError {
     Io(io::Error),
     UnexpectedEof,
     BadUri(uri::Error),
-    BadKeyInfoEncoding(base64::DecodeError),
+    BadKeyInfoEncoding(base64::XmlDecodeError),
     BadKeyInfo(decode::DecodeError<Infallible>),
 }
 
@@ -291,8 +292,8 @@ impl From<uri::Error> for ReadError {
     }
 }
 
-impl From<base64::DecodeError> for ReadError {
-    fn from(err: base64::DecodeError) -> ReadError {
+impl From<base64::XmlDecodeError> for ReadError {
+    fn from(err: base64::XmlDecodeError) -> ReadError {
         ReadError::BadKeyInfoEncoding(err)
     }
 }
