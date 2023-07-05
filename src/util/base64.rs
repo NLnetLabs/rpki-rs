@@ -11,7 +11,7 @@
 //! These differ slightly between the flavors based on what they are used
 //! for.
 use std::{error, fmt, io, str};
-use std::io::Read;
+use std::io::{Read, Write};
 use base64::engine::{DecodeEstimate, Engine};
 use base64::engine::general_purpose::{
     GeneralPurpose, GeneralPurposeConfig, STANDARD
@@ -135,10 +135,13 @@ impl Slurm {
         Self::ENGINE.encode(data)
     }
 
-    pub fn encode_writer(
-        self, writer: impl io::Write
-    ) -> impl io::Write {
-        base64::write::EncoderWriter::new(writer, &Self::ENGINE)
+    pub fn write_encoded_slice(
+        self, data: &[u8], target: &mut impl io::Write
+    ) -> Result<(), io::Error> {
+        let mut enc = base64::write::EncoderWriter::new(target, &Self::ENGINE);
+        enc.write_all(data)?;
+        enc.finish()?;
+        Ok(())
     }
 
     pub fn display(self, data: &[u8]) -> impl fmt::Display + '_ {
