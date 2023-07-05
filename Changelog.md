@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased next version
+## 0.17.0
+
+Released 2023-07-05.
 
 Breaking changes
 
@@ -20,10 +22,6 @@ New
   type-specific check methods for the other types. ([#260])
 * Added a new module `util::base64` that provides Base 64 encoding of data
   for various scenarios. ([#263])
-
-Bug fixes
-
-Other changes
 
 [#259]: https://github.com/NLnetLabs/rpki-rs/pull/259
 [#260]: https://github.com/NLnetLabs/rpki-rs/pull/260
