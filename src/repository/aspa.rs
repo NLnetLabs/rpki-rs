@@ -123,7 +123,7 @@ impl AsProviderAttestation {
         cons.take_sequence(|cons| {
             // version [0] EXPLICIT INTEGER DEFAULT 0
             // must be 1!
-            cons.take_opt_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(1))?;
+            cons.take_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(1))?;
             let customer_as = Asn::take_from(cons)?;
             let provider_as_set = ProviderAsSet::take_from(
                 cons, customer_as
@@ -400,6 +400,18 @@ mod test {
                 asn.into_u32()
             }).collect::<Vec<_>>(),
         );
+    }
+
+    #[test]
+    fn fail_decode_draft_13() {
+        assert!(
+            Mode::Der.decode(
+                include_bytes!(
+                    "../../test-data/repository/aspa-content-draft-13.der"
+                ).as_ref(),
+                AsProviderAttestation::take_from
+            ).is_err()
+        )
     }
 }
 
