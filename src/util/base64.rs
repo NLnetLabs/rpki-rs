@@ -135,6 +135,12 @@ impl Slurm {
         Self::ENGINE.encode(data)
     }
 
+    pub fn encode_writer(
+        self, writer: impl io::Write
+    ) -> impl io::Write {
+        base64::write::EncoderWriter::new(writer, &Self::ENGINE)
+    }
+
     pub fn display(self, data: &[u8]) -> impl fmt::Display + '_ {
         base64::display::Base64Display::new(data, &Self::ENGINE)
     }
