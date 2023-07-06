@@ -7,9 +7,17 @@ Breaking changes
 
 New
 
+* Added a new method `write_encoded_slice` to `util::base64::Slurm`.
+  ([#269])
+
 Bug fixes
 
+* Correctly rejects ASPA objects that have a version of 0. ([#270])
+
 Other changes
+
+[#269]: https://github.com/NLnetLabs/rpki-rs/pull/269
+[#270]: https://github.com/NLnetLabs/rpki-rs/pull/270
 
 
 ## 0.17.0
