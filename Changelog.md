@@ -1,9 +1,8 @@
 # Changelog
 
+## 0.17.1
 
-## Unreleased next version
-
-Breaking changes
+Released 2023-07-06.
 
 New
 
@@ -13,8 +12,6 @@ New
 Bug fixes
 
 * Correctly rejects ASPA objects that have a version of 0. ([#270])
-
-Other changes
 
 [#269]: https://github.com/NLnetLabs/rpki-rs/pull/269
 [#270]: https://github.com/NLnetLabs/rpki-rs/pull/270
