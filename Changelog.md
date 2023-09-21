@@ -1,17 +1,13 @@
 # Changelog
 
-## Unreleased future version
+## 0.17.2
 
-Breaking changes
-
-New
+Released 2023-09-21
 
 Bug fixes
 
 * Upgraded the dependency on _[bcder]_ to at least 0.7.3 to avoid a number
   of decoding issues described in CVE-2023-39914. ([#272])
-
-Other changes
 
 [#272]: https://github.com/NLnetLabs/rpki-rs/pull/272
 [bcder]: (https://github.com/nlnetlabs/bcder)
