@@ -14,7 +14,8 @@ use ring::error::Unspecified;
 use ring::signature::VerificationAlgorithm;
 use untrusted::Input;
 use crate::oid;
-use crate::util::{base64, hex};
+#[cfg(feature = "serde")] use crate::util::base64;
+use crate::util::hex;
 use super::signature::{RpkiSignatureAlgorithm, Signature, SignatureAlgorithm};
 
 

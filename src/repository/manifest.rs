@@ -42,6 +42,7 @@ pub struct Manifest {
 
 impl Manifest {
     /// Decodes a manifest from a source.
+    #[allow(clippy::redundant_closure)]
     pub fn decode<S: IntoSource>(
         source: S,
         strict: bool
