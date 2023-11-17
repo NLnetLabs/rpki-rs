@@ -15,10 +15,10 @@ This memo documents the violations we encountered and are dealing with in
 relaxed validation mode.
 
 
-## Resource Certificates (RFC 6487)
+## Resource Certificates ([RFC 6487](https://datatracker.ietf.org/doc/html/rfc6487))
 
 Resource certificates are defined as a profile on the more general
-Internet PKI certificates defined in RFC 5280.
+Internet PKI certificates defined in [RFC 5280](https://datatracker.ietf.org/doc/html/rfc5280).
 
 
 ### Subject and Issuer
@@ -39,7 +39,7 @@ fields.
 RFC 6487 forbids any access methods other than id-ad-signedObject for EE
 certificates. However, there is CAs that also the id-ad-rpkiNotify method
 for RRDP to these certificates which are declared for certificate
-authority use by RFC 81821.
+authority use by [RFC 8182](https://datatracker.ietf.org/doc/html/rfc8182).
 
 In relaxed mode, we tolerate id-ad-rpkiNotify access methods in EE
 certificates.
@@ -47,15 +47,18 @@ certificates.
 
 ## Signed Objects (RFC 6488)
 
-Signed objects are defined as a profile on CMS messages defined in RFC
-5652.
+Signed objects are defined as a profile on CMS messages defined in [RFC
+5652](https://datatracker.ietf.org/doc/html/rfc5652).
 
 
 ### DER Encoding
 
-RFC 6488 demands all signed objects to be DER encoded while the more
+[RFC 6488](https://datatracker.ietf.org/doc/html/rfc6488)
+demands all signed objects to be DER encoded while the more
 general CMS format allows any BER encoding – DER is a stricter subset of
-the more general BER. At least one CA does indeed produce BER encoded
+the more general BER. [See Wikipedia for BER vs DER](https://en.wikipedia.org/wiki/X.690).
+
+At least one CA does indeed produce BER encoded
 signed objects.
 
 In relaxed mode, we will allow BER encoding.
