@@ -1302,7 +1302,7 @@ impl RtaBuilder {
         &mut self.crls
     }
 
-    pub fn sign<S: Signer>(
+    pub async fn sign<S: Signer>(
         &mut self,
         signer: &S,
         key: &S::KeyId,
@@ -1326,10 +1326,10 @@ impl RtaBuilder {
         let signature = signer.sign(
             key, RpkiSignatureAlgorithm::default(),
             &signed_attrs.encode_verify()
-        )?;
+        ).await?;
 
         self.signer_infos.push(SignerInfo {
-            sid: signer.get_key_info(key)?.key_identifier(),
+            sid: signer.get_key_info(key).await?.key_identifier(),
             digest_algorithm: self.digest_algorithm,
             signed_attrs,
             signature,

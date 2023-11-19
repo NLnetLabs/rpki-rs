@@ -76,30 +76,31 @@ impl OpenSslSigner {
     }
 }
 
+#[async_trait::async_trait]
 impl Signer for OpenSslSigner {
     type KeyId = KeyId;
     type Error = io::Error;
 
-    fn create_key(
+    async fn create_key(
         &self, algorithm: PublicKeyFormat
     ) -> Result<Self::KeyId, Self::Error> {
         Ok(self.insert_key(KeyPair::new(algorithm)?))
     }
 
-    fn get_key_info(
+    async fn get_key_info(
         &self,
         id: &Self::KeyId
     ) -> Result<PublicKey, KeyError<Self::Error>> {
         self.get_key(*id)?.get_key_info().map_err(KeyError::Signer)
     }
 
-    fn destroy_key(
+    async fn destroy_key(
         &self, key: &Self::KeyId
     ) -> Result<(), KeyError<Self::Error>> {
         self.delete_key(*key)
     }
 
-    fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
+    async fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized + Sync>(
         &self,
         key: &Self::KeyId,
         algorithm: Alg,
@@ -108,7 +109,10 @@ impl Signer for OpenSslSigner {
         self.get_key(*key)?.sign(algorithm, data.as_ref()).map_err(Into::into)
     }
 
-    fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
+    async fn sign_one_off<
+        Alg: SignatureAlgorithm,
+        D: AsRef<[u8]> + ?Sized + Sync
+        >(
         &self,
         algorithm: Alg,
         data: &D
@@ -119,7 +123,7 @@ impl Signer for OpenSslSigner {
         Ok((sig, info))
     }
 
-    fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error> {
+    async fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error> {
         self.rng.fill(target).map_err(|_|
             io::Error::new(io::ErrorKind::Other, "rng error")
         )
@@ -223,20 +227,23 @@ pub mod tests {
     use super::*;
     use crate::crypto::signature::RpkiSignatureAlgorithm;
 
-    #[test]
-    fn info_sign_delete() {
+    #[tokio::test]
+    async fn info_sign_delete() {
         let s = OpenSslSigner::new();
-        let ki = s.create_key(PublicKeyFormat::Rsa).unwrap();
+        let ki = s.create_key(PublicKeyFormat::Rsa).await.unwrap();
         let data = b"foobar";
-        let _ = s.get_key_info(&ki).unwrap();
-        let _ = s.sign(&ki, RpkiSignatureAlgorithm::default(), data).unwrap();
-        s.destroy_key(&ki).unwrap();
+        s.get_key_info(&ki).await.unwrap();
+        s.sign(&ki, RpkiSignatureAlgorithm::default(), data).await.unwrap();
+        s.destroy_key(&ki).await.unwrap();
     }
     
-    #[test]
-    fn one_off() {
+    #[tokio::test]
+    async fn one_off() {
         let s = OpenSslSigner::new();
-        s.sign_one_off(RpkiSignatureAlgorithm::default(), b"foobar").unwrap();
+        s.sign_one_off(
+            RpkiSignatureAlgorithm::default(),
+            b"foobar"
+        ).await.unwrap();
     }
 }
 

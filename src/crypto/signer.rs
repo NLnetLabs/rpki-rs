@@ -8,6 +8,7 @@ use super::signature::{SignatureAlgorithm, Signature};
 //------------ Signer --------------------------------------------------------
 
 /// A type that allow creating signatures.
+#[async_trait::async_trait]
 pub trait Signer {
     /// The type used for identifying keys.
     type KeyId;
@@ -16,7 +17,7 @@ pub trait Signer {
     type Error: fmt::Debug + fmt::Display;
 
     /// Creates a new key and returns an identifier.
-    fn create_key(
+    async fn create_key(
         &self,
         algorithm: PublicKeyFormat
     ) -> Result<Self::KeyId, Self::Error>;
@@ -24,7 +25,7 @@ pub trait Signer {
     /// Returns the public key information for the given key.
     ///
     /// If the key identified by `key` does not exist, returns `None`.
-    fn get_key_info(
+    async fn get_key_info(
         &self,
         key: &Self::KeyId
     ) -> Result<PublicKey, KeyError<Self::Error>>;
@@ -32,13 +33,13 @@ pub trait Signer {
     /// Destroys a key.
     ///
     /// Returns whether the key identified by `key` existed.
-    fn destroy_key(
+    async fn destroy_key(
         &self,
         key: &Self::KeyId
     ) -> Result<(), KeyError<Self::Error>>;
 
     /// Signs data.
-    fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
+    async fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized + Sync>(
         &self,
         key: &Self::KeyId,
         algorithm: Alg,
@@ -49,7 +50,10 @@ pub trait Signer {
     ///
     /// Returns both the signature and the public key of the key pair,
     /// but will not store this key pair.
-    fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
+    async fn sign_one_off<
+        Alg: SignatureAlgorithm,
+        D: AsRef<[u8]> + ?Sized + Sync
+    >(
         &self,
         algorithm: Alg,
         data: &D
@@ -58,7 +62,7 @@ pub trait Signer {
     /// Creates random data.
     ///
     /// The method fills the provide bytes slice with random data.
-    fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error>;
+    async fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error>;
 }
 
 

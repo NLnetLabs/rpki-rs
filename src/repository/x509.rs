@@ -316,9 +316,9 @@ impl Serial {
     }
 
     /// Creates a random new serial number.
-    pub fn random<S: Signer>(signer: &S) -> Result<Self, S::Error> {
+    pub async fn random<S: Signer>(signer: &S) -> Result<Self, S::Error> {
         let mut res = <[u8; 20]>::default();
-        signer.rand(&mut res)?;
+        signer.rand(&mut res).await?;
         res[0] &= 0x7F;
         Ok(Self(res))
     }
@@ -331,12 +331,12 @@ impl Serial {
     /// # Panics
     ///
     /// The function panics if `len` is more than 20.
-    pub fn short_random<S: Signer>(
+    pub async fn short_random<S: Signer>(
         signer: &S,
         len: usize
     ) -> Result<Self, S::Error> {
         let mut res = <[u8; 20]>::default();
-        signer.rand(&mut res[len..])?;
+        signer.rand(&mut res[len..]).await?;
         res[0] &= 0x7F;
         Ok(Self(res))
     }
@@ -562,12 +562,12 @@ impl<'de> serde::Deserialize<'de> for Serial {
 //------------ SignedData ----------------------------------------------------
 
 #[derive(Clone, Debug)]
-pub struct SignedData<Alg = RpkiSignatureAlgorithm> {
+pub struct SignedData<Alg = RpkiSignatureAlgorithm> where Alg: Send + Sync {
     data: Captured,
     signature: Signature<Alg>,
 }
 
-impl<Alg> SignedData<Alg> {
+impl<Alg: Send + Sync> SignedData<Alg> {
     pub fn new(data: Captured, signature: Signature<Alg>) -> Self {
         Self { data, signature }
     }
@@ -636,9 +636,9 @@ impl Eq for SignedData {}
 
 
 #[derive(Clone, Copy, Debug)]
-pub struct SignatureValueContent<'a, Alg>(&'a SignedData<Alg>);
+pub struct SignatureValueContent<'a, Alg: Send + Sync>(&'a SignedData<Alg>);
 
-impl<'a, Alg> PrimitiveContent for SignatureValueContent<'a, Alg> {
+impl<'a, Alg: Send + Sync> PrimitiveContent for SignatureValueContent<'a, Alg> {
     const TAG: Tag = Tag::BIT_STRING;
 
     fn encoded_len(&self, _: Mode) -> usize {

@@ -43,7 +43,7 @@ use crate::util::base64;
 
 /// An RPKI Certificate Sign Request.
 #[derive(Clone, Debug)]
-pub struct Csr<Alg, Attrs> {
+pub struct Csr<Alg: Send + Sync, Attrs> {
     /// The outer structure of the CSR.
     signed_data: SignedData<Alg>,
 
@@ -56,7 +56,7 @@ pub type BgpsecCsr = Csr<BgpsecSignatureAlgorithm, BgpsecCsrAttributes>;
 
 /// # Data Access
 ///
-impl<Alg, Attrs> Csr<Alg, Attrs> {
+impl<Alg: Send + Sync, Attrs> Csr<Alg, Attrs> {
     /// The subject name included on the CSR.
     ///
     /// TLDR; This field is useless and will be ignored by the issuing CA.
@@ -86,7 +86,7 @@ impl<Alg, Attrs> Csr<Alg, Attrs> {
     }
 }
 
-impl<Alg> Csr<Alg, RpkiCaCsrAttributes> {
+impl<Alg: Send + Sync> Csr<Alg, RpkiCaCsrAttributes> {
     /// Returns the cA field of the basic constraints extension if present, or
     /// false.
     pub fn basic_ca(&self) -> bool {
@@ -177,14 +177,14 @@ impl Csr<(), ()> {
     /// required SIA entries for 'id-ad-caRepository' and
     /// 'id-ad-rpkiManifest' (see RFC6487), and the optional entry for
     /// 'id-ad-rpkiNotify' (see RFC8182), need to be specified.
-    pub fn construct_rpki_ca<S: Signer>(
+    pub async fn construct_rpki_ca<S: Signer>(
         signer: &S,
         key: &S::KeyId,
         ca_repository: &uri::Rsync,
         rpki_manifest: &uri::Rsync,
         rpki_notify: Option<&uri::Https>
     ) -> Result<Captured, SigningError<S::Error>> {
-        let pub_key = signer.get_key_info(key)?;
+        let pub_key = signer.get_key_info(key).await?;
 
         let ca_repository = if ca_repository.path_is_dir() {
             Cow::Borrowed(ca_repository)
@@ -235,7 +235,7 @@ impl Csr<(), ()> {
             key,
             RpkiSignatureAlgorithm::default(),
             &content
-        )?.unwrap();
+        ).await?.unwrap();
 
         Ok(Captured::from_values(Mode::Der,
             encode::sequence((
@@ -572,15 +572,15 @@ mod test {
         assert!(RpkiCaCsr::decode(bytes.as_ref()).is_err());
     }
 
-    #[test]
+    #[tokio::test]
     #[cfg(all(test, feature="softkeys"))]
-    fn build_csr() {
+    async fn build_csr() {
 
         use crate::crypto::softsigner::OpenSslSigner;
         use crate::crypto::PublicKeyFormat;
 
         let signer = OpenSslSigner::new();
-        let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
+        let key = signer.create_key(PublicKeyFormat::Rsa).await.unwrap();
 
 
         let ca_repo = rsync("rsync://localhost/repo/");
@@ -593,12 +593,12 @@ mod test {
             &ca_repo,
             &rpki_mft,
             Some(&rpki_not)
-        ).unwrap();
+        ).await.unwrap();
 
         let csr = RpkiCaCsr::decode(enc.as_slice()).unwrap();
         csr.verify_signature().unwrap();
 
-        let pub_key = signer.get_key_info(&key).unwrap();
+        let pub_key = signer.get_key_info(&key).await.unwrap();
 
         assert!(csr.basic_ca());
         assert_eq!(&pub_key, csr.public_key());
@@ -629,8 +629,8 @@ mod signer_test {
 
     use super::*;
 
-    #[test]
-    fn router_cert_from_csr() {
+    #[tokio::test]
+    async fn router_cert_from_csr() {
         use crate::crypto::keys::PublicKeyFormat;
         use crate::crypto::softsigner::OpenSslSigner;
         use crate::repository::cert::{Cert, Overclaim};
@@ -643,8 +643,8 @@ mod signer_test {
         csr.verify_signature().unwrap();
 
         let signer = OpenSslSigner::new();
-        let ca_key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
-        let ca_pubkey = signer.get_key_info(&ca_key).unwrap();
+        let ca_key = signer.create_key(PublicKeyFormat::Rsa).await.unwrap();
+        let ca_pubkey = signer.get_key_info(&ca_key).await.unwrap();
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
         let mut cert = TbsCert::new(
             12u64.into(), ca_pubkey.to_subject_name(),
@@ -657,7 +657,7 @@ mod signer_test {
         cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_as_resource_blocks(|b| b.push((Asn::MIN, Asn::MAX)));
-        let cert = cert.into_cert(&signer, &ca_key).unwrap().to_captured();
+        let cert = cert.into_cert(&signer, &ca_key).await.unwrap().to_captured();
         let cert = Cert::decode(cert.as_slice()).unwrap();
         let talinfo = TalInfo::from_name("foo".into()).into_arc();
         let ca_cert = cert.validate_ta(talinfo, true).unwrap();
@@ -688,7 +688,7 @@ mod signer_test {
         );
 
         // test sign and encode
-        let router_cert = router_cert.into_cert(&signer, &ca_key).unwrap();
+        let router_cert = router_cert.into_cert(&signer, &ca_key).await.unwrap();
 
         // decode again
         let router_cert = router_cert.to_captured();

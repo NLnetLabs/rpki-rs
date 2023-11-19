@@ -52,15 +52,22 @@ impl ProvisioningCms {
     /// in order to allow for some NTP drift as well as processing delay
     /// between generating this CMS, sending it, and letting the receiver
     /// validate it.
-    pub fn create<S: Signer>(
+    pub async fn create<S: Signer>(
         message: Message,
         signing_key: &S::KeyId,
         signer: &S,
     ) -> Result<Self, SigningError<S::Error>> {
         let data = message.to_xml_bytes();
-        let validity = Validity::new(Time::five_minutes_ago(), Time::five_minutes_from_now());
+        let validity = Validity::new(
+            Time::five_minutes_ago(),
+            Time::five_minutes_from_now()
+        );
 
-        let signed_msg = SignedMessage::create(data, validity, signing_key, signer)?;
+        let signed_msg = SignedMessage::create(
+            data, validity,
+            signing_key,
+            signer
+        ).await?;
 
         Ok(ProvisioningCms {
             signed_msg,
@@ -1937,7 +1944,7 @@ mod signer_test {
         },
     };
 
-    fn sign_and_validate_msg(
+    async fn sign_and_validate_msg(
         signer: &OpenSslSigner,
         signing_key: KeyId,
         validation_key: &PublicKey,
@@ -1945,7 +1952,7 @@ mod signer_test {
     ) {
         let cms = ProvisioningCms::create(
             message.clone(), &signing_key, signer
-        ).unwrap();
+        ).await.unwrap();
 
         let bytes = cms.to_bytes();
 
@@ -1957,21 +1964,21 @@ mod signer_test {
         assert_eq!(message, decoded_message);
     }
 
-    #[test]
-    fn sign_and_validate() {
+    #[tokio::test]
+    async fn sign_and_validate() {
         let signer = OpenSslSigner::new();
 
-        let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
+        let key = signer.create_key(PublicKeyFormat::Rsa).await.unwrap();
         let cert = IdCert::new_ta(
             Validity::from_secs(60), &key, &signer
-        ).unwrap();
+        ).await.unwrap();
 
         let child = SenderHandle::from_str("child").unwrap();
         let parent = RecipientHandle::from_str("parent").unwrap();
 
         let list = Message::list(child, parent);
 
-        sign_and_validate_msg(&signer, key, cert.public_key(), list);
+        sign_and_validate_msg(&signer, key, cert.public_key(), list).await;
     }
 
     #[test]
