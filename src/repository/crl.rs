@@ -593,6 +593,7 @@ pub struct RevokedCertificatesIter(Captured);
 impl Iterator for RevokedCertificatesIter {
     type Item = CrlEntry;
 
+    #[allow(clippy::redundant_closure)]
     fn next(&mut self) -> Option<Self::Item> {
         self.0.decode_partial(|cons| CrlEntry::take_opt_from(cons)).unwrap()
     }

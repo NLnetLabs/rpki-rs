@@ -335,7 +335,7 @@ impl Query {
             }
         }
 
-        if pdus.get(0) == Some(&QueryPdu::List) {
+        if pdus.first() == Some(&QueryPdu::List) {
             Ok(Query::List)
         } else {
             let mut delta = PublishDelta::default();
@@ -974,7 +974,7 @@ impl Reply {
             pdu_element.take_end(reader)?;
         }
 
-        let reply_kind = match pdus.get(0) {
+        let reply_kind = match pdus.first() {
             Some(el) => el.kind(),
             None => ReplyPduType::List
         };
