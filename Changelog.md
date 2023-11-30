@@ -4,11 +4,15 @@
 
 Breaking changes
 
+* Upgraded _ring_ to 0.17 and _quick-xml_ to 0.31. ([#287])
+
 New
 
 Bug fixes
 
 Other changes
+
+[#287]: https://github.com/NLnetLabs/rpki-rs/pull/287
 
 
 ## 0.17.2
