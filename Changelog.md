@@ -1,16 +1,12 @@
 # Changelog
 
-## Unreleased next version
+## 0.18.0
+
+Released 2023-11-30.
 
 Breaking changes
 
 * Upgraded _ring_ to 0.17 and _quick-xml_ to 0.31. ([#287])
-
-New
-
-Bug fixes
-
-Other changes
 
 [#287]: https://github.com/NLnetLabs/rpki-rs/pull/287
 
