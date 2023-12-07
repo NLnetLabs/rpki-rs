@@ -1351,12 +1351,10 @@ mod test {
 
     #[test]
     fn next_year() {
-        let now = DateTime::parse_from_rfc3339(
-            "2014-10-21T16:39:57-00:00"
+        let now = Utc.with_ymd_and_hms(
+            2014, 10, 21, 16, 39, 57
         ).unwrap();
-        let future = Time::years_from_date(
-            1, DateTime::from_utc(now.naive_utc(), Utc)
-        );
+        let future = Time::years_from_date(1, now);
 
         assert_eq!(future.year(), 2015);
         assert_eq!(future.month(), 10);
@@ -1368,12 +1366,10 @@ mod test {
 
     #[test]
     fn next_year_from_leap() {
-        let now = DateTime::parse_from_rfc3339(
-            "2020-02-29T16:39:57-00:00"
+        let now = Utc.with_ymd_and_hms(
+            2020, 2, 29, 16, 39, 57
         ).unwrap();
-        let future = Time::years_from_date(
-            10, DateTime::from_utc(now.naive_utc(), Utc)
-        );
+        let future = Time::years_from_date(10, now);
 
         assert_eq!(future.year(), 2030);
         assert_eq!(future.month(), 2);
