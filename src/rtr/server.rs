@@ -20,6 +20,13 @@ use super::payload::{Action, PayloadRef, Timing};
 use super::state::State;
 
 
+//============ Constants =====================================================
+
+/// The maximum protocol version we support.
+///
+/// We support all protcol versions from 0 up to and including this value.
+const MAX_VERSION: u8 = 2;
+
 //============ Traits ========================================================
 
 //------------ PayloadSource et al. ------------------------------------------
@@ -323,7 +330,7 @@ where Sock: AsyncRead + Unpin {
             if current != header.version() {
                 Err(Query::Error(
                     pdu::Error::new(
-                        header.version(),
+                        current, // respond with the version expected
                         8,
                         header,
                         "version switched during connection"
@@ -334,10 +341,10 @@ where Sock: AsyncRead + Unpin {
                 Ok(())
             }
         }
-        else if header.version() > 2 {
+        else if header.version() > MAX_VERSION {
             Err(Query::Error(
                 pdu::Error::new(
-                    header.version(),
+                    MAX_VERSION, // respond with what they should try
                     4,
                     header,
                     "only versions 0 to 2 supported"
