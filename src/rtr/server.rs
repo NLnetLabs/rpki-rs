@@ -24,7 +24,7 @@ use super::state::State;
 
 /// The maximum protocol version we support.
 ///
-/// We support all protcol versions from 0 up to and including this value.
+/// We support all protocol versions from 0 up to and including this value.
 const MAX_VERSION: u8 = 2;
 
 //============ Traits ========================================================
