@@ -348,7 +348,7 @@ where Sock: AsyncRead + Unpin {
                     4,
                     header,
                     concat!(
-                        "only versions 0 to ",
+                        "only versions 0 up to and including ",
                         stringify!(MAX_VERSION),
                         " supported"
                     )
