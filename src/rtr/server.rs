@@ -25,10 +25,7 @@ use super::state::State;
 /// The maximum protocol version we support.
 ///
 /// We support all protcol versions from 0 up to and including this value.
-///
-/// Since there is not yet any stable agreement on the format of the ASPA PDU,
-/// we only support versions 0 and 1 for now.
-const MAX_VERSION: u8 = 1;
+const MAX_VERSION: u8 = 2;
 
 //============ Traits ========================================================
 
