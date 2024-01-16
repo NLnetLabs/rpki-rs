@@ -8,7 +8,12 @@ New
 
 Bug fixes
 
+* The RTR server now returns the expected protocol version in the version
+  negotiation error message rather than the requested version. ([#280])
+
 Other changes
+
+[#280]: https://github.com/NLnetLabs/rpki-rs/pull/280
 
 
 ## 0.18.0
@@ -17,9 +22,9 @@ Released 2023-11-30.
 
 Breaking changes
 
-* Upgraded _ring_ to 0.17 and _quick-xml_ to 0.31. ([#287])
+* Upgraded _ring_ to 0.17 and _quick-xml_ to 0.31. ([#278])
 
-[#287]: https://github.com/NLnetLabs/rpki-rs/pull/287
+[#287]: https://github.com/NLnetLabs/rpki-rs/pull/278
 
 
 ## 0.17.2
