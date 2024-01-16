@@ -347,7 +347,11 @@ where Sock: AsyncRead + Unpin {
                     MAX_VERSION, // respond with what they should try
                     4,
                     header,
-                    "only versions 0 to 2 supported"
+                    concat!(
+                        "only versions 0 to ",
+                        stringify!(MAX_VERSION),
+                        " supported"
+                    )
                 )
             ))
         }
