@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased next version
+
+Breaking changes
+
+New
+
+Bug fixes
+
+Other changes
+
+
 ## 0.18.1
 
 Released 2024-01-17.
