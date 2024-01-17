@@ -10,10 +10,18 @@ Bug fixes
 
 * The RTR server now returns the expected protocol version in the version
   negotiation error message rather than the requested version. ([#280])
+* The RTR server does not accept protocol version 2 for now to avoid
+  sending illegal ASPA PDUs. This is a workaround until the final format
+  of the PDU is specified. ([#281])
+* Fixed protocol version negotiation in the RTR client. It will now error
+  out if the server responds with a version greater than the requested one
+  rather just accepting it. ([#282])
 
 Other changes
 
 [#280]: https://github.com/NLnetLabs/rpki-rs/pull/280
+[#281]: https://github.com/NLnetLabs/rpki-rs/pull/281
+[#282]: https://github.com/NLnetLabs/rpki-rs/pull/282
 
 
 ## 0.18.0
