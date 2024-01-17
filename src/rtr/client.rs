@@ -22,6 +22,13 @@ use super::state::State;
 
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// The protocol version we initially propose.
+///
+/// While the client technically supports version 2 as well, the format of the
+/// ASPA PDU has not yet been agreed upon. Rather than possibly deploying
+/// broken servers, we only start with version 1 for now.
+const INITIAL_VERSION: u8 = 1;
+
 
 //------------ PayloadTarget -------------------------------------------------
 
@@ -191,7 +198,7 @@ impl<Sock, Target> Client<Sock, Target> {
 
     /// Returns the protocol version to use.
     fn version(&self) -> u8 {
-        self.version.unwrap_or(1)
+        self.version.unwrap_or(INITIAL_VERSION)
     }
 }
 
@@ -425,6 +432,15 @@ where
             else {
                 Ok(())
             }
+        }
+        else if version > INITIAL_VERSION {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "server requested unsupported protocol version {}",
+                    version
+                )
+            ))
         }
         else {
             self.version = Some(version);
