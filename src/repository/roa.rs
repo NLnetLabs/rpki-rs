@@ -584,7 +584,7 @@ impl RoaBuilder {
     ///
     /// This method will panic if both the IPv4 and IPv6 addresses are empty
     /// as that is not allowed and would lead to a malformed ROA.
-    pub fn finalize<S: Signer>(
+    pub async fn finalize<S: Signer>(
         self,
         mut sigobj: SignedObjectBuilder,
         signer: &S,
@@ -602,7 +602,7 @@ impl RoaBuilder {
             content.encode_ref().to_captured(Mode::Der).into_bytes(),
             signer,
             issuer_key,
-        )?;
+        ).await?;
         Ok(Roa { signed, content })
     }
 }
@@ -767,10 +767,10 @@ mod signer_test {
     use crate::repository::x509::Validity;
     use super::*;
 
-    fn make_roa() -> Roa {
+    async fn make_roa() -> Roa {
         let signer = OpenSslSigner::new();
-        let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
-        let pubkey = signer.get_key_info(&key).unwrap();
+        let key = signer.create_key(PublicKeyFormat::Rsa).await.unwrap();
+        let pubkey = signer.get_key_info(&key).await.unwrap();
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
 
         let mut cert = TbsCert::new(
@@ -784,7 +784,7 @@ mod signer_test {
         cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_as_resource_blocks(|b| b.push((Asn::MIN, Asn::MAX)));
-        let cert = cert.into_cert(&signer, &key).unwrap();
+        let cert = cert.into_cert(&signer, &key).await.unwrap();
 
         let mut roa = RoaBuilder::new(64496.into());
         roa.push_v4_addr(Ipv4Addr::new(192, 0, 2, 0), 24, None);
@@ -795,7 +795,7 @@ mod signer_test {
                 uri.clone(), uri
             ),
             &signer, &key
-        ).unwrap();
+        ).await.unwrap();
         let roa = roa.encode_ref().to_captured(Mode::Der);
 
         let roa = Roa::decode(roa.as_slice(), true).unwrap();
@@ -807,15 +807,15 @@ mod signer_test {
         roa
     }
 
-    #[test]
-    fn encode_roa() {
-        make_roa();
+    #[tokio::test]
+    async fn encode_roa() {
+        make_roa().await;
     }
 
-    #[test]
+    #[tokio::test]
     #[cfg(feature = "serde")]
-    fn serde_roa() {
-        let roa = make_roa();
+    async fn serde_roa() {
+        let roa = make_roa().await;
 
         let serialized = serde_json::to_string(&roa).unwrap();
         let deser_roa: Roa = serde_json::from_str(&serialized).unwrap();

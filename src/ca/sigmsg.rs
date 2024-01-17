@@ -280,7 +280,7 @@ impl SignedMessage {
 /// 
 impl SignedMessage {
     /// Create a new signed message under the given TA IdCert.
-    pub fn create<S: Signer>(
+    pub async fn create<S: Signer>(
         data: Bytes,
         validity: Validity,
         issuing_key_id: &S::KeyId,
@@ -310,21 +310,22 @@ impl SignedMessage {
         
         let (signature, ee_key) = signer.sign_one_off(
             RpkiSignatureAlgorithm::default(), &signed_attrs.encode_verify()
-        )?;
+        ).await?;
+
         let sid = ee_key.key_identifier();
         
         let crl = SignedMessageCrl::create(
             &validity,
             issuing_key_id,
             signer
-        )?;
+        ).await?;
 
         let ee_cert = IdCert::new_ee(
             &ee_key,
             validity,
             issuing_key_id,
             signer
-        )?;
+        ).await?;
         
         let content = OctetString::new(data);
 
@@ -473,12 +474,12 @@ impl SignedMessageCrl {
     /// The CRL will use a this_update and next_update time which is aligned
     /// with the EE certificate validity time for the signed message CMS
     /// wrapper.
-    fn create<S: Signer>(
+    async fn create<S: Signer>(
         validity: &Validity,
         issuing_key_id: &S::KeyId,
         signer: &S,
     ) -> Result<Self, SigningError<S::Error>> {
-        let issuing_pub_key = signer.get_key_info(issuing_key_id)?;
+        let issuing_pub_key = signer.get_key_info(issuing_key_id).await?;
         
         let signature = RpkiSignatureAlgorithm::default();
         let issuer = Name::from_pub_key(&issuing_pub_key);
@@ -509,8 +510,8 @@ impl SignedMessageCrl {
         };
 
         let data = Captured::from_values(Mode::Der, tbs.encode_ref());
-        let signature = signer.sign(issuing_key_id, tbs.signature, &data)?;
-        let signed_data = SignedData::new(data, signature);
+        let sig = signer.sign(issuing_key_id, tbs.signature, &data).await?;
+        let signed_data = SignedData::new(data, sig);
 
         Ok(SignedMessageCrl {
             signed_data,
@@ -881,16 +882,16 @@ mod signer_test {
     };
 
     
-    #[test]
-    fn encode_and_sign_signed_message() {
+    #[tokio::test]
+    async fn encode_and_sign_signed_message() {
         let signer = OpenSslSigner::new();
 
-        let ta_key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
+        let ta_key = signer.create_key(PublicKeyFormat::Rsa).await.unwrap();
         let ta_cert = IdCert::new_ta(
             Validity::from_secs(60),
             &ta_key,
             &signer
-        ).unwrap();
+        ).await.unwrap();
 
         let content = Bytes::from_static(b"euj");
         let validity = Validity::from_secs(60);
@@ -901,7 +902,7 @@ mod signer_test {
             validity,
             &ta_key,
             &signer
-        ).unwrap();
+        ).await.unwrap();
 
         // Encode to bytes
         let bytes = signed_message.to_captured().into_bytes();

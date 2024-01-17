@@ -345,21 +345,25 @@ impl AspaBuilder {
     }
 
     /// Finalizes the builder into an ASPA.
-    pub fn finalize<S: Signer>(
+    pub async fn finalize<S: Signer>(
         self, 
         mut sigobj: SignedObjectBuilder,
         signer: &S,
         issuer_key: &S::KeyId,
     ) -> Result<Aspa, SigningError<S::Error>> {
         let content = self.into_attestation();
-        sigobj.set_as_resources(content.as_resources());
+        
+        let signed = {
+            sigobj.set_as_resources(content.as_resources());
 
-        let signed = sigobj.finalize(
-            Oid(oid::CT_ASPA.0.into()),
-            content.encode_ref().to_captured(Mode::Der).into_bytes(),
-            signer,
-            issuer_key,
-        )?;
+            sigobj.finalize(
+                Oid(oid::CT_ASPA.0.into()),
+                content.encode_ref().to_captured(Mode::Der).into_bytes(),
+                signer,
+                issuer_key,
+            ).await?
+        };
+
         Ok(Aspa { signed, content })
     }
 }
@@ -427,13 +431,16 @@ mod signer_test {
     use crate::repository::x509::Validity;
     use super::*;
 
-    fn make_aspa(
+    async fn make_aspa(
         customer_as: Asn,
         mut providers: Vec<Asn>,
     ) -> Aspa {
         let signer = OpenSslSigner::new();
 
-        let issuer_key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
+        let issuer_key = signer.create_key(
+            PublicKeyFormat::Rsa
+        ).await.unwrap();
+
         let issuer_uri = uri::Rsync::from_str(
             "rsync://example.com/parent/ca.cer"
         ).unwrap();
@@ -452,7 +459,7 @@ mod signer_test {
                 "rsync://example.com/ca/ca.mft"
             ).unwrap();
 
-            let pubkey = signer.get_key_info(&issuer_key).unwrap();
+            let pubkey = signer.get_key_info(&issuer_key).await.unwrap();
 
             let mut cert = TbsCert::new(
                 12u64.into(),
@@ -469,7 +476,7 @@ mod signer_test {
             cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
             cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
             cert.build_as_resource_blocks(|b| b.push((Asn::MIN, Asn::MAX)));
-            let cert = cert.into_cert(&signer, &issuer_key).unwrap();
+            let cert = cert.into_cert(&signer, &issuer_key).await.unwrap();
 
             cert.validate_ta(
                 TalInfo::from_name("foo".into()).into_arc(), true
@@ -494,7 +501,7 @@ mod signer_test {
             ),
             &signer,
             &issuer_key
-        ).unwrap();
+        ).await.unwrap();
 
         let encoded = aspa.to_captured();
         let decoded = Aspa::decode(encoded.as_slice(), true).unwrap();
@@ -516,27 +523,27 @@ mod signer_test {
         aspa
     }
 
-    #[test]
-    fn encode_aspa() {
+    #[tokio::test]
+    async fn encode_aspa() {
         let customer_as = 64496.into();
         let providers = vec![
             64498.into(),
             64497.into(),
             64499.into(),
         ];
-        make_aspa(customer_as, providers);
+        make_aspa(customer_as, providers).await;
     }
 
-    #[test]
+    #[tokio::test]
     #[cfg(feature = "serde")]
-    fn serde_aspa() {
+    async fn serde_aspa() {
         let customer_as = 64496.into();
         let providers = vec![
             64498.into(),
             64497.into(),
             64499.into(),
         ];
-        let aspa = make_aspa(customer_as, providers);
+        let aspa = make_aspa(customer_as, providers).await;
         
         let serialized = serde_json::to_string(&aspa).unwrap();
         let deserialized: Aspa = serde_json::from_str(&serialized).unwrap();

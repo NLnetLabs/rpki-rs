@@ -912,14 +912,14 @@ impl SignedObjectBuilder {
         self.binary_signing_time = time
     }
 
-    pub fn finalize<S: Signer>(
+    pub async fn finalize<S: Signer>(
         self,
         content_type: Oid<Bytes>,
         content: Bytes,
         signer: &S,
         issuer_key: &S::KeyId,
     ) -> Result<SignedObject, SigningError<S::Error>> {
-        let issuer_pub = signer.get_key_info(issuer_key)?;
+        let issuer_pub = signer.get_key_info(issuer_key).await?;
 
         // Produce signed attributes.
         let message_digest = self.digest_algorithm.digest(&content).into();
@@ -933,7 +933,7 @@ impl SignedObjectBuilder {
         // Sign signed attributes with a one-off key.
         let (signature, key_info) = signer.sign_one_off(
             RpkiSignatureAlgorithm::default(), &signed_attrs.encode_verify()
-        )?;
+        ).await?;
         let sid = key_info.key_identifier();
 
         // Make the certificate.
@@ -953,7 +953,7 @@ impl SignedObjectBuilder {
         cert.set_v4_resources(self.v4_resources);
         cert.set_v6_resources(self.v6_resources);
         cert.set_as_resources(self.as_resources);
-        let cert = cert.into_cert(signer, issuer_key)?;
+        let cert = cert.into_cert(signer, issuer_key).await?;
 
         Ok(SignedObject {
             digest_algorithm: self.digest_algorithm,
@@ -1082,11 +1082,11 @@ mod signer_test {
     use crate::repository::tal::TalInfo;
     use super::*;
         
-    #[test]
-    fn encode_signed_object() {
+    #[tokio::test]
+    async fn encode_signed_object() {
         let signer = OpenSslSigner::new();
-        let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
-        let pubkey = signer.get_key_info(&key).unwrap();
+        let key = signer.create_key(PublicKeyFormat::Rsa).await.unwrap();
+        let pubkey = signer.get_key_info(&key).await.unwrap();
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
 
         let mut cert = TbsCert::new(
@@ -1100,7 +1100,7 @@ mod signer_test {
         cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_as_resource_blocks(|b| b.push((Asn::MIN, Asn::MAX)));
-        let cert = cert.into_cert(&signer, &key).unwrap();
+        let cert = cert.into_cert(&signer, &key).await.unwrap();
 
         let mut sigobj = SignedObjectBuilder::new(
             12u64.into(), Validity::from_secs(86400), uri.clone(),
@@ -1112,7 +1112,7 @@ mod signer_test {
             Bytes::from(b"1234".as_ref()),
             &signer,
             &key,
-        ).unwrap();
+        ).await.unwrap();
         let sigobj = sigobj.encode_ref().to_captured(Mode::Der);
 
         let sigobj = SignedObject::decode(sigobj.as_slice(), true).unwrap();

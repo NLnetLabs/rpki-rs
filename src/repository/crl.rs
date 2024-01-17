@@ -253,7 +253,7 @@ impl<C> TbsCertList<C> {
     }
 
     /// Converts the value into a signed CRL.
-    pub fn into_crl<S: Signer>(
+    pub async fn into_crl<S: Signer>(
         self,
         signer: &S,
         key: &S::KeyId
@@ -264,7 +264,7 @@ impl<C> TbsCertList<C> {
     {
         let tbs: TbsCertList<RevokedCertificates> = self.into();
         let data = Captured::from_values(Mode::Der, tbs.encode_ref());
-        let signature = signer.sign(key, tbs.signature, &data)?;
+        let signature = signer.sign(key, tbs.signature, &data).await?;
         Ok(Crl {
             signed_data: SignedData::new(data, signature),
             tbs,
@@ -816,11 +816,11 @@ mod signer_test {
     use crate::crypto::PublicKeyFormat;
     use crate::crypto::softsigner::OpenSslSigner;
 
-    #[test]
-    fn build_ta_cert() {
+    #[tokio::test]
+    async fn build_ta_cert() {
         let signer = OpenSslSigner::new();
-        let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
-        let pubkey = signer.get_key_info(&key).unwrap();
+        let key = signer.create_key(PublicKeyFormat::Rsa).await.unwrap();
+        let pubkey = signer.get_key_info(&key).await.unwrap();
         let crl = TbsCertList::new(
             Default::default(),
             pubkey.to_subject_name(),
@@ -830,7 +830,7 @@ mod signer_test {
             pubkey.key_identifier(),
             12u64.into()
         );
-        let crl = crl.into_crl(&signer, &key).unwrap().to_captured();
+        let crl = crl.into_crl(&signer, &key).await.unwrap().to_captured();
         let _crl = Crl::decode(crl.as_slice()).unwrap();
     }
 }

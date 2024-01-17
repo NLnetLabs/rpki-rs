@@ -63,7 +63,7 @@ impl PublicationCms {
     /// in order to allow for some NTP drift as well as processing delay
     /// between generating this CMS, sending it, and letting the receiver
     /// validate it.
-    pub fn create<S: Signer>(
+    pub async fn create<S: Signer>(
         message: Message,
         issuing_key_id: &S::KeyId,
         signer: &S,
@@ -79,7 +79,7 @@ impl PublicationCms {
             validity,
             issuing_key_id,
             signer
-        )?;
+        ).await?;
 
         Ok(PublicationCms { signed_msg, message})
     }
@@ -1682,7 +1682,7 @@ mod signer_test {
         crypto::{softsigner::{OpenSslSigner, KeyId}, PublicKeyFormat}
     };
 
-    fn sign_and_validate_msg(
+    async fn sign_and_validate_msg(
         signer: &OpenSslSigner,
         signing_key: KeyId,
         validation_key: &PublicKey,
@@ -1692,7 +1692,7 @@ mod signer_test {
             message.clone(),
             &signing_key,
             signer
-        ).unwrap();
+        ).await.unwrap();
 
         let bytes = cms.to_bytes();
 
@@ -1734,37 +1734,62 @@ mod signer_test {
         Withdraw::with_hash_tag(uri, hash)
     }
 
-    #[test]
-    fn sign_and_validate() {
+    #[tokio::test]
+    async fn sign_and_validate() {
         let signer = OpenSslSigner::new();
 
-        let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
+        let key = signer.create_key(PublicKeyFormat::Rsa).await.unwrap();
         let cert = IdCert::new_ta(
             Validity::from_secs(60),
             &key,
             &signer
-        ).unwrap();
+        ).await.unwrap();
 
-        sign_and_validate_msg(&signer, key, cert.public_key(), Message::list_query());
+        sign_and_validate_msg(
+            &signer,
+            key,
+            cert.public_key(),
+            Message::list_query()
+        ).await;
 
         let mut rpl = ListReply::empty();
         rpl.add_element(element("rsync://localhost/ca/f1.txt", b"a"));
         rpl.add_element(element("rsync://localhost/ca/f2.txt", b"b"));
         rpl.add_element(element("rsync://localhost/ca/f3.txt", b"c"));
-        sign_and_validate_msg(&signer, key, cert.public_key(), Message::list_reply(rpl));
+        sign_and_validate_msg(
+            &signer,
+            key,
+            cert.public_key(),
+            Message::list_reply(rpl)
+        ).await;
 
         let mut delta = PublishDelta::empty();
         delta.add_publish(publish("rsync://localhost/ca/f1.txt", b"a"));
         delta.add_update(update("rsync://localhost/ca/f2.txt", b"b", b"c"));
         delta.add_withdraw(withdraw("rsync://localhost/ca/f3.txt", b"d"));
-        sign_and_validate_msg(&signer, key, cert.public_key(), Message::delta(delta));
+        sign_and_validate_msg(
+            &signer,
+            key,
+            cert.public_key(),
+            Message::delta(delta)
+        ).await;
 
-        sign_and_validate_msg(&signer, key, cert.public_key(), Message::success());
+        sign_and_validate_msg(
+            &signer,
+            key,
+            cert.public_key(),
+            Message::success()
+        ).await;
 
         let mut error_reply = ErrorReply::empty();
         let error = ReportError::with_code(ReportErrorCode::PermissionFailure);
         error_reply.add_error(error);
-        sign_and_validate_msg(&signer, key, cert.public_key(), Message::error(error_reply));
+        sign_and_validate_msg(
+            &signer,
+            key,
+            cert.public_key(),
+            Message::error(error_reply)
+        ).await;
     }
 
     #[test]

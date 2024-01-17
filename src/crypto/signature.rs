@@ -13,7 +13,7 @@ use super::signer::SigningAlgorithm;
 //------------ SignatureAlgorithm --------------------------------------------
 
 /// The allowed signature algorithms for a certain purpose.
-pub trait SignatureAlgorithm: Sized {
+pub trait SignatureAlgorithm: Send + Sized + Sync {
     type Encoder: encode::Values;
 
     /// Returns the signing algorithm for this algorithm.
@@ -62,6 +62,9 @@ pub struct RpkiSignatureAlgorithm {
     /// Constructed values will always have this set to `true`.
     has_parameter: bool
 }
+
+unsafe impl Send for RpkiSignatureAlgorithm {}
+unsafe impl Sync for RpkiSignatureAlgorithm {}
 
 /// # ASN.1 Values
 ///
@@ -239,14 +242,14 @@ impl SignatureAlgorithm for BgpsecSignatureAlgorithm {
 //------------ Signature -----------------------------------------------------
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Signature<Alg> {
+pub struct Signature<Alg: Send + Sync> {
     algorithm: Alg,
     value: Bytes
 }
 
 pub type RpkiSignature = Signature<RpkiSignatureAlgorithm>;
 
-impl<Alg> Signature<Alg> {
+impl<Alg: Send + Sync> Signature<Alg> {
     pub fn new(algorithm: Alg, value: Bytes) -> Self {
         Signature { algorithm, value }
     }

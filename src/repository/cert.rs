@@ -1231,13 +1231,13 @@ impl TbsCert {
     }
 
     /// Converts the value into a signed certificate.
-    pub fn into_cert<S: Signer>(
+    pub async fn into_cert<S: Signer>(
         self,
         signer: &S,
         key: &S::KeyId,
     ) -> Result<Cert, SigningError<S::Error>> {
         let data = Captured::from_values(Mode::Der, self.encode_ref());
-        let signature = signer.sign(key, self.signature, &data)?;
+        let signature = signer.sign(key, self.signature, &data).await?;
         Ok(Cert {
             signed_data: SignedData::new(data, signature),
             tbs: self
@@ -2797,11 +2797,11 @@ mod signer_test {
     use super::*;
 
 
-    #[test]
-    fn build_ta_cert() {
+    #[tokio::test]
+    async fn build_ta_cert() {
         let signer = OpenSslSigner::new();
-        let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
-        let pubkey = signer.get_key_info(&key).unwrap();
+        let key = signer.create_key(PublicKeyFormat::Rsa).await.unwrap();
+        let pubkey = signer.get_key_info(&key).await.unwrap();
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
         let mut cert = TbsCert::new(
             12u64.into(), pubkey.to_subject_name(),
@@ -2814,7 +2814,7 @@ mod signer_test {
         cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_as_resource_blocks(|b| b.push((Asn::MIN, Asn::MAX)));
-        let cert = cert.into_cert(&signer, &key).unwrap().to_captured();
+        let cert = cert.into_cert(&signer, &key).await.unwrap().to_captured();
         let cert = Cert::decode(cert.as_slice()).unwrap();
         let talinfo = TalInfo::from_name("foo".into()).into_arc();
         cert.validate_ta(talinfo, true).unwrap();

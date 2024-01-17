@@ -219,7 +219,7 @@ impl ManifestContent {
         }
     }
 
-    pub fn into_manifest<S: Signer>(
+    pub async fn into_manifest<S: Signer>(
         self,
         mut sigobj: SignedObjectBuilder,
         signer: &S,
@@ -233,7 +233,7 @@ impl ManifestContent {
             self.encode_ref().to_captured(Mode::Der).into_bytes(),
             signer,
             issuer_key,
-        )?;
+        ).await?;
         Ok(Manifest { signed, content: self })
     }
 }
@@ -575,10 +575,10 @@ mod signer_test {
     use crate::repository::x509::Validity;
     use super::*;
 
-    fn make_test_manifest() -> Manifest {
+    async fn make_test_manifest() -> Manifest {
         let signer = OpenSslSigner::new();
-        let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
-        let pubkey = signer.get_key_info(&key).unwrap();
+        let key = signer.create_key(PublicKeyFormat::Rsa).await.unwrap();
+        let pubkey = signer.get_key_info(&key).await.unwrap();
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
 
         let mut cert = TbsCert::new(
@@ -592,7 +592,7 @@ mod signer_test {
         cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_as_resource_blocks(|b| b.push((Asn::MIN, Asn::MAX)));
-        let cert = cert.into_cert(&signer, &key).unwrap();
+        let cert = cert.into_cert(&signer, &key).await.unwrap();
 
         let content = ManifestContent::new(
             12u64.into(), Time::now(), Time::next_week(),
@@ -609,7 +609,7 @@ mod signer_test {
                 uri.clone(), uri
             ),
             &signer, &key
-        ).unwrap();
+        ).await.unwrap();
         let manifest = manifest.encode_ref().to_captured(Mode::Der);
 
         let manifest = Manifest::decode(manifest.as_slice(), true).unwrap();
@@ -621,15 +621,15 @@ mod signer_test {
         manifest
     }
 
-    #[test]
-    fn encode_manifest() {
-        make_test_manifest();
+    #[tokio::test]
+    async fn encode_manifest() {
+        make_test_manifest().await;
     }
 
-    #[test]
+    #[tokio::test]
     #[cfg(feature = "serde")]
-    fn serde_manifest() {
-        let mft = make_test_manifest();
+    async fn serde_manifest() {
+        let mft = make_test_manifest().await;
         let serialized = serde_json::to_string(&mft).unwrap();
         let deser_mft: Manifest = serde_json::from_str(&serialized).unwrap();
 
