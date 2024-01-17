@@ -1,10 +1,8 @@
 # Changelog
 
-## Unreleased next version
+## 0.18.1
 
-Breaking changes
-
-New
+Released 2024-01-17.
 
 Bug fixes
 
@@ -16,8 +14,6 @@ Bug fixes
 * Fixed protocol version negotiation in the RTR client. It will now error
   out if the server responds with a version greater than the requested one
   rather just accepting it. ([#282])
-
-Other changes
 
 [#280]: https://github.com/NLnetLabs/rpki-rs/pull/280
 [#281]: https://github.com/NLnetLabs/rpki-rs/pull/281
