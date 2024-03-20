@@ -305,14 +305,22 @@ impl Serial {
         if s.is_empty() {
             return Err(SerialSliceError::empty())
         }
-        // We do not support more than 20 octets or exactly 20 octets if the
-        // sign bit is set.
-        if s.len() > 20 || (s.len() == 20 && s[0] & 0x80 != 0) {
+        // We do not support more than 20 octets.
+        if s.len() > 20 {
             return Err(SerialSliceError::long())
         }
         let mut res = <[u8; 20]>::default();
         res[20 - s.len()..].copy_from_slice(s);
-        Ok(Self(res))
+        Self::from_array(res)
+    }
+
+    /// Creates a serial number from an array.
+    pub fn from_array(array: [u8; 20]) -> Result<Self, SerialSliceError> {
+        // The left-most bit must be 0 to indicate an unsigned integer.
+        if array[0] & 0x80 != 0 {
+            return Err(SerialSliceError::long())
+        }
+        Ok(Self(array))
     }
 
     /// Creates a random new serial number.
@@ -339,6 +347,11 @@ impl Serial {
         signer.rand(&mut res[len..])?;
         res[0] &= 0x7F;
         Ok(Self(res))
+    }
+
+    /// Converts the serial number into a bytes array.
+    pub fn into_array(self) -> [u8; 20] {
+        self.0
     }
 
     pub fn take_from<S: decode::Source>(
@@ -432,7 +445,15 @@ impl Default for Serial {
 }
 
 
-//--- From and FromStr
+//--- From, TryFrom, and FromStr
+
+impl TryFrom<[u8; 20]> for Serial {
+    type Error = SerialSliceError;
+
+    fn try_from(array: [u8; 20]) -> Result<Self, Self::Error> {
+        Self::from_array(array)
+    }
+}
 
 impl From<u128> for Serial {
     fn from(value: u128) -> Self {
@@ -443,6 +464,12 @@ impl From<u128> for Serial {
 impl From<u64> for Serial {
     fn from(value: u64) -> Self {
         Self::from_slice(value.to_be_bytes().as_ref()).unwrap()
+    }
+}
+
+impl From<Serial> for [u8; 20] {
+    fn from(serial: Serial) -> Self {
+        serial.0
     }
 }
 
