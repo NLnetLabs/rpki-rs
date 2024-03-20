@@ -1009,6 +1009,7 @@ mod arbitrary {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(feature = "serde"))] use std::str::FromStr;
     use super::*;
 
     #[test]
