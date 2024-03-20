@@ -13,7 +13,7 @@ use bcder::decode::{DecodeError, ContentError, IntoSource, Source};
 use bcder::encode::PrimitiveContent;
 use bcder::string::{PrintableString, Utf8String};
 use chrono::{
-    Datelike, DateTime, Duration, LocalResult, Timelike, TimeZone, Utc
+    Datelike, DateTime, LocalResult, TimeDelta, Timelike, TimeZone, Utc
 };
 use crate::oid;
 use crate::crypto::{
@@ -673,19 +673,19 @@ impl Time {
     }
 
     pub fn five_minutes_ago() -> Self {
-        Self::now() - Duration::minutes(5)
+        Self::now() - TimeDelta::try_minutes(5).unwrap()
     }
 
     pub fn five_minutes_from_now() -> Self {
-        Self::now() + Duration::minutes(5)
+        Self::now() + TimeDelta::try_minutes(5).unwrap()
     }
 
     pub fn tomorrow() -> Self {
-        Self::now() + Duration::days(1)
+        Self::now() + TimeDelta::try_days(1).unwrap()
     }
 
     pub fn next_week() -> Self {
-        Self::now() + Duration::weeks(1)
+        Self::now() + TimeDelta::try_weeks(1).unwrap()
     }
 
     pub fn next_year() -> Self {
@@ -946,10 +946,10 @@ impl FromStr for Time {
 
 //--- Add
 
-impl ops::Add<Duration> for Time {
+impl ops::Add<TimeDelta> for Time {
     type Output = Self;
 
-    fn add(self, duration: Duration) -> Self::Output {
+    fn add(self, duration: TimeDelta) -> Self::Output {
         Self::new(self.0 + duration)
     }
 }
@@ -957,10 +957,10 @@ impl ops::Add<Duration> for Time {
 
 //--- Sub
 
-impl ops::Sub<Duration> for Time {
+impl ops::Sub<TimeDelta> for Time {
     type Output = Self;
 
-    fn sub(self, duration: Duration) -> Self::Output {
+    fn sub(self, duration: TimeDelta) -> Self::Output {
         Self::new(self.0 - duration)
     }
 }
@@ -1065,7 +1065,7 @@ impl Validity {
         Validity { not_before, not_after }
     }
 
-    pub fn from_duration(duration: Duration) -> Self {
+    pub fn from_duration(duration: TimeDelta) -> Self {
         let not_before = Time::now();
         let not_after = Time::new(Utc::now() + duration);
         if not_before < not_after {
@@ -1077,7 +1077,7 @@ impl Validity {
     }
 
     pub fn from_secs(secs: i64) -> Self {
-        Self::from_duration(Duration::seconds(secs))
+        Self::from_duration(TimeDelta::try_seconds(secs).unwrap())
     }
 
     pub fn not_before(self) -> Time {
