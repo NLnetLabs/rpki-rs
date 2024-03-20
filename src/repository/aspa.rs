@@ -420,9 +420,9 @@ mod signer_test {
     use std::str::FromStr;
     use crate::uri;
     use crate::repository::cert::{KeyUsage, Overclaim, TbsCert};
-    use crate::crypto::{PublicKeyFormat, Signer};
+    use crate::crypto::PublicKeyFormat;
     use crate::crypto::softsigner::OpenSslSigner;
-    use crate::repository::resources::{Asn, Prefix};
+    use crate::repository::resources::Prefix;
     use crate::repository::tal::TalInfo;
     use crate::repository::x509::Validity;
     use super::*;

@@ -6,7 +6,6 @@
 //! [`Server`]: struct.Server.html
 //! [`VrpSource`]: trait.VrpSource.html
 use std::io;
-use std::marker::Unpin;
 use futures_util::future;
 use futures_util::pin_mut;
 use futures_util::future::Either;

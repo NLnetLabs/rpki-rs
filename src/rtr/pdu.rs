@@ -7,8 +7,6 @@
 //! the two versions.
 
 use std::{borrow, error, fmt, io, mem, ops, slice};
-use std::convert::TryFrom;
-use std::marker::Unpin;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use bytes::Bytes;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};

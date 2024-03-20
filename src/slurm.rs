@@ -9,7 +9,6 @@
 #![cfg(feature = "slurm")]
 
 use std::{borrow, error, fmt, io, ops};
-use std::convert::{TryFrom, TryInto};
 use std::str::FromStr;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
@@ -723,7 +722,6 @@ mod serde_opt_asn {
 
 mod serde_key_identifier {
     use std::fmt;
-    use std::convert::TryFrom;
     use crate::util::base64;
     use super::KeyIdentifier;
 

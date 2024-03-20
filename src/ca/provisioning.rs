@@ -1,6 +1,6 @@
 //! Support RFC 6492 Provisioning Protocol (aka up-down)
 
-use std::convert::{Infallible, TryFrom};
+use std::convert::Infallible;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -1832,10 +1832,7 @@ impl From<ValidationError> for Error {
 
 #[cfg(test)]
 mod tests {
-
-    use crate::ca::sigmsg::SignedMessage;
     use std::str::from_utf8_unchecked;
-
     use super::*;
 
     /// Test that the we can re-encode the message to xml, parse it,

@@ -18,7 +18,6 @@
 //! [RFC 6487]: https://tools.ietf.org/html/rfc5487
 
 use std::{borrow, fmt, ops};
-use std::iter::FromIterator;
 use std::sync::Arc;
 use bcder::{decode, encode};
 use bcder::{
@@ -2789,11 +2788,9 @@ mod test {
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
     use std::str::FromStr;
-    use crate::repository::cert::Cert;
     use crate::crypto::PublicKeyFormat;
     use crate::crypto::softsigner::OpenSslSigner;
     use crate::repository::resources::{Asn, Prefix};
-    use crate::repository::tal::TalInfo;
     use super::*;
 
 

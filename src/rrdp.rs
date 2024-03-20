@@ -23,8 +23,6 @@
 
 use std::{error, fmt, hash, io, str};
 use std::io::Read;
-use std::convert::TryFrom;
-use std::convert::TryInto;
 use std::ops::Deref;
 use bytes::Bytes;
 use log::info;
@@ -1516,7 +1514,7 @@ impl error::Error for ProcessError { }
 
 #[cfg(test)]
 mod test {
-    use std::str::{FromStr, from_utf8_unchecked};
+    use std::str::from_utf8_unchecked;
 
     use super::*;
 

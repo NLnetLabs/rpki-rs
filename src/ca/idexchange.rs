@@ -5,7 +5,7 @@
 //! parent CA and/or RPKI Publication Servers.
 
 use std::borrow;
-use std::convert::{Infallible, TryFrom};
+use std::convert::Infallible;
 use std::fmt;
 use std::io;
 use std::path::PathBuf;

@@ -2,7 +2,6 @@
 
 use std::{error, fmt, hash, str};
 use std::borrow::Cow;
-use std::convert::TryFrom;
 use bytes::{BufMut, Bytes, BytesMut};
 
 #[cfg(feature = "repository")] use std::io;
@@ -1011,7 +1010,6 @@ mod arbitrary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::str::FromStr;
 
     #[test]
     fn rsync_uri_characters() {

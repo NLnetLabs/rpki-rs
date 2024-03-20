@@ -873,13 +873,8 @@ mod tests {
 
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
+    use crate::crypto::{softsigner::OpenSslSigner, PublicKeyFormat};
     use super::*;
-
-    use crate::{
-        ca::idcert::IdCert,
-        crypto::{softsigner::OpenSslSigner, PublicKeyFormat}
-    };
-
     
     #[test]
     fn encode_and_sign_signed_message() {

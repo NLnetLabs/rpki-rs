@@ -15,7 +15,6 @@
 
 use std::{error, fmt, iter};
 use std::cmp::Ordering;
-use std::iter::FromIterator;
 use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::Tag;

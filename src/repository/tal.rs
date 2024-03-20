@@ -2,7 +2,7 @@
 
 use std::{fmt, str};
 use std::cmp::Ordering;
-use std::convert::{Infallible, TryFrom};
+use std::convert::Infallible;
 use std::fs::{read_dir, DirEntry, File, ReadDir};
 use std::io::{self, Read};
 use std::path::Path;
@@ -325,7 +325,6 @@ impl fmt::Display for ReadError {
 
 #[cfg(test)]
 mod test {
-    use bytes::Bytes;
     use crate::repository::cert::Cert;
     use super::*;
 

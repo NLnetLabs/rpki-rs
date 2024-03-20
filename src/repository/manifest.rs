@@ -529,7 +529,6 @@ impl From<ManifestHashMismatch> for VerificationError {
 
 #[cfg(test)]
 mod test {
-    use crate::repository::cert::Cert;
     use crate::repository::tal::TalInfo;
     use super::*;
 
@@ -565,10 +564,8 @@ mod test {
 #[cfg(all(test, feature = "softkeys"))]
 mod signer_test {
     use std::str::FromStr;
-    use bcder::encode::Values;
-    use crate::uri;
     use crate::repository::cert::{KeyUsage, Overclaim, TbsCert};
-    use crate::crypto::{PublicKeyFormat, Signer};
+    use crate::crypto::PublicKeyFormat;
     use crate::crypto::softsigner::OpenSslSigner;
     use crate::repository::resources::{Asn, Prefix};
     use crate::repository::tal::TalInfo;

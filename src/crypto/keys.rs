@@ -1,7 +1,7 @@
 //! Types and parameters of keys.
 
 use std::{error, fmt, io, str};
-use std::convert::{Infallible, TryFrom};
+use std::convert::Infallible;
 use std::str::FromStr;
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, Oid, Tag};

@@ -9,7 +9,6 @@
 
 use std::{error, fmt, io, iter, str};
 use std::fmt::Display;
-use std::iter::FromIterator;
 use std::net::{AddrParseError, IpAddr, Ipv4Addr, Ipv6Addr};
 use std::num::ParseIntError;
 use std::str::FromStr;

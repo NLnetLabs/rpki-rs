@@ -10,7 +10,6 @@
 //! For more information on how to use the client, see the [`Client`] type.
 use std::{error, fmt, io};
 use std::future::Future;
-use std::marker::Unpin;
 use tokio::time::{timeout, timeout_at, Duration, Instant};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use super::payload::{Action, Payload, Timing};

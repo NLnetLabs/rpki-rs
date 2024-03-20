@@ -757,12 +757,10 @@ mod test {
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
     use std::str::FromStr;
-    use bcder::encode::Values;
     use crate::uri;
-    use crate::crypto::{PublicKeyFormat, Signer};
+    use crate::crypto::PublicKeyFormat;
     use crate::crypto::softsigner::OpenSslSigner;
     use crate::repository::cert::{KeyUsage, Overclaim, TbsCert};
-    use crate::repository::resources::{Asn, Prefix};
     use crate::repository::tal::TalInfo;
     use crate::repository::x509::Validity;
     use super::*;
