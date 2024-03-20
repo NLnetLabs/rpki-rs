@@ -6,9 +6,13 @@ Breaking changes
 
 New
 
+* `Serial` can now be converted from and to `[u8; 20]`. ([#285])
+
 Bug fixes
 
 Other changes
+
+[#285]: https://github.com/NLnetLabs/rpki-rs/pull/285
 
 
 ## 0.18.1
