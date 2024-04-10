@@ -1656,10 +1656,7 @@ impl TbsCert {
                     "wrong AS resources extension for certificate policy"
                 ))
             }
-            let (v4_resources, v6_resources) = match ip_resources {
-                Some(res) => res,
-                None => (None, None)
-            };
+            let (v4_resources, v6_resources) = ip_resources.unwrap_or_default();
             let (ca_repository, rpki_manifest, signed_object, rpki_notify) = {
                 match sia {
                     Some(sia) => (
