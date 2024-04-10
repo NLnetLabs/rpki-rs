@@ -1114,13 +1114,13 @@ impl CertResources {
 
     fn replace_inherited(&mut self, ca: &CertResources) {
         if self.as_resources.is_none() {
-            self.as_resources = ca.as_resources.clone()
+            self.as_resources.clone_from(&ca.as_resources)
         }
         if self.v4_resources.is_none() {
-            self.v4_resources = ca.v4_resources.clone()
+            self.v4_resources.clone_from(&ca.v4_resources)
         }
         if self.v6_resources.is_none() {
-            self.v6_resources = ca.v6_resources.clone()
+            self.v6_resources.clone_from(&ca.v6_resources)
         }
     }
 

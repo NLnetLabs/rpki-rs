@@ -18,8 +18,8 @@ use bcder::decode::{self, DecodeError, Source};
 pub struct Asn(u32);
 
 impl Asn {
-    pub const MIN: Asn = Asn(std::u32::MIN);
-    pub const MAX: Asn = Asn(std::u32::MAX);
+    pub const MIN: Asn = Asn(u32::MIN);
+    pub const MAX: Asn = Asn(u32::MAX);
 
     /// Creates an AS number from a `u32`.
     pub fn from_u32(value: u32) -> Self {

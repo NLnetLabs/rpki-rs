@@ -282,7 +282,7 @@ where
         self.sock.flush().await?;
         let start = match self.try_io(FirstReply::read).await? {
             FirstReply::Response(start) => start,
-            FirstReply::Reset(_) => {
+            FirstReply::Reset => {
                 self.state = None;
                 return Ok(None)
             }
@@ -457,7 +457,7 @@ enum FirstReply {
     Response(pdu::CacheResponse),
 
     /// A reset response. We need to retry with a reset query.
-    Reset(pdu::CacheReset),
+    Reset,
 }
 
 impl FirstReply {
@@ -478,7 +478,7 @@ impl FirstReply {
             pdu::CacheReset::PDU => {
                 pdu::CacheReset::read_payload(
                     header, sock
-                ).await.map(FirstReply::Reset)
+                ).await.map(|_| FirstReply::Reset)
             }
             pdu::Error::PDU => {
                 Err(io::Error::new(
