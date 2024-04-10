@@ -149,6 +149,16 @@ impl NotificationFile {
         true
     }
 
+    /// Returns whether all URIs have the same origin as the given URI.
+    pub fn has_matching_origins(&self, base: &uri::Https) -> bool {
+        if !base.eq_authority(self.snapshot().uri()) {
+            return false
+        }
+        if self.deltas().iter().any(|delta| !base.eq_authority(delta.uri())) {
+            return false
+        }
+        true
+    }
 }
 
 /// # XML support
@@ -1773,5 +1783,32 @@ mod test {
                 Bytes::new()
             )
         );
+    }
+
+    #[test]
+    fn has_matching_origins() {
+        fn check<const N: usize>(
+            snapshot: &str, deltas: [&str; N]
+        ) -> bool {
+            let hash = Hash::from_data(b"12");
+            NotificationFile::new(
+                Uuid::nil(), 0,
+                SnapshotInfo::new(
+                    uri::Https::from_str(snapshot).unwrap(), hash
+                ),
+                deltas.iter().map(|uri| {
+                    DeltaInfo::new(
+                        0, uri::Https::from_str(uri).unwrap(), hash
+                    )
+                }).collect()
+            ).has_matching_origins(
+                &uri::Https::from_str("https://foo.bar/n/o").unwrap()
+            )
+        }
+
+        assert!(check(
+            "https://foo.bar/1/2/3",
+            ["https://foo.bar/", "https://foo.bar/4", "https://foo.bar/7/8"],
+        ));
     }
 }
