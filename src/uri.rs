@@ -651,6 +651,11 @@ impl Https {
             Some(res)
         }
     }
+
+    /// Returns whether the two URIs have the same authority.
+    pub fn eq_authority(&self, other: &Self) -> bool {
+        self.authority().eq_ignore_ascii_case(other.authority())
+    }
 }
 
 
