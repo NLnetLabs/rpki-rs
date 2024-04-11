@@ -7,12 +7,16 @@ Breaking changes
 New
 
 * `Serial` can now be converted from and to `[u8; 20]`. ([#285])
+* Added `uri::Https::eq_authority` and
+  `rrdp::NotificationFile::has_matching_origin` to check for same origin
+  rules in RRDP. ([#287])
 
 Bug fixes
 
 Other changes
 
 [#285]: https://github.com/NLnetLabs/rpki-rs/pull/285
+[#287]: https://github.com/NLnetLabs/rpki-rs/pull/287
 
 
 ## 0.18.1
