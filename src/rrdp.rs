@@ -1810,5 +1810,10 @@ mod test {
             "https://foo.bar/1/2/3",
             ["https://foo.bar/", "https://foo.bar/4", "https://foo.bar/7/8"],
         ));
+
+        assert!(!check(
+            "https://foo.bar/1/2/3",
+            ["https://foo.bar/", "https://foo.local/4"],
+        ));
     }
 }
