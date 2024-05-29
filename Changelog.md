@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased next version
+## 0.18.2
 
-Breaking changes
+Released 2024-05-29.
 
 New
 
@@ -10,10 +10,6 @@ New
 * Added `uri::Https::eq_authority` and
   `rrdp::NotificationFile::has_matching_origin` to check for same origin
   rules in RRDP. ([#287])
-
-Bug fixes
-
-Other changes
 
 [#285]: https://github.com/NLnetLabs/rpki-rs/pull/285
 [#287]: https://github.com/NLnetLabs/rpki-rs/pull/287
