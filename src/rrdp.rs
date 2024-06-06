@@ -57,7 +57,10 @@ pub struct NotificationFile {
     snapshot: SnapshotInfo,
 
     /// The list of available delta updates.
-    deltas: Vec<DeltaInfo>,
+    ///
+    /// If parsing the list fails for a “soft” reason, this is set to the
+    /// error variant.
+    deltas: Result<Vec<DeltaInfo>, DeltaListError>,
 }
 
 /// # Data Access
@@ -70,7 +73,12 @@ impl NotificationFile {
         snapshot: UriAndHash,
         deltas: Vec<DeltaInfo>,
     ) -> Self {
-        NotificationFile { session_id, serial, snapshot, deltas }
+        NotificationFile {
+            session_id,
+            serial,
+            snapshot,
+            deltas: Ok(deltas),
+        }
     }
 
     /// Returns the identifier of the current session of the server.
@@ -100,7 +108,18 @@ impl NotificationFile {
     ///
     /// Deltas can be processed using the [`ProcessDelta`] trait.
     pub fn deltas(&self) -> &[DeltaInfo] {
-        &self.deltas
+        match self.deltas {
+            Ok(ref deltas) => deltas.as_slice(),
+            Err(_) => &[]
+        }
+    }
+
+    /// Returns the status of the delta list.
+    pub fn delta_status(&self) -> Result<(), DeltaListError> {
+        match self.deltas {
+            Ok(_) => Ok(()),
+            Err(err) => Err(err)
+        }
     }
 
     /// Sorts the deltas by increasing serial numbers.
@@ -108,7 +127,9 @@ impl NotificationFile {
     /// In other words, the delta with the smallest serial number will
     /// appear at the beginning of the sequence.
     pub fn sort_deltas(&mut self) {
-        self.deltas.sort_by_key(|delta| delta.serial());
+        if let Ok(ref mut deltas) = self.deltas {
+            deltas.sort_by_key(|delta| delta.serial());
+        }
     }
 
     /// Sorts the deltas by decreasing serial numbers.
@@ -116,7 +137,9 @@ impl NotificationFile {
     /// In other words, the delta with the largest serial number will
     /// appear at the beginning of the sequence.
     pub fn reverse_sort_deltas(&mut self) {
-        self.deltas.sort_by(|a,b| b.serial.cmp(&a.serial));
+        if let Ok(ref mut deltas) = self.deltas {
+            deltas.sort_by(|a,b| b.serial.cmp(&a.serial));
+        }
     }
 
     /// Sorts, verifies, and optionally limits the list of deltas.
@@ -126,22 +149,24 @@ impl NotificationFile {
     ///
     /// Returns whether there are no gaps in the retained deltas.
     pub fn sort_and_verify_deltas(&mut self, limit: Option<usize>) -> bool {
-        if !self.deltas.is_empty() {
-            self.sort_deltas();
+        if let Ok(ref mut deltas) = self.deltas {
+            if !deltas.is_empty() {
+                deltas.sort_by_key(|delta| delta.serial());
 
-            if let Some(limit) = limit {
-                if limit < self.deltas.len() {
-                    let offset = self.deltas.len() - limit;
-                    self.deltas.drain(..offset);
+                if let Some(limit) = limit {
+                    if limit < deltas.len() {
+                        let offset = deltas.len() - limit;
+                        deltas.drain(..offset);
+                    }
                 }
-            }
 
-            let mut last_seen = self.deltas[0].serial();
-            for delta in &self.deltas[1..] {
-                if last_seen + 1 != delta.serial() {
-                    return false;
-                } else {
-                    last_seen = delta.serial()
+                let mut last_seen = deltas[0].serial();
+                for delta in &deltas[1..] {
+                    if last_seen + 1 != delta.serial() {
+                        return false;
+                    } else {
+                        last_seen = delta.serial()
+                    }
                 }
             }
         }
@@ -154,8 +179,10 @@ impl NotificationFile {
         if !base.eq_authority(self.snapshot().uri()) {
             return false
         }
-        if self.deltas().iter().any(|delta| !base.eq_authority(delta.uri())) {
-            return false
+        if let Ok(ref deltas) = self.deltas {
+            if deltas.iter().any(|delta| !base.eq_authority(delta.uri())) {
+                return false
+            }
         }
         true
     }
@@ -165,7 +192,28 @@ impl NotificationFile {
 ///
 impl NotificationFile {
     /// Parses the notification file from its XML representation.
-    pub fn parse<R: io::BufRead>(reader: R) -> Result<Self, XmlError> {
+    pub fn parse<R: io::BufRead>(
+        reader: R,
+    ) -> Result<Self, XmlError> {
+        Self::_parse(reader, None)
+    }
+
+    /// Parses the notification file with a limit on the delta_list.
+    ///
+    /// If there are more delta entries than the given limit, the list of the
+    /// returned value will be empty and [`Self::delta_status`] will return
+    /// an error.
+    pub fn parse_limited<R: io::BufRead>(
+        reader: R,
+        delta_limit: usize,
+    ) -> Result<Self, XmlError> {
+        Self::_parse(reader, Some(delta_limit))
+    }
+
+    pub fn _parse<R: io::BufRead>(
+        reader: R,
+        delta_limit: Option<usize>,
+    ) -> Result<Self, XmlError> {
         let mut reader = Reader::new(reader);
 
         let mut session_id = None;
@@ -196,7 +244,7 @@ impl NotificationFile {
 
         let mut snapshot = None;
 
-        let mut deltas = vec![];
+        let mut deltas = Ok(vec![]);
 
         while let Some(mut content) = outer.take_opt_element(&mut reader,
                                                              |element| {
@@ -245,13 +293,24 @@ impl NotificationFile {
                         }
                         _ => Err(XmlError::Malformed)
                     })?;
-                    match (serial, uri, hash) {
-                        (Some(serial), Some(uri), Some(hash)) => {
-                            deltas.push(DeltaInfo::new(serial, uri, hash));
-                            Ok(())
+                    let (serial, uri, hash) = match (serial, uri, hash) {
+                        (Some(serial), Some(uri), Some(hash)) =>  {
+                            (serial, uri, hash)
                         }
-                        _ => Err(XmlError::Malformed)
+                        _ => return Err(XmlError::Malformed)
+                    };
+                    if let Some(limit) = delta_limit {
+                        let len = deltas.as_ref().map(|deltas| {
+                            deltas.len()
+                        }).unwrap_or(0);
+                        if len >= limit {
+                            deltas = Err(DeltaListError::Oversized);
+                        }
                     }
+                    if let Ok(ref mut deltas) = deltas {
+                        deltas.push(DeltaInfo::new(serial, uri, hash))
+                    }
+                    Ok(())
                 }
                 _ => Err(XmlError::Malformed)
             }
@@ -1477,6 +1536,26 @@ impl fmt::Display for ParseHashError {
 impl error::Error for ParseHashError { }
 
 
+//------------ DeltaListError ------------------------------------------------
+
+/// An error happened when parsing the delta list of a notification file.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DeltaListError {
+    /// The delta list was larger than a given limit.
+    Oversized,
+}
+
+impl fmt::Display for DeltaListError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Oversized => write!(f, "excessively large delta list")
+        }
+    }
+}
+
+impl error::Error for DeltaListError { }
+
+
 //------------ ProcessError --------------------------------------------------
 
 /// An error occurred while processing RRDP data.
@@ -1525,6 +1604,7 @@ impl error::Error for ProcessError { }
 #[cfg(test)]
 mod test {
     use std::str::from_utf8_unchecked;
+    use std::str::FromStr;
 
     use super::*;
 
@@ -1654,6 +1734,27 @@ mod test {
                 
         from_sorted.sort_deltas();
         assert_eq!(from_sorted, from_unsorted);
+    }
+
+    #[test]
+    fn notification_parse_limited() {
+        let bytes = include_bytes!(
+            "../test-data/rrdp/ripe-notification.xml"
+        ).as_ref();
+        let full = NotificationFile::parse(bytes).unwrap();
+        assert!(!full.deltas().is_empty());
+        
+        let limited = NotificationFile::parse_limited(
+            bytes, full.deltas().len()
+        ).unwrap();
+        assert_eq!(limited.deltas().len(), full.deltas().len());
+        assert!(limited.delta_status().is_ok());
+
+        let limited = NotificationFile::parse_limited(
+            bytes, full.deltas().len() - 1
+        ).unwrap();
+        assert_eq!(limited.deltas().len(), 0);
+        assert!(limited.delta_status().is_err());
     }
 
     #[test]
