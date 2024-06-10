@@ -1,5 +1,17 @@
 # Changelog
 
+
+## Unreleased next version
+
+Breaking changes
+
+New
+
+Bug fixes
+
+Other changes
+
+
 ## 0.18.3
 
 Released 2024-06-10.
