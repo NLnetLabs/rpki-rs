@@ -107,6 +107,8 @@ impl NotificationFile {
     /// Returns the list of available delta updates.
     ///
     /// Deltas can be processed using the [`ProcessDelta`] trait.
+    ///
+    /// If `delta_status` returns an error, this list will be empty.
     pub fn deltas(&self) -> &[DeltaInfo] {
         match self.deltas {
             Ok(ref deltas) => deltas.as_slice(),
