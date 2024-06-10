@@ -1,17 +1,13 @@
 # Changelog
 
-## Unreleased next version
+## 0.18.3
 
-Breaking changes
+Released 2024-06-10.
 
 New
 
 * Added `rrdp::NotificationFile::parse_limited` that allows parsing while
   limiting the length of the list of deltas. ([#293])
-
-Bug fixes
-
-Other changes
 
 [#293]: https://github.com/NLnetLabs/rpki-rs/pull/293
 
