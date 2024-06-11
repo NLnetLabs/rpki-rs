@@ -820,6 +820,7 @@ mod signer_test {
 
     #[test]
     fn build_ta_cert() {
+        // CRL with two CrlEntries.
         let signer = OpenSslSigner::new();
         let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
         let pubkey = signer.get_key_info(&key).unwrap();
@@ -828,13 +829,21 @@ mod signer_test {
             pubkey.to_subject_name(),
             Time::now(),
             Time::tomorrow(),
-            vec![CrlEntry::new(12u64.into(), Time::now())],
+            vec![
+                CrlEntry::new(12u64.into(), Time::now()),
+                CrlEntry::new(42u64.into(), Time::now())
+            ],
             pubkey.key_identifier(),
             12u64.into()
         );
         let crl = crl.into_crl(&signer, &key).unwrap().to_captured();
-        let _crl = Crl::decode(crl.as_slice()).unwrap();
+        let crl = Crl::decode(crl.as_slice()).unwrap();
+        assert_eq!(
+            crl.revoked_certs().iter().collect::<Vec<_>>().len(),
+            2
+        );
 
+        // CRL with no CrlEntries.
         let crl = TbsCertList::new(
             Default::default(),
             pubkey.to_subject_name(),
@@ -845,7 +854,8 @@ mod signer_test {
             12u64.into()
         );
         let crl = crl.into_crl(&signer, &key).unwrap().to_captured();
-        let _crl = Crl::decode(crl.as_slice()).unwrap();
+        let crl = Crl::decode(crl.as_slice()).unwrap();
+        assert!(crl.revoked_certs().iter().next().is_none());
     }
 }
 
