@@ -563,7 +563,9 @@ impl RevokedCertificates {
 
     /// Returns a value encoder for a reference to the value.
     pub fn encode_ref(&self) -> impl encode::Values + '_ {
-        encode::sequence(&self.0)
+        (!self.0.is_empty()).then(|| {
+            encode::sequence(&self.0)
+        })
     }
 
     /// Create a value from an iterator over CRL entries.
@@ -827,6 +829,18 @@ mod signer_test {
             Time::now(),
             Time::tomorrow(),
             vec![CrlEntry::new(12u64.into(), Time::now())],
+            pubkey.key_identifier(),
+            12u64.into()
+        );
+        let crl = crl.into_crl(&signer, &key).unwrap().to_captured();
+        let _crl = Crl::decode(crl.as_slice()).unwrap();
+
+        let crl = TbsCertList::new(
+            Default::default(),
+            pubkey.to_subject_name(),
+            Time::now(),
+            Time::tomorrow(),
+            vec![],
             pubkey.key_identifier(),
             12u64.into()
         );
