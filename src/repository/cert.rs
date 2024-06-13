@@ -1559,7 +1559,6 @@ impl TbsCert {
             let subject = Name::take_from(cons)?;
             let subject_public_key_info = PublicKey::take_from(cons)?;
 
-
             // issuerUniqueID and subjectUniqueID must not be present in
             // resource certificates. So extension is next.
 
