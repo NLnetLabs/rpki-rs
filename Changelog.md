@@ -9,7 +9,11 @@ New
 
 Bug fixes
 
+* Correctly encode a CRL with empty revokedCertificates. ([#295])
+
 Other changes
+
+[#295]: https://github.com/NLnetLabs/rpki-rs/pull/295
 
 
 ## 0.18.3
