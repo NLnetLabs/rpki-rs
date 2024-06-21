@@ -1,17 +1,12 @@
 # Changelog
 
+## 0.18.4
 
-## Unreleased next version
-
-Breaking changes
-
-New
+Released 2024-06-21.
 
 Bug fixes
 
 * Correctly encode a CRL with empty revokedCertificates. ([#295])
-
-Other changes
 
 [#295]: https://github.com/NLnetLabs/rpki-rs/pull/295
 
