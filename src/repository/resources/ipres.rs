@@ -1709,6 +1709,110 @@ impl AddressFamily {
 }
 
 
+//------------ Ipv4Block -----------------------------------------------------
+
+/// Contains an IPv4 address block.
+///
+/// This type is a thin wrapper around [`IpBlock`] ensuring that this is an
+/// IPv4 address block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Ipv4Block(IpBlock);
+
+impl Ipv4Block {
+    /// Creates a new block covering all addresses.
+    pub fn all() -> Self {
+        Self(IpBlock::all())
+    }
+
+    /// Returns whether the block is prefix with address length zero.
+    pub fn is_slash_zero(&self) -> bool {
+        self.0.is_slash_zero()
+    }
+
+    /// The smallest address of the block.
+    pub fn min(&self) -> Ipv4Addr {
+        self.0.min().into()
+    }
+
+    /// The largest address of the block.
+    pub fn max(&self) -> Ipv4Addr {
+        self.0.max().into()
+    }
+}
+
+
+//--- FromStr
+
+impl str::FromStr for Ipv4Block {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(IpBlock::from_v4_str(s)?))
+    }
+}
+
+
+//--- Display
+
+impl fmt::Display for Ipv4Block {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt_v4(f)
+    }
+}
+
+
+//------------ Ipv6Block -----------------------------------------------------
+
+/// Contains an IPv6 address block.
+///
+/// This type is a thin wrapper around [`IpBlock`] ensuring that this is an
+/// IPv6 address block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Ipv6Block(IpBlock);
+
+impl Ipv6Block {
+    /// Creates a new block covering all addresses.
+    pub fn all() -> Self {
+        Self(IpBlock::all())
+    }
+
+    /// Returns whether the block is prefix with address length zero.
+    pub fn is_slash_zero(&self) -> bool {
+        self.0.is_slash_zero()
+    }
+
+    /// The smallest address of the block.
+    pub fn min(&self) -> Ipv6Addr {
+        self.0.min().into()
+    }
+
+    /// The largest address of the block.
+    pub fn max(&self) -> Ipv6Addr {
+        self.0.max().into()
+    }
+}
+
+
+//--- FromStr
+
+impl str::FromStr for Ipv6Block {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(IpBlock::from_v6_str(s)?))
+    }
+}
+
+
+//--- Display
+
+impl fmt::Display for Ipv6Block {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt_v6(f)
+    }
+}
+
+
 //------------ Ipv4Blocks ----------------------------------------------------
 
 /// Contains IPv4 resources. This type is a thin wrapper around the underlying

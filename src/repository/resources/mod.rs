@@ -20,10 +20,10 @@ pub use self::asres::{
 };
 pub use self::choice::ResourcesChoice;
 pub use self::ipres::{
-    Addr, AddressFamily, InheritedIpResources, IpBlock, IpBlocks, Ipv4Blocks,
-    Ipv6Blocks, IpBlocksBuilder, IpBlocksForFamily, IpResources,
-    IpResourcesBuilder, OverclaimedIpResources, OverclaimedIpv4Resources,
-    OverclaimedIpv6Resources, Prefix
+    Addr, AddressFamily, InheritedIpResources, IpBlock, IpBlocks, Ipv4Block,
+    Ipv4Blocks, Ipv6Block, Ipv6Blocks, IpBlocksBuilder, IpBlocksForFamily,
+    IpResources, IpResourcesBuilder, OverclaimedIpResources,
+    OverclaimedIpv4Resources, OverclaimedIpv6Resources, Prefix
 };
 pub use self::set::{
     ResourceDiff, ResourceSet
