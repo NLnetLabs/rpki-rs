@@ -1741,7 +1741,13 @@ impl Ipv4Block {
 }
 
 
-//--- FromStr
+//--- From and FromStr
+
+impl From<Ipv4Block> for IpBlock {
+    fn from(src: Ipv4Block) -> IpBlock {
+        src.0
+    }
+}
 
 impl str::FromStr for Ipv4Block {
     type Err = FromStrError;
@@ -1793,7 +1799,13 @@ impl Ipv6Block {
 }
 
 
-//--- FromStr
+//--- From and FromStr
+
+impl From<Ipv6Block> for IpBlock {
+    fn from(src: Ipv6Block) -> IpBlock {
+        src.0
+    }
+}
 
 impl str::FromStr for Ipv6Block {
     type Err = FromStrError;
@@ -1844,7 +1856,7 @@ impl fmt::Display for Ipv4Blocks {
     }
 }
 
-//--- FromStr
+//--- FromStr and FromIterator
 
 impl FromStr for Ipv4Blocks {
     type Err = FromStrError;
@@ -1865,6 +1877,12 @@ impl FromStr for Ipv4Blocks {
         }
 
         Ok(Ipv4Blocks(builder.finalize()))
+    }
+}
+
+impl FromIterator<Ipv4Block> for Ipv4Blocks {
+    fn from_iter<I: IntoIterator<Item = Ipv4Block>>(iter: I) -> Self {
+        Self(IpBlocks::from_iter(iter.into_iter().map(Into::into)))
     }
 }
 
@@ -1935,7 +1953,7 @@ impl fmt::Display for Ipv6Blocks {
     }
 }
 
-//--- FromStr
+//--- FromStr and FromIterator
 
 impl FromStr for Ipv6Blocks {
     type Err = FromStrError;
@@ -1956,6 +1974,12 @@ impl FromStr for Ipv6Blocks {
         }
 
         Ok(Ipv6Blocks(builder.finalize()))
+    }
+}
+
+impl FromIterator<Ipv6Block> for Ipv6Blocks {
+    fn from_iter<I: IntoIterator<Item = Ipv6Block>>(iter: I) -> Self {
+        Self(IpBlocks::from_iter(iter.into_iter().map(Into::into)))
     }
 }
 
