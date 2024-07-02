@@ -4,10 +4,8 @@
 //! used to exchange identity and configuration between CAs and their
 //! parent CA and/or RPKI Publication Servers.
 
-use std::borrow;
+use std::{borrow, error, fmt, io};
 use std::convert::Infallible;
-use std::fmt;
-use std::io;
 use std::path::PathBuf;
 use std::str::from_utf8;
 use std::str::FromStr;
@@ -1253,6 +1251,8 @@ impl fmt::Display for Error {
         }
     }
 }
+
+impl error::Error for Error { }
 
 impl From<xml::decode::Error> for Error {
     fn from(e: xml::decode::Error) -> Self {
