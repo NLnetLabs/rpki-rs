@@ -6,9 +6,13 @@ Breaking changes
 
 New
 
+* `ca::idexchange::Error` now impls `std::error::Error`. ([#297])
+
 Bug fixes
 
 Other changes
+
+[#297]: https://github.com/NLnetLabs/rpki-rs/pull/297
 
 
 ## 0.18.4
