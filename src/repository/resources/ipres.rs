@@ -1830,7 +1830,7 @@ impl fmt::Display for Ipv6Block {
 /// Contains IPv4 resources. This type is a thin wrapper around the underlying
 /// [`IpBlocks`] type intended to help with serializing/deserializing and
 /// formatting using IPv4 syntax.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Ipv4Blocks(IpBlocks);
 
 impl Ipv4Blocks {
@@ -1927,7 +1927,7 @@ impl std::ops::Deref for Ipv4Blocks {
 /// Contains IPv6 resources. This type is a thin wrapper around the underlying
 /// [`IpBlocks`] type intended to help with serializing/deserializing and
 /// formatting using IPv6 syntax.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Ipv6Blocks(IpBlocks);
 
 impl Ipv6Blocks {
