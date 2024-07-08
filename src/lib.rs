@@ -33,6 +33,7 @@
 
 pub mod ca;
 pub mod crypto;
+pub mod dep;
 pub mod oid;
 pub mod repository;
 pub mod resources;
