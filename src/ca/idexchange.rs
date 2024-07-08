@@ -777,6 +777,10 @@ impl PublisherRequest {
         &self.publisher_handle
     }
 
+    pub fn set_publisher_handle(&mut self, handle: PublisherHandle) {
+        self.publisher_handle = handle
+    }
+
     pub fn tag(&self) -> Option<&String> {
         self.tag.as_ref()
     }
