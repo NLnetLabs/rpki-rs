@@ -7,12 +7,17 @@ Breaking changes
 New
 
 * `ca::idexchange::Error` now impls `std::error::Error`. ([#297])
+* Re-export `bcder` as `dep::bcder` if it is enabled. ([#299])
 
 Bug fixes
 
 Other changes
 
+* The minimum supported Rust version is now 1.67. ([#301])
+
 [#297]: https://github.com/NLnetLabs/rpki-rs/pull/297
+[#299]: https://github.com/NLnetLabs/rpki-rs/pull/299
+[#301]: https://github.com/NLnetLabs/rpki-rs/pull/301
 
 
 ## 0.18.4
