@@ -231,6 +231,19 @@ impl Rsync {
         &self.bytes[self.path_start..]
     }
 
+    /// Converts the URI into one representing a directory.
+    ///
+    /// If the path does not end in a slash or is not empty, appends a slash
+    /// to it.
+    pub fn path_into_dir(&mut self) {
+        if !self.path_is_dir() {
+            let mut new_bytes = Vec::with_capacity(self.bytes.len() + 1);
+            new_bytes.extend_from_slice(&self.bytes);
+            new_bytes.push(b'/');
+            self.bytes = new_bytes.into();
+        }
+    }
+
     /// Returns the parent URI.
     ///
     /// The parent URI is the URI with the last path segment removed. If a
@@ -596,6 +609,24 @@ impl Https {
     /// path results in an empty string.
     pub fn path(&self) -> &str {
         &self.as_str()[self.path_idx..]
+    }
+
+    /// Returns whether the URI's path resolves to a directory.
+    pub fn path_is_dir(&self) -> bool {
+        self.path().is_empty() || self.path().ends_with('/')
+    }
+
+    /// Converts the URI into one representing a directory.
+    ///
+    /// If the path does not end in a slash or is not empty, appends a slash
+    /// to it.
+    pub fn path_into_dir(&mut self) {
+        if !self.path_is_dir() {
+            let mut new_bytes = Vec::with_capacity(self.uri.len() + 1);
+            new_bytes.extend_from_slice(&self.uri);
+            new_bytes.push(b'/');
+            self.uri = new_bytes.into();
+        }
     }
 
     /// This function will join this URI and the given path. If the current
