@@ -8,7 +8,8 @@ New
 
 * `ca::idexchange::Error` now impls `std::error::Error`. ([#297])
 * Re-export `bcder` as `dep::bcder` if it is enabled. ([#299])
-* Added `PublisherRequest::set_publisher_handle?. ([#300])
+* Added `PublisherRequest::set_publisher_handle`. ([#300])
+* Added `uri::{Rsync,Https}::path_into_dir` ([#302])
 
 Bug fixes
 
@@ -20,6 +21,7 @@ Other changes
 [#299]: https://github.com/NLnetLabs/rpki-rs/pull/299
 [#300]: https://github.com/NLnetLabs/rpki-rs/pull/300
 [#301]: https://github.com/NLnetLabs/rpki-rs/pull/301
+[#302]: https://github.com/NLnetLabs/rpki-rs/pull/302
 
 
 ## 0.18.4
