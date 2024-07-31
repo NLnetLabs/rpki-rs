@@ -10,18 +10,21 @@ New
 * Re-export `bcder` as `dep::bcder` if it is enabled. ([#299])
 * Added `PublisherRequest::set_publisher_handle`. ([#300])
 * Added `uri::{Rsync,Https}::path_into_dir` ([#302])
+* Added `Ipv4Block` and `Ipv6Block` and `FromIterator` impls for
+  `Ipv4Blocks` and `Ipv6Blocks`. ([#298])
 
 Bug fixes
 
 Other changes
 
-* The minimum supported Rust version is now 1.67. ([#301])
+* The minimum supported Rust version is now 1.70. ([#303])
 
 [#297]: https://github.com/NLnetLabs/rpki-rs/pull/297
+[#298]: https://github.com/NLnetLabs/rpki-rs/pull/298
 [#299]: https://github.com/NLnetLabs/rpki-rs/pull/299
 [#300]: https://github.com/NLnetLabs/rpki-rs/pull/300
-[#301]: https://github.com/NLnetLabs/rpki-rs/pull/301
 [#302]: https://github.com/NLnetLabs/rpki-rs/pull/302
+[#303]: https://github.com/NLnetLabs/rpki-rs/pull/303
 
 
 ## 0.18.4
