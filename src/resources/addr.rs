@@ -561,8 +561,8 @@ impl<'a> arbitrary::Arbitrary<'a> for Prefix {
 /// is as follows:
 /// - any max_len always comes before no max_len
 /// - a larger (higher) max_len comes before a smaller (lower) max_len (e.g.
-/// 24 comes before 20). This is analog to how more-specifics come before
-/// less-specifics.
+///   24 comes before 20). This is analog to how more-specifics come before
+///   less-specifics.
 ///
 /// Note that the max_len can either be equal to the prefix length (with no
 /// practical difference from an omitted max_len) or larger than the prefix
