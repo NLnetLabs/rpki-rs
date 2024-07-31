@@ -697,7 +697,7 @@ impl IpBlock {
         }
     }
 
-    /// Returns whether the block is prefix with address length zero.
+    /// Returns whether the block is a prefix with address length zero.
     pub fn is_slash_zero(&self) -> bool {
         matches!(*self, IpBlock::Prefix(prefix) if prefix.len == 0)
     }
@@ -1709,12 +1709,126 @@ impl AddressFamily {
 }
 
 
+//------------ Ipv4Block -----------------------------------------------------
+
+/// A consecutive sequence of IPv4 addresses.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Ipv4Block(IpBlock);
+
+impl Ipv4Block {
+    /// Creates a new block covering all IPv4 addresses.
+    pub fn all() -> Self {
+        Self(IpBlock::all())
+    }
+
+    /// Returns whether the block is prefix with address length zero.
+    pub fn is_slash_zero(&self) -> bool {
+        self.0.is_slash_zero()
+    }
+
+    /// The smallest address of the block.
+    pub fn min(&self) -> Ipv4Addr {
+        self.0.min().into()
+    }
+
+    /// The largest address of the block.
+    pub fn max(&self) -> Ipv4Addr {
+        self.0.max().into()
+    }
+}
+
+
+//--- From and FromStr
+
+impl From<Ipv4Block> for IpBlock {
+    fn from(src: Ipv4Block) -> IpBlock {
+        src.0
+    }
+}
+
+impl str::FromStr for Ipv4Block {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(IpBlock::from_v4_str(s)?))
+    }
+}
+
+
+//--- Display
+
+impl fmt::Display for Ipv4Block {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt_v4(f)
+    }
+}
+
+
+//------------ Ipv6Block -----------------------------------------------------
+
+/// A consecutive sequence of IPv6 addresses.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Ipv6Block(IpBlock);
+
+impl Ipv6Block {
+    /// Creates a new block covering all IPv6 addresses.
+    pub fn all() -> Self {
+        Self(IpBlock::all())
+    }
+
+    /// Returns whether the block is prefix with address length zero.
+    pub fn is_slash_zero(&self) -> bool {
+        self.0.is_slash_zero()
+    }
+
+    /// The smallest address of the block.
+    pub fn min(&self) -> Ipv6Addr {
+        self.0.min().into()
+    }
+
+    /// The largest address of the block.
+    pub fn max(&self) -> Ipv6Addr {
+        self.0.max().into()
+    }
+}
+
+
+//--- From and FromStr
+
+impl From<Ipv6Block> for IpBlock {
+    fn from(src: Ipv6Block) -> IpBlock {
+        src.0
+    }
+}
+
+impl str::FromStr for Ipv6Block {
+    type Err = FromStrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(IpBlock::from_v6_str(s)?))
+    }
+}
+
+
+//--- Display
+
+impl fmt::Display for Ipv6Block {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt_v6(f)
+    }
+}
+
+
 //------------ Ipv4Blocks ----------------------------------------------------
 
-/// Contains IPv4 resources. This type is a thin wrapper around the underlying
-/// [`IpBlocks`] type intended to help with serializing/deserializing and
-/// formatting using IPv4 syntax.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// Multiple consecutive sequences of IPv4 addresses.
+///
+/// Values of this type are guaranteed to contain a sequence of
+/// [`Ipv4Block`]s that fulfills the requirements of RFC 3779. Specifically,
+/// the blocks will not overlap, will not be consecutive (i.e., there’s at
+/// least one address between neighbouring blocks), will be in order, and
+/// anything that can be addressed as a prefix will be.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Ipv4Blocks(IpBlocks);
 
 impl Ipv4Blocks {
@@ -1740,7 +1854,7 @@ impl fmt::Display for Ipv4Blocks {
     }
 }
 
-//--- FromStr
+//--- FromStr and FromIterator
 
 impl FromStr for Ipv4Blocks {
     type Err = FromStrError;
@@ -1761,6 +1875,12 @@ impl FromStr for Ipv4Blocks {
         }
 
         Ok(Ipv4Blocks(builder.finalize()))
+    }
+}
+
+impl FromIterator<Ipv4Block> for Ipv4Blocks {
+    fn from_iter<I: IntoIterator<Item = Ipv4Block>>(iter: I) -> Self {
+        Self(IpBlocks::from_iter(iter.into_iter().map(Into::into)))
     }
 }
 
@@ -1802,10 +1922,14 @@ impl std::ops::Deref for Ipv4Blocks {
 
 //------------ Ipv6Blocks ----------------------------------------------------
 
-/// Contains IPv6 resources. This type is a thin wrapper around the underlying
-/// [`IpBlocks`] type intended to help with serializing/deserializing and
-/// formatting using IPv6 syntax.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// Multiple consecutive sequences of IPv6 addresses.
+///
+/// Values of this type are guaranteed to contain a sequence of
+/// [`Ipv6Block`]s that fulfills the requirements of RFC 3779. Specifically,
+/// the blocks will not overlap, will not be consecutive (i.e., there’s at
+/// least one address between neighbouring blocks), will be in order, and
+/// anything that can be addressed as a prefix will be.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Ipv6Blocks(IpBlocks);
 
 impl Ipv6Blocks {
@@ -1831,7 +1955,7 @@ impl fmt::Display for Ipv6Blocks {
     }
 }
 
-//--- FromStr
+//--- FromStr and FromIterator
 
 impl FromStr for Ipv6Blocks {
     type Err = FromStrError;
@@ -1852,6 +1976,12 @@ impl FromStr for Ipv6Blocks {
         }
 
         Ok(Ipv6Blocks(builder.finalize()))
+    }
+}
+
+impl FromIterator<Ipv6Block> for Ipv6Blocks {
+    fn from_iter<I: IntoIterator<Item = Ipv6Block>>(iter: I) -> Self {
+        Self(IpBlocks::from_iter(iter.into_iter().map(Into::into)))
     }
 }
 
