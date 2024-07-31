@@ -697,7 +697,7 @@ impl IpBlock {
         }
     }
 
-    /// Returns whether the block is prefix with address length zero.
+    /// Returns whether the block is a prefix with address length zero.
     pub fn is_slash_zero(&self) -> bool {
         matches!(*self, IpBlock::Prefix(prefix) if prefix.len == 0)
     }
@@ -1711,15 +1711,12 @@ impl AddressFamily {
 
 //------------ Ipv4Block -----------------------------------------------------
 
-/// Contains an IPv4 address block.
-///
-/// This type is a thin wrapper around [`IpBlock`] ensuring that this is an
-/// IPv4 address block.
+/// A consecutive sequence of IPv4 addresses.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Ipv4Block(IpBlock);
 
 impl Ipv4Block {
-    /// Creates a new block covering all addresses.
+    /// Creates a new block covering all IPv4 addresses.
     pub fn all() -> Self {
         Self(IpBlock::all())
     }
@@ -1769,15 +1766,12 @@ impl fmt::Display for Ipv4Block {
 
 //------------ Ipv6Block -----------------------------------------------------
 
-/// Contains an IPv6 address block.
-///
-/// This type is a thin wrapper around [`IpBlock`] ensuring that this is an
-/// IPv6 address block.
+/// A consecutive sequence of IPv6 addresses.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Ipv6Block(IpBlock);
 
 impl Ipv6Block {
-    /// Creates a new block covering all addresses.
+    /// Creates a new block covering all IPv6 addresses.
     pub fn all() -> Self {
         Self(IpBlock::all())
     }
@@ -1827,9 +1821,13 @@ impl fmt::Display for Ipv6Block {
 
 //------------ Ipv4Blocks ----------------------------------------------------
 
-/// Contains IPv4 resources. This type is a thin wrapper around the underlying
-/// [`IpBlocks`] type intended to help with serializing/deserializing and
-/// formatting using IPv4 syntax.
+/// Multiple consecutive sequences of IPv4 addresses.
+///
+/// Values of this type are guaranteed to contain a sequence of
+/// [`Ipv4Block`]s that fulfills the requirements of RFC 3779. Specifically,
+/// the blocks will not overlap, will not be consecutive (i.e., there’s at
+/// least one address between neighbouring blocks), will be in order, and
+/// anything that can be addressed as a prefix will be.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Ipv4Blocks(IpBlocks);
 
@@ -1924,9 +1922,13 @@ impl std::ops::Deref for Ipv4Blocks {
 
 //------------ Ipv6Blocks ----------------------------------------------------
 
-/// Contains IPv6 resources. This type is a thin wrapper around the underlying
-/// [`IpBlocks`] type intended to help with serializing/deserializing and
-/// formatting using IPv6 syntax.
+/// Multiple consecutive sequences of IPv6 addresses.
+///
+/// Values of this type are guaranteed to contain a sequence of
+/// [`Ipv6Block`]s that fulfills the requirements of RFC 3779. Specifically,
+/// the blocks will not overlap, will not be consecutive (i.e., there’s at
+/// least one address between neighbouring blocks), will be in order, and
+/// anything that can be addressed as a prefix will be.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Ipv6Blocks(IpBlocks);
 
