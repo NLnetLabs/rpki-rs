@@ -141,7 +141,7 @@ impl<T> Handle<T> {
 
     fn verify_name(s: &str) -> Result<(), InvalidHandle> {
         if s.bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'/' || b == b'\\')
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'/')
             && !s.is_empty()
             && s.len() < 256
         {
