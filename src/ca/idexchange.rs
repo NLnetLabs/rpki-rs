@@ -95,7 +95,13 @@ pub type RecipientHandle = Handle<Recipient>;
 /// entities. Handles are like strings, but they are restricted to the
 /// following - taken from the RELAX NG schema in RFC 8183:
 ///
+/// ```txt
 /// handle  = xsd:string { maxLength="255" pattern="[\-_A-Za-z0-9/]*" }
+/// ```
+///
+/// Earlier versions of this library allowed backslash characters in the
+/// handle as well. This behavior is maintained if the `compat` feature is
+/// enabled.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq)]
 #[serde(try_from = "String")]
 pub struct Handle<T> {
@@ -139,9 +145,23 @@ impl<T> Handle<T> {
         PathBuf::from(s)
     }
 
+    #[cfg(not(feature = "compat"))]
     fn verify_name(s: &str) -> Result<(), InvalidHandle> {
         if s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'/')
+            && !s.is_empty()
+            && s.len() < 256
+        {
+            Ok(())
+        } else {
+            Err(InvalidHandle)
+        }
+    }
+
+    #[cfg(feature = "compat")]
+    fn verify_name(s: &str) -> Result<(), InvalidHandle> {
+        if s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'/' || b == b'\\')
             && !s.is_empty()
             && s.len() < 256
         {
