@@ -1063,7 +1063,7 @@ impl AddressRange {
 
             let new_start = start + 2_u128.pow(same_bits);
 
-            if new_start - 1 >= end {
+            if new_start > end {
                 break;
             }
 
