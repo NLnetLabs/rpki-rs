@@ -12,6 +12,7 @@ use std::fmt::Display;
 use std::net::{AddrParseError, IpAddr, Ipv4Addr, Ipv6Addr};
 use std::num::ParseIntError;
 use std::str::FromStr;
+use std::cmp;
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, OctetString, Tag};
 use bcder::decode::{ContentError, DecodeError};
@@ -1035,6 +1036,41 @@ impl AddressRange {
         else {
             Err(self)
         }
+    }
+
+    /// Convert a range into a set of prefixes
+    /// 
+    /// Algorithm is based on that by ARIN
+    pub fn to_prefixes(self) -> Vec<Prefix> {
+        let mut start = self.min.to_bits();
+        let end = self.max.to_bits();
+        
+        let mut prefixes: Vec<Prefix> = vec![];
+
+        loop {
+            let addr_host_bits = start.trailing_zeros();
+            let mut max_allowed = 128 - (start ^ end).leading_zeros();
+            if end.trailing_ones() < max_allowed {
+                max_allowed -= 1;
+            }
+
+            let same_bits = cmp::min(addr_host_bits, max_allowed);
+            let prefix_len = 128 - same_bits;
+
+            assert!(prefix_len <= 128);
+            let prefix = Prefix::new(Addr::from(start), prefix_len as u8); 
+            prefixes.push(prefix);
+
+            let new_start = start + 2_u128.pow(same_bits);
+
+            if new_start - 1 >= end {
+                break;
+            }
+
+            start = new_start;
+        }
+        
+        prefixes
     }
 
     /// Formats the range as an IPv4 range.
@@ -2207,7 +2243,7 @@ impl From<OverclaimedIpv6Resources> for VerificationError {
 //============ Tests =========================================================
 
 #[cfg(test)]
-mod test {
+mod tests {
     use bcder::encode::Values;
     use super::*;
 
@@ -2657,6 +2693,18 @@ mod test {
             Addr(0x1234_5678_1234_5678_1234_5678_1234_5678).to_max(11).0,
             0x123f_ffff_ffff_ffff_ffff_ffff_ffff_ffff
         );
+    }
+
+    #[test]
+    fn to_prefixes() {
+        let range = AddressRange::new(
+            Addr::from(0x0000_0000_0000_0000_0000_0000_0000_0001), 
+            Addr::from(0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFE)
+        );
+
+        let prefixes = range.to_prefixes();
+
+        assert_eq!(254, prefixes.len())
     }
 }
 
