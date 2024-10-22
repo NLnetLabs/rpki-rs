@@ -1041,13 +1041,15 @@ impl AddressRange {
     /// Convert a range into a set of prefixes
     /// 
     /// Algorithm is based on that by ARIN
-    pub fn to_prefixes(self) -> Vec<Prefix> {
+    pub fn to_prefixes(self) -> impl Iterator<Item = Prefix> {
         let mut start = self.min.to_bits();
         let end = self.max.to_bits();
         
-        let mut prefixes: Vec<Prefix> = vec![];
+        std::iter::from_fn(move || {
+            if start > end {
+                return None;
+            }
 
-        loop {
             let addr_host_bits = start.trailing_zeros();
             let mut max_allowed = 128 - (start ^ end).leading_zeros();
             if end.trailing_ones() < max_allowed {
@@ -1057,20 +1059,13 @@ impl AddressRange {
             let same_bits = cmp::min(addr_host_bits, max_allowed);
             let prefix_len = 128 - same_bits;
 
-            assert!(prefix_len <= 128);
-            let prefix = Prefix::new(Addr::from(start), prefix_len as u8); 
-            prefixes.push(prefix);
+            debug_assert!(prefix_len <= 128);
+            let prefix = Prefix::new(Addr::from(start), prefix_len as u8);
 
-            let new_start = start + 2_u128.pow(same_bits);
+            start += 2_u128.pow(same_bits);
 
-            if new_start > end {
-                break;
-            }
-
-            start = new_start;
-        }
-        
-        prefixes
+            Some(prefix)
+        })
     }
 
     /// Formats the range as an IPv4 range.
@@ -2704,7 +2699,7 @@ mod tests {
 
         let prefixes = range.to_prefixes();
 
-        assert_eq!(254, prefixes.len())
+        assert_eq!(254, prefixes.count())
     }
 }
 
