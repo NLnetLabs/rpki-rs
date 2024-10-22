@@ -2,9 +2,7 @@
 //!
 //! This module implements a generic RTR server through [`Server`]. The server
 //! receives its data from a type implementing [`PayloadSource`].
-//!
-//! [`Server`]: struct.Server.html
-//! [`VrpSource`]: trait.VrpSource.html
+
 use std::io;
 use futures_util::future;
 use futures_util::pin_mut;
@@ -73,7 +71,7 @@ pub trait PayloadSource: Clone + Sync + Send + 'static {
     /// Returns the current state and an iterator over the full set of VRPs.
     fn full(&self) -> (State, Self::Set);
 
-    /// Returns the current state and an interator over differences in VPRs.
+    /// Returns the current state and an iterator over differences in VPRs.
     ///
     /// The difference is between the state given in `state` and the current
     /// state. If the source cannot provide this difference, for instance
@@ -101,7 +99,7 @@ pub trait PayloadDiff: Sync + Send + 'static {
 
 /// A stream socket to be used for an RTR connection.
 ///
-/// Apart from being abile to read and write asynchronously and being spawned
+/// Apart from being able to read and write asynchronously and being spawned
 /// as an async task, the trait allows additional processing when the client
 /// has successfully updated.
 pub trait Socket: AsyncRead + AsyncWrite + Unpin + Sync + Send + 'static {
@@ -125,8 +123,6 @@ impl Socket for tokio::net::TcpStream { }
 /// a VRP source and serves RTR data. In order to also serve notifications
 /// whenever new data is available, the server uses a notification dispatch
 /// system via the [`Dispatch`] system.
-///
-/// [`Dispatch`]: struct.Dispatch.html
 pub struct Server<Listener, Source> {
     /// The listener socket.
     listener: Listener,
@@ -151,7 +147,7 @@ impl<Listener, Source> Server<Listener, Source> {
     /// Runs the server.
     ///
     /// The asynchronous function will return successfully when the listener
-    /// socket (which is a stream over new connectons) finishes. It will
+    /// socket (which is a stream over new connections) finishes. It will
     /// return with an error if the listener socket errors out.
     pub async fn run<Sock>(mut self) -> Result<(), io::Error>
     where
@@ -202,7 +198,7 @@ impl<Sock, Source> Connection<Sock, Source> {
 
     /// Returns the protocol version we agreed on.
     ///
-    /// If there hasn’t been a negotation yet, returns the lowest protocol
+    /// If there hasn’t been a negotiation yet, returns the lowest protocol
     /// version we support, which currently is 0.
     fn version(&self) -> u8 {
         self.version.unwrap_or(0)

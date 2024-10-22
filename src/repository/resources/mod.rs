@@ -9,8 +9,6 @@
 //! Delegation Extension and [`AsResources`] implements the Autonomous System
 //! Identifier Delegation Extension.
 //!
-//! [`AsResources`]: struct.AsResources.html
-//! [`IpResources`]: struct.IpResources.html
 //! [RFC 3779]: https://tools.ietf.org/html/rfc3779
 //! [RFC 6487]: https://tools.ietf.org/html/rfc6487
 

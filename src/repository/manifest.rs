@@ -6,9 +6,6 @@
 //! This module defines the type [`Manifest`] that represents a decoded
 //! manifest and the type [`ManifestContent`] for the content of a validated
 //! manifest, as well as some helper types for accessing the content.
-//!
-//! [`Manifest`]: struct.Manifest.html
-//! [`ManifestContent`]: struct.ManifestContent.html
 
 use std::{borrow, fmt, ops};
 use bcder::{decode, encode};
