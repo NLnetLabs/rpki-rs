@@ -1039,9 +1039,7 @@ impl AddressRange {
     }
 
     /// Convert a range into a set of prefixes
-    /// 
-    /// Algorithm is based on that by ARIN
-    pub fn to_prefixes(self) -> impl Iterator<Item = Prefix> {
+    pub fn to_v6_prefixes(self) -> impl Iterator<Item = Prefix> {
         let mut start = self.min.to_bits();
         let end = self.max.to_bits();
         
@@ -1060,9 +1058,40 @@ impl AddressRange {
             let prefix_len = 128 - same_bits;
 
             debug_assert!(prefix_len <= 128);
-            let prefix = Prefix::new(Addr::from(start), prefix_len as u8);
+            let prefix = Prefix::new(Addr::from_bits(start), prefix_len as u8);
 
             start += 2_u128.pow(same_bits);
+
+            Some(prefix)
+        })
+    }
+
+    /// Convert a range into a set of prefixes
+    pub fn to_v4_prefixes(self) -> impl Iterator<Item = Prefix> {
+        let mut start = (self.min.to_bits() >> 96) as u32;
+        let end = (self.max.to_bits() >> 96) as u32;
+        
+        std::iter::from_fn(move || {
+            if start > end {
+                return None;
+            }
+
+            let addr_host_bits = start.trailing_zeros();
+            let mut max_allowed = 32 - (start ^ end).leading_zeros();
+            if end.trailing_ones() < max_allowed {
+                max_allowed -= 1;
+            }
+
+            let same_bits = cmp::min(addr_host_bits, max_allowed);
+            let prefix_len = 32 - same_bits;
+
+            debug_assert!(prefix_len <= 32);
+            let prefix = Prefix::new(
+                Addr::from(Ipv4Addr::from(start)), 
+                prefix_len as u8
+            );
+
+            start += 2u32.pow(same_bits);
 
             Some(prefix)
         })
@@ -2692,14 +2721,26 @@ mod tests {
 
     #[test]
     fn to_prefixes() {
-        let range = AddressRange::new(
-            Addr::from(0x0000_0000_0000_0000_0000_0000_0000_0001), 
-            Addr::from(0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFE)
-        );
+        {
+            let range = AddressRange::new(
+                Addr::from(0x0000_0000_0000_0000_0000_0000_0000_0001), 
+                Addr::from(0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFE)
+            );
 
-        let prefixes = range.to_prefixes();
+            let prefixes = range.to_v6_prefixes();
 
-        assert_eq!(254, prefixes.count())
+            assert_eq!(254, prefixes.count());
+        }
+        {
+            let range = AddressRange::new(
+                Addr::from(Ipv4Addr::from_str("192.168.0.0").unwrap()), 
+                Addr::from(Ipv4Addr::from_str("192.168.2.255").unwrap())
+            );
+
+            let prefixes = range.to_v4_prefixes();
+
+            assert_eq!(2, prefixes.count());
+        }
     }
 }
 
