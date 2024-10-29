@@ -1038,7 +1038,7 @@ impl AddressRange {
         }
     }
 
-    /// Convert a range into a set of prefixes
+    /// Convert a range into a set of V6 prefixes
     pub fn to_v6_prefixes(self) -> impl Iterator<Item = Prefix> {
         let mut start = self.min.to_bits();
         let end = self.max.to_bits();
@@ -1066,7 +1066,7 @@ impl AddressRange {
         })
     }
 
-    /// Convert a range into a set of prefixes
+    /// Convert a range into a set of V4 prefixes
     pub fn to_v4_prefixes(self) -> impl Iterator<Item = Prefix> {
         let mut start = (self.min.to_bits() >> 96) as u32;
         let end = (self.max.to_bits() >> 96) as u32;
@@ -2723,8 +2723,8 @@ mod tests {
     fn to_prefixes() {
         {
             let range = AddressRange::new(
-                Addr::from(0x0000_0000_0000_0000_0000_0000_0000_0001), 
-                Addr::from(0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFE)
+                Addr::from(Ipv6Addr::from_str("::1").unwrap()), 
+                Addr::from(Ipv6Addr::from_str("ffff:ffff:ffff:ffff:ffff:ffff:ffff:fffe").unwrap())
             );
 
             let prefixes = range.to_v6_prefixes();
