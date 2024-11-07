@@ -1044,16 +1044,34 @@ impl AddressRange {
         let end = self.max.to_bits();
         
         std::iter::from_fn(move || {
+            // The idea is to take the largest prefix possible from the start
+            // then move the start to the address after the last address in
+            // that prefix, and do it again until there are no addresses left.
+
+            // Based loosely on <https://github.com/arineng/cidr-calc>
             if start > end {
                 return None;
             }
-
+            
+            // Determine how many of the last bits of the address are prefixable
+            // e.g. for 2001:DB8:: that would be 99
             let addr_host_bits = start.trailing_zeros();
+
+            // Determine how many of the first bits are shared between the
+            // start and the end, to determine an upper bound for the prefix
+            // e.g. 2001:DB8:: and 2001:DB8::8000 share 112 bits, so the max
+            // is 16
             let mut max_allowed = 128 - (start ^ end).leading_zeros();
             if end.trailing_ones() < max_allowed {
+                // Prevent overshooting the prefix
+                // e.g. for 2001:DB8::8000 the trailing_ones = 0, so the max 
+                // is now 15 to prevent covering space after 2001:DB8::8000
                 max_allowed -= 1;
             }
 
+            // Obtain the bits at the end that are the same, which is the
+            // shortest of either the amount of 0 bits at the current address
+            // or the amount of bits not shared at the start
             let same_bits = cmp::min(addr_host_bits, max_allowed);
             let prefix_len = 128 - same_bits;
 
@@ -1072,6 +1090,7 @@ impl AddressRange {
         let end = (self.max.to_bits() >> 96) as u32;
         
         std::iter::from_fn(move || {
+            // This works the same as `to_v6_prefixes` above
             if start > end {
                 return None;
             }
