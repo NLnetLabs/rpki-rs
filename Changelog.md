@@ -12,8 +12,12 @@ New
 * Added `uri::{Rsync,Https}::path_into_dir` ([#302])
 * Added `Ipv4Block` and `Ipv6Block` and `FromIterator` impls for
   `Ipv4Blocks` and `Ipv6Blocks`. ([#298])
+* Made `AddressRange` public and added methods to convert ranges into
+  a set of prefixes. ([#306])
 
 Bug fixes
+
+* Do not allow backslashes in idexchange handles. ([#304])
 
 Other changes
 
@@ -25,6 +29,8 @@ Other changes
 [#300]: https://github.com/NLnetLabs/rpki-rs/pull/300
 [#302]: https://github.com/NLnetLabs/rpki-rs/pull/302
 [#303]: https://github.com/NLnetLabs/rpki-rs/pull/303
+[#304]: https://github.com/NLnetLabs/rpki-rs/pull/304
+[#306]: https://github.com/NLnetLabs/rpki-rs/pull/306
 
 
 ## 0.18.4
