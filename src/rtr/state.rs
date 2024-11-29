@@ -4,9 +4,6 @@
 //! particular RTR server. The complete state, encapsulated in the type
 //! [`State`] consists of a sixteen bit session id and a serial number. Since
 //! the serial number follows special rules, it has its own type [`Serial`].
-//!
-//! [`Serial`]: struct.Serial.html
-//! [`State`]: struct.State.html
 
 use std::{cmp, fmt, hash, str};
 use std::time::SystemTime;
@@ -72,8 +69,6 @@ impl State {
     ///
     /// Serial number may wrap but that’s totally fine. See [`Serial`] for
     /// more details.
-    ///
-    /// [`Serial`]: struct.Serial.html
     pub fn inc(&mut self) {
         self.serial = self.serial.add(1)
     }

@@ -295,7 +295,7 @@ impl<'a> fmt::Display for IpBlocksForFamily<'a> {
 
 /// A sequence of address ranges for one address family.
 ///
-/// Values of this type are guaranteed to contain a sequence of `IpBlocks`
+/// Values of this type are guaranteed to contain a sequence of [`IpBlock`]s
 /// that fulfills the requirements of RFC 3779. Specifically, the blocks will
 /// not overlap, will not be consecutive (i.e., there’s at least one address
 /// between neighbouring blocks), will be in order, and anything that can be
@@ -739,7 +739,7 @@ impl IpBlock {
         DisplayV4Block(self)
     }
 
-    /// Returns an object that displays the block as an IPv4 block.
+    /// Returns an object that displays the block as an IPv6 block.
     pub fn display_v6(self) -> DisplayV6Block {
         DisplayV6Block(self)
     }

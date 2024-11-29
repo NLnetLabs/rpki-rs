@@ -103,7 +103,7 @@ impl DigestAlgorithm {
 /// The functions and methods in this section allow decoding and encoding
 /// such values.
 ///
-/// [`SignatureAlgorithm`]: ../signature/struct.SignatureAlgorithm.html
+/// [`SignatureAlgorithm`]: super::SignatureAlgorithm
 /// [RFC 5754]: https://tools.ietf.org/html/rfc5754
 /// [RFC 7935]: https://tools.ietf.org/html/rfc7935
 impl DigestAlgorithm {
@@ -180,7 +180,7 @@ impl DigestAlgorithm {
         encode::sequence(oid::SHA256.encode())
     }
 
-    /// Provides an encoder for a indentifer as the sole value of a set.
+    /// Provides an encoder for a identifier as the sole value of a set.
     pub fn encode_set(self) -> impl encode::Values {
         encode::set(
             self.encode()

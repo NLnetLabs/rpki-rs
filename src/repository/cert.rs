@@ -12,8 +12,6 @@
 //!
 //! In addition, there are several types for the components of a certificate.
 //!
-//! [`Cert`]: struct.Cert.html
-//! [`ResourceCert`]: struct.ResourceCert.html
 //! [RFC 5280]: https://tools.ietf.org/html/rfc5280
 //! [RFC 6487]: https://tools.ietf.org/html/rfc5487
 
@@ -73,13 +71,12 @@ use super::x509::{
 /// further processing. In addition, various methods exist to access
 /// information contained in the certificate.
 ///
-/// [`ResourceCert`]: struct.ResourceCert.html
-/// [`decode`]: #method.decode
-/// [`take_from`]: #method.take_from
-/// [`from_constructed`]: #method.from_constructed
-/// [`validate_ca`]: #method.validate_ca
-/// [`validate_ee`]: #method.validate_ee
-/// [`validate_ta`]: #method.validate_ta
+/// [`decode`]: Cert::decode
+/// [`take_from`]: Cert::take_from
+/// [`from_constructed`]: Cert::from_constructed
+/// [`validate_ca`]: Cert::validate_ca
+/// [`validate_ee`]: Cert::validate_ee
+/// [`validate_ta`]: Cert::validate_ta
 #[derive(Clone, Debug)]
 pub struct Cert {
     /// The outer structure of the certificate.
@@ -256,7 +253,7 @@ impl Cert {
         self.verify_ee_at(issuer, strict, now).map_err(Into::into)
     }
 
-    /// Validates the certificate as a detached EE certficate.
+    /// Validates the certificate as a detached EE certificate.
     ///
     /// Such a certificate is used by signed objects that are not published
     /// through RPKI repositories.
@@ -384,7 +381,7 @@ impl Cert {
         // 4.8.1. Basic Constraints: Must not be present.
         if self.basic_ca.is_some(){
             return Err(InspectionError::new(
-                "Basic Contraints extension \
+                "Basic Constraints extension \
                  not allowed in end entity certificate"
             ))
         }
@@ -422,7 +419,7 @@ impl Cert {
         Ok(())
     }
 
-    /// Inspects the certificate as a detached EE certficate.
+    /// Inspects the certificate as a detached EE certificate.
     ///
     /// Checks that the certificate fulfills all formal requirements of such
     /// a certificate.
@@ -435,7 +432,7 @@ impl Cert {
         // 4.8.1. Basic Constraints: Must not be present.
         if self.basic_ca.is_some(){
             return Err(InspectionError::new(
-                "Basic Contraints extension \
+                "Basic Constraints extension \
                  not allowed in end entity certificate"
             ))
         }
@@ -506,7 +503,7 @@ impl Cert {
         // 4.8.1. Basic Constraints. Must not be present.
         if self.basic_ca.is_some(){
             return Err(InspectionError::new(
-                "Basic Contraints extension \
+                "Basic Constraints extension \
                  not allowed in end entity certificate"
             ))
         }
@@ -517,7 +514,7 @@ impl Cert {
             self.subject_public_key_info().key_identifier()
         {
             return Err(InspectionError::new(
-                "Subject Key Identifer extension doesn't match \
+                "Subject Key Identifier extension doesn't match \
                  the public key"
             ))
         }
@@ -588,7 +585,7 @@ impl Cert {
         }
         if self.as_resources().is_inherited() {
             return Err(InspectionError::new(
-                "inherited AS Resources in router certifiate"
+                "inherited AS Resources in router certificate"
             ))
         }
 
