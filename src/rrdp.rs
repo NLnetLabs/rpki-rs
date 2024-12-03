@@ -217,38 +217,40 @@ impl NotificationFile {
         delta_limit: Option<usize>,
     ) -> Result<Self, XmlError> {
         let mut reader = Reader::new(reader);
-
+        
         let mut session_id = None;
         let mut serial = None;
-        let mut outer = reader.start(|element| {
+        let mut outer = reader.start_with_limit(|element| {
             if element.name() != NOTIFICATION {
                 return Err(XmlError::Malformed)
             }
 
-            element.attributes(|name, value| match name {
-                b"version" => {
-                    if value.ascii_into::<u8>()? != 1 {
-                        return Err(XmlError::Malformed)
+            element.attributes(|name, value| {
+                match name {
+                    b"version" => {
+                        if value.ascii_into::<u8>()? != 1 {
+                            return Err(XmlError::Malformed)
+                        }
+                        Ok(())
                     }
-                    Ok(())
+                    b"session_id" => {
+                        session_id = Some(value.ascii_into()?);
+                        Ok(())
+                    }
+                    b"serial" => {
+                        serial = Some(value.ascii_into()?);
+                        Ok(())
+                    }
+                    _ => Err(XmlError::Malformed)
                 }
-                b"session_id" => {
-                    session_id = Some(value.ascii_into()?);
-                    Ok(())
-                }
-                b"serial" => {
-                    serial = Some(value.ascii_into()?);
-                    Ok(())
-                }
-                _ => Err(XmlError::Malformed)
-            })
-        })?;
+        })
+        }, 100_000_000)?;
 
         let mut snapshot = None;
 
         let mut deltas = Ok(vec![]);
 
-        while let Some(mut content) = outer.take_opt_element(&mut reader,
+        while let Some(mut content) = outer.take_opt_element_with_limit(&mut reader,
                                                              |element| {
             match element.name() {
                 SNAPSHOT => {
@@ -316,7 +318,7 @@ impl NotificationFile {
                 }
                 _ => Err(XmlError::Malformed)
             }
-        })? {
+        }, 100_000_000)? {
             content.take_end(&mut reader)?;
         }
 
@@ -774,7 +776,7 @@ pub trait ProcessSnapshot {
         
         let mut session_id = None;
         let mut serial = None;
-        let mut outer = reader.start(|element| {
+        let mut outer = reader.start_with_limit(|element| {
             if element.name() != SNAPSHOT {
                 info!("Bad outer: not snapshot, but {:?}", element.name());
                 return Err(XmlError::Malformed)
@@ -800,7 +802,7 @@ pub trait ProcessSnapshot {
                     Err(XmlError::Malformed)
                 }
             })
-        }).map_err(Into::into)?;
+        }, 100_000_000).map_err(Into::into)?;
 
         match (session_id, serial) {
             (Some(session_id), Some(serial)) => {
@@ -814,7 +816,7 @@ pub trait ProcessSnapshot {
 
         loop {
             let mut uri = None;
-            let inner = outer.take_opt_element(&mut reader, |element| {
+            let inner = outer.take_opt_element_with_limit(&mut reader, |element| {
                 if element.name() != PUBLISH {
                 info!("Bad inner: not publish");
                     return Err(ProcessError::malformed())
@@ -829,7 +831,7 @@ pub trait ProcessSnapshot {
                         Err(ProcessError::malformed())
                     }
                 })
-            })?;
+            },100_000_000)?;
             let mut inner = match inner {
                 Some(inner) => inner,
                 None => break
