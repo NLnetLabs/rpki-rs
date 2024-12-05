@@ -14,6 +14,8 @@ New
   `Ipv4Blocks` and `Ipv6Blocks`. ([#298])
 * Made `AddressRange` public and added methods to convert ranges into
   a set of prefixes. ([#306])
+* Updated the ASPA RTR PDU to conform with version -14 of
+  draft-ietf-sidrops-8210bis. ([#309])
 
 Bug fixes
 
@@ -31,6 +33,7 @@ Other changes
 [#303]: https://github.com/NLnetLabs/rpki-rs/pull/303
 [#304]: https://github.com/NLnetLabs/rpki-rs/pull/304
 [#306]: https://github.com/NLnetLabs/rpki-rs/pull/306
+[#309]: https://github.com/NLnetLabs/rpki-rs/pull/309
 
 
 ## 0.18.4
