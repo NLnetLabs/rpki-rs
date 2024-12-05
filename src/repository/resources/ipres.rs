@@ -269,7 +269,7 @@ impl<'a> IpBlocksForFamily<'a> {
     }
 }
 
-impl<'a> fmt::Display for IpBlocksForFamily<'a> {
+impl fmt::Display for IpBlocksForFamily<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut blocks_iter = self.blocks.iter();
 

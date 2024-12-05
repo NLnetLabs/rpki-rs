@@ -169,7 +169,7 @@ impl Asn {
     ) -> Result<Self, D::Error> {
         struct Visitor;
 
-        impl<'de> serde::de::Visitor<'de> for Visitor {
+        impl serde::de::Visitor<'_> for Visitor {
             type Value = Asn;
 
             fn expecting(
@@ -198,7 +198,7 @@ impl Asn {
     ) -> Result<Self, D::Error> {
         struct Visitor;
 
-        impl<'de> serde::de::Visitor<'de> for Visitor {
+        impl serde::de::Visitor<'_> for Visitor {
             type Value = Asn;
 
             fn expecting(
@@ -390,7 +390,7 @@ pub struct SmallSetDifference<'a> {
     right: Peekable<SmallSetIter<'a>>,
 }
 
-impl<'a> Iterator for SmallSetDifference<'a> {
+impl Iterator for SmallSetDifference<'_> {
     type Item = Asn;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -423,7 +423,7 @@ pub struct SmallSetSymmetricDifference<'a> {
     right: Peekable<SmallSetIter<'a>>,
 }
 
-impl<'a> Iterator for SmallSetSymmetricDifference<'a> {
+impl Iterator for SmallSetSymmetricDifference<'_> {
     type Item = Asn;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -455,7 +455,7 @@ pub struct SmallSetIntersection<'a> {
     right: Peekable<SmallSetIter<'a>>,
 }
 
-impl<'a> Iterator for SmallSetIntersection<'a> {
+impl Iterator for SmallSetIntersection<'_> {
     type Item = Asn;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -489,7 +489,7 @@ pub struct SmallSetUnion<'a> {
     right: Peekable<SmallSetIter<'a>>,
 }
 
-impl<'a> Iterator for SmallSetUnion<'a> {
+impl Iterator for SmallSetUnion<'_> {
     type Item = Asn;
 
     fn next(&mut self) -> Option<Self::Item> {

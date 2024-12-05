@@ -481,7 +481,7 @@ impl<'de> Deserialize<'de> for Rsync {
 //--- PrimitiveContent
 
 #[cfg(feature = "repository")]
-impl<'a> encode::PrimitiveContent for &'a Rsync {
+impl encode::PrimitiveContent for &'_ Rsync {
     const TAG: Tag = Tag::IA5_STRING;
 
     fn encoded_len(&self, _: Mode) -> usize {
@@ -779,7 +779,7 @@ impl<'de> Deserialize<'de> for Https {
 //--- PrimitiveContent
 
 #[cfg(feature = "repository")]
-impl<'a> encode::PrimitiveContent for &'a Https {
+impl encode::PrimitiveContent for &'_ Https {
     const TAG: Tag = Tag::IA5_STRING;
 
     fn encoded_len(&self, _: Mode) -> usize {
@@ -871,7 +871,7 @@ impl<V> Default for UriVisitor<V> {
 }
 
 #[cfg(feature = "serde")]
-impl<'de, V> serde::de::Visitor<'de> for UriVisitor<V>
+impl<V> serde::de::Visitor<'_> for UriVisitor<V>
 where
     V: FromStr + TryFrom<String>,
     <V as FromStr>::Err: fmt::Display,
@@ -980,7 +980,7 @@ mod arbitrary {
         }
     }
 
-    impl<'a> Arbitrary<'a> for super::Https {
+    impl Arbitrary<'_> for super::Https {
         fn arbitrary(u: &mut Unstructured) -> arbitrary::Result<Self> {
             let mut res = String::from("https://");
             append_host(&mut res, u)?;
