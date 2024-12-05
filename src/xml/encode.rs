@@ -225,7 +225,7 @@ impl<'a, W: io::Write> Element<'a, W> {
     }
 }
 
-impl<'a, W: io::Write> Drop for Element<'a, W> {
+impl<W: io::Write> Drop for Element<'_, W> {
     fn drop(&mut self) {
         if let Err(err) = self.end() {
             self.writer.store_error(err)
@@ -246,7 +246,7 @@ pub struct Content<'a, W> {
     writer: &'a mut Writer<W>,
 }
 
-impl<'a, W: io::Write> Content<'a, W> {
+impl<W: io::Write> Content<'_, W> {
     /// Add an element with the given tag.
     ///
     /// This will write the beginning of the tag to the writer and therefore
@@ -417,8 +417,8 @@ impl<'a, W: io::Write> DisplayText<'a, W> {
     }
 }
 
-impl<'a, W: io::Write> fmt::Write for DisplayText<'a, W> {
-    fn write_str(&mut  self, s: &str) -> fmt::Result {
+impl<W: io::Write> fmt::Write for DisplayText<'_, W> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
         match self.escape.write_escaped(s.as_bytes(), self.inner) {
             Ok(()) => Ok(()),
             Err(err) => {

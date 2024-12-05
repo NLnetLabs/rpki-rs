@@ -371,7 +371,7 @@ impl<'n, 'l> Name<'n, 'l> {
     }
 }
 
-impl<'n, 'l> fmt::Debug for Name<'n, 'l> {
+impl fmt::Debug for Name<'_, '_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Name(")?;
         if let Some(ns) = self.namespace {
@@ -381,13 +381,13 @@ impl<'n, 'l> fmt::Debug for Name<'n, 'l> {
     }
 }
 
-impl<'n, 'l> From<&'l [u8]> for Name<'n, 'l> {
+impl<'l> From<&'l [u8]> for Name<'_, 'l> {
     fn from(local: &'l [u8]) -> Self {
         Name::unqualified(local)
     }
 }
 
-impl<'n, 'l> From<&'l str> for Name<'n, 'l> {
+impl<'l> From<&'l str> for Name<'_, 'l> {
     fn from(local: &'l str) -> Self {
         Name::unqualified(local.as_bytes())
     }
@@ -412,7 +412,7 @@ impl<'n, 'l> From<(&'n str, &'l str)> for Name<'n, 'l> {
 #[derive(Clone)]
 pub struct AttrValue<'a>(quick_xml::events::attributes::Attribute<'a>);
 
-impl<'a> AttrValue<'a> {
+impl AttrValue<'_> {
     pub fn ascii_into<T: str::FromStr>(self) -> Result<T, Error> {
         let s = self.0.unescape_value()?;
         if !s.is_ascii() {
@@ -435,7 +435,7 @@ impl<'a> AttrValue<'a> {
 
 pub struct Text<'a>(quick_xml::events::BytesText<'a>);
 
-impl<'a> Text<'a> {
+impl Text<'_> {
     pub fn to_utf8(&self) -> Result<Cow<str>, Error> {
         Ok(self.0.unescape()?)
     }

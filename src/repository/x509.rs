@@ -561,7 +561,7 @@ impl<'de> serde::Deserialize<'de> for Serial {
     ) -> Result<Self, D::Error> {
         struct SerialVisitor;
 
-        impl<'de> serde::de::Visitor<'de> for SerialVisitor {
+        impl serde::de::Visitor<'_> for SerialVisitor {
             type Value = Serial;
 
             fn expecting(
@@ -665,7 +665,7 @@ impl Eq for SignedData {}
 #[derive(Clone, Copy, Debug)]
 pub struct SignatureValueContent<'a, Alg>(&'a SignedData<Alg>);
 
-impl<'a, Alg> PrimitiveContent for SignatureValueContent<'a, Alg> {
+impl<Alg> PrimitiveContent for SignatureValueContent<'_, Alg> {
     const TAG: Tag = Tag::BIT_STRING;
 
     fn encoded_len(&self, _: Mode) -> usize {

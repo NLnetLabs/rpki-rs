@@ -609,7 +609,7 @@ impl<'de> serde::Deserialize<'de> for KeyIdentifier {
     ) -> Result<Self, D::Error> {
         struct KeyIdentifierVisitor;
 
-        impl<'de> serde::de::Visitor<'de> for KeyIdentifierVisitor {
+        impl serde::de::Visitor<'_> for KeyIdentifierVisitor {
             type Value = KeyIdentifier;
 
             fn expecting(

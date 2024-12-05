@@ -312,7 +312,7 @@ impl RoaIpAddresses {
 #[derive(Clone, Debug)]
 pub struct RoaIpAddressIter<'a>(SliceSource<'a>);
 
-impl<'a> Iterator for RoaIpAddressIter<'a> {
+impl Iterator for RoaIpAddressIter<'_> {
     type Item = RoaIpAddress;
 
     fn next(&mut self) -> Option<Self::Item> {

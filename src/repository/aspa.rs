@@ -267,7 +267,7 @@ impl ProviderAsSet {
 #[derive(Clone, Debug)]
 pub struct ProviderAsIter<'a>(SliceSource<'a>);
 
-impl<'a> Iterator for ProviderAsIter<'a> {
+impl Iterator for ProviderAsIter<'_> {
     type Item = Asn;
 
     fn next(&mut self) -> Option<Self::Item> {
