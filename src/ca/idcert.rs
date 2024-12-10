@@ -419,6 +419,10 @@ impl TbsIdCert {
     pub fn subject(&self) -> &Name {
         &self.subject
     }
+
+    pub fn validity(&self) -> &Validity {
+        &self.validity
+    }
 }
 
 /// # Decoding and Encoding
