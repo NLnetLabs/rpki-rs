@@ -16,6 +16,7 @@ New
   a set of prefixes. ([#306])
 * Updated the ASPA RTR PDU to conform with version -14 of
   draft-ietf-sidrops-8210bis. ([#309])
+* Exposed `ca::idcert::TbsIdCert::validity`. ([#310]);
 
 Bug fixes
 
@@ -34,6 +35,7 @@ Other changes
 [#304]: https://github.com/NLnetLabs/rpki-rs/pull/304
 [#306]: https://github.com/NLnetLabs/rpki-rs/pull/306
 [#309]: https://github.com/NLnetLabs/rpki-rs/pull/309
+[#310]: https://github.com/NLnetLabs/rpki-rs/pull/310
 
 
 ## 0.18.4
