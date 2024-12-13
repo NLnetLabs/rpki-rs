@@ -16,6 +16,11 @@ use crate::util::base64;
 use super::payload;
 use super::state::{Serial, State};
 
+#[cfg(feature = "serde")]
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+
+#[cfg(feature = "serde")]
+use serde::de::Error as _;
 
 //------------ Macro for Common Impls ----------------------------------------
 
@@ -774,6 +779,29 @@ impl<'a> arbitrary::Arbitrary<'a> for RouterKeyInfo {
 }
 
 
+//--- Deserialze and Serialize
+
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for RouterKeyInfo {
+    fn deserialize<D: Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
+        Vec::<u8>::deserialize(
+            deserializer
+        )?.try_into().map_err(D::Error::custom)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl Serialize for RouterKeyInfo {
+    fn serialize<S: Serializer>(
+        &self, serializer: S
+    ) -> Result<S::Ok, S::Error> {
+        self.0.as_ref().serialize(serializer)
+    }
+}
+
+
 //------------ Aspa ----------------------------------------------------------
 
 /// The PDU for ASPA.
@@ -1019,6 +1047,57 @@ impl<'a> arbitrary::Arbitrary<'a> for ProviderAsns {
 impl AsRef<[u8]> for ProviderAsns {
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
+    }
+}
+
+
+//--- Deserialize, Serialize
+
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for ProviderAsns {
+    fn deserialize<D: Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
+        struct Visitor;
+
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = ProviderAsns;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a sequence of ASNs")
+            }
+
+            fn visit_seq<A: de::SeqAccess<'de>>(
+                self, mut seq: A
+            ) -> Result<Self::Value, A::Error> {
+                let mut res = match seq.size_hint() {
+                    Some(size) if size < usize::from(u16::MAX) => {
+                        Vec::with_capacity(size * mem::size_of::<u32>())
+                    }
+                    _ => Vec::new()
+                };
+                while let Some(asn) = seq.next_element::<Asn>()? {
+                    const MAX_LEN: usize =
+                        (u16::MAX as usize) * mem::size_of::<u32>();
+                    if res.len() >= MAX_LEN {
+                        return Err(A::Error::custom("too many provider ASNs"));
+                    }
+                    res.extend_from_slice(&asn.into_u32().to_be_bytes());
+                }
+                Ok(ProviderAsns(res.into()))
+            }
+        }
+
+        deserializer.deserialize_seq(Visitor)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl Serialize for ProviderAsns {
+    fn serialize<S: Serializer>(
+        &self, serializer: S
+    ) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.iter())
     }
 }
 

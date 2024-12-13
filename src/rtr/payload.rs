@@ -15,6 +15,8 @@ use crate::resources::addr::MaxLenPrefix;
 use crate::resources::asn::Asn;
 use super::pdu::{ProviderAsns, RouterKeyInfo};
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 //------------ RouteOrigin ---------------------------------------------------
 
@@ -27,6 +29,7 @@ use super::pdu::{ProviderAsns, RouterKeyInfo};
 /// are separate payload types in RTR.
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct RouteOrigin {
     /// The address prefix to authorize.
     pub prefix: MaxLenPrefix,
@@ -101,6 +104,7 @@ impl hash::Hash for RouteOrigin {
 /// A BGPsec router key.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct RouterKey {
     /// The subject key identifier of the router key.
     pub key_identifier: KeyIdentifier,
@@ -127,6 +131,7 @@ impl RouterKey {
 /// An ASPA ... unit.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct Aspa {
     /// The customer ASN.
     pub customer: Asn,
@@ -160,6 +165,7 @@ impl Aspa {
 /// The type of a payload item.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum PayloadType {
     Origin,
     RouterKey,
@@ -172,6 +178,7 @@ pub enum PayloadType {
 /// All payload types supported by RTR and this crate.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum Payload {
     /// A route origin authorisation.
     Origin(RouteOrigin),
@@ -317,6 +324,7 @@ impl<'a> From<&'a Aspa> for PayloadRef<'a> {
 /// What to do with a given payload.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum Action {
     /// Announce the payload.
     ///
@@ -363,6 +371,7 @@ impl Action {
 
 /// The RTR representation of an address family.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct Afi(u8);
 
 impl Afi {
@@ -426,6 +435,7 @@ impl<'a> arbitrary::Arbitrary<'a> for Afi {
 /// These three values are included in the end-of-data PDU of version 1
 /// onwards.
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct Timing {
     /// The number of seconds until a client should refresh its data.
     pub refresh: u32,

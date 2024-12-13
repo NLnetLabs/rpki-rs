@@ -5,6 +5,7 @@ use std::cmp::Ordering;
 use std::net::{AddrParseError, IpAddr, Ipv4Addr, Ipv6Addr};
 use std::num::ParseIntError;
 use std::str::FromStr;
+use serde::{Deserialize, Serialize};
 
 
 //------------ Bits ----------------------------------------------------------
@@ -569,7 +570,7 @@ impl<'a> arbitrary::Arbitrary<'a> for Prefix {
 /// length. The max_len can not be smaller than the prefix length. Because of
 /// that, we can safely order 'any max_len' before 'no max_len' for equal
 /// prefixes.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MaxLenPrefix {
     /// The prefix.
