@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 //------------ Tal -----------------------------------------------------------
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct Tal {
     uris: Vec<TalUri>,
     key_info: PublicKey,
