@@ -15,6 +15,9 @@ use crate::uri;
 use crate::crypto::PublicKey;
 use crate::util::base64;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 
 //------------ Tal -----------------------------------------------------------
 
@@ -250,6 +253,7 @@ impl fmt::Display for TalUri {
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct TalInfo {
     name: String,
 }
