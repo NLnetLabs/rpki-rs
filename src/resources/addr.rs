@@ -327,6 +327,23 @@ impl Prefix {
         })
     }
 
+    /// Creates a prefix from a string even if the host portion is non-zero.
+    pub fn from_str_relaxed(s: &str) -> Result<Self, ParsePrefixError> {
+        if s.is_empty() {
+            return Err(ParsePrefixError::Empty)
+        }
+        let slash = s.find('/').ok_or(ParsePrefixError::MissingLen)?;
+        let addr = IpAddr::from_str(&s[..slash]).map_err(
+            ParsePrefixError::InvalidAddr
+        )?;
+        let len = u8::from_str(&s[slash + 1..]).map_err(
+            ParsePrefixError::InvalidLen
+        )?;
+        Prefix::new_relaxed(
+            addr, len
+        ).map_err(ParsePrefixError::InvalidPrefix)
+    }
+
     /// Returns whether the prefix is for an IPv4 address.
     pub fn is_v4(self) -> bool {
         self.family_and_len.is_v4()
@@ -983,7 +1000,114 @@ mod test {
         );
         assert!(
             matches!(
+                Prefix::from_str("127.0.0.1/33"),
+                Err(ParsePrefixError::InvalidPrefix(
+                    PrefixError::LenOverflow
+                ))
+            )
+        );
+        assert!(
+            matches!(
+                Prefix::from_str("2001:db8::/129"),
+                Err(ParsePrefixError::InvalidPrefix(
+                    PrefixError::LenOverflow
+                ))
+            )
+        );
+        assert!(
+            matches!(
+                Prefix::from_str("2001:db8::/9000"),
+                Err(ParsePrefixError::InvalidLen(_))
+            )
+        );
+        assert!(
+            matches!(
+                Prefix::from_str("127.0.0.1/24"),
+                Err(ParsePrefixError::InvalidPrefix(
+                    PrefixError::NonZeroHost
+                ))
+            )
+        );
+        assert!(
+            matches!(
                 Prefix::from_str(""),
+                Err(ParsePrefixError::Empty)
+            )
+        );
+    }
+
+    #[test]
+    fn prefix_from_str_relaxed() {
+        assert_eq!(
+            Prefix::from_str_relaxed("127.0.0.0/12").unwrap().addr_and_len(),
+            (IpAddr::from_str("127.0.0.0").unwrap(), 12)
+        );
+        assert_eq!(
+            Prefix::from_str_relaxed(
+                "2001:db8:10:20::/64"
+            ).unwrap().addr_and_len(),
+            (IpAddr::from_str("2001:db8:10:20::").unwrap(), 64)
+        );
+        assert_eq!(
+            Prefix::from_str_relaxed("0.0.0.0/0").unwrap().addr_and_len(),
+            (IpAddr::from_str("0.0.0.0").unwrap(), 0)
+        );
+        assert_eq!(
+            Prefix::from_str_relaxed("::/0").unwrap().addr_and_len(),
+            (IpAddr::from_str("::").unwrap(), 0)
+        );
+
+        assert_eq!(
+            Prefix::from_str_relaxed("127.0.0.0"),
+            Err(ParsePrefixError::MissingLen)
+        );
+        assert_eq!(
+            Prefix::from_str_relaxed("2001:db8::"),
+            Err(ParsePrefixError::MissingLen)
+        );
+        assert!(
+            matches!(
+                Prefix::from_str_relaxed("127.0.0.0/"),
+                Err(ParsePrefixError::InvalidLen(_))
+            )
+        );
+        assert!(
+            matches!(
+                Prefix::from_str_relaxed("2001:db8::/"),
+                Err(ParsePrefixError::InvalidLen(_))
+            )
+        );
+        assert!(
+            matches!(
+                Prefix::from_str_relaxed("127.0.0.1/33"),
+                Err(ParsePrefixError::InvalidPrefix(
+                    PrefixError::LenOverflow
+                ))
+            )
+        );
+        assert!(
+            matches!(
+                Prefix::from_str_relaxed("2001:db8::/129"),
+                Err(ParsePrefixError::InvalidPrefix(
+                    PrefixError::LenOverflow
+                ))
+            )
+        );
+        assert!(
+            matches!(
+                Prefix::from_str_relaxed("2001:db8::/9000"),
+                Err(ParsePrefixError::InvalidLen(_))
+            )
+        );
+        assert_eq!(
+            Prefix::from_str_relaxed(
+                "127.0.0.1/24"
+            ).unwrap().addr_and_len(),
+            (IpAddr::from_str("127.0.0.0").unwrap(), 24)
+        );
+        assert!(
+            matches!(
+                Prefix::from_str_relaxed(""),
                 Err(ParsePrefixError::Empty)
             )
         );
