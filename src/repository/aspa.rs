@@ -34,13 +34,29 @@ pub struct Aspa {
 impl Aspa {
     pub fn decode<S: IntoSource>(
         source: S,
-        strict: bool
+        strict: bool,
+    ) -> Result<Self, DecodeError<<S::Source as Source>::Error>> {
+        Self::_decode(source, strict, None)
+    }
+
+    pub fn decode_with_limit<S: IntoSource>(
+        source: S,
+        strict: bool,
+        provider_limit: usize,
+    ) -> Result<Self, DecodeError<<S::Source as Source>::Error>> {
+        Self::_decode(source, strict, Some(provider_limit))
+    }
+
+    fn _decode<S: IntoSource>(
+        source: S,
+        strict: bool,
+        provider_limit: Option<usize>,
     ) -> Result<Self, DecodeError<<S::Source as Source>::Error>> {
         let signed = SignedObject::decode_if_type(
             source, &oid::CT_ASPA, strict
         )?;
         let content = signed.decode_content(|cons| {
-            AsProviderAttestation::take_from(cons)
+            AsProviderAttestation::take_from(cons, provider_limit)
         }).map_err(DecodeError::convert)?;
         Ok(Aspa { signed, content })
     }
@@ -118,7 +134,8 @@ pub struct AsProviderAttestation {
 
 impl AsProviderAttestation {
     fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
+        cons: &mut decode::Constructed<S>,
+        provider_limit: Option<usize>,
     ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(|cons| {
             // version [0] EXPLICIT INTEGER DEFAULT 0
@@ -126,7 +143,7 @@ impl AsProviderAttestation {
             cons.take_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(1))?;
             let customer_as = Asn::take_from(cons)?;
             let provider_as_set = ProviderAsSet::take_from(
-                cons, customer_as
+                cons, customer_as, provider_limit,
             )?;
 
             Ok(AsProviderAttestation {
@@ -221,6 +238,7 @@ impl ProviderAsSet {
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         customer_as: Asn,
+        mut provider_limit: Option<usize>,
     ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_sequence(|cons| {
             cons.capture(|cons| {
@@ -228,6 +246,16 @@ impl ProviderAsSet {
                 while let Some(asn) = Asn::take_opt_from(
                     cons
                 )? {
+                    if let Some(limit) = provider_limit {
+                        match limit.checked_sub(1) {
+                            Some(new) => provider_limit = Some(new),
+                            None => {
+                                return Err(cons.content_err(
+                                    "too many provider ASNs"
+                                ))
+                            }
+                        }
+                    }
                     if asn == customer_as {
                         return Err(cons.content_err(
                             "customer AS in provider AS set"
@@ -391,7 +419,7 @@ mod test {
             include_bytes!(
                 "../../test-data/repository/aspa-content.der"
             ).as_ref(),
-            AsProviderAttestation::take_from
+            |cons| AsProviderAttestation::take_from(cons, None)
         ).unwrap();
         assert_eq!(content.customer_as(), 15562.into());
         assert_eq!(
@@ -409,9 +437,37 @@ mod test {
                 include_bytes!(
                     "../../test-data/repository/aspa-content-draft-13.der"
                 ).as_ref(),
-                AsProviderAttestation::take_from
+                |cons| AsProviderAttestation::take_from(cons, None)
             ).is_err()
         )
+    }
+
+    #[test]
+    fn decode_content_with_limit() {
+        assert!(
+            Mode::Der.decode(
+                include_bytes!(
+                    "../../test-data/repository/aspa-content.der"
+                ).as_ref(),
+                |cons| AsProviderAttestation::take_from(cons, Some(5))
+            ).is_ok()
+        );
+        assert!(
+            Mode::Der.decode(
+                include_bytes!(
+                    "../../test-data/repository/aspa-content.der"
+                ).as_ref(),
+                |cons| AsProviderAttestation::take_from(cons, Some(4))
+            ).is_ok()
+        );
+        assert!(
+            Mode::Der.decode(
+                include_bytes!(
+                    "../../test-data/repository/aspa-content.der"
+                ).as_ref(),
+                |cons| AsProviderAttestation::take_from(cons, Some(3))
+            ).is_err()
+        );
     }
 }
 
