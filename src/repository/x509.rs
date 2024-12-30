@@ -20,7 +20,7 @@ use crate::crypto::{
     PublicKey, RpkiSignatureAlgorithm, Signature, SignatureAlgorithm, Signer,
     SignatureVerificationError,
 };
-use crate::util::base64;
+#[cfg(feature = "serde")] use crate::util::base64;
 use super::error::{InspectionError, VerificationError};
 
 

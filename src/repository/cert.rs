@@ -29,7 +29,7 @@ use crate::crypto::{
     KeyIdentifier, PublicKey, RpkiSignatureAlgorithm, SignatureAlgorithm,
     SignatureVerificationError, Signer, SigningError,
 };
-use crate::util::base64;
+#[cfg(feature = "serde")] use crate::util::base64;
 use super::error::{InspectionError, ValidationError, VerificationError};
 use super::resources::{
     AsBlock, AsBlocks, AsBlocksBuilder, AsResources, AsResourcesBuilder,
