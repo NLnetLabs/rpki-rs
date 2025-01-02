@@ -181,7 +181,7 @@ impl AsProviderAttestation {
         encode::sequence((
             encode::sequence_as(Tag::CTX_0, 1u8.encode()),
             self.customer_as.encode(),
-            &self.provider_as_set.0,
+            &self.provider_as_set.captured,
         ))
     }
 
@@ -203,9 +203,17 @@ impl AsProviderAttestation {
 /// the AS in this set are ordered, free of duplicates and there is at least
 /// one AS.
 #[derive(Clone, Debug)]
-pub struct ProviderAsSet(Captured);
+pub struct ProviderAsSet {
+    captured: Captured,
+    len: usize,
+}
 
 impl ProviderAsSet {
+    #[allow(clippy::len_without_is_empty)] // never empty
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
     pub fn to_set(&self) -> SmallAsnSet {
         unsafe {
             SmallAsnSet::from_vec_unchecked(
@@ -215,14 +223,15 @@ impl ProviderAsSet {
     }
 
     pub fn iter(&self) -> ProviderAsIter {
-        ProviderAsIter(self.0.as_slice().into_source())
+        ProviderAsIter(self.captured.as_slice().into_source())
     }
 
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         customer_as: Asn,
     ) -> Result<Self, DecodeError<S::Error>> {
-        cons.take_sequence(|cons| {
+        let mut len = 0;
+        let captured = cons.take_sequence(|cons| {
             cons.capture(|cons| {
                 let mut last: Option<Asn> = None;
                 while let Some(asn) = Asn::take_opt_from(
@@ -249,6 +258,7 @@ impl ProviderAsSet {
                         }
                     }
                     last = Some(asn);
+                    len += 1;
                 }
                 if last.is_none() {
                     return Err(cons.content_err(
@@ -257,7 +267,8 @@ impl ProviderAsSet {
                 }
                 Ok(())
             })
-        }).map(ProviderAsSet)
+        })?;
+        Ok(Self { captured, len })
     }
 }
 
@@ -336,7 +347,10 @@ impl AspaBuilder {
             )
         );
         
-        let provider_as_set = ProviderAsSet(provider_as_set_captured);
+        let provider_as_set = ProviderAsSet {
+            captured: provider_as_set_captured,
+            len: self.providers.len()
+        };
 
         AsProviderAttestation {
             customer_as: self.customer_as,
