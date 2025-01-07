@@ -17,6 +17,8 @@ New
 * Updated the ASPA RTR PDU to conform with version -14 of
   draft-ietf-sidrops-8210bis. ([#309])
 * Exposed `ca::idcert::TbsIdCert::validity`. ([#310]);
+* The ASPA `ProviderAsSet` now keeps track of its length and exposes it
+  via the new `len` method. ([#315])
 
 Bug fixes
 
@@ -36,6 +38,7 @@ Other changes
 [#306]: https://github.com/NLnetLabs/rpki-rs/pull/306
 [#309]: https://github.com/NLnetLabs/rpki-rs/pull/309
 [#310]: https://github.com/NLnetLabs/rpki-rs/pull/310
+[#315]: https://github.com/NLnetLabs/rpki-rs/pull/315
 
 
 ## 0.18.4
