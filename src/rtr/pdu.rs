@@ -799,7 +799,8 @@ impl Aspa {
     /// # Panics
     ///
     /// This function panics if the length of the resulting PDU doesn’t fit
-    /// in a `u32`.
+    /// in a `u32`. Because `ProviderAsns` is now limited in size, this can’t
+    /// happen.
     pub fn new(
         version: u8,
         flags: u8,
@@ -948,6 +949,9 @@ impl AsMut<[u8]> for AspaFixed {
 pub struct ProviderAsns(Bytes);
 
 impl ProviderAsns {
+    /// The maximum number of provider ASNs.
+    const MAX_COUNT: usize = 16380;
+
     /// Returns an empty value.
     pub fn empty() -> Self {
         Self(Bytes::new())
@@ -963,7 +967,7 @@ impl ProviderAsns {
         let iter = iter.into_iter();
         let mut providers = Vec::with_capacity(iter.size_hint().0);
         iter.enumerate().try_for_each(|(idx, item)| {
-            if idx >= usize::from(u16::MAX) {
+            if idx > Self::MAX_COUNT {
                 return Err(ProviderAsnsError(()))
             }
             providers.extend_from_slice(&item.into_u32().to_be_bytes());

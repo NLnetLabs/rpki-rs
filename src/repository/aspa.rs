@@ -202,6 +202,9 @@ impl AsProviderAttestation {
 /// This type contains the provider AS set in encoded form. It guarantees that
 /// the AS in this set are ordered, free of duplicates and there is at least
 /// one AS.
+///
+/// It does not, at this point, enforce the maximum allowed number of 16380
+/// ASNs. This will be added with the next breaking change.
 #[derive(Clone, Debug)]
 pub struct ProviderAsSet {
     captured: Captured,
@@ -209,6 +212,9 @@ pub struct ProviderAsSet {
 }
 
 impl ProviderAsSet {
+    /// The maximum number of ASNs allowed in the set.
+    const MAX_LEN: usize = 16380;
+
     #[allow(clippy::len_without_is_empty)] // never empty
     pub fn len(&self) -> usize {
         self.len
@@ -226,6 +232,9 @@ impl ProviderAsSet {
         ProviderAsIter(self.captured.as_slice().into_source())
     }
 
+    /// Takes the provider ASN sequence from an encoded source.
+    ///
+    /// Enforces a maxium size of 16380 ASNs.
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         customer_as: Asn,
@@ -237,6 +246,11 @@ impl ProviderAsSet {
                 while let Some(asn) = Asn::take_opt_from(
                     cons
                 )? {
+                    if len > Self::MAX_LEN {
+                        return Err(cons.content_err(
+                            "too many provider ASNs"
+                        ));
+                    }
                     if asn == customer_as {
                         return Err(cons.content_err(
                             "customer AS in provider AS set"
