@@ -246,7 +246,7 @@ impl ProviderAsSet {
                 while let Some(asn) = Asn::take_opt_from(
                     cons
                 )? {
-                    if len > Self::MAX_LEN {
+                    if len >= Self::MAX_LEN {
                         return Err(cons.content_err(
                             "too many provider ASNs"
                         ));
@@ -553,6 +553,29 @@ mod signer_test {
             64499.into(),
         ];
         make_aspa(customer_as, providers);
+    }
+
+    #[test]
+    fn provider_asn_size() {
+        fn make_aspa(len: usize) -> Captured {
+            let mut builder = AspaBuilder::empty(0.into());
+            for i in 0..(len as u32) {
+                builder.add_provider(Asn::from(i + 1)).unwrap();
+            }
+            builder.into_attestation().encode_ref().to_captured(Mode::Der)
+        }
+
+        make_aspa(
+            ProviderAsSet::MAX_LEN - 1
+        ).decode(AsProviderAttestation::take_from).unwrap();
+        make_aspa(
+            ProviderAsSet::MAX_LEN
+        ).decode(AsProviderAttestation::take_from).unwrap();
+        assert!(
+            make_aspa(
+                ProviderAsSet::MAX_LEN + 1
+            ).decode(AsProviderAttestation::take_from).is_err()
+        );
     }
 
     #[test]
