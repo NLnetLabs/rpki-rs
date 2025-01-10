@@ -799,7 +799,8 @@ impl Aspa {
     /// # Panics
     ///
     /// This function panics if the length of the resulting PDU doesn’t fit
-    /// in a `u32`.
+    /// in a `u32`. Because `ProviderAsns` is now limited in size, this can’t
+    /// happen.
     pub fn new(
         version: u8,
         flags: u8,
@@ -948,6 +949,9 @@ impl AsMut<[u8]> for AspaFixed {
 pub struct ProviderAsns(Bytes);
 
 impl ProviderAsns {
+    /// The maximum number of provider ASNs.
+    pub const MAX_COUNT: usize = 16380;
+
     /// Returns an empty value.
     pub fn empty() -> Self {
         Self(Bytes::new())
@@ -963,7 +967,7 @@ impl ProviderAsns {
         let iter = iter.into_iter();
         let mut providers = Vec::with_capacity(iter.size_hint().0);
         iter.enumerate().try_for_each(|(idx, item)| {
-            if idx >= usize::from(u16::MAX) {
+            if idx >= Self::MAX_COUNT {
                 return Err(ProviderAsnsError(()))
             }
             providers.extend_from_slice(&item.into_u32().to_be_bytes());
@@ -1836,19 +1840,19 @@ mod test {
     fn provider_count() {
         assert_eq!(
             ProviderAsns::try_from_iter(
-                iter::repeat(Asn::from(0)).take(usize::from(u16::MAX - 1))
+                iter::repeat(Asn::from(0)).take(ProviderAsns::MAX_COUNT - 1)
             ).unwrap().asn_count(),
-            u16::MAX - 1
+            (ProviderAsns::MAX_COUNT - 1) as u16,
         );
         assert_eq!(
             ProviderAsns::try_from_iter(
-                iter::repeat(Asn::from(0)).take(usize::from(u16::MAX))
+                iter::repeat(Asn::from(0)).take(ProviderAsns::MAX_COUNT)
             ).unwrap().asn_count(),
-            u16::MAX
+            ProviderAsns::MAX_COUNT as u16,
         );
         assert!(
             ProviderAsns::try_from_iter(
-                iter::repeat(Asn::from(0)).take(usize::from(u16::MAX) + 1)
+                iter::repeat(Asn::from(0)).take(ProviderAsns::MAX_COUNT + 1)
             ).is_err()
         );
     }
