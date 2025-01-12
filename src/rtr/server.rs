@@ -26,7 +26,13 @@ use super::state::State;
 /// While the server technically supports version 2 as well, the format of the
 /// ASPA PDU has not yet been agreed upon. Rather than possibly deploying
 /// broken servers, we only announce support for version 0 or 1 for now.
-const MAX_VERSION: u8 = 1;
+const MAX_VERSION: u8 = {
+    if cfg!(feature = "unstable_rtr_version_2") {
+        2
+    } else {
+        1
+    }
+};
 
 //============ Traits ========================================================
 

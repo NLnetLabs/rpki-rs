@@ -65,6 +65,8 @@ softkeys = [ "openssl" ]
 # with OpenSSL
 __windows_ci_all = [ "ca", "rrdp", "rtr", "serde-support" ]
 
+unstable_rtr_version_2 = []
+
 [[bin]]
 name = "readcer"
 required-features = [ "repository" ]
