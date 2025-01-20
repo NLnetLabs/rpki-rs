@@ -10,10 +10,6 @@
 //!
 //! The RPKI CRL profile is defined in RFC 6487 based on the Internet RPIX
 //! profile defined in RFC 5280.
-//!
-//! [`Crl`]: struct.Crl.html
-//! [`CrlStore`]: struct.CrlStore.html
-
 use std::{fmt, ops};
 use std::collections::HashSet;
 use std::str::FromStr;
@@ -341,7 +337,7 @@ impl<C> TbsCertList<C> {
         &self.authority_key_id
     }
 
-    /// Sets the authority key identifer.
+    /// Sets the authority key identifier.
     pub fn set_authority_key_identifier(&mut self, id: KeyIdentifier) {
         self.authority_key_id = id
     }
@@ -627,7 +623,7 @@ impl CrlEntry {
         cons.take_sequence(Self::from_constructed)
     }
 
-    /// Takes an optional CRL entry from the beginning of a contructed value.
+    /// Takes an optional CRL entry from the beginning of a constructed value.
     pub fn take_opt_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, DecodeError<S::Error>> {

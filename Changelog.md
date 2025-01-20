@@ -12,8 +12,17 @@ New
 * Added `uri::{Rsync,Https}::path_into_dir` ([#302])
 * Added `Ipv4Block` and `Ipv6Block` and `FromIterator` impls for
   `Ipv4Blocks` and `Ipv6Blocks`. ([#298])
+* Made `AddressRange` public and added methods to convert ranges into
+  a set of prefixes. ([#306])
+* Updated the ASPA RTR PDU to conform with version -14 of
+  draft-ietf-sidrops-8210bis. ([#309])
+* Exposed `ca::idcert::TbsIdCert::validity`. ([#310]);
+* The ASPA `ProviderAsSet` now keeps track of its length and exposes it
+  via the new `len` method. ([#315])
 
 Bug fixes
+
+* Do not allow backslashes in idexchange handles. ([#304])
 
 Other changes
 
@@ -25,6 +34,11 @@ Other changes
 [#300]: https://github.com/NLnetLabs/rpki-rs/pull/300
 [#302]: https://github.com/NLnetLabs/rpki-rs/pull/302
 [#303]: https://github.com/NLnetLabs/rpki-rs/pull/303
+[#304]: https://github.com/NLnetLabs/rpki-rs/pull/304
+[#306]: https://github.com/NLnetLabs/rpki-rs/pull/306
+[#309]: https://github.com/NLnetLabs/rpki-rs/pull/309
+[#310]: https://github.com/NLnetLabs/rpki-rs/pull/310
+[#315]: https://github.com/NLnetLabs/rpki-rs/pull/315
 
 
 ## 0.18.4

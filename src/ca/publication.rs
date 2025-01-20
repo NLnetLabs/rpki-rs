@@ -222,7 +222,7 @@ impl Message {
 /// # Decoding from XML
 /// 
 impl Message {
-    /// Parses an RFC 8181 <msg />
+    /// Parses an RFC 8181 `<msg />`
     pub fn decode<R: io::BufRead>(reader: R) -> Result<Self, Error> {
         let mut reader = xml::decode::Reader::new(reader);
 
@@ -539,7 +539,7 @@ impl QueryPdu {
 //------------ PublishDelta ------------------------------------------------
 
 /// This type represents a multi element query as described in
-/// https://tools.ietf.org/html/rfc8181#section-3.7
+/// <https://tools.ietf.org/html/rfc8181#section-3.7>
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublishDelta(Vec<PublishDeltaElement>);
 
@@ -613,7 +613,7 @@ impl PublishDeltaElement {
 //------------ Publish -------------------------------------------------------
 
 /// Represents a publish element, that does not update any existing object.
-/// See: https://tools.ietf.org/html/rfc8181#section-3.1
+/// See: <https://tools.ietf.org/html/rfc8181#section-3.1>
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Publish {
     tag: Option<String>,
@@ -679,7 +679,7 @@ impl Publish {
 //------------ Update --------------------------------------------------------
 
 /// Represents a publish element, that replaces an existing object.
-/// See: https://tools.ietf.org/html/rfc8181#section-3.2
+/// See: <https://tools.ietf.org/html/rfc8181#section-3.2>
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Update {
     tag: Option<String>,
@@ -766,7 +766,7 @@ impl Update {
 //------------ Withdraw ------------------------------------------------------
 
 /// Represents a withdraw element that removes an object.
-/// See: https://tools.ietf.org/html/rfc8181#section-3.3
+/// See: <https://tools.ietf.org/html/rfc8181#section-3.3>
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Withdraw {
     tag: Option<String>,
@@ -1062,7 +1062,7 @@ impl ReplyPdu {
 //------------ ListReply -----------------------------------------------------
 
 /// This type represents the list reply as described in
-/// https://tools.ietf.org/html/rfc8181#section-2.3
+/// <https://tools.ietf.org/html/rfc8181#section-2.3>
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ListReply {
     elements: Vec<ListElement>,
@@ -1156,7 +1156,7 @@ impl ListElement {
 //------------ ErrorReply ----------------------------------------------------
 
 /// This type represents the error report as described in
-/// https://tools.ietf.org/html/rfc8181#section-3.5 and 3.6
+/// <https://tools.ietf.org/html/rfc8181#section-3.5> and 3.6
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ErrorReply {
     errors: Vec<ReportError>,

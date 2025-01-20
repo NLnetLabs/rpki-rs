@@ -28,8 +28,11 @@ use super::idcert::IdCert;
 /// but similar structure.
 /// 
 /// Most important differences to watch out for:
-/// = This uses [`IdCert`] instead of [`Cert`] as the EE (no INRs needed)
-/// = This MUST include a CRL
+///  - This uses [`IdCert`] instead of [`Cert`] as the EE (no INRs needed)
+///  - This MUST include a CRL
+/// 
+/// [`Cert`]: crate::repository::cert::Cert 
+/// [`SignedObject`]: crate::repository::sigobj::SignedObject
 #[derive(Clone, Debug)]
 pub struct  SignedMessage {
     //--- From SignedData

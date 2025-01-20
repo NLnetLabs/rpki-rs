@@ -8,64 +8,7 @@ use quick_xml::name::Namespace;
 use crate::util::base64;
 
 
-/// A simple BufRead passthrough proxy that acts as a "trip computer"
-/// 
-/// It keeps track of the amount of bytes read since it was last reset.
-/// If a limit is set, it will return an IO error when attempting to read
-/// past that limit.
-struct BufReadCounter<R: io::BufRead> {
-    reader: R,
-    trip: u128,
-    limit: u128
-}
-
-impl<R: io::BufRead> BufReadCounter<R> {
-
-    /// Create a new trip computer (resetting counter) for a BufRead
-    /// Acts transparently to the implementation of a BufRead below
-    pub fn new(reader: R) -> Self {
-        BufReadCounter {
-            reader,
-            trip: 0,
-            limit: 0
-        }
-    }
-
-    /// Reset the amount of bytes read back to 0
-    pub fn reset(&mut self) {
-        self.trip = 0;
-    }
-
-    /// Set a limit or pass 0 to disable the limit to the maximum bytes to 
-    /// read. This overrides the previous limit.
-    pub fn limit(&mut self, limit: u128) {
-        self.limit = limit;
-    }
-}
-
-impl<R: io::BufRead> io::Read for BufReadCounter<R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.reader.read(buf)
-    }
-}
-
-impl<R: io::BufRead> io::BufRead for BufReadCounter<R> {
-    fn fill_buf(&mut self) -> io::Result<&[u8]> {
-        if self.limit > 0 && self.trip > self.limit {
-            return Err(
-                io::Error::new(io::ErrorKind::Other, 
-                    format!("Trip is over limit ({:?}/{:?})", 
-                        &self.trip, &self.limit))
-            );
-        }
-        self.reader.fill_buf()
-    }
-
-    fn consume(&mut self, amt: usize) {
-        self.trip += u128::try_from(amt).unwrap_or_default();
-        self.reader.consume(amt)
-    }
-}
+//------------ Reader --------------------------------------------------------
 
 /// An XML reader.
 ///
@@ -87,7 +30,7 @@ impl<R: io::BufRead> Reader<R> {
         }
     }
 
-    pub fn reset_and_limit(&mut self, limit: u128) {
+    pub fn reset_and_limit(&mut self, limit: u64) {
         self.reader.get_mut().reset();
         self.reader.get_mut().limit(limit);
     }
@@ -124,7 +67,7 @@ impl<R: io::BufRead> Reader<R> {
     }
 
     pub fn start_with_limit<F, E>(
-        &mut self, op: F, limit: u128) -> Result<Content, E>
+        &mut self, op: F, limit: u64) -> Result<Content, E>
     where F: FnOnce(Element) -> Result<(), E>, E: From<Error> {
         self.reset_and_limit(limit);
         self.start(op)
@@ -242,7 +185,7 @@ impl Content {
         &self,
         reader: &mut Reader<R>,
         op: F,
-        limit: u128
+        limit: u64
     ) -> Result<Content, E>
     where R: io::BufRead, F: FnOnce(Element) -> Result<(), E>, E: From<Error> {
         reader.reset_and_limit(limit);
@@ -297,7 +240,7 @@ impl Content {
         &mut self,
         reader: &mut Reader<R>,
         op: F,
-        limit: u128
+        limit: u64
     ) -> Result<Option<Content>, E>
     where
         R: io::BufRead,
@@ -341,7 +284,7 @@ impl Content {
         &mut self,
         reader: &mut Reader<R>,
         op: F,
-        limit: u128
+        limit: u64
     ) -> Result<T, E>
     where
         R: io::BufRead,
@@ -486,7 +429,7 @@ impl<'n, 'l> Name<'n, 'l> {
     }
 }
 
-impl<'n, 'l> fmt::Debug for Name<'n, 'l> {
+impl fmt::Debug for Name<'_, '_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Name(")?;
         if let Some(ns) = self.namespace {
@@ -496,13 +439,13 @@ impl<'n, 'l> fmt::Debug for Name<'n, 'l> {
     }
 }
 
-impl<'n, 'l> From<&'l [u8]> for Name<'n, 'l> {
+impl<'l> From<&'l [u8]> for Name<'_, 'l> {
     fn from(local: &'l [u8]) -> Self {
         Name::unqualified(local)
     }
 }
 
-impl<'n, 'l> From<&'l str> for Name<'n, 'l> {
+impl<'l> From<&'l str> for Name<'_, 'l> {
     fn from(local: &'l str) -> Self {
         Name::unqualified(local.as_bytes())
     }
@@ -527,7 +470,7 @@ impl<'n, 'l> From<(&'n str, &'l str)> for Name<'n, 'l> {
 #[derive(Clone)]
 pub struct AttrValue<'a>(quick_xml::events::attributes::Attribute<'a>);
 
-impl<'a> AttrValue<'a> {
+impl AttrValue<'_> {
     pub fn ascii_into<T: str::FromStr>(self) -> Result<T, Error> {
         let s = self.0.unescape_value()?;
         if !s.is_ascii() {
@@ -550,7 +493,7 @@ impl<'a> AttrValue<'a> {
 
 pub struct Text<'a>(quick_xml::events::BytesText<'a>);
 
-impl<'a> Text<'a> {
+impl Text<'_> {
     pub fn to_utf8(&self) -> Result<Cow<str>, Error> {
         Ok(self.0.unescape()?)
     }
@@ -564,6 +507,70 @@ impl<'a> Text<'a> {
         base64::Xml.decode(
             self.to_utf8()?.as_ref()
         ).map_err(|_| Error::Malformed)
+    }
+}
+
+
+//------------ BufReadCounter ------------------------------------------------
+
+/// A simple BufRead passthrough proxy that acts as a "trip computer"
+/// 
+/// It keeps track of the amount of bytes read since it was last reset.
+/// If a limit is set, it will return an IO error when attempting to read
+/// past that limit.
+struct BufReadCounter<R: io::BufRead> {
+    reader: R,
+    trip: u64,
+    limit: u64,
+}
+
+impl<R: io::BufRead> BufReadCounter<R> {
+    /// Create a new trip computer (resetting counter) for a BufRead.
+    ///
+    /// Acts transparently to the implementation of a BufRead below.
+    pub fn new(reader: R) -> Self {
+        BufReadCounter {
+            reader,
+            trip: 0,
+            limit: 0
+        }
+    }
+
+    /// Reset the amount of bytes read back to 0
+    pub fn reset(&mut self) {
+        self.trip = 0;
+    }
+
+    /// Set a limit or pass 0 to disable the limit to the maximum bytes to 
+    /// read. This overrides the previous limit.
+    pub fn limit(&mut self, limit: u64) {
+        self.limit = limit;
+    }
+}
+
+impl<R: io::BufRead> io::Read for BufReadCounter<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.reader.read(buf)
+    }
+}
+
+impl<R: io::BufRead> io::BufRead for BufReadCounter<R> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        if self.limit > 0 && self.trip > self.limit {
+            return Err(
+                io::Error::new(io::ErrorKind::Other, 
+                    format!("Trip is over limit ({:?}/{:?})", 
+                        &self.trip, &self.limit))
+            );
+        }
+        self.reader.fill_buf()
+    }
+
+    fn consume(&mut self, amt: usize) {
+        self.trip = self.trip.saturating_add(
+            u64::try_from(amt).unwrap_or_default()
+        );
+        self.reader.consume(amt)
     }
 }
 

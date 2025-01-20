@@ -78,7 +78,7 @@ impl PublicKeyFormat {
 /// defined by [RFC 4055] and the parameters must be present and NULL.
 /// When parsing, we generously also allow it to be absent altogether.
 ///
-/// For ECDSA keys, the object identifer needs to be `ecPublicKey` defined
+/// For ECDSA keys, the object identifier needs to be `ecPublicKey` defined
 /// in [RFC 5480] with the parameter being the object identifier `secp256r1`
 /// defined in the same RFC.
 ///
@@ -113,7 +113,7 @@ impl PublicKeyFormat{
         }
     }
 
-    /// Provides an encoder for the algorihm identifier.
+    /// Provides an encoder for the algorithm identifier.
     pub fn encode(self) -> impl encode::Values {
         match self {
             PublicKeyFormat::Rsa => {
@@ -177,7 +177,7 @@ impl PublicKey {
     /// Creates an RSA Public Key based on the supplied exponent and modulus.
     /// 
     /// See:
-    /// [RFC 4055]: https://tools.ietf.org/html/rfc4055
+    /// [RFC 4055]: <https://tools.ietf.org/html/rfc4055>
     /// 
     /// An RSA Public Key uses the following DER encoded structure inside its
     /// BitString component:
@@ -421,7 +421,7 @@ impl PrimitiveContent for PublicKeyCn {
 pub struct KeyIdentifier([u8; 20]);
 
 impl KeyIdentifier {
-    /// Returns an octet slice of the key identifer’s value.
+    /// Returns an octet slice of the key identifier’s value.
     pub fn as_slice(&self) -> &[u8] {
         self.0.as_ref()
     }
@@ -456,7 +456,7 @@ impl KeyIdentifier {
         cons.take_opt_value_if(bcder::Tag::OCTET_STRING, Self::from_content)
     }
 
-    /// Parses an encoded key identifer from encoded content.
+    /// Parses an encoded key identifier from encoded content.
     pub fn from_content<S: Source>(
         content: &mut decode::Content<S>
     ) -> Result<Self, DecodeError<S::Error>> {
@@ -481,7 +481,7 @@ impl KeyIdentifier {
         }
     }
 
-    /// Skips over an encoded key indentifier.
+    /// Skips over an encoded key identifier.
     pub fn skip_opt_in<S: Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<()>, DecodeError<S::Error>> {
@@ -609,7 +609,7 @@ impl<'de> serde::Deserialize<'de> for KeyIdentifier {
     ) -> Result<Self, D::Error> {
         struct KeyIdentifierVisitor;
 
-        impl<'de> serde::de::Visitor<'de> for KeyIdentifierVisitor {
+        impl serde::de::Visitor<'_> for KeyIdentifierVisitor {
             type Value = KeyIdentifier;
 
             fn expecting(

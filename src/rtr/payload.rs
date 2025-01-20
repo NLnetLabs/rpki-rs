@@ -287,7 +287,7 @@ pub enum PayloadRef<'a> {
 
 //--- From
 
-impl<'a> From<RouteOrigin> for PayloadRef<'a> {
+impl From<RouteOrigin> for PayloadRef<'_> {
     fn from(src: RouteOrigin) -> Self {
         PayloadRef::Origin(src)
     }

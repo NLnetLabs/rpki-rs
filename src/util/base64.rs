@@ -166,7 +166,7 @@ impl<'a> SkipWhitespace<'a> {
     }
 }
 
-impl<'a> io::Read for SkipWhitespace<'a> {
+impl io::Read for SkipWhitespace<'_> {
     fn read(&mut self, mut buf: &mut[u8]) -> Result<usize, io::Error> {
         let mut res = 0;
 
@@ -205,7 +205,7 @@ pub struct XmlDecoderReader<'a>(
     >
 );
 
-impl<'a> io::Read for XmlDecoderReader<'a> {
+impl io::Read for XmlDecoderReader<'_> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         self.0.read(buf)
     }

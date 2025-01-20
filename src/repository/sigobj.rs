@@ -1270,9 +1270,9 @@ mod signer_test {
 /// [RFC 5652]: https://tools.ietf.org/html/rfc5652
 /// [RFC 6488]: https://tools.ietf.org/html/rfc6488
 /// [RFC 7935]: https://tools.ietf.org/html/rfc7935
-/// [`Cert`]: ../../cert/struct.Cert.html
-/// [`DigestAlgorithm`]: ../../crypto/keys/struct.DigestAlgorithm.html
-/// [`oid`]: ../../oid/index.html
+/// [`Cert`]: super::cert::Cert
+/// [`DigestAlgorithm`]: crate::crypto::digest::DigestAlgorithm
+/// [`oid`]: crate::oid
 pub mod spec { }
 
 

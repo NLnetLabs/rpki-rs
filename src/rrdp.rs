@@ -222,13 +222,13 @@ impl NotificationFile {
         delta_limit: Option<usize>,
     ) -> Result<Self, XmlError> {
         let mut reader = Reader::new(reader);
-        
         let mut session_id = None;
         let mut serial = None;
-        let mut outer = reader.start_with_limit(|element| {
-            if element.name() != NOTIFICATION {
-                return Err(XmlError::Malformed)
-            }
+        let mut outer = reader.start_with_limit(
+            |element| {
+                if element.name() != NOTIFICATION {
+                    return Err(XmlError::Malformed)
+                }
 
             element.attributes(|name, value| {
                 match name {
@@ -252,7 +252,6 @@ impl NotificationFile {
         }, MAX_HEADER_SIZE)?;
 
         let mut snapshot = None;
-
         let mut deltas = Ok(vec![]);
 
         while let Some(mut content) = outer.take_opt_element_with_limit(&mut reader,
@@ -576,7 +575,7 @@ impl DeltaElement {
     }
 }
 
-///--- From
+//--- From
 
 impl From<PublishElement> for DeltaElement {
     fn from(src: PublishElement) -> Self {
@@ -1441,7 +1440,7 @@ pub struct ObjectReader<'a>(
     base64::XmlDecoderReader<'a>
 );
 
-impl<'a> ObjectReader<'a> {
+impl ObjectReader<'_> {
     /// Processes an element with optional XML PCDATA as object content.
     ///
     /// An object reader is created and passed to the closure `op` for
@@ -1488,7 +1487,7 @@ impl<'a> ObjectReader<'a> {
     }
 }
 
-impl<'a> io::Read for ObjectReader<'a> {
+impl io::Read for ObjectReader<'_> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         self.0.read(buf)
     }

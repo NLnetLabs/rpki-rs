@@ -482,7 +482,7 @@ impl ChildRequest {
         writer.done()
     }
 
-    /// Writes the ChildRequest's XML representation to a new Vec<u8>.
+    /// Writes the ChildRequest's XML representation to a new `Vec<u8>`.
     pub fn to_xml_vec(&self) -> Vec<u8> {
         let mut vec = vec![];
         self.write_xml(&mut vec).unwrap(); // safe
@@ -730,7 +730,7 @@ impl ParentResponse {
         validate_idcert_at(&self.id_cert, when)
     }
 
-    /// Writes the ParentResponse's XML representation to a new Vec<u8>.
+    /// Writes the ParentResponse's XML representation to a new `Vec<u8>`.
     pub fn to_xml_vec(&self) -> Vec<u8> {
         let mut vec = vec![];
         self.write_xml(&mut vec).unwrap(); // safe
@@ -756,12 +756,12 @@ impl fmt::Display for ParentResponse {
 
 //------------ PublisherRequest ----------------------------------------------
 
-/// Type representing a <publisher_request/>
+/// Type representing a `<publisher_request/>`
 ///
 /// This is the XML message with identity information that a CA sends to a
 /// Publication Server.
 ///
-/// For more info, see: https://tools.ietf.org/html/rfc8183#section-5.2.3
+/// For more info, see: <https://tools.ietf.org/html/rfc8183#section-5.2.3>
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherRequest {
     /// The self-signed IdCert containing the publisher's public key.
@@ -912,7 +912,7 @@ impl PublisherRequest {
         writer.done()
     }
 
-    /// Writes the PublisherRequest's XML representation to a new Vec<u8>.
+    /// Writes the PublisherRequest's XML representation to a new `Vec<u8>`.
     pub fn to_xml_vec(&self) -> Vec<u8> {
         let mut vec = vec![];
         self.write_xml(&mut vec).unwrap(); // safe
@@ -945,7 +945,7 @@ impl fmt::Display for PublisherRequest {
 /// This is the response sent to a CA by the publication server. It contains
 /// the details needed by the CA to send publication messages to the server.
 ///
-/// See https://tools.ietf.org/html/rfc8183#section-5.2.4
+/// See <https://tools.ietf.org/html/rfc8183#section-5.2.4>
 #[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
 pub struct RepositoryResponse {
     /// The Publication Server Identity Certificate
@@ -1155,7 +1155,7 @@ impl RepositoryResponse {
         validate_idcert_at(&self.id_cert, when)
     }
 
-    /// Writes the RepositoryResponse's XML representation to a new Vec<u8>.
+    /// Writes the RepositoryResponse's XML representation to a new `Vec<u8>`.
     pub fn to_xml_vec(&self) -> Vec<u8> {
         let mut vec = vec![];
         self.write_xml(&mut vec).unwrap(); // safe

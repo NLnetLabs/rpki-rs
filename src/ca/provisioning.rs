@@ -270,7 +270,7 @@ impl Message {
 /// # Decoding from XML
 ///
 impl Message {
-    /// Parses an RFC 6492 <message />
+    /// Parses an RFC 6492 `<message />`
     pub fn decode<R: io::BufRead>(reader: R) -> Result<Self, Error> {
         let mut reader = xml::decode::Reader::new(reader);
 
@@ -375,7 +375,7 @@ impl Payload {
 /// # Encoding to XML
 ///
 impl Payload {
-    /// Value for the type attribute in the <message /> element.
+    /// Value for the type attribute in the `<message />` element.
     pub fn payload_type(&self) -> PayloadType {
         match self {
             Payload::List => PayloadType::List,
@@ -723,7 +723,7 @@ impl IssuanceResponse {
 /// Note that the IssuanceRequest will be rejected by the parent, if the limit
 /// exceeds the child's entitlements.
 ///
-/// See: https://tools.ietf.org/html/rfc6492#section-3.4.1
+/// See: <https://tools.ietf.org/html/rfc6492#section-3.4.1>
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RequestResourceLimit {
     #[serde(
@@ -998,7 +998,7 @@ impl From<&RevocationRequest> for RevocationResponse {
 
 //------------ KeyElement ----------------------------------------------------
 
-/// This type represents a <key /> element as used in both the Certificate
+/// This type represents a `<key />` element as used in both the Certificate
 /// Revocation Request and Response, sections 3.5.1 and 3.5.2 respectively,
 /// of RFC6492.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -1096,7 +1096,7 @@ impl fmt::Display for KeyElement {
 /// This structure is what is called the "Resource Class List Response"
 /// in section 3.3.2 of RFC6492.
 ///
-/// This response can have 0 or more <class /> elements containing the
+/// This response can have 0 or more `<class />` elements containing the
 /// entitlements for 0 or more corresponding resource classes.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ResourceClassListResponse {
