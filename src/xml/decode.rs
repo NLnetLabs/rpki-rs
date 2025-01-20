@@ -30,7 +30,7 @@ impl<R: io::BufRead> Reader<R> {
         }
     }
 
-    pub fn reset_and_limit(&mut self, limit: u128) {
+    pub fn reset_and_limit(&mut self, limit: u64) {
         self.reader.get_mut().reset();
         self.reader.get_mut().limit(limit);
     }
@@ -67,7 +67,7 @@ impl<R: io::BufRead> Reader<R> {
     }
 
     pub fn start_with_limit<F, E>(
-        &mut self, op: F, limit: u128) -> Result<Content, E>
+        &mut self, op: F, limit: u64) -> Result<Content, E>
     where F: FnOnce(Element) -> Result<(), E>, E: From<Error> {
         self.reset_and_limit(limit);
         self.start(op)
@@ -185,7 +185,7 @@ impl Content {
         &self,
         reader: &mut Reader<R>,
         op: F,
-        limit: u128
+        limit: u64
     ) -> Result<Content, E>
     where R: io::BufRead, F: FnOnce(Element) -> Result<(), E>, E: From<Error> {
         reader.reset_and_limit(limit);
@@ -240,7 +240,7 @@ impl Content {
         &mut self,
         reader: &mut Reader<R>,
         op: F,
-        limit: u128
+        limit: u64
     ) -> Result<Option<Content>, E>
     where
         R: io::BufRead,
@@ -284,7 +284,7 @@ impl Content {
         &mut self,
         reader: &mut Reader<R>,
         op: F,
-        limit: u128
+        limit: u64
     ) -> Result<T, E>
     where
         R: io::BufRead,
@@ -520,8 +520,8 @@ impl Text<'_> {
 /// past that limit.
 struct BufReadCounter<R: io::BufRead> {
     reader: R,
-    trip: u128,
-    limit: u128
+    trip: u64,
+    limit: u64,
 }
 
 impl<R: io::BufRead> BufReadCounter<R> {
@@ -543,7 +543,7 @@ impl<R: io::BufRead> BufReadCounter<R> {
 
     /// Set a limit or pass 0 to disable the limit to the maximum bytes to 
     /// read. This overrides the previous limit.
-    pub fn limit(&mut self, limit: u128) {
+    pub fn limit(&mut self, limit: u64) {
         self.limit = limit;
     }
 }
@@ -567,7 +567,9 @@ impl<R: io::BufRead> io::BufRead for BufReadCounter<R> {
     }
 
     fn consume(&mut self, amt: usize) {
-        self.trip += u128::try_from(amt).unwrap_or_default();
+        self.trip = self.trip.saturating_add(
+            u64::try_from(amt).unwrap_or_default()
+        );
         self.reader.consume(amt)
     }
 }
