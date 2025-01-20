@@ -571,7 +571,7 @@ impl DeltaElement {
     }
 }
 
-///--- From
+//--- From
 
 impl From<PublishElement> for DeltaElement {
     fn from(src: PublishElement) -> Self {
@@ -1436,7 +1436,7 @@ pub struct ObjectReader<'a>(
     base64::XmlDecoderReader<'a>
 );
 
-impl<'a> ObjectReader<'a> {
+impl ObjectReader<'_> {
     /// Processes an element with optional XML PCDATA as object content.
     ///
     /// An object reader is created and passed to the closure `op` for
@@ -1483,7 +1483,7 @@ impl<'a> ObjectReader<'a> {
     }
 }
 
-impl<'a> io::Read for ObjectReader<'a> {
+impl io::Read for ObjectReader<'_> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         self.0.read(buf)
     }

@@ -787,11 +787,6 @@ pub struct Aspa {
 #[repr(packed)]
 struct AspaFixed {
     header: Header,
-    flags: u8,
-    afi_flags: u8,
-
-    #[allow(dead_code)]
-    provider_count: u16,
     customer: u32,
 }
 
@@ -818,10 +813,11 @@ impl Aspa {
         ).expect("ASPA RTR PDU size overflow");
         Aspa {
             fixed: AspaFixed {
-                header: Header::new(version, Self::PDU, 0, len),
-                flags,
-                afi_flags: 0,
-                provider_count: providers.asn_count().to_be(),
+                header: Header::new(
+                    version, Self::PDU,
+                    (flags as u16) << 8,
+                    len
+                ),
                 customer: customer.into_u32().to_be(),
             },
             providers
@@ -848,7 +844,7 @@ impl Aspa {
     /// The only flag currently used is the least significant bit that is
     /// 1 for an announcement and 0 for a withdrawal.
     pub fn flags(&self) -> u8 {
-        self.fixed.flags
+        (self.fixed.header.session >> 8) as u8
     }
 
     /// Returns the customer ASN.
@@ -899,7 +895,15 @@ impl Aspa {
         let provider_len = match
             header.pdu_len()?.checked_sub(mem::size_of::<AspaFixed>())
         {
-            Some(len) => len,
+            Some(len) => {
+                if len % 4 != 0 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "invalid length for ASPA PDU"
+                    ))
+                }
+                len
+            }
             None => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -909,16 +913,6 @@ impl Aspa {
         };
         let mut fixed = AspaFixed { header, .. Default::default() };
         sock.read_exact(&mut fixed.as_mut()[Header::LEN..]).await?;
-        if provider_len
-            != usize::from(
-                u16::from_be(fixed.provider_count)
-            ) * mem::size_of::<u32>()
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "invalid length for ASPA PDU"
-            ))
-        }
         let providers = ProviderAsns::read(sock, provider_len).await?;
         Ok(Aspa { fixed, providers })
     }
@@ -1831,9 +1825,9 @@ mod test {
                 ]).unwrap(),
             ),
             [
-                2, 11, 0, 0,    0, 0, 0, 24,
-                1, 0, 0, 2,     0, 1, 0, 15,
-                0, 1, 0, 13,    0, 1, 0, 14,
+                2, 11, 1, 0,    0, 0, 0, 20,
+                0, 1, 0, 15,    0, 1, 0, 13,
+                0, 1, 0, 14,
             ]
         );
     }

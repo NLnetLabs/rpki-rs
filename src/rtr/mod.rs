@@ -21,8 +21,8 @@
 //! You can read more about RPKI in [RFC 6480]. RTR is currently specified in
 //! [RFC 8210].
 //!
-//! [`Client`]: client/struct.Client.html
-//! [`Server`]: server/struct.Server.html
+//! [`Client`]: client::Client
+//! [`Server`]: server::Server
 //! [Tokio]: https://crates.io/crates/tokio
 //! [RFC 6480]: https://tools.ietf.org/html/rfc6480
 //! [RFC 8210]: https://tools.ietf.org/html/rfc8210

@@ -660,7 +660,7 @@ impl<'de> Deserialize<'de> for Base64KeyInfo {
     ) -> Result<Self, D::Error> {
         struct Visitor;
 
-        impl<'de> serde::de::Visitor<'de> for Visitor {
+        impl serde::de::Visitor<'_> for Visitor {
             type Value = Base64KeyInfo;
 
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -736,7 +736,7 @@ mod serde_key_identifier {
     ) -> Result<KeyIdentifier, D::Error> {
         struct Visitor;
 
-        impl<'de> serde::de::Visitor<'de> for Visitor {
+        impl serde::de::Visitor<'_> for Visitor {
             type Value = KeyIdentifier;
 
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {

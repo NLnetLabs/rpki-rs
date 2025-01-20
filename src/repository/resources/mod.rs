@@ -9,8 +9,6 @@
 //! Delegation Extension and [`AsResources`] implements the Autonomous System
 //! Identifier Delegation Extension.
 //!
-//! [`AsResources`]: struct.AsResources.html
-//! [`IpResources`]: struct.IpResources.html
 //! [RFC 3779]: https://tools.ietf.org/html/rfc3779
 //! [RFC 6487]: https://tools.ietf.org/html/rfc6487
 
@@ -20,9 +18,9 @@ pub use self::asres::{
 };
 pub use self::choice::ResourcesChoice;
 pub use self::ipres::{
-    Addr, AddressFamily, InheritedIpResources, IpBlock, IpBlocks, Ipv4Block,
-    Ipv4Blocks, Ipv6Block, Ipv6Blocks, IpBlocksBuilder, IpBlocksForFamily,
-    IpResources, IpResourcesBuilder, OverclaimedIpResources,
+    Addr, AddressFamily, AddressRange, InheritedIpResources, IpBlock, IpBlocks,
+    Ipv4Block, Ipv4Blocks, Ipv6Block, Ipv6Blocks, IpBlocksBuilder,
+    IpBlocksForFamily, IpResources, IpResourcesBuilder, OverclaimedIpResources,
     OverclaimedIpv4Resources, OverclaimedIpv6Resources, Prefix
 };
 pub use self::set::{
