@@ -40,8 +40,8 @@ use crate::xml::decode::{Content, Error as XmlError, Reader, Name};
 
 //------------ Maximum XML sizes ---------------------------------------------
 
-const MAX_FILE_SIZE: u128 = 100_000_000;
-const MAX_HEADER_SIZE: u128 = 1_000_000;
+const MAX_FILE_SIZE: u64 = 100_000_000;
+const MAX_HEADER_SIZE: u64 = 1_000_000;
 
 //------------ NotificationFile ----------------------------------------------
 
