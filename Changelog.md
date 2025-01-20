@@ -16,9 +16,14 @@ New
   a set of prefixes. ([#306])
 * Updated the ASPA RTR PDU to conform with version -14 of
   draft-ietf-sidrops-8210bis. ([#309])
-* Exposed `ca::idcert::TbsIdCert::validity`. ([#310]);
+* Enable ASPA version 2 in the RTR server. ([#318])
 * The ASPA `ProviderAsSet` now keeps track of its length and exposes it
   via the new `len` method. ([#315])
+* The ASPA Provider AS Set is now length is limited to 16380 entries when
+  parsing from ASPA objects and creating RTR PDUs. ([#316])
+* Exposed `ca::idcert::TbsIdCert::validity`. ([#310]);
+* Protect against maliciously large XML input to the RRDP parser. This
+  will allow re-enabling GZIP support in RRDP clients. ([#319])
 
 Bug fixes
 
@@ -39,6 +44,9 @@ Other changes
 [#309]: https://github.com/NLnetLabs/rpki-rs/pull/309
 [#310]: https://github.com/NLnetLabs/rpki-rs/pull/310
 [#315]: https://github.com/NLnetLabs/rpki-rs/pull/315
+[#316]: https://github.com/NLnetLabs/rpki-rs/pull/316
+[#318]: https://github.com/NLnetLabs/rpki-rs/pull/318
+[#319]: https://github.com/NLnetLabs/rpki-rs/pull/319
 
 
 ## 0.18.4
