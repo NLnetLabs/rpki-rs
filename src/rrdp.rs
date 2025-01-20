@@ -38,6 +38,11 @@ use crate::xml::decode::{Content, Error as XmlError, Reader, Name};
 };
 
 
+//------------ Maximum XML sizes ---------------------------------------------
+
+const MAX_FILE_SIZE: u128 = 100_000_000;
+const MAX_HEADER_SIZE: u128 = 1_000_000;
+
 //------------ NotificationFile ----------------------------------------------
 
 /// The RRDP Update Notification File.
@@ -244,7 +249,7 @@ impl NotificationFile {
                     _ => Err(XmlError::Malformed)
                 }
         })
-        }, 100_000_000)?;
+        }, MAX_HEADER_SIZE)?;
 
         let mut snapshot = None;
 
@@ -318,7 +323,7 @@ impl NotificationFile {
                 }
                 _ => Err(XmlError::Malformed)
             }
-        }, 100_000_000)? {
+        }, MAX_HEADER_SIZE)? {
             content.take_end(&mut reader)?;
         }
 
@@ -802,7 +807,7 @@ pub trait ProcessSnapshot {
                     Err(XmlError::Malformed)
                 }
             })
-        }, 100_000_000).map_err(Into::into)?;
+        }, MAX_HEADER_SIZE).map_err(Into::into)?;
 
         match (session_id, serial) {
             (Some(session_id), Some(serial)) => {
@@ -831,7 +836,7 @@ pub trait ProcessSnapshot {
                         Err(ProcessError::malformed())
                     }
                 })
-            },100_000_000)?;
+            },MAX_FILE_SIZE)?;
             let mut inner = match inner {
                 Some(inner) => inner,
                 None => break
@@ -1086,7 +1091,7 @@ pub trait ProcessDelta {
         
         let mut session_id = None;
         let mut serial = None;
-        let mut outer = reader.start(|element| {
+        let mut outer = reader.start_with_limit(|element| {
             if element.name() != DELTA {
                 return Err(ProcessError::malformed())
             }
@@ -1107,7 +1112,7 @@ pub trait ProcessDelta {
                 }
                 _ => Err(ProcessError::malformed())
             })
-        })?;
+        }, MAX_HEADER_SIZE)?;
 
         match (session_id, serial) {
             (Some(session_id), Some(serial)) => {
@@ -1120,7 +1125,7 @@ pub trait ProcessDelta {
             let mut action = None;
             let mut uri = None;
             let mut hash = None;
-            let inner = outer.take_opt_element(&mut reader, |element| {
+            let inner = outer.take_opt_element_with_limit(&mut reader, |element| {
                 match element.name() {
                     PUBLISH => action = Some(Action::Publish),
                     WITHDRAW => action = Some(Action::Withdraw),
@@ -1137,7 +1142,7 @@ pub trait ProcessDelta {
                     }
                     _ => Err(ProcessError::malformed())
                 })
-            })?;
+            }, MAX_FILE_SIZE)?;
             let mut inner = match inner {
                 Some(inner) => inner,
                 None => break
