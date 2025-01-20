@@ -12,7 +12,10 @@ mod tests {
     use tokio::net::TcpListener;
     use rpki::rrdp::NotificationFile;
 
-    async fn serve(test_bytes: &'static[u8],_: Request<hyper::body::Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {
+    async fn serve(
+        test_bytes: &'static[u8],
+        _: Request<hyper::body::Incoming>
+    ) -> Result<Response<Full<Bytes>>, Infallible> {
         let body = Full::new(Bytes::from_static(test_bytes));
 
         Ok(Response::builder()
@@ -65,7 +68,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_snapshot_uri() {
-        let bytes = include_bytes!("../test-data/rrdp/bomb-snapshot-uri.xml.gz");
+        let bytes = include_bytes!(
+            "../test-data/rrdp/bomb-snapshot-uri.xml.gz"
+        );
         assert!(run(bytes).await.is_ok());
     }
 

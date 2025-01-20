@@ -8,64 +8,7 @@ use quick_xml::name::Namespace;
 use crate::util::base64;
 
 
-/// A simple BufRead passthrough proxy that acts as a "trip computer"
-/// 
-/// It keeps track of the amount of bytes read since it was last reset.
-/// If a limit is set, it will return an IO error when attempting to read
-/// past that limit.
-struct BufReadCounter<R: io::BufRead> {
-    reader: R,
-    trip: u128,
-    limit: u128
-}
-
-impl<R: io::BufRead> BufReadCounter<R> {
-
-    /// Create a new trip computer (resetting counter) for a BufRead
-    /// Acts transparently to the implementation of a BufRead below
-    pub fn new(reader: R) -> Self {
-        BufReadCounter {
-            reader,
-            trip: 0,
-            limit: 0
-        }
-    }
-
-    /// Reset the amount of bytes read back to 0
-    pub fn reset(&mut self) {
-        self.trip = 0;
-    }
-
-    /// Set a limit or pass 0 to disable the limit to the maximum bytes to 
-    /// read. This overrides the previous limit.
-    pub fn limit(&mut self, limit: u128) {
-        self.limit = limit;
-    }
-}
-
-impl<R: io::BufRead> io::Read for BufReadCounter<R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.reader.read(buf)
-    }
-}
-
-impl<R: io::BufRead> io::BufRead for BufReadCounter<R> {
-    fn fill_buf(&mut self) -> io::Result<&[u8]> {
-        if self.limit > 0 && self.trip > self.limit {
-            return Err(
-                io::Error::new(io::ErrorKind::Other, 
-                    format!("Trip is over limit ({:?}/{:?})", 
-                        &self.trip, &self.limit))
-            );
-        }
-        self.reader.fill_buf()
-    }
-
-    fn consume(&mut self, amt: usize) {
-        self.trip += u128::try_from(amt).unwrap_or_default();
-        self.reader.consume(amt)
-    }
-}
+//------------ Reader --------------------------------------------------------
 
 /// An XML reader.
 ///
@@ -564,6 +507,68 @@ impl Text<'_> {
         base64::Xml.decode(
             self.to_utf8()?.as_ref()
         ).map_err(|_| Error::Malformed)
+    }
+}
+
+
+//------------ BufReadCounter ------------------------------------------------
+
+/// A simple BufRead passthrough proxy that acts as a "trip computer"
+/// 
+/// It keeps track of the amount of bytes read since it was last reset.
+/// If a limit is set, it will return an IO error when attempting to read
+/// past that limit.
+struct BufReadCounter<R: io::BufRead> {
+    reader: R,
+    trip: u128,
+    limit: u128
+}
+
+impl<R: io::BufRead> BufReadCounter<R> {
+    /// Create a new trip computer (resetting counter) for a BufRead.
+    ///
+    /// Acts transparently to the implementation of a BufRead below.
+    pub fn new(reader: R) -> Self {
+        BufReadCounter {
+            reader,
+            trip: 0,
+            limit: 0
+        }
+    }
+
+    /// Reset the amount of bytes read back to 0
+    pub fn reset(&mut self) {
+        self.trip = 0;
+    }
+
+    /// Set a limit or pass 0 to disable the limit to the maximum bytes to 
+    /// read. This overrides the previous limit.
+    pub fn limit(&mut self, limit: u128) {
+        self.limit = limit;
+    }
+}
+
+impl<R: io::BufRead> io::Read for BufReadCounter<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.reader.read(buf)
+    }
+}
+
+impl<R: io::BufRead> io::BufRead for BufReadCounter<R> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        if self.limit > 0 && self.trip > self.limit {
+            return Err(
+                io::Error::new(io::ErrorKind::Other, 
+                    format!("Trip is over limit ({:?}/{:?})", 
+                        &self.trip, &self.limit))
+            );
+        }
+        self.reader.fill_buf()
+    }
+
+    fn consume(&mut self, amt: usize) {
+        self.trip += u128::try_from(amt).unwrap_or_default();
+        self.reader.consume(amt)
     }
 }
 
