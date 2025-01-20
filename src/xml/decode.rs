@@ -13,18 +13,18 @@ use crate::util::base64;
 /// It keeps track of the amount of bytes read since it was last reset.
 /// If a limit is set, it will return an IO error when attempting to read
 /// past that limit.
-struct BufReadTripComputer<R: io::BufRead> {
+struct BufReadCounter<R: io::BufRead> {
     reader: R,
     trip: u128,
     limit: u128
 }
 
-impl<R: io::BufRead> BufReadTripComputer<R> {
+impl<R: io::BufRead> BufReadCounter<R> {
 
     /// Create a new trip computer (resetting counter) for a BufRead
     /// Acts transparently to the implementation of a BufRead below
     pub fn new(reader: R) -> Self {
-        BufReadTripComputer {
+        BufReadCounter {
             reader,
             trip: 0,
             limit: 0
@@ -43,13 +43,13 @@ impl<R: io::BufRead> BufReadTripComputer<R> {
     }
 }
 
-impl<R: io::BufRead> io::Read for BufReadTripComputer<R> {
+impl<R: io::BufRead> io::Read for BufReadCounter<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.reader.read(buf)
     }
 }
 
-impl<R: io::BufRead> io::BufRead for BufReadTripComputer<R> {
+impl<R: io::BufRead> io::BufRead for BufReadCounter<R> {
     fn fill_buf(&mut self) -> io::Result<&[u8]> {
         if self.limit > 0 && self.trip > self.limit {
             return Err(
@@ -71,14 +71,14 @@ impl<R: io::BufRead> io::BufRead for BufReadTripComputer<R> {
 ///
 /// This struct holds all state necessary for parsing an XML document.
 pub struct Reader<R: io::BufRead> {
-    reader: quick_xml::NsReader<BufReadTripComputer<R>>,
+    reader: quick_xml::NsReader<BufReadCounter<R>>,
     buf: Vec<u8>,
 }
 
 impl<R: io::BufRead> Reader<R> {
     /// Creates a new reader from an underlying reader.
     pub fn new(reader: R) -> Self {
-        let reader = BufReadTripComputer::new(reader);
+        let reader = BufReadCounter::new(reader);
         let mut reader = quick_xml::NsReader::from_reader(reader);
         reader.trim_text(true);
         Reader {

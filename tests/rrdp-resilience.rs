@@ -1,3 +1,4 @@
+#![cfg(feature = "repository")]
 #[cfg(test)]
 mod tests {
     use std::convert::Infallible;
