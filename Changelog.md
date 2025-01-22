@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased next version
+## 0.18.5
 
-Breaking changes
+Released 2025-01-22.
 
 New
 
@@ -19,8 +19,8 @@ New
 * Enable ASPA version 2 in the RTR server. ([#318])
 * The ASPA `ProviderAsSet` now keeps track of its length and exposes it
   via the new `len` method. ([#315])
-* The ASPA Provider AS Set is now length is limited to 16380 entries when
-  parsing from ASPA objects and creating RTR PDUs. ([#316])
+* The ASPA Provider AS Set is now limited to 16380 entries when parsing from
+  ASPA objects and creating RTR PDUs. ([#316])
 * Exposed `ca::idcert::TbsIdCert::validity`. ([#310]);
 * Protect against maliciously large XML input to the RRDP parser. This
   will allow re-enabling GZIP support in RRDP clients. ([#319])
@@ -34,14 +34,13 @@ Bug fixes
 
 Other changes
 
-* The minimum supported Rust version is now 1.70. ([#303])
+* The minimum supported Rust version is now 1.73. ([#319])
 
 [#297]: https://github.com/NLnetLabs/rpki-rs/pull/297
 [#298]: https://github.com/NLnetLabs/rpki-rs/pull/298
 [#299]: https://github.com/NLnetLabs/rpki-rs/pull/299
 [#300]: https://github.com/NLnetLabs/rpki-rs/pull/300
 [#302]: https://github.com/NLnetLabs/rpki-rs/pull/302
-[#303]: https://github.com/NLnetLabs/rpki-rs/pull/303
 [#304]: https://github.com/NLnetLabs/rpki-rs/pull/304
 [#306]: https://github.com/NLnetLabs/rpki-rs/pull/306
 [#309]: https://github.com/NLnetLabs/rpki-rs/pull/309
