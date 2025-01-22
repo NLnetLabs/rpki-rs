@@ -420,10 +420,7 @@ impl FileAndHash<Bytes, Bytes> {
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<()>, DecodeError<S::Error>> {
         cons.take_opt_sequence(|cons| {
-            cons.take_value_if(
-                Tag::IA5_STRING,
-                OctetString::from_content
-            )?;
+            let _ = Ia5String::take_from(cons)?;
             BitString::skip_in(cons)?;
             Ok(())
         })
@@ -555,6 +552,20 @@ mod test {
         serde_json::from_slice::<Manifest>(include_bytes!(
             "../../test-data/repository/serde-compat/manifest.json"
         )).unwrap();
+    }
+
+    #[test]
+    fn charset_violation() {
+        assert!(
+            Manifest::decode(
+                // This manifest is identical to ta.mft but has a non-ASCII
+                // character in the manifest filenames.
+                include_bytes!(
+                    "../../test-data/repository/ta.mft.bad-filename"
+                ).as_ref(),
+                false,
+            ).is_err()
+        );
     }
 }
 
