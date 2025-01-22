@@ -28,6 +28,9 @@ New
 Bug fixes
 
 * Do not allow backslashes in idexchange handles. ([#304])
+* Check the content of file names in a manifest during parsing. This fixes a
+  crash when later code assumes that the file names only contain ASCII
+  characters and otherwise panics. ([#320])
 
 Other changes
 
@@ -47,6 +50,7 @@ Other changes
 [#316]: https://github.com/NLnetLabs/rpki-rs/pull/316
 [#318]: https://github.com/NLnetLabs/rpki-rs/pull/318
 [#319]: https://github.com/NLnetLabs/rpki-rs/pull/319
+[#320]: https://github.com/NLnetLabs/rpki-rs/pull/320
 
 
 ## 0.18.4
