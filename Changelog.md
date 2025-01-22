@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased next version
+## 0.18.5
 
-Breaking changes
+Released 2025-01-22.
 
 New
 
