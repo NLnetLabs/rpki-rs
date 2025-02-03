@@ -1,0 +1,28 @@
+[package]
+name = "rpki-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.rpki]
+path = ".."
+features = ["repository"]
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "decode_objects"
+path = "fuzz_targets/decode_objects.rs"
+test = false
+doc = false
