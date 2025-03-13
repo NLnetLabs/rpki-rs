@@ -16,7 +16,7 @@ use crate::crypto::keys::KeyIdentifier;
 use crate::resources::addr::{MaxLenPrefix, Prefix};
 use crate::resources::asn::Asn;
 use crate::rtr::payload as rtr;
-use crate::rtr::pdu::{RouterKeyInfo, KeyInfoError};
+use crate::rtr::pdu::{KeyInfoError, ProviderAsns, RouterKeyInfo};
 use crate::util::base64;
 
 
@@ -45,6 +45,15 @@ impl SlurmFile {
         SlurmFile {
             version: Default::default(),
             filters, assertions,
+        }
+    }
+    pub fn new_with_version(
+        version: SlurmVersion,
+        filters: ValidationOutputFilters,
+        assertions: LocallyAddedAssertions,
+    ) -> Self {
+        SlurmFile {
+            version, filters, assertions,
         }
     }
 
@@ -113,11 +122,12 @@ impl TryFrom<u8> for SlurmVersion {
     type Error = &'static str;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        if value == 1 {
+        if value == 1 || value == 2 {
+            // TODO: Do this check properly
             Ok(Self)
         }
         else {
-            Err("slurmVersion must be 1")
+            Err("slurmVersion must be 1 or 2")
         }
     }
 }
@@ -126,7 +136,7 @@ impl Serialize for SlurmVersion {
     fn serialize<S: serde::Serializer>(
         &self, serializer: S,
     ) -> Result<S::Ok, S::Error> {
-        serializer.serialize_u8(1)
+        serializer.serialize_u8(2)
     }
 }
 
@@ -144,6 +154,11 @@ pub struct ValidationOutputFilters {
     /// The list of descriptions of BGPsec router keys to remove.
     #[serde(rename = "bgpsecFilters")]
     pub bgpsec: Vec<BgpsecFilter>,
+
+    /// The list of descriptions of ASPA assertions to remove.
+    #[serde(rename = "aspaFilters")]
+    #[serde(default)]
+    pub aspa: Vec<AspaFilter>,
 }
 
 impl ValidationOutputFilters {
@@ -151,10 +166,12 @@ impl ValidationOutputFilters {
     pub fn new(
         prefix: impl Into<Vec<PrefixFilter>>,
         bgpsec: impl Into<Vec<BgpsecFilter>>,
+        aspa:   impl Into<Vec<AspaFilter>>,
     ) -> Self {
         ValidationOutputFilters {
             prefix: prefix.into(),
             bgpsec: bgpsec.into(),
+            aspa:   aspa.into(),
         }
     }
 
@@ -287,6 +304,55 @@ impl BgpsecFilter {
 }
 
 
+//------------ AspaFilter ----------------------------------------------------
+
+// serde doesn’t allow enums to be flattened. So we will have to allow empty
+// filters unless we want to do our own Deserialize impl. Which we don’t.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AspaFilter {
+    /// The AS number of the autonomous system to filter assertions for.
+    #[serde(with = "self::serde_opt_asn")]
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "customerAsid")]
+    pub customer_asid: Option<Asn>,
+
+    /// An optional cpmment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+}
+
+impl AspaFilter {
+    /// Creates a new aspa filter.
+    pub fn new(
+        customer_asid: Option<Asn>, comment: Option<String>
+    ) -> Self {
+        AspaFilter { customer_asid, comment }
+    }
+
+    /// Returns whether a route origin should be dropped.
+    pub fn drop_aspa(&self, aspa: &rtr::Aspa) -> bool {
+        let drop_vap = self.customer_asid.map(|self_asid| {
+            self_asid == aspa.customer
+        });
+
+        match drop_vap {
+            Some(vap) => vap,
+            None => false
+        }
+    }
+
+    /// Returns whether the given payload item should be dropped.
+    pub fn drop_payload(&self, payload: &rtr::Payload) -> bool {
+        match payload {
+            rtr::Payload::Aspa(aspa) => self.drop_aspa(aspa),
+            _ => false
+        }
+    }
+}
+
+
 //------------ LocallyAddedAssertions ----------------------------------------
 
 /// The set of elements added to the data set.
@@ -300,6 +366,11 @@ pub struct LocallyAddedAssertions {
     /// The list of BGPsec router keys added.
     #[serde(rename = "bgpsecAssertions")]
     pub bgpsec: Vec<BgpsecAssertion>,
+
+    /// The list of autonomous system provider authorizations added.
+    #[serde(rename = "aspaAssertions")]
+    #[serde(default)]
+    pub aspa: Vec<AspaAssertion>,
 }
 
 impl LocallyAddedAssertions {
@@ -307,17 +378,21 @@ impl LocallyAddedAssertions {
     pub fn new(
         prefix: impl Into<Vec<PrefixAssertion>>,
         bgpsec: impl Into<Vec<BgpsecAssertion>>,
+        aspa:   impl Into<Vec<AspaAssertion>>,
     ) -> Self {
         LocallyAddedAssertions {
             prefix: prefix.into(),
-            bgpsec: bgpsec.into()
+            bgpsec: bgpsec.into(),
+            aspa:   aspa.into(),
         }
     }
 
     /// Returns an iterator over RTR payload items to be added.
     pub fn iter_payload(&self) -> impl Iterator<Item = rtr::Payload> + '_ {
         self.prefix.iter().map(|item| item.to_payload()).chain(
-            self.bgpsec.iter().map(|item| item.to_payload())
+            self.bgpsec.iter().map(|item| item.to_payload()).chain(
+                self.aspa.iter().map(|item| item.to_payload())
+            )
         )
     }
 }
@@ -356,7 +431,7 @@ impl PrefixAssertion {
 
 //--- Deserialize and Serialize
 //
-// We neeed to enforce that max_prefix_len is greater or equal to
+// We need to enforce that max_prefix_len is greater or equal to
 // prefix.len(), so we need to roll our own implementation.
 
 impl<'de> Deserialize<'de> for PrefixAssertion {
@@ -533,6 +608,159 @@ impl BgpsecAssertion {
         rtr::Payload::router_key(
             self.ski, self.asn, self.router_public_key.0.clone()
         )
+    }
+}
+
+
+//------------ AspaAssertion -------------------------------------------------
+
+/// A route origin assertion.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct AspaAssertion {
+    /// The prefix and optional max-length this assertion is for.
+    pub customer_asid: Asn,
+
+    /// The AS number of autonomous system authorized to announce the prefix.
+    pub provider_set: ProviderAsns,
+
+    /// An optional comment.
+    pub comment: Option<String>,
+}
+
+impl AspaAssertion {
+    /// Creates a new prefix assertion.
+    pub fn new(
+        customer_asid: Asn,
+        provider_set: ProviderAsns,
+        comment: Option<String>,
+    ) -> Self {
+        AspaAssertion { customer_asid, provider_set, comment }
+    }
+
+    fn to_payload(&self) -> rtr::Payload {
+        rtr::Payload::aspa(self.customer_asid, self.provider_set.clone())
+    }
+}
+
+//--- Deserialize and Serialize
+//
+// We need to enforce that max_prefix_len is greater or equal to
+// prefix.len(), so we need to roll our own implementation.
+
+impl<'de> Deserialize<'de> for AspaAssertion {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
+        use serde::de;
+
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        enum Fields { CustomerAsid, ProviderSet, Comment }
+
+        struct StructVisitor;
+
+        impl<'de> de::Visitor<'de> for StructVisitor {
+            type Value = AspaAssertion;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("AspaAssertion object")
+            }
+
+            fn visit_map<V: de::MapAccess<'de>>(
+                self, mut map: V
+            ) -> Result<Self::Value, V::Error> {
+                let mut customer_as_id: Option<u32> = None;
+                let mut provider_set = None;
+                let mut comment = None;
+
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Fields::CustomerAsid => {
+                            if customer_as_id.is_some() {
+                                return Err(
+                                    de::Error::duplicate_field("customerAsid")
+                                );
+                            }
+                            customer_as_id = Some(map.next_value()?);
+                        }
+                        Fields::ProviderSet => {
+                            if provider_set.is_some() {
+                                return Err(
+                                    de::Error::duplicate_field("providerSet")
+                                );
+                            }
+                            let v:Vec<u32>  = map.next_value::<Vec<u32>>()?;
+                            if let Ok(providers) = ProviderAsns::try_from_iter
+                                (v.iter().map(|i| Asn::from_u32(*i))) {
+                                provider_set = Some(providers);
+                            } else {
+                                return Err(
+                                    de::Error::custom("Invalid field")
+                                );
+                            }
+                        }
+                        Fields::Comment => {
+                            if comment.is_some() {
+                                return Err(
+                                    de::Error::duplicate_field("comment")
+                                );
+                            }
+                            comment = Some(map.next_value()?);
+                        }
+                    }
+                }
+
+                let customer_as_id: u32 = customer_as_id.ok_or_else(|| {
+                    de::Error::missing_field("customerAsid")
+                })?;
+                let provider_set = provider_set.ok_or_else(|| {
+                    de::Error::missing_field("providerSet")
+                })?;
+
+                Ok(AspaAssertion { 
+                    customer_asid: customer_as_id.into(),
+                    provider_set,
+                    comment 
+                })
+            }
+        }
+
+        const FIELDS: &[&str] = &[
+            "customerAsid", "providerSet", "comment"
+        ];
+        deserializer.deserialize_struct(
+            "AspaAssertion", FIELDS, StructVisitor
+        )
+    }
+}
+
+impl Serialize for AspaAssertion {
+    fn serialize<S: serde::Serializer>(
+        &self, serializer: S
+    ) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+
+        let field_num = match
+            self.comment.is_some()
+        {
+            true => 3,
+            false => 2
+        };
+        let mut serializer = serializer.serialize_struct(
+            "AspaAssertion", field_num,
+        )?;
+        serializer.serialize_field(
+            "customerAsid", &self.customer_asid.into_u32(),
+        )?;
+        serializer.serialize_field(
+            "providerSet", &self.provider_set.iter().map(|a| a.into_u32()).collect::<Vec<u32>>(),
+        )?;
+        if let Some(comment) = self.comment.as_ref() {
+            serializer.serialize_field(
+                "comment", comment.as_str()
+            )?;
+        }
+        serializer.end()
     }
 }
 
@@ -880,6 +1108,31 @@ mod test {
         assert_eq!(0, exceptions.assertions.bgpsec.len());
     }
 
+    #[test]
+    fn parse_empty_slurm_file_v2() {
+        let json = r##"
+            {
+              "slurmVersion": 2,
+              "validationOutputFilters": {
+                "prefixFilters": [],
+                "bgpsecFilters": [],
+                "aspaFilters":   []
+              },
+              "locallyAddedAssertions": {
+                "prefixAssertions": [],
+                "bgpsecAssertions": [],
+                "aspaAssertions":   []
+              }
+            }
+        "##;
+        let exceptions = SlurmFile::from_str(json).unwrap();
+
+        assert_eq!(0, exceptions.filters.prefix.len());
+        assert_eq!(0, exceptions.filters.bgpsec.len());
+        assert_eq!(0, exceptions.assertions.prefix.len());
+        assert_eq!(0, exceptions.assertions.bgpsec.len());
+    }
+
     fn full_slurm() -> SlurmFile {
         SlurmFile::new(
             ValidationOutputFilters::new(
@@ -925,6 +1178,7 @@ mod test {
                         Some(String::from("Key for ASN matching SKI"))
                     ),
                 ],
+                []
             ),
             LocallyAddedAssertions::new(
                 [
@@ -955,6 +1209,7 @@ mod test {
                         None,
                     ),
                 ],
+                []
             ),
         )
     }
@@ -966,6 +1221,109 @@ mod test {
                 include_str!("../test-data/slurm/full.json")
             ).unwrap(),
             full_slurm()
+        );
+    }
+
+    fn full_slurm_v2() -> SlurmFile {
+        SlurmFile::new_with_version(
+            SlurmVersion::try_from(2).unwrap(),
+            ValidationOutputFilters::new(
+                [
+                    PrefixFilter::new(
+                        Some(Prefix::new_v4(
+                            [192, 0, 2, 0].into(), 24
+                        ).unwrap()),
+                        None,
+                        Some(
+                            String::from("All VRPs encompassed by prefix")
+                        )
+                    ),
+                    PrefixFilter::new(
+                        None,
+                        Some(64496.into()),
+                        Some(String::from("All VRPs matching ASN"))
+                    ),
+                    PrefixFilter::new(
+                        Some(Prefix::new_v4(
+                            [198, 51, 100, 0].into(), 24
+                        ).unwrap()),
+                        Some(64497.into()),
+                        Some(String::from(
+                            "All VRPs encompassed by prefix, matching ASN"
+                        ))
+                    ),
+                ],
+                [
+                    BgpsecFilter::new(
+                        None,
+                        Some(64496.into()),
+                        Some(String::from("All keys for ASN"))
+                    ),
+                    BgpsecFilter::new(
+                        Some(KeyIdentifier::from(*b"12345678901234567890")),
+                        None,
+                        Some(String::from("Key matching Router SKI"))
+                    ),
+                    BgpsecFilter::new(
+                        Some(KeyIdentifier::from(*b"deadbeatdeadbeatdead")),
+                        Some(64497.into()),
+                        Some(String::from("Key for ASN matching SKI"))
+                    ),
+                ],
+                [
+                    AspaFilter::new(
+                        Some(64496.into()),
+                        Some(String::from("ASPAs matching Customer ASID 64496"))
+                    )
+                ]
+            ),
+            LocallyAddedAssertions::new(
+                [
+                    PrefixAssertion::new(
+                        Prefix::new_v4(
+                            [198, 51, 100, 0].into(), 24
+                        ).unwrap().into(),
+                        64496.into(),
+                        Some(String::from("My other important route"))
+                    ),
+                    PrefixAssertion::new(
+                        MaxLenPrefix::new(
+                            Prefix::new_v6(
+                                [0x2001, 0x0db8, 0, 0, 0, 0, 0, 0].into(),
+                                32
+                            ).unwrap(),
+                            Some(48),
+                        ).unwrap(),
+                        64496.into(),
+                        Some(String::from("My de-aggregated route"))
+                    ),
+                ],
+                [
+                    BgpsecAssertion::new(
+                        64496.into(),
+                        KeyIdentifier::from(*b"12345678901234567890"),
+                        Bytes::from(b"blubb".as_ref()).try_into().unwrap(),
+                        None,
+                    ),
+                ],
+                [
+                    AspaAssertion::new(
+                        64496.into(),
+                        ProviderAsns::try_from_iter([64497.into(), 64498.into()]).unwrap(),
+                        Some(String::from("Locally assert 64497 and 64498 are providers for 64496"))
+                    )
+                ]
+            ),
+        )
+    }
+
+    #[test]
+    fn parse_full_slurm_file_v2() {
+        assert_eq!(
+            SlurmFile::from_str(
+                include_str!("../test-data/slurm/full_v2.json")
+            ).unwrap(),
+            full_slurm_v2()
         );
     }
 
