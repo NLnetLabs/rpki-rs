@@ -331,7 +331,7 @@ impl AspaFilter {
         AspaFilter { customer_asid, comment }
     }
 
-    /// Returns whether a route origin should be dropped.
+    /// Returns whether a vap should be dropped.
     pub fn drop_aspa(&self, aspa: &rtr::Aspa) -> bool {
         let drop_vap = self.customer_asid.map(|self_asid| {
             self_asid == aspa.customer
