@@ -482,10 +482,12 @@ impl ManifestHash {
         &self,
         t: T
     ) -> Result<(), ManifestHashMismatch> {
-        ring::constant_time::verify_slices_are_equal(
-            self.hash.as_ref(),
-            self.algorithm.digest(t.as_ref()).as_ref()
-        ).map_err(|_| ManifestHashMismatch(()))
+        if self.hash.as_ref() != self.algorithm.digest(t.as_ref()).as_ref() {
+            Err(ManifestHashMismatch(()))
+        }
+        else {
+            Ok(())
+        }
     }
 
     /// Returns the digest algorithm of the hash.
@@ -544,6 +546,18 @@ mod test {
             false
         ).unwrap();
         assert!(obj.validate_at(&issuer, false, at).is_err());
+    }
+
+    #[test]
+    fn verify_manifest_hash() {
+        let alg = DigestAlgorithm::sha256();
+        let hash = ManifestHash::new(
+            Bytes::copy_from_slice(alg.digest(b"foobar").as_ref()),
+            alg
+        );
+
+        assert!(hash.verify(b"foobar").is_ok());
+        assert!(hash.verify(b"barfoo").is_err());
     }
 
     #[test]

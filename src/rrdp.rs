@@ -1368,7 +1368,7 @@ impl str::FromStr for Hash {
             )?.to_digit(16).ok_or(
                 ParseHashError::BAD_CHARS
             )?;
-            *octet = (first << 4 | second) as u8;
+            *octet = ((first << 4) | second) as u8;
         }
         Ok(Hash(res))
     }
