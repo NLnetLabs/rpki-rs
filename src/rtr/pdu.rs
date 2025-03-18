@@ -182,7 +182,7 @@ macro_rules! concrete {
 
 /// A serial notify informs a client that a cache has new data.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 #[allow(dead_code)]
 pub struct SerialNotify {
     header: Header,
@@ -211,7 +211,7 @@ concrete!(SerialNotify);
 
 /// A serial query requests all updates since a router’s last update.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 #[allow(dead_code)]
 pub struct SerialQuery {
     header: Header,
@@ -242,7 +242,7 @@ concrete!(SerialQuery);
 ///
 /// This the serial query PDU without the header.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct SerialQueryPayload {
     serial: u32
 }
@@ -277,7 +277,7 @@ common!(SerialQueryPayload);
 
 /// A reset query requests the complete current set of data.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct ResetQuery {
     header: Header
 }
@@ -301,7 +301,7 @@ concrete!(ResetQuery);
 
 /// The cache response starts a sequence of payload PDUs with data.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct CacheResponse {
     header: Header
 }
@@ -325,7 +325,7 @@ concrete!(CacheResponse);
 
 /// An IPv4 prefix is the payload PDU for route origin authorisation in IPv4.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 #[allow(dead_code)]
 pub struct Ipv4Prefix {
     header: Header,
@@ -397,7 +397,7 @@ concrete!(Ipv4Prefix);
 
 /// An IPv6 prefix is the payload PDU for route origin authorisation in IPv6.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 #[allow(dead_code)]
 pub struct Ipv6Prefix {
     header: Header,
@@ -475,7 +475,7 @@ pub struct RouterKey {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 struct RouterKeyFixed {
     header: Header,
     key_identifier: [u8; 20],
@@ -784,7 +784,7 @@ pub struct Aspa {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 struct AspaFixed {
     header: Header,
     customer: u32,
@@ -1394,7 +1394,7 @@ impl AsMut<[u8]> for EndOfData {
 ///
 /// This type is the version used in protocol version 0.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct EndOfDataV0 {
     header: Header,
     serial: u32
@@ -1427,7 +1427,7 @@ concrete!(EndOfDataV0);
 ///
 /// This type is the version used beginning with protocol version 1.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct EndOfDataV1 {
     header: Header,
     serial: u32,
@@ -1481,7 +1481,7 @@ concrete!(EndOfDataV1);
 /// serial number indicated in the serial query, it responds with a cache
 /// reset.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct CacheReset {
     header: Header
 }
@@ -1595,7 +1595,7 @@ impl AsMut<[u8]> for Error {
 
 /// The header portion of an RTR PDU.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct Header {
     /// The version of the PDU.
     version: u8,
