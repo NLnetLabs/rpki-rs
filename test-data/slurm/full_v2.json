@@ -1,0 +1,70 @@
+{
+  "slurmVersion": 2,
+  "validationOutputFilters": {
+    "prefixFilters": [
+      {
+        "prefix": "192.0.2.0/24",
+        "comment": "All VRPs encompassed by prefix"
+      },
+      {
+        "asn": 64496,
+        "comment": "All VRPs matching ASN"
+      },
+      {
+        "prefix": "198.51.100.0/24",
+        "asn": 64497,
+        "comment": "All VRPs encompassed by prefix, matching ASN"
+      }
+    ],
+    "bgpsecFilters": [
+      {
+        "asn": 64496,
+        "comment": "All keys for ASN"
+      },
+      {
+        "SKI": "MTIzNDU2Nzg5MDEyMzQ1Njc4OTA",
+        "comment": "Key matching Router SKI"
+      },
+      {
+        "asn": 64497,
+        "SKI": "ZGVhZGJlYXRkZWFkYmVhdGRlYWQ",
+        "comment": "Key for ASN matching SKI"
+      }
+    ],
+    "aspaFilters": [
+      {
+        "customerAsid": 64496,
+        "comment": "ASPAs matching Customer ASID 64496"
+      }
+    ]
+  },
+  "locallyAddedAssertions": {
+    "prefixAssertions": [
+      {
+        "asn": 64496,
+        "prefix": "198.51.100.0/24",
+        "comment": "My other important route"
+      },
+      {
+        "asn": 64496,
+        "prefix": "2001:DB8::/32",
+        "maxPrefixLength": 48,
+        "comment": "My de-aggregated route"
+      }
+    ],
+    "bgpsecAssertions": [
+      {
+        "asn": 64496,
+        "SKI": "MTIzNDU2Nzg5MDEyMzQ1Njc4OTA",
+        "routerPublicKey": "Ymx1YmI"
+      }
+    ],
+    "aspaAssertions": [
+      {
+        "customerAsid": 64496,
+        "providerSet": [64497, 64498],
+        "comment": "Locally assert 64497 and 64498 are providers for 64496"
+      }
+    ]
+  }
+}
