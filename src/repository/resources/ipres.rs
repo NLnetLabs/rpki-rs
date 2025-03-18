@@ -1042,15 +1042,17 @@ impl AddressRange {
     pub fn to_v6_prefixes(self) -> impl Iterator<Item = Prefix> {
         let mut start = self.min.to_bits();
         let end = self.max.to_bits();
+
+        let mut cidrs: Vec<Prefix> = vec![];
         
-        std::iter::from_fn(move || {
+        loop {
             // The idea is to take the largest prefix possible from the start
             // then move the start to the address after the last address in
             // that prefix, and do it again until there are no addresses left.
 
             // Based loosely on <https://github.com/arineng/cidr-calc>
             if start > end {
-                return None;
+                break;
             }
             
             // Determine how many of the last bits of the address are prefixable
@@ -1077,11 +1079,16 @@ impl AddressRange {
 
             debug_assert!(prefix_len <= 128);
             let prefix = Prefix::new(Addr::from_bits(start), prefix_len as u8);
+            cidrs.push(prefix);
 
-            start += 2_u128.pow(same_bits);
+            if prefix.max().to_bits() == end {
+                break;
+            }
 
-            Some(prefix)
-        })
+            start += 1 << same_bits;
+        }
+
+        cidrs.into_iter()
     }
 
     /// Convert a range into a set of V4 prefixes
@@ -1089,10 +1096,12 @@ impl AddressRange {
         let mut start = (self.min.to_bits() >> 96) as u32;
         let end = (self.max.to_bits() >> 96) as u32;
         
-        std::iter::from_fn(move || {
+        let mut cidrs: Vec<Prefix> = vec![];
+        
+        loop {
             // This works the same as `to_v6_prefixes` above
             if start > end {
-                return None;
+                break;
             }
 
             let addr_host_bits = start.trailing_zeros();
@@ -1110,10 +1119,16 @@ impl AddressRange {
                 prefix_len as u8
             );
 
-            start += 2u32.pow(same_bits);
+            cidrs.push(prefix);
 
-            Some(prefix)
-        })
+            if (prefix.max().to_bits() >> 96) as u32 == end {
+                break;
+            }
+
+            start += 1 << same_bits;
+        }
+
+        cidrs.into_iter()
     }
 
     /// Formats the range as an IPv4 range.
@@ -2759,6 +2774,40 @@ mod tests {
             let prefixes = range.to_v4_prefixes();
 
             assert_eq!(2, prefixes.count());
+        }
+        {
+            let range = AddressRange::new(
+                Addr::from(Ipv4Addr::from_str("192.168.2.255").unwrap()), 
+                Addr::from(Ipv4Addr::from_str("192.168.0.0").unwrap())
+            );
+
+            let prefixes = range.to_v4_prefixes();
+
+            assert_eq!(0, prefixes.count());
+        }
+    }
+
+    #[test]
+    fn to_full_prefixes() {
+        {
+            let range = AddressRange::new(
+                Addr::from(Ipv6Addr::from_str("::").unwrap()), 
+                Addr::from(Ipv6Addr::from_str("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff").unwrap())
+            );
+
+            let prefixes = range.to_v6_prefixes();
+
+            assert_eq!(1, prefixes.count());
+        }
+        {
+            let range = AddressRange::new(
+                Addr::from(Ipv4Addr::from_str("0.0.0.0").unwrap()), 
+                Addr::from(Ipv4Addr::from_str("255.255.255.255").unwrap())
+            );
+
+            let prefixes = range.to_v4_prefixes();
+
+            assert_eq!(1, prefixes.count());
         }
     }
 }
