@@ -1,6 +1,6 @@
-/// An enum offering the choice between inherited and included resources.
-///
-/// This is a private module used only internally.
+//! An enum offering the choice between inherited and included resources.
+//!
+//! This is a private module used only internally.
 
 use std::fmt;
 

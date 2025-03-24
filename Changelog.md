@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased next version
+
+Breaking changes
+
+New
+
+Bug fixes
+
+Other changes
+
+* The minimum supported Rust version is now 1.81. ([#326])
+
+[#326]: https://github.com/NLnetLabs/rpki-rs/pull/326
+
+
 ## 0.18.5
 
 Released 2025-01-22.
