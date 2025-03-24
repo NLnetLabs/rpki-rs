@@ -146,7 +146,7 @@ impl Serialize for SlurmVersion {
     fn serialize<S: serde::Serializer>(
         &self, serializer: S,
     ) -> Result<S::Ok, S::Error> {
-        serializer.serialize_u8(2)
+        serializer.serialize_u8(self.version)
     }
 }
 
@@ -1189,7 +1189,7 @@ mod test {
                         Some(String::from("Key for ASN matching SKI"))
                     ),
                 ],
-                []
+                None::<Vec<AspaFilter>>
             ),
             LocallyAddedAssertions::new(
                 [
@@ -1220,7 +1220,7 @@ mod test {
                         None,
                     ),
                 ],
-                []
+                None::<Vec<AspaAssertion>>
             ),
         )
     }
@@ -1280,12 +1280,12 @@ mod test {
                         Some(String::from("Key for ASN matching SKI"))
                     ),
                 ],
-                [
+                Some([
                     AspaFilter::new(
                         Some(64496.into()),
                         Some(String::from("ASPAs matching Customer ASID 64496"))
                     )
-                ]
+                ])
             ),
             LocallyAddedAssertions::new(
                 [
@@ -1316,13 +1316,13 @@ mod test {
                         None,
                     ),
                 ],
-                [
+                Some([
                     AspaAssertion::new(
                         64496.into(),
                         ProviderAsns::try_from_iter([64497.into(), 64498.into()]).unwrap(),
                         Some(String::from("Locally assert 64497 and 64498 are providers for 64496"))
                     )
-                ]
+                ])
             ),
         )
     }
