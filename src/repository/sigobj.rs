@@ -231,7 +231,7 @@ impl SignedObject {
     ) -> Result<ResourceCert, ValidationError> {
         self.inspect(strict)?;
         self.verify(strict)?;
-        self.cert.validate_ee_at(issuer, strict, now).map_err(Into::into)
+        self.cert.validate_ee_at(issuer, strict, now)
     }
 
     /// Validates that the signed object complies with the specification.
