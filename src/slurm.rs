@@ -42,18 +42,16 @@ impl SlurmFile {
         filters: ValidationOutputFilters,
         assertions: LocallyAddedAssertions,
     ) -> Self {
-        SlurmFile {
-            version: Default::default(),
-            filters, assertions,
-        }
-    }
-    pub fn new_with_version(
-        version: SlurmVersion,
-        filters: ValidationOutputFilters,
-        assertions: LocallyAddedAssertions,
-    ) -> Self {
-        SlurmFile {
-            version, filters, assertions,
+        if assertions.aspa.is_some() || filters.aspa.is_some() {
+            SlurmFile {
+                version: SlurmVersion::v2(),
+                filters, assertions,
+            }
+        } else {
+            SlurmFile {
+                version: SlurmVersion::v1(),
+                filters, assertions,
+            }
         }
     }
 
@@ -110,11 +108,23 @@ impl FromStr for SlurmFile {
 /// serializing accordingly.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq)]
 #[serde(try_from = "u8")]
-struct SlurmVersion;
+struct SlurmVersion {
+    version: u8
+}
 
 impl Default for SlurmVersion {
     fn default() -> SlurmVersion {
-        SlurmVersion
+        Self::v2()
+    }
+}
+
+impl SlurmVersion {
+    pub fn v1() -> SlurmVersion {
+        SlurmVersion { version: 1 }
+    }
+
+    pub fn v2() -> SlurmVersion {
+        SlurmVersion { version: 2 }
     }
 }
 
@@ -122,11 +132,11 @@ impl TryFrom<u8> for SlurmVersion {
     type Error = &'static str;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        if value == 1 || value == 2 {
-            // TODO: Do this check properly
-            Ok(Self)
-        }
-        else {
+        if value == 1 {
+            Ok(Self::v1())
+        } else if value == 2 {
+            Ok(Self::v2())
+        } else {
             Err("slurmVersion must be 1 or 2")
         }
     }
@@ -157,8 +167,7 @@ pub struct ValidationOutputFilters {
 
     /// The list of descriptions of ASPA assertions to remove.
     #[serde(rename = "aspaFilters")]
-    #[serde(default)]
-    pub aspa: Vec<AspaFilter>,
+    pub aspa: Option<Vec<AspaFilter>>,
 }
 
 impl ValidationOutputFilters {
@@ -166,12 +175,13 @@ impl ValidationOutputFilters {
     pub fn new(
         prefix: impl Into<Vec<PrefixFilter>>,
         bgpsec: impl Into<Vec<BgpsecFilter>>,
-        aspa:   impl Into<Vec<AspaFilter>>,
+        aspa:   Option<impl Into<Vec<AspaFilter>>>,
     ) -> Self {
+        let aspa = aspa.map(|a| a.into());
         ValidationOutputFilters {
             prefix: prefix.into(),
             bgpsec: bgpsec.into(),
-            aspa:   aspa.into(),
+            aspa,
         }
     }
 
@@ -337,10 +347,7 @@ impl AspaFilter {
             self_asid == aspa.customer
         });
 
-        match drop_vap {
-            Some(vap) => vap,
-            None => false
-        }
+        drop_vap.unwrap_or(false)
     }
 
     /// Returns whether the given payload item should be dropped.
@@ -369,8 +376,7 @@ pub struct LocallyAddedAssertions {
 
     /// The list of autonomous system provider authorizations added.
     #[serde(rename = "aspaAssertions")]
-    #[serde(default)]
-    pub aspa: Vec<AspaAssertion>,
+    pub aspa: Option<Vec<AspaAssertion>>,
 }
 
 impl LocallyAddedAssertions {
@@ -378,20 +384,25 @@ impl LocallyAddedAssertions {
     pub fn new(
         prefix: impl Into<Vec<PrefixAssertion>>,
         bgpsec: impl Into<Vec<BgpsecAssertion>>,
-        aspa:   impl Into<Vec<AspaAssertion>>,
+        aspa:   Option<impl Into<Vec<AspaAssertion>>>,
     ) -> Self {
+        let aspa = aspa.map(|a| a.into());
         LocallyAddedAssertions {
             prefix: prefix.into(),
             bgpsec: bgpsec.into(),
-            aspa:   aspa.into(),
+            aspa,
         }
     }
 
     /// Returns an iterator over RTR payload items to be added.
     pub fn iter_payload(&self) -> impl Iterator<Item = rtr::Payload> + '_ {
+        let aspa = match &self.aspa {
+            None => <&[AspaAssertion]>::default(),
+            Some(a) => a
+        };
         self.prefix.iter().map(|item| item.to_payload()).chain(
             self.bgpsec.iter().map(|item| item.to_payload()).chain(
-                self.aspa.iter().map(|item| item.to_payload())
+                aspa.iter().map(|item| item.to_payload())
             )
         )
     }
@@ -1225,8 +1236,7 @@ mod test {
     }
 
     fn full_slurm_v2() -> SlurmFile {
-        SlurmFile::new_with_version(
-            SlurmVersion::try_from(2).unwrap(),
+        SlurmFile::new(
             ValidationOutputFilters::new(
                 [
                     PrefixFilter::new(
