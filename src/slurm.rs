@@ -11,6 +11,7 @@
 use std::{borrow, error, fmt, io, ops};
 use std::str::FromStr;
 use bytes::Bytes;
+use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use crate::crypto::keys::KeyIdentifier;
 use crate::resources::addr::{MaxLenPrefix, Prefix};
@@ -95,7 +96,19 @@ impl FromStr for SlurmFile {
     type Err = serde_json::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        serde_json::from_str(s)
+        let slurm: Result<SlurmFile, serde_json::Error> = serde_json::from_str(s);
+        if let Ok(s) = &slurm {
+            if s.version == SlurmVersion::v1() && 
+                (s.assertions.aspa.is_some() || s.filters.aspa.is_some()) {
+                    return Err(Self::Err::custom(
+                        "ASPA field present in SLURM v1"));
+            } else if s.version == SlurmVersion::v2() && 
+                (s.assertions.aspa.is_none() || s.filters.aspa.is_none()) {
+                    return Err(Self::Err::custom(
+                        "ASPA field not present in SLURM v2"));
+            }
+        }
+        slurm
     }
 }
 
@@ -1468,6 +1481,25 @@ mod test {
                             "comment": "non-zero"
                           },
                         ],
+                        "bgpsecAssertions": []
+                      }
+                    }
+                "##
+            ).is_err()
+        );
+
+        // wrong SLURM version.
+        assert!(
+            SlurmFile::from_str(
+                r##"
+                    {
+                      "slurmVersion": 2,
+                      "validationOutputFilters": {
+                        "prefixFilters": [],
+                        "bgpsecFilters": []
+                      },
+                      "locallyAddedAssertions": {
+                        "prefixAssertions": [],
                         "bgpsecAssertions": []
                       }
                     }
