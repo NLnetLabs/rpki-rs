@@ -549,7 +549,7 @@ impl RouterKey {
         // reserved byte (of zeroes). As the value of the Session field is in
         // network byte order, we are actually looking at (Reserved, Flags),
         // so we want the lower byte here.
-        self.fixed.header.session as u8
+        (u16::from_be(self.fixed.header.session) >> 8) as u8
     }
 
     /// Returns the subject key identifier.
@@ -853,7 +853,7 @@ impl Aspa {
         // reserved byte (of zeroes). As the value of the Session field is in
         // network byte order, we are actually looking at (Reserved, Flags),
         // so we want the lower byte here.
-        self.fixed.header.session  as u8
+        (u16::from_be(self.fixed.header.session) >> 8) as u8
     }
 
     /// Returns the customer ASN.
