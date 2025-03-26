@@ -547,8 +547,8 @@ impl RouterKey {
     pub fn flags(&self) -> u8 {
         // The two-byte Session field is reused for the Flags byte and one
         // reserved byte (of zeroes). As the value of the Session field is in
-        // network byte order, we are actually looking at (Reserved, Flags),
-        // so we want the lower byte here.
+        // network byte order, we first convert it, then shift out the lower
+        // byte.
         (u16::from_be(self.fixed.header.session) >> 8) as u8
     }
 
@@ -851,8 +851,8 @@ impl Aspa {
     pub fn flags(&self) -> u8 {
         // The two-byte Session field is reused for the Flags byte and one
         // reserved byte (of zeroes). As the value of the Session field is in
-        // network byte order, we are actually looking at (Reserved, Flags),
-        // so we want the lower byte here.
+        // network byte order, we first convert it, then shift out the lower
+        // byte.
         (u16::from_be(self.fixed.header.session) >> 8) as u8
     }
 
