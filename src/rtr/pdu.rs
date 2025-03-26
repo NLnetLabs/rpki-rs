@@ -545,7 +545,11 @@ impl RouterKey {
     /// The only flag currently used is the least significant bit that is
     /// 1 for an announcement and 0 for a withdrawal.
     pub fn flags(&self) -> u8 {
-        (self.fixed.header.session >> 8) as u8
+        // The two-byte Session field is reused for the Flags byte and one
+        // reserved byte (of zeroes). As the value of the Session field is in
+        // network byte order, we are actually looking at (Reserved, Flags),
+        // so we want the lower byte here.
+        self.fixed.header.session as u8
     }
 
     /// Returns the subject key identifier.
@@ -845,7 +849,11 @@ impl Aspa {
     /// The only flag currently used is the least significant bit that is
     /// 1 for an announcement and 0 for a withdrawal.
     pub fn flags(&self) -> u8 {
-        (self.fixed.header.session >> 8) as u8
+        // The two-byte Session field is reused for the Flags byte and one
+        // reserved byte (of zeroes). As the value of the Session field is in
+        // network byte order, we are actually looking at (Reserved, Flags),
+        // so we want the lower byte here.
+        self.fixed.header.session  as u8
     }
 
     /// Returns the customer ASN.
@@ -1818,6 +1826,19 @@ mod test {
         );
     }
 
+    #[test]
+    fn router_key_flags() {
+        for flags in [0, 1, 128, 255] {
+            let key = RouterKey::new(
+                1, flags,
+                [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20],
+                Asn::from_u32(0x1000f),
+                RouterKeyInfo::new(Bytes::from_static(&[21,22,23,24])).unwrap()
+            );
+            assert_eq!(key.flags(), flags);
+        }
+    }
+
     #[tokio::test]
     async fn read_write_aspa() {
         read_write!(
@@ -1834,6 +1855,20 @@ mod test {
                 0, 1, 0, 14,
             ]
         );
+    }
+
+    #[test]
+    fn aspa_flags() {
+        for flags in [0, 1, 128, 255] {
+            let aspa = Aspa::new(
+                2, flags,
+                Asn::from_u32(0x1000f),
+                ProviderAsns::try_from_iter([
+                    Asn::from_u32(0x1000d), Asn::from_u32(0x1000e)
+                ]).unwrap(),
+            );
+            assert_eq!(aspa.flags(), flags);
+        }
     }
 
     #[test]
