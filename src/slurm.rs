@@ -11,7 +11,6 @@
 use std::{borrow, error, fmt, io, ops};
 use std::str::FromStr;
 use bytes::Bytes;
-use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use crate::crypto::keys::KeyIdentifier;
 use crate::resources::addr::{MaxLenPrefix, Prefix};
