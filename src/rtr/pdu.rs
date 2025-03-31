@@ -1265,7 +1265,7 @@ impl Payload {
 ///
 /// This PDU differs between version 0 and 1 of RTR. Consequently, this
 /// generic version is an enum that can be both, depending on the version
-/// requested.
+/// requested. For version 2, the PDU is the same as for version 1.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum EndOfData {
     V0(EndOfDataV0),
