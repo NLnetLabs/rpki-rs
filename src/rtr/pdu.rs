@@ -1309,7 +1309,7 @@ impl EndOfData {
                 EndOfDataV0::read_payload(header, sock)
                     .await.map(EndOfData::V0)
             }
-            1 => {
+            1|2 => {
                 EndOfDataV1::read_payload(header, sock)
                     .await.map(EndOfData::V1)
             }
@@ -1326,7 +1326,7 @@ impl EndOfData {
     pub fn version(&self) -> u8 {
         match *self {
             EndOfData::V0(_) => 0,
-            EndOfData::V1(_) => 1,
+            EndOfData::V1(v1_or_v2) => v1_or_v2.header.version()
         }
     }
 
