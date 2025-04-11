@@ -1273,7 +1273,7 @@ impl Payload {
 ///
 /// This PDU differs between version 0 and 1 of RTR. Consequently, this
 /// generic version is an enum that can be both, depending on the version
-/// requested.
+/// requested. For version 2, the PDU is the same as for version 1.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum EndOfData {
     V0(EndOfDataV0),
@@ -1317,7 +1317,7 @@ impl EndOfData {
                 EndOfDataV0::read_payload(header, sock)
                     .await.map(EndOfData::V0)
             }
-            1 => {
+            1|2 => {
                 EndOfDataV1::read_payload(header, sock)
                     .await.map(EndOfData::V1)
             }
@@ -1334,7 +1334,7 @@ impl EndOfData {
     pub fn version(&self) -> u8 {
         match *self {
             EndOfData::V0(_) => 0,
-            EndOfData::V1(_) => 1,
+            EndOfData::V1(v1_or_v2) => v1_or_v2.header.version()
         }
     }
 
@@ -1910,6 +1910,40 @@ mod test {
                 1, 7, 0x12, 0x34,         0, 0, 0, 24,
                 0xde, 0xad, 0xbe, 0xef,   0x00, 0x00, 0x0e, 0x10,
                 0x00, 0x00, 0x02, 0x58,   0x00, 0x00, 0x1c, 0x20,
+            ]
+        );
+    }
+
+    macro_rules! test_eod_pdu_version {
+        ($version:expr, $raw:expr) => {
+            if let Err(eod) = Payload::read(&mut $raw.as_slice()).await.unwrap() {
+                assert_eq!($version, eod.version());
+            } else {
+                panic!("expected End of Data PDU");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn end_of_data_versions() {
+        test_eod_pdu_version!(
+            0,
+            vec![0, 7, 0x12, 0x34, 0, 0, 0, 12,  0xde, 0xad, 0xbe, 0xef]
+        );
+        test_eod_pdu_version!(
+            1,
+            vec![
+                0x01, 0x07, 0x8e, 0xef, 0x00, 0x00, 0x00, 0x18,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x8f,
+                0x00, 0x00, 0x02, 0x58, 0x00, 0x00, 0x1c, 0x20
+            ]
+        );
+        test_eod_pdu_version!(
+            2,
+            vec![
+                0x02, 0x07, 0x8e, 0xef, 0x00, 0x00, 0x00, 0x18,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x8f,
+                0x00, 0x00, 0x02, 0x58, 0x00, 0x00, 0x1c, 0x20
             ]
         );
     }
