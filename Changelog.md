@@ -6,13 +6,24 @@ Breaking changes
 
 New
 
+* Added support for ASPA to SLURM. ([#325])
+
 Bug fixes
+
+* Fix access to flags in the ASPA and router key RTR PDUs. ([#327])
+* Fix reported version in EndOfData RTR PDUs. ([#328])
+* Fix an overflow in `AddressRange::to_vX_prefixes` for prefix length 0.
+  ([#323])
 
 Other changes
 
 * The minimum supported Rust version is now 1.81. ([#326])
 
+[#323]: https://github.com/NLnetLabs/rpki-rs/pull/323
+[#325]: https://github.com/NLnetLabs/rpki-rs/pull/325
 [#326]: https://github.com/NLnetLabs/rpki-rs/pull/326
+[#327]: https://github.com/NLnetLabs/rpki-rs/pull/327
+[#328]: https://github.com/NLnetLabs/rpki-rs/pull/328
 
 
 ## 0.18.5
