@@ -7,6 +7,7 @@
 
 //--- Re-exports
 //
+pub use self::aspa::Aspa;
 pub use self::cert::{Cert, ResourceCert};
 pub use self::crl::Crl;
 pub use self::manifest::Manifest;
