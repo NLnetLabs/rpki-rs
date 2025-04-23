@@ -1,12 +1,12 @@
 # Changelog
 
-## Unreleased next version
+## 0.18.6
 
-Breaking changes
+Released 2025-04-23.
 
 New
 
-* Added support for ASPA to SLURM. ([#325])
+* Added support for ASPA to SLURM. ([#325], [#329])
 
 Bug fixes
 
@@ -24,6 +24,7 @@ Other changes
 [#326]: https://github.com/NLnetLabs/rpki-rs/pull/326
 [#327]: https://github.com/NLnetLabs/rpki-rs/pull/327
 [#328]: https://github.com/NLnetLabs/rpki-rs/pull/328
+[#329]: https://github.com/NLnetLabs/rpki-rs/pull/329
 
 
 ## 0.18.5
