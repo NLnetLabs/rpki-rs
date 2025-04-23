@@ -172,16 +172,16 @@ pub struct ValidationOutputFilters {
 
 impl ValidationOutputFilters {
     /// Creates a new value from the components.
+    ///
+    /// Sets the `aspa` field to `None`.
     pub fn new(
         prefix: impl Into<Vec<PrefixFilter>>,
         bgpsec: impl Into<Vec<BgpsecFilter>>,
-        aspa:   Option<impl Into<Vec<AspaFilter>>>,
     ) -> Self {
-        let aspa = aspa.map(|a| a.into());
         ValidationOutputFilters {
             prefix: prefix.into(),
             bgpsec: bgpsec.into(),
-            aspa,
+            aspa: None,
         }
     }
 
@@ -381,16 +381,16 @@ pub struct LocallyAddedAssertions {
 
 impl LocallyAddedAssertions {
     /// Creates a new value from its components.
+    ///
+    /// Sets the `aspa` field to `None`.
     pub fn new(
         prefix: impl Into<Vec<PrefixAssertion>>,
         bgpsec: impl Into<Vec<BgpsecAssertion>>,
-        aspa:   Option<impl Into<Vec<AspaAssertion>>>,
     ) -> Self {
-        let aspa = aspa.map(|a| a.into());
         LocallyAddedAssertions {
             prefix: prefix.into(),
             bgpsec: bgpsec.into(),
-            aspa,
+            aspa: None,
         }
     }
 
@@ -1189,7 +1189,6 @@ mod test {
                         Some(String::from("Key for ASN matching SKI"))
                     ),
                 ],
-                None::<Vec<AspaFilter>>
             ),
             LocallyAddedAssertions::new(
                 [
@@ -1220,7 +1219,6 @@ mod test {
                         None,
                     ),
                 ],
-                None::<Vec<AspaAssertion>>
             ),
         )
     }
@@ -1237,8 +1235,8 @@ mod test {
 
     fn full_slurm_v2() -> SlurmFile {
         SlurmFile::new(
-            ValidationOutputFilters::new(
-                [
+            ValidationOutputFilters {
+                prefix: vec![
                     PrefixFilter::new(
                         Some(Prefix::new_v4(
                             [192, 0, 2, 0].into(), 24
@@ -1263,7 +1261,7 @@ mod test {
                         ))
                     ),
                 ],
-                [
+                bgpsec: vec![
                     BgpsecFilter::new(
                         None,
                         Some(64496.into()),
@@ -1280,15 +1278,15 @@ mod test {
                         Some(String::from("Key for ASN matching SKI"))
                     ),
                 ],
-                Some([
+                aspa: Some(vec![
                     AspaFilter::new(
                         Some(64496.into()),
                         Some(String::from("ASPAs matching Customer ASID 64496"))
                     )
-                ])
-            ),
-            LocallyAddedAssertions::new(
-                [
+                ]),
+            },
+            LocallyAddedAssertions {
+                prefix: vec![
                     PrefixAssertion::new(
                         Prefix::new_v4(
                             [198, 51, 100, 0].into(), 24
@@ -1308,7 +1306,7 @@ mod test {
                         Some(String::from("My de-aggregated route"))
                     ),
                 ],
-                [
+                bgpsec: vec![
                     BgpsecAssertion::new(
                         64496.into(),
                         KeyIdentifier::from(*b"12345678901234567890"),
@@ -1316,14 +1314,19 @@ mod test {
                         None,
                     ),
                 ],
-                Some([
+                aspa: Some(vec![
                     AspaAssertion::new(
                         64496.into(),
-                        ProviderAsns::try_from_iter([64497.into(), 64498.into()]).unwrap(),
-                        Some(String::from("Locally assert 64497 and 64498 are providers for 64496"))
+                        ProviderAsns::try_from_iter(
+                            [64497.into(), 64498.into()]
+                        ).unwrap(),
+                        Some(String::from(
+                            "Locally assert 64497 and 64498 are providers \
+                            for 64496"
+                        ))
                     )
                 ])
-            ),
+            },
         )
     }
 
