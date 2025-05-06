@@ -28,3 +28,5 @@ pub mod rta;
 pub mod sigobj;
 pub mod tal;
 pub mod x509;
+
+pub(crate) mod test;
