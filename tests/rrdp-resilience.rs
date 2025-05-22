@@ -1,4 +1,5 @@
-#![cfg(feature = "repository")]
+#[cfg(feature = "rrdp")]
+#[cfg(feature = "repository")]
 #[cfg(test)]
 mod tests {
     use std::convert::Infallible;
