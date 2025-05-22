@@ -629,10 +629,10 @@ impl BgpsecAssertion {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct AspaAssertion {
     /// The prefix and optional max-length this assertion is for.
-    pub customer_asid: Asn,
+    pub customer_asn: Asn,
 
     /// The AS number of autonomous system authorized to announce the prefix.
-    pub provider_set: ProviderAsns,
+    pub provider_asns: ProviderAsns,
 
     /// An optional comment.
     pub comment: Option<String>,
@@ -641,15 +641,15 @@ pub struct AspaAssertion {
 impl AspaAssertion {
     /// Creates a new prefix assertion.
     pub fn new(
-        customer_asid: Asn,
-        provider_set: ProviderAsns,
+        customer_asn: Asn,
+        provider_asns: ProviderAsns,
         comment: Option<String>,
     ) -> Self {
-        AspaAssertion { customer_asid, provider_set, comment }
+        AspaAssertion { customer_asn, provider_asns, comment }
     }
 
     fn to_payload(&self) -> rtr::Payload {
-        rtr::Payload::aspa(self.customer_asid, self.provider_set.clone())
+        rtr::Payload::aspa(self.customer_asn, self.provider_asns.clone())
     }
 }
 
@@ -666,7 +666,7 @@ impl<'de> Deserialize<'de> for AspaAssertion {
 
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
-        enum Fields { CustomerAsid, ProviderSet, Comment }
+        enum Fields { CustomerAsn, ProviderAsns, Comment }
 
         struct StructVisitor;
 
@@ -680,30 +680,30 @@ impl<'de> Deserialize<'de> for AspaAssertion {
             fn visit_map<V: de::MapAccess<'de>>(
                 self, mut map: V
             ) -> Result<Self::Value, V::Error> {
-                let mut customer_as_id: Option<u32> = None;
-                let mut provider_set = None;
+                let mut customer_asn: Option<u32> = None;
+                let mut provider_asns = None;
                 let mut comment = None;
 
                 while let Some(key) = map.next_key()? {
                     match key {
-                        Fields::CustomerAsid => {
-                            if customer_as_id.is_some() {
+                        Fields::CustomerAsn => {
+                            if customer_asn.is_some() {
                                 return Err(
-                                    de::Error::duplicate_field("customerAsid")
+                                    de::Error::duplicate_field("customerAsn")
                                 );
                             }
-                            customer_as_id = Some(map.next_value()?);
+                            customer_asn = Some(map.next_value()?);
                         }
-                        Fields::ProviderSet => {
-                            if provider_set.is_some() {
+                        Fields::ProviderAsns => {
+                            if provider_asns.is_some() {
                                 return Err(
-                                    de::Error::duplicate_field("providerSet")
+                                    de::Error::duplicate_field("providerAsns")
                                 );
                             }
                             let v:Vec<u32>  = map.next_value::<Vec<u32>>()?;
                             if let Ok(providers) = ProviderAsns::try_from_iter
                                 (v.iter().map(|i| Asn::from_u32(*i))) {
-                                provider_set = Some(providers);
+                                provider_asns = Some(providers);
                             } else {
                                 return Err(
                                     de::Error::custom("Invalid field")
@@ -721,23 +721,23 @@ impl<'de> Deserialize<'de> for AspaAssertion {
                     }
                 }
 
-                let customer_as_id: u32 = customer_as_id.ok_or_else(|| {
-                    de::Error::missing_field("customerAsid")
+                let customer_asn: u32 = customer_asn.ok_or_else(|| {
+                    de::Error::missing_field("customerAsn")
                 })?;
-                let provider_set = provider_set.ok_or_else(|| {
-                    de::Error::missing_field("providerSet")
+                let provider_asns = provider_asns.ok_or_else(|| {
+                    de::Error::missing_field("providerAsns")
                 })?;
 
                 Ok(AspaAssertion { 
-                    customer_asid: customer_as_id.into(),
-                    provider_set,
+                    customer_asn: customer_asn.into(),
+                    provider_asns,
                     comment 
                 })
             }
         }
 
         const FIELDS: &[&str] = &[
-            "customerAsid", "providerSet", "comment"
+            "customerAsn", "providerAsns", "comment"
         ];
         deserializer.deserialize_struct(
             "AspaAssertion", FIELDS, StructVisitor
@@ -761,10 +761,10 @@ impl Serialize for AspaAssertion {
             "AspaAssertion", field_num,
         )?;
         serializer.serialize_field(
-            "customerAsid", &self.customer_asid.into_u32(),
+            "customerAsn", &self.customer_asn.into_u32(),
         )?;
         serializer.serialize_field(
-            "providerSet", &self.provider_set.iter().map(|a| a.into_u32()).collect::<Vec<u32>>(),
+            "providerAsns", &self.provider_asns.iter().map(|a| a.into_u32()).collect::<Vec<u32>>(),
         )?;
         if let Some(comment) = self.comment.as_ref() {
             serializer.serialize_field(
