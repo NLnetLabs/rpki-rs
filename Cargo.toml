@@ -2,7 +2,7 @@
 name = "rpki"
 version = "0.18.6"
 edition = "2021"
-rust-version = "1.81"
+rust-version = "1.82"
 authors = ["NLnet Labs <rpki-team@nlnetlabs.nl>"]
 description = "A library for validating and creating RPKI data."
 documentation = "https://docs.rs/rpki/"
