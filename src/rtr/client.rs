@@ -22,11 +22,7 @@ use super::state::State;
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// The protocol version we initially propose.
-///
-/// While the client technically supports version 2 as well, the format of the
-/// ASPA PDU has not yet been agreed upon. Rather than possibly deploying
-/// broken servers, we only start with version 1 for now.
-const INITIAL_VERSION: u8 = 1;
+const INITIAL_VERSION: u8 = 2;
 
 
 //------------ PayloadTarget -------------------------------------------------
@@ -298,16 +294,14 @@ where
                         Ok(some) => some,
                         Err(err) => {
                             err.write(&mut self.sock).await?;
-                            return Err(io::Error::new(
-                                io::ErrorKind::Other, "")
-                            );
+                            return Err(io::Error::other(""));
                         }
                     };
                     if let Err(err) = target.push_update(action, payload) {
                         err.send(
                             self.version(), Some(pdu), &mut self.sock
                         ).await?;
-                        return Err(io::Error::new(io::ErrorKind::Other, ""));
+                        return Err(io::Error::other(""));
                     }
                 }
                 Ok(None) => {
@@ -345,16 +339,14 @@ where
                         Ok(some) => some,
                         Err(err) => {
                             err.write(&mut self.sock).await?;
-                            return Err(io::Error::new(
-                                io::ErrorKind::Other, "")
-                            );
+                            return Err(io::Error::other(""))
                         }
                     };
                     if let Err(err) = target.push_update(action, payload) {
                         err.send(
                             self.version(), Some(pdu), &mut self.sock
                         ).await?;
-                        return Err(io::Error::new(io::ErrorKind::Other, ""));
+                        return Err(io::Error::other(""));
                     }
                 }
                 Ok(None) => {
@@ -379,7 +371,7 @@ where
     ) -> Result<(), io::Error> {
         if let Err(err) = self.target.apply(update, self.timing) {
             self.send_error(err).await?;
-            Err(io::Error::new(io::ErrorKind::Other, ""))
+            Err(io::Error::other(""))
         }
         else {
             Ok(())
@@ -481,8 +473,7 @@ impl FirstReply {
                 ).await.map(|_| FirstReply::Reset)
             }
             pdu::Error::PDU => {
-                Err(io::Error::new(
-                    io::ErrorKind::Other,
+                Err(io::Error::other(
                     format!("server reported error {}", header.session())
                 ))
             }

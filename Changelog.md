@@ -6,6 +6,44 @@ Breaking changes
 
 New
 
+Bug fixes
+
+Other changes
+
+
+## 0.18.6
+
+Released 2025-04-23.
+
+New
+
+* Added support for ASPA to SLURM. ([#325], [#329])
+
+Bug fixes
+
+* Fix access to flags in the ASPA and router key RTR PDUs. ([#327])
+* Fix reported version in EndOfData RTR PDUs. ([#328])
+* Fix an overflow in `AddressRange::to_vX_prefixes` for prefix length 0.
+  ([#323])
+
+Other changes
+
+* The minimum supported Rust version is now 1.81. ([#326])
+
+[#323]: https://github.com/NLnetLabs/rpki-rs/pull/323
+[#325]: https://github.com/NLnetLabs/rpki-rs/pull/325
+[#326]: https://github.com/NLnetLabs/rpki-rs/pull/326
+[#327]: https://github.com/NLnetLabs/rpki-rs/pull/327
+[#328]: https://github.com/NLnetLabs/rpki-rs/pull/328
+[#329]: https://github.com/NLnetLabs/rpki-rs/pull/329
+
+
+## 0.18.5
+
+Released 2025-01-22.
+
+New
+
 * `ca::idexchange::Error` now impls `std::error::Error`. ([#297])
 * Re-export `bcder` as `dep::bcder` if it is enabled. ([#299])
 * Added `PublisherRequest::set_publisher_handle`. ([#300])
@@ -16,26 +54,40 @@ New
   a set of prefixes. ([#306])
 * Updated the ASPA RTR PDU to conform with version -14 of
   draft-ietf-sidrops-8210bis. ([#309])
+* Enable ASPA version 2 in the RTR server. ([#318])
+* The ASPA `ProviderAsSet` now keeps track of its length and exposes it
+  via the new `len` method. ([#315])
+* The ASPA Provider AS Set is now limited to 16380 entries when parsing from
+  ASPA objects and creating RTR PDUs. ([#316])
 * Exposed `ca::idcert::TbsIdCert::validity`. ([#310]);
+* Protect against maliciously large XML input to the RRDP parser. This
+  will allow re-enabling GZIP support in RRDP clients. ([#319])
 
 Bug fixes
 
 * Do not allow backslashes in idexchange handles. ([#304])
+* Check the content of file names in a manifest during parsing. This fixes a
+  crash when later code assumes that the file names only contain ASCII
+  characters and otherwise panics. ([#320])
 
 Other changes
 
-* The minimum supported Rust version is now 1.70. ([#303])
+* The minimum supported Rust version is now 1.73. ([#319])
 
 [#297]: https://github.com/NLnetLabs/rpki-rs/pull/297
 [#298]: https://github.com/NLnetLabs/rpki-rs/pull/298
 [#299]: https://github.com/NLnetLabs/rpki-rs/pull/299
 [#300]: https://github.com/NLnetLabs/rpki-rs/pull/300
 [#302]: https://github.com/NLnetLabs/rpki-rs/pull/302
-[#303]: https://github.com/NLnetLabs/rpki-rs/pull/303
 [#304]: https://github.com/NLnetLabs/rpki-rs/pull/304
 [#306]: https://github.com/NLnetLabs/rpki-rs/pull/306
 [#309]: https://github.com/NLnetLabs/rpki-rs/pull/309
 [#310]: https://github.com/NLnetLabs/rpki-rs/pull/310
+[#315]: https://github.com/NLnetLabs/rpki-rs/pull/315
+[#316]: https://github.com/NLnetLabs/rpki-rs/pull/316
+[#318]: https://github.com/NLnetLabs/rpki-rs/pull/318
+[#319]: https://github.com/NLnetLabs/rpki-rs/pull/319
+[#320]: https://github.com/NLnetLabs/rpki-rs/pull/320
 
 
 ## 0.18.4

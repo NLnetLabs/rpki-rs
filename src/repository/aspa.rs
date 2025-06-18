@@ -181,7 +181,7 @@ impl AsProviderAttestation {
         encode::sequence((
             encode::sequence_as(Tag::CTX_0, 1u8.encode()),
             self.customer_as.encode(),
-            &self.provider_as_set.0,
+            &self.provider_as_set.captured,
         ))
     }
 
@@ -202,10 +202,24 @@ impl AsProviderAttestation {
 /// This type contains the provider AS set in encoded form. It guarantees that
 /// the AS in this set are ordered, free of duplicates and there is at least
 /// one AS.
+///
+/// It does not, at this point, enforce the maximum allowed number of 16380
+/// ASNs. This will be added with the next breaking change.
 #[derive(Clone, Debug)]
-pub struct ProviderAsSet(Captured);
+pub struct ProviderAsSet {
+    captured: Captured,
+    len: usize,
+}
 
 impl ProviderAsSet {
+    /// The maximum number of ASNs allowed in the set.
+    const MAX_LEN: usize = 16380;
+
+    #[allow(clippy::len_without_is_empty)] // never empty
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
     pub fn to_set(&self) -> SmallAsnSet {
         unsafe {
             SmallAsnSet::from_vec_unchecked(
@@ -215,19 +229,28 @@ impl ProviderAsSet {
     }
 
     pub fn iter(&self) -> ProviderAsIter {
-        ProviderAsIter(self.0.as_slice().into_source())
+        ProviderAsIter(self.captured.as_slice().into_source())
     }
 
+    /// Takes the provider ASN sequence from an encoded source.
+    ///
+    /// Enforces a maxium size of 16380 ASNs.
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         customer_as: Asn,
     ) -> Result<Self, DecodeError<S::Error>> {
-        cons.take_sequence(|cons| {
+        let mut len = 0;
+        let captured = cons.take_sequence(|cons| {
             cons.capture(|cons| {
                 let mut last: Option<Asn> = None;
                 while let Some(asn) = Asn::take_opt_from(
                     cons
                 )? {
+                    if len >= Self::MAX_LEN {
+                        return Err(cons.content_err(
+                            "too many provider ASNs"
+                        ));
+                    }
                     if asn == customer_as {
                         return Err(cons.content_err(
                             "customer AS in provider AS set"
@@ -249,6 +272,7 @@ impl ProviderAsSet {
                         }
                     }
                     last = Some(asn);
+                    len += 1;
                 }
                 if last.is_none() {
                     return Err(cons.content_err(
@@ -257,7 +281,8 @@ impl ProviderAsSet {
                 }
                 Ok(())
             })
-        }).map(ProviderAsSet)
+        })?;
+        Ok(Self { captured, len })
     }
 }
 
@@ -336,7 +361,10 @@ impl AspaBuilder {
             )
         );
         
-        let provider_as_set = ProviderAsSet(provider_as_set_captured);
+        let provider_as_set = ProviderAsSet {
+            captured: provider_as_set_captured,
+            len: self.providers.len()
+        };
 
         AsProviderAttestation {
             customer_as: self.customer_as,
@@ -525,6 +553,29 @@ mod signer_test {
             64499.into(),
         ];
         make_aspa(customer_as, providers);
+    }
+
+    #[test]
+    fn provider_asn_size() {
+        fn make_aspa(len: usize) -> Captured {
+            let mut builder = AspaBuilder::empty(0.into());
+            for i in 0..(len as u32) {
+                builder.add_provider(Asn::from(i + 1)).unwrap();
+            }
+            builder.into_attestation().encode_ref().to_captured(Mode::Der)
+        }
+
+        make_aspa(
+            ProviderAsSet::MAX_LEN - 1
+        ).decode(AsProviderAttestation::take_from).unwrap();
+        make_aspa(
+            ProviderAsSet::MAX_LEN
+        ).decode(AsProviderAttestation::take_from).unwrap();
+        assert!(
+            make_aspa(
+                ProviderAsSet::MAX_LEN + 1
+            ).decode(AsProviderAttestation::take_from).is_err()
+        );
     }
 
     #[test]

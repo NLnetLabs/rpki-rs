@@ -420,10 +420,7 @@ impl FileAndHash<Bytes, Bytes> {
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<()>, DecodeError<S::Error>> {
         cons.take_opt_sequence(|cons| {
-            cons.take_value_if(
-                Tag::IA5_STRING,
-                OctetString::from_content
-            )?;
+            let _ = Ia5String::take_from(cons)?;
             BitString::skip_in(cons)?;
             Ok(())
         })
@@ -485,10 +482,12 @@ impl ManifestHash {
         &self,
         t: T
     ) -> Result<(), ManifestHashMismatch> {
-        ring::constant_time::verify_slices_are_equal(
-            self.hash.as_ref(),
-            self.algorithm.digest(t.as_ref()).as_ref()
-        ).map_err(|_| ManifestHashMismatch(()))
+        if self.hash.as_ref() != self.algorithm.digest(t.as_ref()).as_ref() {
+            Err(ManifestHashMismatch(()))
+        }
+        else {
+            Ok(())
+        }
     }
 
     /// Returns the digest algorithm of the hash.
@@ -550,11 +549,37 @@ mod test {
     }
 
     #[test]
+    fn verify_manifest_hash() {
+        let alg = DigestAlgorithm::sha256();
+        let hash = ManifestHash::new(
+            Bytes::copy_from_slice(alg.digest(b"foobar").as_ref()),
+            alg
+        );
+
+        assert!(hash.verify(b"foobar").is_ok());
+        assert!(hash.verify(b"barfoo").is_err());
+    }
+
+    #[test]
     #[cfg(feature = "serde")]
     fn compat_de_manifest() {
         serde_json::from_slice::<Manifest>(include_bytes!(
             "../../test-data/repository/serde-compat/manifest.json"
         )).unwrap();
+    }
+
+    #[test]
+    fn charset_violation() {
+        assert!(
+            Manifest::decode(
+                // This manifest is identical to ta.mft but has a non-ASCII
+                // character in the manifest filenames.
+                include_bytes!(
+                    "../../test-data/repository/ta.mft.bad-filename"
+                ).as_ref(),
+                false,
+            ).is_err()
+        );
     }
 }
 

@@ -182,7 +182,7 @@ macro_rules! concrete {
 
 /// A serial notify informs a client that a cache has new data.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 #[allow(dead_code)]
 pub struct SerialNotify {
     header: Header,
@@ -211,7 +211,7 @@ concrete!(SerialNotify);
 
 /// A serial query requests all updates since a router’s last update.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 #[allow(dead_code)]
 pub struct SerialQuery {
     header: Header,
@@ -242,7 +242,7 @@ concrete!(SerialQuery);
 ///
 /// This the serial query PDU without the header.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct SerialQueryPayload {
     serial: u32
 }
@@ -277,7 +277,7 @@ common!(SerialQueryPayload);
 
 /// A reset query requests the complete current set of data.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct ResetQuery {
     header: Header
 }
@@ -301,7 +301,7 @@ concrete!(ResetQuery);
 
 /// The cache response starts a sequence of payload PDUs with data.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct CacheResponse {
     header: Header
 }
@@ -325,7 +325,7 @@ concrete!(CacheResponse);
 
 /// An IPv4 prefix is the payload PDU for route origin authorisation in IPv4.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 #[allow(dead_code)]
 pub struct Ipv4Prefix {
     header: Header,
@@ -397,7 +397,7 @@ concrete!(Ipv4Prefix);
 
 /// An IPv6 prefix is the payload PDU for route origin authorisation in IPv6.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 #[allow(dead_code)]
 pub struct Ipv6Prefix {
     header: Header,
@@ -475,7 +475,7 @@ pub struct RouterKey {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 struct RouterKeyFixed {
     header: Header,
     key_identifier: [u8; 20],
@@ -545,7 +545,11 @@ impl RouterKey {
     /// The only flag currently used is the least significant bit that is
     /// 1 for an announcement and 0 for a withdrawal.
     pub fn flags(&self) -> u8 {
-        (self.fixed.header.session >> 8) as u8
+        // The two-byte Session field is reused for the Flags byte and one
+        // reserved byte (of zeroes). As the value of the Session field is in
+        // network byte order, we first convert it, then shift out the lower
+        // byte.
+        (u16::from_be(self.fixed.header.session) >> 8) as u8
     }
 
     /// Returns the subject key identifier.
@@ -784,7 +788,7 @@ pub struct Aspa {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 struct AspaFixed {
     header: Header,
     customer: u32,
@@ -799,7 +803,8 @@ impl Aspa {
     /// # Panics
     ///
     /// This function panics if the length of the resulting PDU doesn’t fit
-    /// in a `u32`.
+    /// in a `u32`. Because `ProviderAsns` is now limited in size, this can’t
+    /// happen.
     pub fn new(
         version: u8,
         flags: u8,
@@ -844,7 +849,11 @@ impl Aspa {
     /// The only flag currently used is the least significant bit that is
     /// 1 for an announcement and 0 for a withdrawal.
     pub fn flags(&self) -> u8 {
-        (self.fixed.header.session >> 8) as u8
+        // The two-byte Session field is reused for the Flags byte and one
+        // reserved byte (of zeroes). As the value of the Session field is in
+        // network byte order, we first convert it, then shift out the lower
+        // byte.
+        (u16::from_be(self.fixed.header.session) >> 8) as u8
     }
 
     /// Returns the customer ASN.
@@ -948,6 +957,9 @@ impl AsMut<[u8]> for AspaFixed {
 pub struct ProviderAsns(Bytes);
 
 impl ProviderAsns {
+    /// The maximum number of provider ASNs.
+    pub const MAX_COUNT: usize = 16380;
+
     /// Returns an empty value.
     pub fn empty() -> Self {
         Self(Bytes::new())
@@ -963,7 +975,7 @@ impl ProviderAsns {
         let iter = iter.into_iter();
         let mut providers = Vec::with_capacity(iter.size_hint().0);
         iter.enumerate().try_for_each(|(idx, item)| {
-            if idx >= usize::from(u16::MAX) {
+            if idx >= Self::MAX_COUNT {
                 return Err(ProviderAsnsError(()))
             }
             providers.extend_from_slice(&item.into_u32().to_be_bytes());
@@ -1261,7 +1273,7 @@ impl Payload {
 ///
 /// This PDU differs between version 0 and 1 of RTR. Consequently, this
 /// generic version is an enum that can be both, depending on the version
-/// requested.
+/// requested. For version 2, the PDU is the same as for version 1.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum EndOfData {
     V0(EndOfDataV0),
@@ -1305,7 +1317,7 @@ impl EndOfData {
                 EndOfDataV0::read_payload(header, sock)
                     .await.map(EndOfData::V0)
             }
-            1 => {
+            1|2 => {
                 EndOfDataV1::read_payload(header, sock)
                     .await.map(EndOfData::V1)
             }
@@ -1322,7 +1334,7 @@ impl EndOfData {
     pub fn version(&self) -> u8 {
         match *self {
             EndOfData::V0(_) => 0,
-            EndOfData::V1(_) => 1,
+            EndOfData::V1(v1_or_v2) => v1_or_v2.header.version()
         }
     }
 
@@ -1390,7 +1402,7 @@ impl AsMut<[u8]> for EndOfData {
 ///
 /// This type is the version used in protocol version 0.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct EndOfDataV0 {
     header: Header,
     serial: u32
@@ -1423,7 +1435,7 @@ concrete!(EndOfDataV0);
 ///
 /// This type is the version used beginning with protocol version 1.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct EndOfDataV1 {
     header: Header,
     serial: u32,
@@ -1477,7 +1489,7 @@ concrete!(EndOfDataV1);
 /// serial number indicated in the serial query, it responds with a cache
 /// reset.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct CacheReset {
     header: Header
 }
@@ -1591,7 +1603,7 @@ impl AsMut<[u8]> for Error {
 
 /// The header portion of an RTR PDU.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct Header {
     /// The version of the PDU.
     version: u8,
@@ -1814,6 +1826,19 @@ mod test {
         );
     }
 
+    #[test]
+    fn router_key_flags() {
+        for flags in [0, 1, 128, 255] {
+            let key = RouterKey::new(
+                1, flags,
+                [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20],
+                Asn::from_u32(0x1000f),
+                RouterKeyInfo::new(Bytes::from_static(&[21,22,23,24])).unwrap()
+            );
+            assert_eq!(key.flags(), flags);
+        }
+    }
+
     #[tokio::test]
     async fn read_write_aspa() {
         read_write!(
@@ -1833,22 +1858,36 @@ mod test {
     }
 
     #[test]
+    fn aspa_flags() {
+        for flags in [0, 1, 128, 255] {
+            let aspa = Aspa::new(
+                2, flags,
+                Asn::from_u32(0x1000f),
+                ProviderAsns::try_from_iter([
+                    Asn::from_u32(0x1000d), Asn::from_u32(0x1000e)
+                ]).unwrap(),
+            );
+            assert_eq!(aspa.flags(), flags);
+        }
+    }
+
+    #[test]
     fn provider_count() {
         assert_eq!(
             ProviderAsns::try_from_iter(
-                iter::repeat(Asn::from(0)).take(usize::from(u16::MAX - 1))
+                iter::repeat(Asn::from(0)).take(ProviderAsns::MAX_COUNT - 1)
             ).unwrap().asn_count(),
-            u16::MAX - 1
+            (ProviderAsns::MAX_COUNT - 1) as u16,
         );
         assert_eq!(
             ProviderAsns::try_from_iter(
-                iter::repeat(Asn::from(0)).take(usize::from(u16::MAX))
+                iter::repeat(Asn::from(0)).take(ProviderAsns::MAX_COUNT)
             ).unwrap().asn_count(),
-            u16::MAX
+            ProviderAsns::MAX_COUNT as u16,
         );
         assert!(
             ProviderAsns::try_from_iter(
-                iter::repeat(Asn::from(0)).take(usize::from(u16::MAX) + 1)
+                iter::repeat(Asn::from(0)).take(ProviderAsns::MAX_COUNT + 1)
             ).is_err()
         );
     }
@@ -1871,6 +1910,40 @@ mod test {
                 1, 7, 0x12, 0x34,         0, 0, 0, 24,
                 0xde, 0xad, 0xbe, 0xef,   0x00, 0x00, 0x0e, 0x10,
                 0x00, 0x00, 0x02, 0x58,   0x00, 0x00, 0x1c, 0x20,
+            ]
+        );
+    }
+
+    macro_rules! test_eod_pdu_version {
+        ($version:expr, $raw:expr) => {
+            if let Err(eod) = Payload::read(&mut $raw.as_slice()).await.unwrap() {
+                assert_eq!($version, eod.version());
+            } else {
+                panic!("expected End of Data PDU");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn end_of_data_versions() {
+        test_eod_pdu_version!(
+            0,
+            vec![0, 7, 0x12, 0x34, 0, 0, 0, 12,  0xde, 0xad, 0xbe, 0xef]
+        );
+        test_eod_pdu_version!(
+            1,
+            vec![
+                0x01, 0x07, 0x8e, 0xef, 0x00, 0x00, 0x00, 0x18,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x8f,
+                0x00, 0x00, 0x02, 0x58, 0x00, 0x00, 0x1c, 0x20
+            ]
+        );
+        test_eod_pdu_version!(
+            2,
+            vec![
+                0x02, 0x07, 0x8e, 0xef, 0x00, 0x00, 0x00, 0x18,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x8f,
+                0x00, 0x00, 0x02, 0x58, 0x00, 0x00, 0x1c, 0x20
             ]
         );
     }

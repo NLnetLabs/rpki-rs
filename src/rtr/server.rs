@@ -22,11 +22,7 @@ use super::state::State;
 /// The maximum protocol version we support.
 ///
 /// We support all protocol versions from 0 up to and including this value.
-///
-/// While the server technically supports version 2 as well, the format of the
-/// ASPA PDU has not yet been agreed upon. Rather than possibly deploying
-/// broken servers, we only announce support for version 0 or 1 for now.
-const MAX_VERSION: u8 = 1;
+const MAX_VERSION: u8 = 2;
 
 //============ Traits ========================================================
 
@@ -301,7 +297,7 @@ where Sock: AsyncRead + Unpin {
             }
             pdu::Error::PDU => {
                 debug!("RTR: Got error reply.");
-                Err(io::Error::new(io::ErrorKind::Other, "got error PDU"))
+                Err(io::Error::other("got error PDU"))
             }
             pdu => {
                 debug!("RTR: Got query with PDU {}.", pdu);

@@ -38,6 +38,11 @@ use crate::xml::decode::{Content, Error as XmlError, Reader, Name};
 };
 
 
+//------------ Maximum XML sizes ---------------------------------------------
+
+const MAX_FILE_SIZE: u64 = 100_000_000;
+const MAX_HEADER_SIZE: u64 = 1_000_000;
+
 //------------ NotificationFile ----------------------------------------------
 
 /// The RRDP Update Notification File.
@@ -217,106 +222,112 @@ impl NotificationFile {
         delta_limit: Option<usize>,
     ) -> Result<Self, XmlError> {
         let mut reader = Reader::new(reader);
-
         let mut session_id = None;
         let mut serial = None;
-        let mut outer = reader.start(|element| {
-            if element.name() != NOTIFICATION {
-                return Err(XmlError::Malformed)
-            }
-
-            element.attributes(|name, value| match name {
-                b"version" => {
-                    if value.ascii_into::<u8>()? != 1 {
-                        return Err(XmlError::Malformed)
-                    }
-                    Ok(())
+        let mut outer = reader.start_with_limit(
+            |element| {
+                if element.name() != NOTIFICATION {
+                    return Err(XmlError::Malformed)
                 }
-                b"session_id" => {
-                    session_id = Some(value.ascii_into()?);
-                    Ok(())
-                }
-                b"serial" => {
-                    serial = Some(value.ascii_into()?);
-                    Ok(())
-                }
-                _ => Err(XmlError::Malformed)
-            })
-        })?;
 
-        let mut snapshot = None;
-
-        let mut deltas = Ok(vec![]);
-
-        while let Some(mut content) = outer.take_opt_element(&mut reader,
-                                                             |element| {
-            match element.name() {
-                SNAPSHOT => {
-                    if snapshot.is_some() {
-                        return Err(XmlError::Malformed)
-                    }
-                    let mut uri = None;
-                    let mut hash = None;
-                    element.attributes(|name, value| match name {
-                        b"uri" => {
-                            uri = Some(value.ascii_into()?);
+                element.attributes(|name, value| {
+                    match name {
+                        b"version" => {
+                            if value.ascii_into::<u8>()? != 1 {
+                                return Err(XmlError::Malformed)
+                            }
                             Ok(())
                         }
-                        b"hash" => {
-                            hash = Some(value.ascii_into()?);
+                        b"session_id" => {
+                            session_id = Some(value.ascii_into()?);
                             Ok(())
                         }
-                        _ => Err(XmlError::Malformed)
-                    })?;
-                    match (uri, hash) {
-                        (Some(uri), Some(hash)) => {
-                            snapshot = Some(UriAndHash::new(uri, hash));
-                            Ok(())
-                        }
-                        _ => Err(XmlError::Malformed)
-                    }
-                }
-                DELTA => {
-                    let mut serial = None;
-                    let mut uri = None;
-                    let mut hash = None;
-                    element.attributes(|name, value| match name {
                         b"serial" => {
                             serial = Some(value.ascii_into()?);
                             Ok(())
                         }
-                        b"uri" => {
-                            uri = Some(value.ascii_into()?);
-                            Ok(())
-                        }
-                        b"hash" => {
-                            hash = Some(value.ascii_into()?);
-                            Ok(())
-                        }
                         _ => Err(XmlError::Malformed)
-                    })?;
-                    let (serial, uri, hash) = match (serial, uri, hash) {
-                        (Some(serial), Some(uri), Some(hash)) =>  {
-                            (serial, uri, hash)
+                    }
+                })
+            },
+            MAX_HEADER_SIZE
+        )?;
+
+        let mut snapshot = None;
+        let mut deltas = Ok(vec![]);
+
+        while let Some(mut content) = outer.take_opt_element_with_limit(
+            &mut reader,
+            |element| {
+                match element.name() {
+                    SNAPSHOT => {
+                        if snapshot.is_some() {
+                            return Err(XmlError::Malformed)
                         }
-                        _ => return Err(XmlError::Malformed)
-                    };
-                    if let Some(limit) = delta_limit {
-                        let len = deltas.as_ref().map(|deltas| {
-                            deltas.len()
-                        }).unwrap_or(0);
-                        if len >= limit {
-                            deltas = Err(DeltaListError::Oversized);
+                        let mut uri = None;
+                        let mut hash = None;
+                        element.attributes(|name, value| match name {
+                            b"uri" => {
+                                uri = Some(value.ascii_into()?);
+                                Ok(())
+                            }
+                            b"hash" => {
+                                hash = Some(value.ascii_into()?);
+                                Ok(())
+                            }
+                            _ => Err(XmlError::Malformed)
+                        })?;
+                        match (uri, hash) {
+                            (Some(uri), Some(hash)) => {
+                                snapshot = Some(UriAndHash::new(uri, hash));
+                                Ok(())
+                            }
+                            _ => Err(XmlError::Malformed)
                         }
                     }
-                    if let Ok(ref mut deltas) = deltas {
-                        deltas.push(DeltaInfo::new(serial, uri, hash))
+                    DELTA => {
+                        let mut serial = None;
+                        let mut uri = None;
+                        let mut hash = None;
+                        element.attributes(|name, value| match name {
+                            b"serial" => {
+                                serial = Some(value.ascii_into()?);
+                                Ok(())
+                            }
+                            b"uri" => {
+                                uri = Some(value.ascii_into()?);
+                                Ok(())
+                            }
+                            b"hash" => {
+                                hash = Some(value.ascii_into()?);
+                                Ok(())
+                            }
+                            _ => Err(XmlError::Malformed)
+                        })?;
+                        let (serial, uri, hash) = match (serial, uri, hash) {
+                            (Some(serial), Some(uri), Some(hash)) =>  {
+                                (serial, uri, hash)
+                            }
+                            _ => return Err(XmlError::Malformed)
+                        };
+                        if let Some(limit) = delta_limit {
+                            let len = deltas.as_ref().map(|deltas| {
+                                deltas.len()
+                            }).unwrap_or(0);
+                            if len >= limit {
+                                deltas = Err(DeltaListError::Oversized);
+                            }
+                        }
+                        if let Ok(ref mut deltas) = deltas {
+                            deltas.push(DeltaInfo::new(serial, uri, hash))
+                        }
+                        Ok(())
                     }
-                    Ok(())
+                    _ => Err(XmlError::Malformed)
                 }
-                _ => Err(XmlError::Malformed)
-            }
-        })? {
+            },
+            MAX_HEADER_SIZE
+        )? {
             content.take_end(&mut reader)?;
         }
 
@@ -774,33 +785,36 @@ pub trait ProcessSnapshot {
         
         let mut session_id = None;
         let mut serial = None;
-        let mut outer = reader.start(|element| {
-            if element.name() != SNAPSHOT {
-                info!("Bad outer: not snapshot, but {:?}", element.name());
-                return Err(XmlError::Malformed)
-            }
-            element.attributes(|name, value| match name {
-                b"version" => {
-                    if value.ascii_into::<u8>()? != 1 {
-                        info!("Bad version");
-                        return Err(XmlError::Malformed)
+        let mut outer = reader.start_with_limit(
+            |element| {
+                if element.name() != SNAPSHOT {
+                    info!("Bad outer: not snapshot, but {:?}", element.name());
+                    return Err(XmlError::Malformed)
+                }
+                element.attributes(|name, value| match name {
+                    b"version" => {
+                        if value.ascii_into::<u8>()? != 1 {
+                            info!("Bad version");
+                            return Err(XmlError::Malformed)
+                        }
+                        Ok(())
                     }
-                    Ok(())
-                }
-                b"session_id" => {
-                    session_id = Some(value.ascii_into()?);
-                    Ok(())
-                }
-                b"serial" => {
-                    serial = Some(value.ascii_into()?);
-                    Ok(())
-                }
-                _ => {
-                    info!("Bad attribute on snapshot.");
-                    Err(XmlError::Malformed)
-                }
-            })
-        }).map_err(Into::into)?;
+                    b"session_id" => {
+                        session_id = Some(value.ascii_into()?);
+                        Ok(())
+                    }
+                    b"serial" => {
+                        serial = Some(value.ascii_into()?);
+                        Ok(())
+                    }
+                    _ => {
+                        info!("Bad attribute on snapshot.");
+                        Err(XmlError::Malformed)
+                    }
+                })
+            },
+            MAX_HEADER_SIZE,
+        ).map_err(Into::into)?;
 
         match (session_id, serial) {
             (Some(session_id), Some(serial)) => {
@@ -814,22 +828,26 @@ pub trait ProcessSnapshot {
 
         loop {
             let mut uri = None;
-            let inner = outer.take_opt_element(&mut reader, |element| {
-                if element.name() != PUBLISH {
-                info!("Bad inner: not publish");
-                    return Err(ProcessError::malformed())
-                }
-                element.attributes(|name, value| match name {
-                    b"uri" => {
-                        uri = Some(value.ascii_into()?);
-                        Ok(())
+            let inner = outer.take_opt_element_with_limit(
+                &mut reader,
+                |element| {
+                    if element.name() != PUBLISH {
+                    info!("Bad inner: not publish");
+                        return Err(ProcessError::malformed())
                     }
-                    _ => {
-                        info!("Bad attribute on publish.");
-                        Err(ProcessError::malformed())
-                    }
-                })
-            })?;
+                    element.attributes(|name, value| match name {
+                        b"uri" => {
+                            uri = Some(value.ascii_into()?);
+                            Ok(())
+                        }
+                        _ => {
+                            info!("Bad attribute on publish.");
+                            Err(ProcessError::malformed())
+                        }
+                    })
+                },
+                MAX_FILE_SIZE,
+            )?;
             let mut inner = match inner {
                 Some(inner) => inner,
                 None => break
@@ -1084,28 +1102,31 @@ pub trait ProcessDelta {
         
         let mut session_id = None;
         let mut serial = None;
-        let mut outer = reader.start(|element| {
-            if element.name() != DELTA {
-                return Err(ProcessError::malformed())
-            }
-            element.attributes(|name, value| match name {
-                b"version" => {
-                    if value.ascii_into::<u8>()? != 1 {
-                        return Err(ProcessError::malformed())
+        let mut outer = reader.start_with_limit(
+            |element| {
+                if element.name() != DELTA {
+                    return Err(ProcessError::malformed())
+                }
+                element.attributes(|name, value| match name {
+                    b"version" => {
+                        if value.ascii_into::<u8>()? != 1 {
+                            return Err(ProcessError::malformed())
+                        }
+                        Ok(())
                     }
-                    Ok(())
-                }
-                b"session_id" => {
-                    session_id = Some(value.ascii_into()?);
-                    Ok(())
-                }
-                b"serial" => {
-                    serial = Some(value.ascii_into()?);
-                    Ok(())
-                }
-                _ => Err(ProcessError::malformed())
-            })
-        })?;
+                    b"session_id" => {
+                        session_id = Some(value.ascii_into()?);
+                        Ok(())
+                    }
+                    b"serial" => {
+                        serial = Some(value.ascii_into()?);
+                        Ok(())
+                    }
+                    _ => Err(ProcessError::malformed())
+                })
+            },
+            MAX_HEADER_SIZE,
+        )?;
 
         match (session_id, serial) {
             (Some(session_id), Some(serial)) => {
@@ -1118,24 +1139,28 @@ pub trait ProcessDelta {
             let mut action = None;
             let mut uri = None;
             let mut hash = None;
-            let inner = outer.take_opt_element(&mut reader, |element| {
-                match element.name() {
-                    PUBLISH => action = Some(Action::Publish),
-                    WITHDRAW => action = Some(Action::Withdraw),
-                    _ => return Err(ProcessError::malformed()),
-                };
-                element.attributes(|name, value| match name {
-                    b"uri" => {
-                        uri = Some(value.ascii_into()?);
-                        Ok(())
-                    }
-                    b"hash" => {
-                        hash = Some(value.ascii_into()?);
-                        Ok(())
-                    }
-                    _ => Err(ProcessError::malformed())
-                })
-            })?;
+            let inner = outer.take_opt_element_with_limit(
+                &mut reader,
+                |element| {
+                    match element.name() {
+                        PUBLISH => action = Some(Action::Publish),
+                        WITHDRAW => action = Some(Action::Withdraw),
+                        _ => return Err(ProcessError::malformed()),
+                    };
+                    element.attributes(|name, value| match name {
+                        b"uri" => {
+                            uri = Some(value.ascii_into()?);
+                            Ok(())
+                        }
+                        b"hash" => {
+                            hash = Some(value.ascii_into()?);
+                            Ok(())
+                        }
+                        _ => Err(ProcessError::malformed())
+                    })
+                },
+                MAX_FILE_SIZE,
+            )?;
             let mut inner = match inner {
                 Some(inner) => inner,
                 None => break
@@ -1343,7 +1368,7 @@ impl str::FromStr for Hash {
             )?.to_digit(16).ok_or(
                 ParseHashError::BAD_CHARS
             )?;
-            *octet = (first << 4 | second) as u8;
+            *octet = ((first << 4) | second) as u8;
         }
         Ok(Hash(res))
     }

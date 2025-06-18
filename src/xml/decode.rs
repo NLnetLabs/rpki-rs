@@ -7,23 +7,32 @@ use quick_xml::events::attributes::AttrError;
 use quick_xml::name::Namespace;
 use crate::util::base64;
 
+
+//------------ Reader --------------------------------------------------------
+
 /// An XML reader.
 ///
 /// This struct holds all state necessary for parsing an XML document.
 pub struct Reader<R: io::BufRead> {
-    reader: quick_xml::NsReader<R>,
+    reader: quick_xml::NsReader<BufReadCounter<R>>,
     buf: Vec<u8>,
 }
 
 impl<R: io::BufRead> Reader<R> {
     /// Creates a new reader from an underlying reader.
     pub fn new(reader: R) -> Self {
+        let reader = BufReadCounter::new(reader);
         let mut reader = quick_xml::NsReader::from_reader(reader);
         reader.trim_text(true);
         Reader {
             reader,
             buf: Vec::new(),
         }
+    }
+
+    pub fn reset_and_limit(&mut self, limit: u64) {
+        self.reader.get_mut().reset();
+        self.reader.get_mut().limit(limit);
     }
 
     /// Parse the start of the document.
@@ -55,6 +64,13 @@ impl<R: io::BufRead> Reader<R> {
                 _ => return Err(Error::Malformed.into())
             }
         }
+    }
+
+    pub fn start_with_limit<F, E>(
+        &mut self, op: F, limit: u64) -> Result<Content, E>
+    where F: FnOnce(Element) -> Result<(), E>, E: From<Error> {
+        self.reset_and_limit(limit);
+        self.start(op)
     }
 
     /// Parse the end of the document.
@@ -165,6 +181,18 @@ impl Content {
         }
     }
 
+    pub fn take_element_with_limit<R, F, E>(
+        &self,
+        reader: &mut Reader<R>,
+        op: F,
+        limit: u64
+    ) -> Result<Content, E>
+    where R: io::BufRead, F: FnOnce(Element) -> Result<(), E>, E: From<Error> {
+        reader.reset_and_limit(limit);
+
+        self.take_element(reader, op)
+    }
+
     pub fn take_opt_element<R, F, E>(
         &mut self,
         reader: &mut Reader<R>,
@@ -208,6 +236,21 @@ impl Content {
         }
     }
 
+    pub fn take_opt_element_with_limit<R, F, E>(
+        &mut self,
+        reader: &mut Reader<R>,
+        op: F,
+        limit: u64
+    ) -> Result<Option<Content>, E>
+    where
+        R: io::BufRead,
+        F: FnOnce(Element) -> Result<(), E>,
+        E: From<Error>
+    {
+        reader.reset_and_limit(limit);
+        self.take_opt_element(reader, op)
+    }
+
     pub fn take_text<R, F, T, E>(
         &mut self,
         reader: &mut Reader<R>,
@@ -235,6 +278,21 @@ impl Content {
                 _ => return Err(Error::Malformed.into())
             }
         }
+    }
+
+    pub fn take_text_with_limit<R, F, T, E>(
+        &mut self,
+        reader: &mut Reader<R>,
+        op: F,
+        limit: u64
+    ) -> Result<T, E>
+    where
+        R: io::BufRead,
+        F: FnOnce(Text) -> Result<T, E>,
+        E: From<Error>
+    {
+        reader.reset_and_limit(limit);
+        self.take_text(reader, op)
     }
 
     pub fn take_end<R: io::BufRead>(
@@ -449,6 +507,70 @@ impl Text<'_> {
         base64::Xml.decode(
             self.to_utf8()?.as_ref()
         ).map_err(|_| Error::Malformed)
+    }
+}
+
+
+//------------ BufReadCounter ------------------------------------------------
+
+/// A simple BufRead passthrough proxy that acts as a "trip computer"
+/// 
+/// It keeps track of the amount of bytes read since it was last reset.
+/// If a limit is set, it will return an IO error when attempting to read
+/// past that limit.
+struct BufReadCounter<R: io::BufRead> {
+    reader: R,
+    trip: u64,
+    limit: u64,
+}
+
+impl<R: io::BufRead> BufReadCounter<R> {
+    /// Create a new trip computer (resetting counter) for a BufRead.
+    ///
+    /// Acts transparently to the implementation of a BufRead below.
+    pub fn new(reader: R) -> Self {
+        BufReadCounter {
+            reader,
+            trip: 0,
+            limit: 0
+        }
+    }
+
+    /// Reset the amount of bytes read back to 0
+    pub fn reset(&mut self) {
+        self.trip = 0;
+    }
+
+    /// Set a limit or pass 0 to disable the limit to the maximum bytes to 
+    /// read. This overrides the previous limit.
+    pub fn limit(&mut self, limit: u64) {
+        self.limit = limit;
+    }
+}
+
+impl<R: io::BufRead> io::Read for BufReadCounter<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.reader.read(buf)
+    }
+}
+
+impl<R: io::BufRead> io::BufRead for BufReadCounter<R> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        if self.limit > 0 && self.trip > self.limit {
+            return Err(
+                io::Error::other(
+                    format!("Trip is over limit ({:?}/{:?})", 
+                        &self.trip, &self.limit))
+            );
+        }
+        self.reader.fill_buf()
+    }
+
+    fn consume(&mut self, amt: usize) {
+        self.trip = self.trip.saturating_add(
+            u64::try_from(amt).unwrap_or_default()
+        );
+        self.reader.consume(amt)
     }
 }
 
