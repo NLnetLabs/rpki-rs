@@ -49,8 +49,7 @@ impl Xml {
     ) -> Result<Vec<u8>, XmlDecodeError> {
         let input = str::from_utf8(input).map_err(|err| {
             let pos = err.valid_up_to();
-            io::Error::new(
-                io::ErrorKind::Other,
+            io::Error::other(
                 DecodeError::InvalidByte(pos, input[pos])
             )
         })?;
