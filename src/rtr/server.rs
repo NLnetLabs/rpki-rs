@@ -297,7 +297,7 @@ where Sock: AsyncRead + Unpin {
             }
             pdu::Error::PDU => {
                 debug!("RTR: Got error reply.");
-                Err(io::Error::new(io::ErrorKind::Other, "got error PDU"))
+                Err(io::Error::other("got error PDU"))
             }
             pdu => {
                 debug!("RTR: Got query with PDU {}.", pdu);

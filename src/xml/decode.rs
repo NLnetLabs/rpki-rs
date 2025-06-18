@@ -558,7 +558,7 @@ impl<R: io::BufRead> io::BufRead for BufReadCounter<R> {
     fn fill_buf(&mut self) -> io::Result<&[u8]> {
         if self.limit > 0 && self.trip > self.limit {
             return Err(
-                io::Error::new(io::ErrorKind::Other, 
+                io::Error::other(
                     format!("Trip is over limit ({:?}/{:?})", 
                         &self.trip, &self.limit))
             );

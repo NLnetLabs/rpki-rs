@@ -121,7 +121,7 @@ impl Signer for OpenSslSigner {
 
     fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error> {
         self.rng.fill(target).map_err(|_|
-            io::Error::new(io::ErrorKind::Other, "rng error")
+            io::Error::other("rng error")
         )
     }
 }
@@ -152,9 +152,7 @@ struct KeyPair(PKey<Private>);
 impl KeyPair {
     fn new(algorithm: PublicKeyFormat) -> Result<Self, io::Error> {
         if algorithm != PublicKeyFormat::Rsa {
-            return Err(io::Error::new(
-                io::ErrorKind::Other, "invalid algorithm"
-            ));
+            return Err(io::Error::other("invalid algorithm"));
         }
         // Issues unwrapping this indicate a bug in the openssl library.
         // So, there is no way to recover.
@@ -166,8 +164,7 @@ impl KeyPair {
     fn from_der(der: &[u8]) -> Result<Self, io::Error> {
         let res = PKey::private_key_from_der(der)?;
         if res.bits() != 2048 {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(io::Error::other(
                 format!("invalid key length {}", res.bits())
             ))
         }
@@ -177,8 +174,7 @@ impl KeyPair {
     fn from_pem(pem: &[u8]) -> Result<Self, io::Error> {
         let res = PKey::private_key_from_pem(pem)?;
         if res.bits() != 2048 {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(io::Error::other(
                 format!("invalid key length {}", res.bits())
             ))
         }
@@ -201,8 +197,7 @@ impl KeyPair {
         if !matches!(
             algorithm.signing_algorithm(), SigningAlgorithm::RsaSha256
         ) {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(io::Error::other(
                 "invalid algorithm"
             ));
         }

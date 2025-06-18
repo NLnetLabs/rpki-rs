@@ -372,11 +372,7 @@ impl<T: fmt::Display> Text for T {
         match write!(adaptor, "{}", self) {
             Ok(()) => Ok(()),
             Err(_) => match adaptor.into_result() {
-                Ok(()) => {
-                    Err(io::Error::new(
-                        io::ErrorKind::Other, "formatter error"
-                    ))
-                }
+                Ok(()) => Err(io::Error::other("formatter error")),
                 Err(err) => Err(err)
             }
         }
