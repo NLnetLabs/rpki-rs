@@ -26,5 +26,6 @@ pub mod resources;
 pub mod roa;
 pub mod rta;
 pub mod sigobj;
+pub mod tak;
 pub mod tal;
 pub mod x509;

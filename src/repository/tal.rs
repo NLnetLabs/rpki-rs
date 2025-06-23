@@ -20,12 +20,27 @@ use crate::util::base64;
 
 #[derive(Clone, Debug)]
 pub struct Tal {
+    comments: Vec<String>,
     uris: Vec<TalUri>,
     key_info: PublicKey,
     info: Arc<TalInfo>,
 }
 
 impl Tal {
+    pub fn new(
+        comments: Vec<String>,
+        uris: Vec<TalUri>,
+        key_info: PublicKey,
+        name: String,
+    ) -> Self {
+        Tal {
+            comments,
+            uris,
+            key_info,
+            info: Arc::new(TalInfo::from_name(name))
+        }
+    }
+
     pub fn read_dir<P: AsRef<Path>>(path: P) -> Result<TalIter, io::Error> {
         read_dir(path).map(TalIter)
     }
@@ -50,9 +65,10 @@ impl Tal {
         reader.read_to_end(&mut data)?;
 
         let mut data = data.as_slice();
+        let mut comments = Vec::new();
         let mut uris = Vec::new();
-        while let Some(&b'#') = data.first() {
-            Self::skip_line(&mut data)?;
+        while let Some(comment) = Self::take_comment(&mut data)? {
+            comments.push(comment)
         }
         while let Some(uri) = Self::take_uri(&mut data)? {
             uris.push(uri)
@@ -64,6 +80,7 @@ impl Tal {
         let key_info = base64::Xml.decode_bytes(&data)?;
         let key_info = PublicKey::decode(key_info.as_slice().into_source())?;
         Ok(Tal {
+            comments,
             uris,
             key_info,
             info: Arc::new(TalInfo::from_name(name))
@@ -83,11 +100,18 @@ impl Tal {
         })
     }
 
-    fn skip_line(data: &mut &[u8]) -> Result<(), ReadError> {
-        let mut split = data.splitn(2, |&ch| ch == b'\n');
-        let _ = split.next().ok_or(ReadError::UnexpectedEof)?;
-        *data = split.next().ok_or(ReadError::UnexpectedEof)?;
-        Ok(())
+    fn take_comment(data: &mut &[u8]) -> Result<Option<String>, ReadError> {
+        if let Some(&b'#') = data.first() {
+            let mut split = data.splitn(2, |&ch| ch == b'\n');
+            let line = split.next().ok_or(ReadError::UnexpectedEof)?;
+            *data = split.next().ok_or(ReadError::UnexpectedEof)?;
+
+            std::str::from_utf8(&line[1..]) // first char is '#' - we checked
+                .map(|s| Some(s.trim().to_string()))
+                .map_err(|_| ReadError::NonUtf8Comment)
+        } else {
+            Ok(None)
+        }
     }
 
     fn take_uri(data: &mut &[u8]) -> Result<Option<TalUri>, ReadError> {
@@ -107,6 +131,10 @@ impl Tal {
 }
 
 impl Tal {
+    pub fn comments(&self) -> &Vec<String> {
+        &self.comments
+    }
+
     pub fn uris(&self) -> ::std::slice::Iter<TalUri> {
         self.uris.iter()
     }
@@ -183,8 +211,24 @@ impl TalUri {
         uri::Https::from_bytes(bytes).map(Into::into)
     }
 
+    pub fn as_rsync_opt(&self) -> Option<&uri::Rsync> {
+        if let TalUri::Rsync(rsync) = self {
+            Some(rsync)
+        } else {
+            None
+        }
+    }
+
     pub fn is_rsync(&self) -> bool {
         matches!(*self, TalUri::Rsync(_))
+    }
+
+    pub fn as_https_opt(&self) -> Option<&uri::Https> {
+        if let TalUri::Https(https) = self {
+            Some(https)
+        } else {
+            None
+        }
     }
 
     pub fn is_https(&self) -> bool {
@@ -275,6 +319,7 @@ impl TalInfo {
 pub enum ReadError {
     Io(io::Error),
     UnexpectedEof,
+    NonUtf8Comment,
     BadUri(uri::Error),
     BadKeyInfoEncoding(base64::XmlDecodeError),
     BadKeyInfo(decode::DecodeError<Infallible>),
@@ -310,6 +355,8 @@ impl fmt::Display for ReadError {
             ReadError::Io(ref err) => err.fmt(f),
             ReadError::UnexpectedEof
                 => f.write_str("unexpected end of file"),
+            ReadError::NonUtf8Comment
+                => write!(f, "non utf8 character(s) in comment"),
             ReadError::BadUri(ref err)
                 => write!(f, "bad trust anchor URI: {}", err),
             ReadError::BadKeyInfoEncoding(ref err)
