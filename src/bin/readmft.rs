@@ -15,14 +15,14 @@ fn main() {
     let data = match fs::read(path) {
         Ok(file) => file,
         Err(err) => {
-            println!("Can’t read file: {}", err);
+            println!("Can’t read file: {err}");
             return;
         }
     };
     let _cert = match Manifest::decode(data.as_ref(), false) {
         Ok(cert) => cert,
         Err(err) => {
-            println!("Can’t decode manifest: {}", err);
+            println!("Can’t decode manifest: {err}");
             return
         }
     };

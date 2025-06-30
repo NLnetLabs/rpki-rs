@@ -477,7 +477,7 @@ impl fmt::Display for FriendlyRoaIpAddress {
         }
         write!(f, "/{}", self.addr.prefix.addr_len())?;
         if let Some(max_len) = self.addr.max_length {
-            write!(f, "-{}", max_len)?;
+            write!(f, "-{max_len}")?;
         }
         Ok(())
     }

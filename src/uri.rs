@@ -846,7 +846,7 @@ impl Scheme {
     }
 
     pub fn into_string(self) -> String {
-        format!("{}", self)
+        format!("{self}")
     }
 }
 

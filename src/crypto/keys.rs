@@ -564,7 +564,7 @@ impl fmt::Display for KeyIdentifier {
 
 impl fmt::Debug for KeyIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "KeyIdentifier({})", self)
+        write!(f, "KeyIdentifier({self})")
     }
 }
 

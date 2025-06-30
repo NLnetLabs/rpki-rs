@@ -759,7 +759,7 @@ impl fmt::Display for RouterKeyInfo{
 impl fmt::Debug for RouterKeyInfo{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("RouterKeyInfo")
-        .field(&format_args!("{}", self))
+        .field(&format_args!("{self}"))
         .finish()
     }
 }
@@ -1875,19 +1875,19 @@ mod test {
     fn provider_count() {
         assert_eq!(
             ProviderAsns::try_from_iter(
-                iter::repeat(Asn::from(0)).take(ProviderAsns::MAX_COUNT - 1)
+                std::iter::repeat_n(Asn::from(0), ProviderAsns::MAX_COUNT - 1)
             ).unwrap().asn_count(),
             (ProviderAsns::MAX_COUNT - 1) as u16,
         );
         assert_eq!(
             ProviderAsns::try_from_iter(
-                iter::repeat(Asn::from(0)).take(ProviderAsns::MAX_COUNT)
+                std::iter::repeat_n(Asn::from(0), ProviderAsns::MAX_COUNT)
             ).unwrap().asn_count(),
             ProviderAsns::MAX_COUNT as u16,
         );
         assert!(
             ProviderAsns::try_from_iter(
-                iter::repeat(Asn::from(0)).take(ProviderAsns::MAX_COUNT + 1)
+                std::iter::repeat_n(Asn::from(0), ProviderAsns::MAX_COUNT + 1)
             ).is_err()
         );
     }

@@ -47,7 +47,7 @@ mod tests {
             let client = reqwest::blocking::Client::builder()
                 .gzip(true)
                 .build()?;
-            let r = client.get(format!("http://127.0.0.1:{:?}/", port)).send()?;
+            let r = client.get(format!("http://127.0.0.1:{port:?}/")).send()?;
             
             let reader = io::BufReader::new(r);
             let p = NotificationFile::parse(reader);

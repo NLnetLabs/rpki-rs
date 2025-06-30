@@ -136,7 +136,7 @@ impl Iterator for TalIter {
                         Ok(Some(res)) => return Some(Ok(res)),
                         Ok(None) => { },
                         Err(err) => {
-                            error!("Bad trust anchor {}", err);
+                            error!("Bad trust anchor {err}");
                             return Some(Err(err))
                         }
                     }
@@ -311,11 +311,11 @@ impl fmt::Display for ReadError {
             ReadError::UnexpectedEof
                 => f.write_str("unexpected end of file"),
             ReadError::BadUri(ref err)
-                => write!(f, "bad trust anchor URI: {}", err),
+                => write!(f, "bad trust anchor URI: {err}"),
             ReadError::BadKeyInfoEncoding(ref err)
-                => write!(f, "bad key info: {}", err),
+                => write!(f, "bad key info: {err}"),
             ReadError::BadKeyInfo(ref err)
-                => write!(f, "bad key info: {}", err),
+                => write!(f, "bad key info: {err}"),
         }
     }
 }

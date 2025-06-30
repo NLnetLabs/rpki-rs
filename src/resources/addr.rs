@@ -732,7 +732,7 @@ impl fmt::Display for MaxLenPrefix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.prefix())?;
         if let Some(max_len) = self.max_len {
-            write!(f, "-{}", max_len)?;
+            write!(f, "-{max_len}")?;
         }
         Ok(())
     }
@@ -809,10 +809,10 @@ impl fmt::Display for ParsePrefixError {
                 f.write_str("missing length portion")
             }
             ParsePrefixError::InvalidAddr(err) => {
-                write!(f, "invalid address: {}", err)
+                write!(f, "invalid address: {err}")
             }
             ParsePrefixError::InvalidLen(err) => {
-                write!(f, "invalid length: {}", err)
+                write!(f, "invalid length: {err}")
             }
             ParsePrefixError::InvalidPrefix(err) => err.fmt(f),
         }
@@ -890,7 +890,7 @@ impl fmt::Display for ParseMaxLenPrefixError {
                 err.fmt(f)
             }
             ParseMaxLenPrefixError::InvalidMaxLenFormat(err) => {
-                write!(f, "invalid max length: {}", err)
+                write!(f, "invalid max length: {err}")
             }
             ParseMaxLenPrefixError::InvalidMaxLenValue(err) => {
                 err.fmt(f)

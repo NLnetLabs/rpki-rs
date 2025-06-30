@@ -369,7 +369,7 @@ impl<T: fmt::Display> Text for T {
         &self, mode: TextEscape, target: &mut impl io::Write
     ) -> Result<(), io::Error> {
         let mut adaptor = DisplayText::new(target, mode);
-        match write!(adaptor, "{}", self) {
+        match write!(adaptor, "{self}") {
             Ok(()) => Ok(()),
             Err(_) => match adaptor.into_result() {
                 Ok(()) => Err(io::Error::other("formatter error")),
@@ -381,7 +381,7 @@ impl<T: fmt::Display> Text for T {
     fn write_raw(
         &self, target: &mut impl io::Write
     ) -> Result<(), io::Error> {
-        write!(target, "{}", self)
+        write!(target, "{self}")
     }
 }
 
