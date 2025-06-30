@@ -428,8 +428,7 @@ where
             Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!(
-                    "server requested unsupported protocol version {}",
-                    version
+                    "server requested unsupported protocol version {version}"
                 )
             ))
         }
@@ -480,7 +479,7 @@ impl FirstReply {
             pdu => {
                 Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("unexpected PDU {}", pdu)
+                    format!("unexpected PDU {pdu}")
                 ))
             }
         }

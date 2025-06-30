@@ -300,7 +300,7 @@ where Sock: AsyncRead + Unpin {
                 Err(io::Error::other("got error PDU"))
             }
             pdu => {
-                debug!("RTR: Got query with PDU {}.", pdu);
+                debug!("RTR: Got query with PDU {pdu}.");
                 Ok(Some(Query::Error(
                     pdu::Error::new(
                         header.version(),

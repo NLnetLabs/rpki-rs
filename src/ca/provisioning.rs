@@ -891,14 +891,14 @@ impl fmt::Display for RequestResourceLimit {
         } else {
             let mut space_needed = false;
             if let Some(asn) = &self.asn {
-                write!(f, "asn: {}", asn)?;
+                write!(f, "asn: {asn}")?;
                 space_needed = true;
             }
             if let Some(ipv4) = self.ipv4() {
                 if space_needed {
                     write!(f, " ")?;
                 }
-                write!(f, "ipv4: {}", ipv4)?;
+                write!(f, "ipv4: {ipv4}")?;
                 space_needed = true;
             }
 
@@ -906,7 +906,7 @@ impl fmt::Display for RequestResourceLimit {
                 if space_needed {
                     write!(f, " ")?;
                 }
-                write!(f, "ipv6: {}", ipv6)?;
+                write!(f, "ipv6: {ipv6}")?;
             }
 
             Ok(())
@@ -1788,22 +1788,21 @@ impl fmt::Display for Error {
             Error::XmlError(e) => e.fmt(f),
             Error::InvalidPayloadType(e) => e.fmt(f),
             Error::InvalidCsrSyntax(msg) => {
-                write!(f, "Could not decode CSR: {}", msg)
+                write!(f, "Could not decode CSR: {msg}")
             }
             Error::CertSyntax(msg) => {
-                write!(f, "Could not decode certificate: {}", msg)
+                write!(f, "Could not decode certificate: {msg}")
             }
             Error::CmsDecode(msg) => {
-                write!(f, "Could not decode CMS: {}", msg)
+                write!(f, "Could not decode CMS: {msg}")
             }
             Error::Validation(e) => {
-                write!(f, "CMS is not valid: {}", e)
+                write!(f, "CMS is not valid: {e}")
             }
             Error::Limit(set, limit) => {
                 write!(
                     f,
-                    "Limit '{}' contains resources not held in set '{}'",
-                    limit, set
+                    "Limit '{limit}' contains resources not held in set '{set}'"
                 )
             }
         }

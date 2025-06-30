@@ -1401,7 +1401,7 @@ impl PartialEq<digest::Digest> for Hash {
 impl fmt::Display for Hash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for &ch in self.as_slice() {
-            write!(f, "{:02x}", ch)?;
+            write!(f, "{ch:02x}")?;
         }
         Ok(())
     }
@@ -1409,7 +1409,7 @@ impl fmt::Display for Hash {
 
 impl fmt::Debug for Hash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Hash({})", self)
+        write!(f, "Hash({self})")
     }
 }
 

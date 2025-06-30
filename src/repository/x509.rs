@@ -517,7 +517,7 @@ impl fmt::Display for Serial {
 
 impl fmt::Debug for Serial {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Serial({})", self)
+        write!(f, "Serial({self})")
     }
 }
 

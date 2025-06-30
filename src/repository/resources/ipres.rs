@@ -1139,7 +1139,7 @@ impl AddressRange {
         if min == max {
             min.fmt(f)
         } else {
-            write!(f, "{}-{}", min, max)
+            write!(f, "{min}-{max}")
         }
     }
 
@@ -1151,7 +1151,7 @@ impl AddressRange {
         if min == max {
             min.fmt(f)
         } else {
-            write!(f, "{}-{}", min, max)
+            write!(f, "{min}-{max}")
         }
     }
 }
@@ -2185,7 +2185,7 @@ impl fmt::Display for FromStrError {
         match *self {
             FromStrError::Addr(ref err) => err.fmt(f),
             FromStrError::PrefixLen(ref err)
-                => write!(f, "bad prefix length: {}", err),
+                => write!(f, "bad prefix length: {err}"),
             FromStrError::MissingSeparator
                 => f.write_str("missing separator"),
             FromStrError::FamilyMismatch

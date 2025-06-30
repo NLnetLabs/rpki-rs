@@ -1207,7 +1207,7 @@ impl RepoInfo {
         match name_space {
             "" => self.sia_base.clone(),
             _ => self.sia_base
-                    .join(format!("{}/", name_space).as_bytes())
+                    .join(format!("{name_space}/").as_bytes())
                     .unwrap(),
         }
     }
@@ -1268,7 +1268,7 @@ impl fmt::Display for Error {
             Error::InvalidHandle => write!(f, "Invalid handle"),
             Error::InvalidTaBase64(e) => e.fmt(f),
             Error::InvalidTaCertEncoding(e) => {
-                write!(f, "Cannot decode TA cert: {}", e)
+                write!(f, "Cannot decode TA cert: {e}")
             }
             Error::InvalidTaCert => write!(f, "Invalid TA cert"),
             &Error::InvalidUri(e) => e.fmt(f),
