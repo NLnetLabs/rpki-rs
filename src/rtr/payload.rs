@@ -204,7 +204,7 @@ impl Payload {
     }
 
     /// Converts a reference to payload into a payload reference.
-    pub fn as_ref(&self) -> PayloadRef {
+    pub fn as_ref(&self) -> PayloadRef<'_> {
         match self {
             Payload::Origin(origin) => PayloadRef::Origin(*origin),
             Payload::RouterKey(key) => PayloadRef::RouterKey(key),

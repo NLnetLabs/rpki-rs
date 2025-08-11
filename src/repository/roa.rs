@@ -285,7 +285,7 @@ impl RoaIpAddresses {
         self.0.is_empty()
     }
 
-    pub fn iter(&self) -> RoaIpAddressIter {
+    pub fn iter(&self) -> RoaIpAddressIter<'_> {
         RoaIpAddressIter(self.0.as_slice().into_source())
     }
 

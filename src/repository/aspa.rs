@@ -228,7 +228,7 @@ impl ProviderAsSet {
         }
     }
 
-    pub fn iter(&self) -> ProviderAsIter {
+    pub fn iter(&self) -> ProviderAsIter<'_> {
         ProviderAsIter(self.captured.as_slice().into_source())
     }
 

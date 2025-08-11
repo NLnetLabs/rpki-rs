@@ -171,7 +171,7 @@ impl Rsync {
     /// Since host names are case-insensitive, the authority part can be
     /// provided in different ways. This returns a version of the authority
     /// with all ASCII letters in lowercase.
-    pub fn canonical_authority(&self) -> Cow<str> {
+    pub fn canonical_authority(&self) -> Cow<'_, str> {
         let authority = self.authority();
         if authority.as_bytes().iter().any(u8::is_ascii_uppercase) {
             Cow::Owned(authority.to_ascii_lowercase())
@@ -197,7 +197,7 @@ impl Rsync {
     ///
     /// This is the same as the module but with the authority in canonical
     /// form.
-    pub fn canonical_module(&self) -> Cow<str> {
+    pub fn canonical_module(&self) -> Cow<'_, str> {
         if self.authority().as_bytes().iter().any(u8::is_ascii_uppercase) {
             let mut res = String::with_capacity(self.path_start);
             res.push_str("rsync://");
@@ -588,7 +588,7 @@ impl Https {
     /// Since host names are case-insensitive, the authority part can be
     /// provided in different ways. This returns a version of the authority
     /// with all ASCII letters in lowercase.
-    pub fn canonical_authority(&self) -> Cow<str> {
+    pub fn canonical_authority(&self) -> Cow<'_, str> {
         let authority = self.authority();
         if authority.as_bytes().iter().any(u8::is_ascii_uppercase) {
             Cow::Owned(authority.to_ascii_lowercase())

@@ -550,13 +550,13 @@ impl IpBlocks {
 
     /// Returns an IpBlocksForFamily for IPv4 for this,
     /// to help formatting.
-    pub fn as_v4(&self) -> IpBlocksForFamily {
+    pub fn as_v4(&self) -> IpBlocksForFamily<'_> {
         IpBlocksForFamily::v4(self)
     }
 
     /// Returns an IpBlocksForFamily for IPv4 for this,
     /// to help formatting.
-    pub fn as_v6(&self) -> IpBlocksForFamily {
+    pub fn as_v6(&self) -> IpBlocksForFamily<'_> {
         IpBlocksForFamily::v6(self)
     }
 }

@@ -62,7 +62,7 @@ impl Xml {
 
     pub fn decode_reader(
         self, input: &str,
-    ) -> XmlDecoderReader {
+    ) -> XmlDecoderReader<'_> {
         XmlDecoderReader(
             base64::read::DecoderReader::new(
                 SkipWhitespace::new(input),

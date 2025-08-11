@@ -306,7 +306,7 @@ impl SmallAsnSet {
         Self(vec)
     }
 
-    pub fn iter(&self) -> SmallSetIter {
+    pub fn iter(&self) -> SmallSetIter<'_> {
         self.0.iter().cloned()
     }
 
