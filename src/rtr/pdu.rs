@@ -1875,19 +1875,19 @@ mod test {
     fn provider_count() {
         assert_eq!(
             ProviderAsns::try_from_iter(
-                std::iter::repeat_n(Asn::from(0), ProviderAsns::MAX_COUNT - 1)
+                iter::repeat_n(Asn::from(0), ProviderAsns::MAX_COUNT - 1)
             ).unwrap().asn_count(),
             (ProviderAsns::MAX_COUNT - 1) as u16,
         );
         assert_eq!(
             ProviderAsns::try_from_iter(
-                std::iter::repeat_n(Asn::from(0), ProviderAsns::MAX_COUNT)
+                iter::repeat_n(Asn::from(0), ProviderAsns::MAX_COUNT)
             ).unwrap().asn_count(),
             ProviderAsns::MAX_COUNT as u16,
         );
         assert!(
             ProviderAsns::try_from_iter(
-                std::iter::repeat_n(Asn::from(0), ProviderAsns::MAX_COUNT + 1)
+                iter::repeat_n(Asn::from(0), ProviderAsns::MAX_COUNT + 1)
             ).is_err()
         );
     }

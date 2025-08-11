@@ -107,7 +107,7 @@ impl Tal {
 }
 
 impl Tal {
-    pub fn uris(&self) -> ::std::slice::Iter<TalUri> {
+    pub fn uris(&self) -> ::std::slice::Iter<'_, TalUri> {
         self.uris.iter()
     }
 
