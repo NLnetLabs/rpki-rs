@@ -2,9 +2,10 @@
 use std::{error, fmt, io, str};
 use std::borrow::Cow;
 use bytes::Bytes;
+use quick_xml::encoding::EncodingError;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::events::attributes::AttrError;
-use quick_xml::name::Namespace;
+use quick_xml::name::{Namespace, NamespaceError};
 use crate::util::base64;
 
 
@@ -23,7 +24,8 @@ impl<R: io::BufRead> Reader<R> {
     pub fn new(reader: R) -> Self {
         let reader = BufReadCounter::new(reader);
         let mut reader = quick_xml::NsReader::from_reader(reader);
-        reader.trim_text(true);
+        let config = reader.config_mut();
+        config.trim_text(true);
         Reader {
             reader,
             buf: Vec::new(),
@@ -127,8 +129,10 @@ impl<'b, 'n> Element<'b, 'n> {
             }
             if let Some(prefix) = attr.key.prefix() {
                 return Err(E::from(
-                    Error::Xml(quick_xml::Error::UnknownPrefix(
-                        prefix.as_ref().into()
+                    Error::Xml(quick_xml::Error::Namespace(
+                        quick_xml::name::NamespaceError::UnknownPrefix(
+                            prefix.as_ref().into()
+                        )
                     ))
                 ))
             }
@@ -495,12 +499,12 @@ pub struct Text<'a>(quick_xml::events::BytesText<'a>);
 
 impl Text<'_> {
     pub fn to_utf8(&self) -> Result<Cow<'_, str>, Error> {
-        Ok(self.0.unescape()?)
+        Ok(self.0.decode()?)
     }
 
     pub fn to_ascii(&self) -> Result<Cow<'_, str>, Error> {
         // XXX Shouldn’t this reject non-ASCII Unicode?
-        Ok(self.0.unescape()?)
+        Ok(self.0.decode()?)
     }
 
     pub fn base64_decode(&self) -> Result<Vec<u8>, Error> {
@@ -587,6 +591,18 @@ pub enum Error {
 impl From<quick_xml::Error> for Error {
     fn from(err: quick_xml::Error) -> Self {
         Error::Xml(err)
+    }
+}
+
+impl From<NamespaceError> for Error {
+    fn from(err: NamespaceError) -> Self {
+        Error::Xml(err.into())
+    }
+}
+
+impl From<EncodingError> for Error {
+    fn from(err: EncodingError) -> Self {
+        Error::Xml(err.into())
     }
 }
 
