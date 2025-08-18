@@ -612,4 +612,12 @@ impl fmt::Display for Error {
     }
 }
 
-impl error::Error for Error { } 
+impl error::Error for Error {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            Error::Xml(error) => Some(error),
+            Error::XmlAttr(attr_error) => Some(attr_error),
+            Error::Malformed => None,
+        }
+    }
+ } 

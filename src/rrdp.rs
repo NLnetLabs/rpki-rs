@@ -1623,7 +1623,14 @@ impl fmt::Display for ProcessError {
     }
 }
 
-impl error::Error for ProcessError { }
+impl error::Error for ProcessError { 
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            ProcessError::Io(error) => Some(error),
+            ProcessError::Xml(error) => Some(error),
+        }
+    }
+}
 
 
 //============ Tests =========================================================
