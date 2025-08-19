@@ -321,11 +321,11 @@ impl fmt::Display for FromStrError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             FromStrError::Asn(e)
-                => write!(f, "cannot parse ASN resources: {}", e),
+                => write!(f, "cannot parse ASN resources: {e}"),
             FromStrError::Ipv4(e)
-                => write!(f, "cannot parse IPv4 resources: {}", e),
+                => write!(f, "cannot parse IPv4 resources: {e}"),
             FromStrError::Ipv6(e)
-                => write!(f, "cannot parse IPv6 resources: {}", e),
+                => write!(f, "cannot parse IPv6 resources: {e}"),
         }
     }
 }

@@ -877,7 +877,7 @@ impl fmt::Display for Base64KeyInfo {
 impl fmt::Debug for Base64KeyInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("Base64KeyInfo")
-        .field(&format_args!("{}", self))
+        .field(&format_args!("{self}"))
         .finish()
     }
 }
@@ -889,7 +889,7 @@ impl Serialize for Base64KeyInfo {
     fn serialize<S: serde::Serializer>(
         &self, serializer: S
     ) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(&format_args!("{}", self))
+        serializer.collect_str(&format_args!("{self}"))
     }
 }
 

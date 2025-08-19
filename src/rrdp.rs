@@ -1401,7 +1401,7 @@ impl PartialEq<digest::Digest> for Hash {
 impl fmt::Display for Hash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for &ch in self.as_slice() {
-            write!(f, "{:02x}", ch)?;
+            write!(f, "{ch:02x}")?;
         }
         Ok(())
     }
@@ -1409,7 +1409,7 @@ impl fmt::Display for Hash {
 
 impl fmt::Debug for Hash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Hash({})", self)
+        write!(f, "Hash({self})")
     }
 }
 
@@ -1623,7 +1623,14 @@ impl fmt::Display for ProcessError {
     }
 }
 
-impl error::Error for ProcessError { }
+impl error::Error for ProcessError { 
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            ProcessError::Io(error) => Some(error),
+            ProcessError::Xml(error) => Some(error),
+        }
+    }
+}
 
 
 //============ Tests =========================================================

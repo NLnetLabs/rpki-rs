@@ -285,7 +285,7 @@ impl RoaIpAddresses {
         self.0.is_empty()
     }
 
-    pub fn iter(&self) -> RoaIpAddressIter {
+    pub fn iter(&self) -> RoaIpAddressIter<'_> {
         RoaIpAddressIter(self.0.as_slice().into_source())
     }
 
@@ -477,7 +477,7 @@ impl fmt::Display for FriendlyRoaIpAddress {
         }
         write!(f, "/{}", self.addr.prefix.addr_len())?;
         if let Some(max_len) = self.addr.max_length {
-            write!(f, "-{}", max_len)?;
+            write!(f, "-{max_len}")?;
         }
         Ok(())
     }

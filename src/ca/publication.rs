@@ -1512,13 +1512,13 @@ impl fmt::Display for Error {
             Error::InvalidVersion => write!(f, "Invalid version"),
             Error::XmlError(e) => e.fmt(f),
             Error::InvalidErrorCode(code) => {
-                write!(f, "Invalid error code: {}", code)
+                write!(f, "Invalid error code: {code}")
             }
             Error::CmsDecode(msg) => {
-                write!(f, "Could not decode CMS: {}", msg)
+                write!(f, "Could not decode CMS: {msg}")
             }
             Error::Validation(e) => {
-                write!(f, "CMS is not valid: {}", e)
+                write!(f, "CMS is not valid: {e}")
             }
             Error::NotQuery => {
                 write!(f, "was not a query message")

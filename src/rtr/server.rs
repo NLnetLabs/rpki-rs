@@ -81,13 +81,13 @@ pub trait PayloadSource: Clone + Sync + Send + 'static {
 /// A type providing access to a complete payload set.
 pub trait PayloadSet: Sync + Send + 'static {
     /// Returns the next element in the payload set.
-    fn next(&mut self) -> Option<PayloadRef>;
+    fn next(&mut self) -> Option<PayloadRef<'_>>;
 }
 
 /// A type providing access to a diff between payload sets.
 pub trait PayloadDiff: Sync + Send + 'static {
     /// Returns the next element in the diff.
-    fn next(&mut self) -> Option<(PayloadRef, Action)>;
+    fn next(&mut self) -> Option<(PayloadRef<'_>, Action)>;
 }
 
 
@@ -300,7 +300,7 @@ where Sock: AsyncRead + Unpin {
                 Err(io::Error::other("got error PDU"))
             }
             pdu => {
-                debug!("RTR: Got query with PDU {}.", pdu);
+                debug!("RTR: Got query with PDU {pdu}.");
                 Ok(Some(Query::Error(
                     pdu::Error::new(
                         header.version(),

@@ -104,7 +104,7 @@ impl<'b, 'n> Element<'b, 'n> {
     }
 
     /// Returns the name of the element.
-    pub fn name(&self) -> Name {
+    pub fn name(&self) -> Name<'_, '_> {
         Name::new(
             self.ns.map(|ns| ns.0),
             self.start.local_name().into_inner()
@@ -494,11 +494,11 @@ impl AttrValue<'_> {
 pub struct Text<'a>(quick_xml::events::BytesText<'a>);
 
 impl Text<'_> {
-    pub fn to_utf8(&self) -> Result<Cow<str>, Error> {
+    pub fn to_utf8(&self) -> Result<Cow<'_, str>, Error> {
         Ok(self.0.unescape()?)
     }
 
-    pub fn to_ascii(&self) -> Result<Cow<str>, Error> {
+    pub fn to_ascii(&self) -> Result<Cow<'_, str>, Error> {
         // XXX Shouldn’t this reject non-ASCII Unicode?
         Ok(self.0.unescape()?)
     }
@@ -612,4 +612,12 @@ impl fmt::Display for Error {
     }
 }
 
-impl error::Error for Error { } 
+impl error::Error for Error {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            Error::Xml(error) => Some(error),
+            Error::XmlAttr(attr_error) => Some(attr_error),
+            Error::Malformed => None,
+        }
+    }
+ } 

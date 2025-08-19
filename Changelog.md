@@ -6,6 +6,12 @@ Breaking changes
 
 New
 
+* Implement `std::error::Error::source` for  `xml::decode::Error` and
+  `rrdp::ProcessError` to provide access to underlying error. ([#335]);
+
+[#335]: https://github.com/NLnetLabs/rpki-rs/pull/335
+
+
 Bug fixes
 
 Other changes
