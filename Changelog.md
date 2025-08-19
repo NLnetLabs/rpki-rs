@@ -4,11 +4,15 @@
 
 Breaking changes
 
+* Updated the format for SLURM v2 to the latest version of
+  [draft-ietf-sidrops-aspa-slurm}(https://datatracker.ietf.org/doc/html/draft-ietf-sidrops-aspa-slurm). ([#331])
+
 New
 
 * Implement `std::error::Error::source` for  `xml::decode::Error` and
   `rrdp::ProcessError` to provide access to underlying error. ([#335]);
 
+[#331]: https://github.com/NLnetLabs/rpki-rs/pull/331
 [#335]: https://github.com/NLnetLabs/rpki-rs/pull/335
 
 
