@@ -1581,40 +1581,40 @@ impl TbsCert {
                     let value = OctetString::take_from(cons)?;
                     Mode::Der.decode(value, |content| {
                         if id == oid::CE_BASIC_CONSTRAINTS {
-                            Self::take_basic_constraints(
-                                content, &mut basic_ca
+                            Self::take_basic_constraints_critical(
+                                content, critical, &mut basic_ca
                             )
                         } else if id == oid::CE_SUBJECT_KEY_IDENTIFIER {
-                            Self::take_subject_key_identifier(
-                                content, &mut subject_key_id
+                            Self::take_subject_key_identifier_critical(
+                                content, critical, &mut subject_key_id
                             )
                         } else if id == oid::CE_AUTHORITY_KEY_IDENTIFIER {
-                            Self::take_authority_key_identifier(
-                                content, &mut authority_key_id
+                            Self::take_authority_key_identifier_critical(
+                                content, critical, &mut authority_key_id
                             )
                         } else if id == oid::CE_KEY_USAGE {
-                            Self::take_key_usage(
-                                content, &mut key_usage
+                            Self::take_key_usage_critical(
+                                content, critical, &mut key_usage
                             )
                         } else if id == oid::CE_EXTENDED_KEY_USAGE {
-                            Self::take_extended_key_usage(
-                                content, &mut extended_key_usage
+                            Self::take_extended_key_usage_critical(
+                                content, critical, &mut extended_key_usage
                             )
                         } else if id == oid::CE_CRL_DISTRIBUTION_POINTS {
                             Self::take_crl_distribution_points(
-                                content, &mut crl_uri
+                                content, critical, &mut crl_uri
                             )
                         } else if id == oid::PE_AUTHORITY_INFO_ACCESS {
                             Self::take_authority_info_access(
-                                content, &mut ca_issuer
+                                content, critical, &mut ca_issuer
                             )
                         } else if id == oid::PE_SUBJECT_INFO_ACCESS {
-                            Self::take_subject_info_access(
-                                content, &mut sia
+                            Self::take_subject_info_access_critical(
+                                content, critical, &mut sia
                             )
                         } else if id == oid::CE_CERTIFICATE_POLICIES {
                             Self::take_certificate_policies(
-                                content, &mut overclaim
+                                content, critical, &mut overclaim
                             )
                         } else if let Some(m) = Overclaim::from_ip_res(&id) {
                             ip_overclaim = Some(m);
@@ -1708,6 +1708,14 @@ impl TbsCert {
         })
     }
 
+    // The following functions are re-used by the CA module for parsing
+    // certificate signing requests and identity certificates. Neither of
+    // the currently check the critical flag and introducing such a check
+    // could break interoperability and existing Krill installations.
+    //
+    // To avoid that, we keep versions that do and do not check the flag for
+    // now if they are reused, i.e., are `pub(crate)`.
+
     /// Parses the Basic Constraints extension.
     ///
     /// ```text
@@ -1747,6 +1755,22 @@ impl TbsCert {
         }
     }
 
+    /// Parses the Basic Constraints extension considering the critical flag.
+    ///
+    /// The extension is critial for resource certficates.
+    pub(crate) fn take_basic_constraints_critical<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+        critical: bool,
+        basic_ca: &mut Option<bool>,
+    ) -> Result<(), DecodeError<S::Error>> {
+        if !critical {
+            Err(cons.content_err("non-critical Basic Constraints extension"))
+        }
+        else {
+            Self::take_basic_constraints(cons, basic_ca)
+        }
+    }
+
     /// Parses the Subject Key Identifier extension.
     ///
     /// ```text
@@ -1769,6 +1793,24 @@ impl TbsCert {
         else {
             *subject_key_id = Some(KeyIdentifier::take_from(cons)?);
             Ok(())
+        }
+    }
+
+    /// Parses the Subject Key Identifier considering the critical flag.
+    ///
+    /// Must be non-critical for all Internet certificates.
+    fn take_subject_key_identifier_critical<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+        critical: bool,
+        basic_ca: &mut Option<KeyIdentifier>,
+    ) -> Result<(), DecodeError<S::Error>> {
+        if critical {
+            Err(cons.content_err(
+                "critical Subject Key Identifier extension"
+            ))
+        }
+        else {
+            Self::take_subject_key_identifier(cons, basic_ca)
         }
     }
 
@@ -1803,6 +1845,24 @@ impl TbsCert {
         }
     }
 
+    /// Parses the Authority Key Identifier considering the critical flag.
+    ///
+    /// Must be non-critical for all Internet certificates.
+    fn take_authority_key_identifier_critical<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+        critical: bool,
+        authority_key_id: &mut Option<KeyIdentifier>,
+    ) -> Result<(), DecodeError<S::Error>> {
+        if critical {
+            Err(cons.content_err(
+                "critical Authority Key Identifier extension"
+            ))
+        }
+        else {
+            Self::take_authority_key_identifier(cons, authority_key_id)
+        }
+    }
+
     /// Parses the Key Usage extension.
     ///
     /// ```text
@@ -1821,7 +1881,8 @@ impl TbsCert {
     ///
     /// Must be present. In CA certificates, keyCertSign and
     /// CRLSign must be set, in EE certificates, digitalSignatures must be
-    /// set.
+    /// set. All other bits must be zero. DER encoding mandates that all
+    /// trailing zeros must be removed.
     pub(crate) fn take_key_usage<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         key_usage: &mut Option<KeyUsage>
@@ -1846,6 +1907,24 @@ impl TbsCert {
         }
     }
 
+    /// Parses the Key Usage extension considering the critical flag.
+    ///
+    /// Should be critical for Internet certificates and must be critical
+    /// for resource certificates (although not explicitely a MUST, so you
+    /// could argue that non-critical is fine).
+    fn take_key_usage_critical<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+        critical: bool,
+        key_usage: &mut Option<KeyUsage>
+    ) -> Result<(), DecodeError<S::Error>> {
+        if !critical {
+            Err(cons.content_err("non-critical Key Usage extension"))
+        }
+        else {
+            Self::take_key_usage(cons, key_usage)
+        }
+    }
+
     /// Parses the Extended Key Usage extension.
     ///
     /// ```text
@@ -1864,6 +1943,22 @@ impl TbsCert {
         else {
             *extended_key_usage = Some(ExtendedKeyUsage::take_from(cons)?);
             Ok(())
+        }
+    }
+
+    /// Parses the Extended Key Usage considering the critical flag.
+    ///
+    /// Must not be critical for resource certficates.
+    fn take_extended_key_usage_critical<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+        critical: bool,
+        extended_key_usage: &mut Option<ExtendedKeyUsage>
+    ) -> Result<(), DecodeError<S::Error>> {
+        if critical {
+            Err(cons.content_err("critical Extended Key Usage extension"))
+        }
+        else {
+            Self::take_extended_key_usage(cons, extended_key_usage)
         }
     }
 
@@ -1888,13 +1983,21 @@ impl TbsCert {
     /// distributionPoint field must be present and it must contain
     /// the fullName choice which can be one or more uniformResourceIdentifier
     /// choices.
+    ///
+    /// This extensions is non-critical for resource certificates.
     fn take_crl_distribution_points<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
+        critical: bool,
         crl_uri: &mut Option<uri::Rsync>
     ) -> Result<(), DecodeError<S::Error>> {
         if crl_uri.is_some() {
             Err(cons.content_err(
                 "duplicate CRL Distribution Points extension"
+            ))
+        }
+        else if critical {
+            Err(cons.content_err(
+                "critical CRL Distribution Points extension"
             ))
         }
         else {
@@ -1938,13 +2041,21 @@ impl TbsCert {
     /// exactly one entry with accessMethod id-ad-caIssuers and URIs in the
     /// generalName. There must be one rsync URI, there may be more. We only
     /// support the one, though, so we’ll ignore the rest.
+    ///
+    /// This extensions is non-critical for all internet certificates.
     fn take_authority_info_access<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
+        critical: bool,
         ca_issuer: &mut Option<uri::Rsync>
     ) -> Result<(), DecodeError<S::Error>> {
         if ca_issuer.is_some() {
             Err(cons.content_err(
                 "duplicate Authority Information Access extension"
+            ))
+        }
+        else if critical {
+            Err(cons.content_err(
+                "critical Authority Information Access extension"
             ))
         }
         else {
@@ -2004,6 +2115,24 @@ impl TbsCert {
         }
     }
 
+    /// Parses the Subject Information Access considering the critical flag.
+    ///
+    /// This extensions is non-critical for all internet certificates.
+    fn take_subject_info_access_critical<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+        critical: bool,
+        sia: &mut Option<Sia>,
+    ) -> Result<(), DecodeError<S::Error>> {
+        if critical {
+            Err(cons.content_err(
+                "critical Subject Key Identifier extension"
+            ))
+        }
+        else {
+            Self::take_subject_info_access(cons, sia)
+        }
+    }
+
     /// Parses the Certificate Policies extension.
     ///
     /// ```text
@@ -2022,12 +2151,20 @@ impl TbsCert {
     /// Must be present. There are two policyIdentifiers for resource
     /// certificates. They define how we deal with overclaim of resources.
     /// The policyQualifiers are not interesting for us.
+    ///
+    /// Must be critical for resource certificates.
     fn take_certificate_policies<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
+        critical: bool,
         overclaim: &mut Option<Overclaim>,
     ) -> Result<(), DecodeError<S::Error>> {
         if overclaim.is_some() {
             Err(cons.content_err("duplicate Certificate Policies extension"))
+        }
+        else if !critical {
+            Err(cons.content_err(
+                "non-critical Certificate Policies extension"
+            ))
         }
         else {
             *overclaim = Some(
