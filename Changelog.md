@@ -11,14 +11,37 @@ New
 
 * Implement `std::error::Error::source` for  `xml::decode::Error` and
   `rrdp::ProcessError` to provide access to underlying error. ([#335]);
+* Implemented updated requirements for signed objects from RFC 9589 making
+  the Signing Time attribute mandatory and the Binary Signing Time
+  attribute illegal. ([#340])
+* Added more strict parsing of resource certificates:
 
-[#331]: https://github.com/NLnetLabs/rpki-rs/pull/331
-[#335]: https://github.com/NLnetLabs/rpki-rs/pull/335
+  * correctly check the bits in the Key Usage extension ([#337]),
+  * require the correct value of the critical flag in extensions ([#339]),
 
+  These issues were reported by Zizhi Shang, Zhechao Lin, Jiahao Cao,
+  Yangyang Wang, and Mingwei Xu of the Institute for Network Sciences and
+  Cyberspace (INSC), Tsinghua University.
+
+* Disallow empty issuer and subject names in resource certificates.
+
+  This issue was reported by Zhechao Lin, Zizhi Shang, Jiahao Cao, Yangyang
+  Wang, and Mingwei Xu of the Institute for Network Sciences and Cyberspace,
+  Tsinghua University.
 
 Bug fixes
 
 Other changes
+
+* Added some basic scaffolding for fuzzing object parsing. ([#313])
+
+[#313]: https://github.com/NLnetLabs/rpki-rs/pull/313
+[#331]: https://github.com/NLnetLabs/rpki-rs/pull/331
+[#335]: https://github.com/NLnetLabs/rpki-rs/pull/335
+[#337]: https://github.com/NLnetLabs/rpki-rs/pull/337
+[#338]: https://github.com/NLnetLabs/rpki-rs/pull/338
+[#339]: https://github.com/NLnetLabs/rpki-rs/pull/339
+[#340]: https://github.com/NLnetLabs/rpki-rs/pull/340
 
 
 ## 0.18.6
