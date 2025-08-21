@@ -24,8 +24,7 @@ impl<R: io::BufRead> Reader<R> {
     pub fn new(reader: R) -> Self {
         let reader = BufReadCounter::new(reader);
         let mut reader = quick_xml::NsReader::from_reader(reader);
-        let config = reader.config_mut();
-        config.trim_text(true);
+        reader.config_mut().trim_text(true);
         Reader {
             reader,
             buf: Vec::new(),
