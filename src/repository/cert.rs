@@ -1893,10 +1893,10 @@ impl TbsCert {
         else {
             *key_usage = Some({
                 let bits = BitString::take_from(cons)?;
-                if bits.bit(5) && bits.bit(6) {
+                if bits.bit_len() == 7 && bits.octet(0) == 0b0000_0110 {
                     Ok(KeyUsage::Ca)
                 }
-                else if bits.bit(0) {
+                else if bits.bit_len() == 1 && bits.bit(0) {
                     Ok(KeyUsage::Ee)
                 }
                 else {
