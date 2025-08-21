@@ -301,14 +301,12 @@ impl SignedMessage {
         
         // Produce signed attributes
         let message_digest = digest_algorithm.digest(&data).into();
-        let signing_time = Some(Time::now());
-        let binary_signing_time = None;
+        let signing_time = Time::now();
         
         let signed_attrs = SignedAttrs::new(
             &content_type,
             &message_digest,
             signing_time,
-            binary_signing_time
         );
         
         let (signature, ee_key) = signer.sign_one_off(

@@ -46,8 +46,7 @@ pub struct SignedObject {
     //--- SignedAttributes
     //
     message_digest: MessageDigest,
-    signing_time: Option<Time>,
-    binary_signing_time: Option<u64>,
+    signing_time: Time,
 }
 
 /// # Data Access
@@ -79,13 +78,8 @@ impl SignedObject {
     }
 
     /// Returns the signing time if available.
-    pub fn signing_time(&self) -> Option<Time> {
+    pub fn signing_time(&self) -> Time {
         self.signing_time
-    }
-
-    /// Returns the binary signing time if available.
-    pub fn binary_signing_time(&self) -> Option<u64> {
-        self.binary_signing_time
     }
 }
 
@@ -190,7 +184,6 @@ impl SignedObject {
                         signature,
                         message_digest: attrs.1,
                         signing_time: attrs.3,
-                        binary_signing_time: attrs.4
                     })
                 })
             })
@@ -344,8 +337,7 @@ impl SignedAttrs {
     pub(crate) fn new(
         content_type: &Oid<impl AsRef<[u8]>>,
         digest: &MessageDigest,
-        signing_time: Option<Time>,
-        binary_signing_time: Option<u64>,
+        signing_time: Time,
     ) -> Self {
         // In DER encoding, the values of SET OFs is ordered via the octet
         // string of their DER encoding. Given that all our values are
@@ -359,34 +351,23 @@ impl SignedAttrs {
                 content_type.encode_ref(),
             )
         )));
-        let mut signing_time = signing_time.map(|time| {
-            encode::sequence((
-                oid::SIGNING_TIME.encode(),
-                encode::set(
-                    time.encode_varied(),
-                    )
-            ))
-        });
+        let mut signing_time = Some(encode::sequence((
+            oid::SIGNING_TIME.encode(),
+            encode::set(
+                signing_time.encode_varied(),
+            )
+        )));
         let mut message_digest = Some(encode::sequence((
             oid::MESSAGE_DIGEST.encode(),
             encode::set(
                 digest.encode_ref(),
             )
         )));
-        let mut binary_signing_time = binary_signing_time.map(|time| {
-            encode::sequence((
-                oid::AA_BINARY_SIGNING_TIME.encode(),
-                encode::set(
-                    time.encode()
-                )
-            ))
-        });
 
         let mut len = [
             (0, StartOfValue::new(&content_type)),
             (1, StartOfValue::new(&signing_time)),
             (2, StartOfValue::new(&message_digest)),
-            (3, StartOfValue::new(&binary_signing_time)),
         ];
         len.sort_by_key(|&(_, len)| len.unwrap());
 
@@ -408,11 +389,6 @@ impl SignedAttrs {
                         res.extend(val)
                     }
                 }
-                3 => {
-                    if let Some(val) = binary_signing_time.take() {
-                        res.extend(val)
-                    }
-                }
                 _ => unreachable!()
             }
         }
@@ -423,7 +399,7 @@ impl SignedAttrs {
     /// Takes the signed attributes from the beginning of a constructed value.
     ///
     /// Returns the raw signed attrs, the message digest, the content type
-    /// object identifier, and the two optional signing times.
+    /// object identifier, and signing times.
     ///
     /// If strict is true, any unknown signed attributes are rejected, if
     /// strict is false they will be ignored.
@@ -432,13 +408,12 @@ impl SignedAttrs {
         cons: &mut decode::Constructed<S>,
         strict: bool
     ) -> Result<
-        (Self, MessageDigest, Oid<Bytes>, Option<Time>, Option<u64>),
+        (Self, MessageDigest, Oid<Bytes>, Time),
         DecodeError<S::Error>
     > {
         let mut message_digest = None;
         let mut content_type = None;
         let mut signing_time = None;
-        let mut binary_signing_time = None;
         let raw = cons.take_constructed_if(Tag::CTX_0, |cons| {
             cons.capture(|cons| {
                 while let Some(()) = cons.take_opt_sequence(|cons| {
@@ -451,12 +426,6 @@ impl SignedAttrs {
                     }
                     else if oid == oid::SIGNING_TIME {
                         Self::take_signing_time(cons, &mut signing_time)
-                    }
-                    else if oid == oid::AA_BINARY_SIGNING_TIME {
-                        Self::take_bin_signing_time(
-                            cons,
-                            &mut binary_signing_time
-                        )
                     }
                     else if !strict {
                         cons.skip_all()
@@ -480,17 +449,18 @@ impl SignedAttrs {
                 ))
             }
         };
-        let content_type = match content_type {
-            Some(some) => some,
-            None => {
-                return Err(cons.content_err(
-                    "missing content type in signed attributes",
-                ))
-            }
+        let Some(content_type) = content_type else {
+            return Err(cons.content_err(
+                "missing content type in signed attributes",
+            ))
+        };
+        let Some(signing_time) = signing_time else {
+            return Err(cons.content_err(
+                "missing signing time in signed attributes"
+            ))
         };
         Ok((
             Self(raw), message_digest, content_type, signing_time,
-            binary_signing_time
         ))
     }
 
@@ -504,7 +474,7 @@ impl SignedAttrs {
     pub fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<
-        (Self, MessageDigest, Oid<Bytes>, Option<Time>, Option<u64>),
+        (Self, MessageDigest, Oid<Bytes>, Time),
         DecodeError<S::Error>
     > {
         Self::take_from_with_mode(cons, true)
@@ -524,7 +494,7 @@ impl SignedAttrs {
     pub fn take_from_signed_message<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<
-        (Self, MessageDigest, Oid<Bytes>, Option<Time>, Option<u64>),
+        (Self, MessageDigest, Oid<Bytes>, Time),
         DecodeError<S::Error>
     > {
         Self::take_from_with_mode(cons, false)
@@ -574,21 +544,6 @@ impl SignedAttrs {
         else {
             *signing_time = Some(
                 cons.take_set(Time::take_from)?
-            );
-            Ok(())
-        }
-    }
-
-    fn take_bin_signing_time<S: decode::Source>(
-        cons: &mut decode::Constructed<S>,
-        bin_signing_time: &mut Option<u64>
-    ) -> Result<(), DecodeError<S::Error>> {
-        if bin_signing_time.is_some() {
-            Err(cons.content_err("duplicate Binary Signing Time attribute"))
-        }
-        else {
-            *bin_signing_time = Some(
-                cons.take_set(|cons| cons.take_u64())?
             );
             Ok(())
         }
@@ -720,13 +675,8 @@ pub struct SignedObjectBuilder {
 
     /// The signing time attribute of the signed object.
     ///
-    /// This is optional and by default omitted.
-    signing_time: Option<Time>,
-
-    /// The binary signing time attribute of the signed object.
-    ///
-    /// This is optional and by default omitted.
-    binary_signing_time: Option<u64>,
+    /// Defaults to the current time..
+    signing_time: Time,
 }
 
 impl SignedObjectBuilder {
@@ -749,8 +699,7 @@ impl SignedObjectBuilder {
             v4_resources: IpResources::missing(),
             v6_resources: IpResources::missing(),
             as_resources: AsResources::missing(),
-            signing_time: None,
-            binary_signing_time: None,
+            signing_time: Time::now(),
         }
     }
 
@@ -893,23 +842,13 @@ impl SignedObjectBuilder {
     }
 
     /// Returns the signing time attribute.
-    pub fn signing_time(&self) -> Option<Time> {
+    pub fn signing_time(&self) -> Time {
         self.signing_time
     }
 
     /// Sets the signing time attribute.
-    pub fn set_signing_time(&mut self, signing_time: Option<Time>) {
+    pub fn set_signing_time(&mut self, signing_time: Time) {
         self.signing_time = signing_time
-    }
-
-    /// Returns the binary signing time attribute.
-    pub fn binary_signing_time(&self) -> Option<u64> {
-        self.binary_signing_time
-    }
-
-    /// Sets the binary signing time attribute.
-    pub fn set_binary_signing_time(&mut self, time: Option<u64>) {
-        self.binary_signing_time = time
     }
 
     pub fn finalize<S: Signer>(
@@ -927,7 +866,6 @@ impl SignedObjectBuilder {
             &content_type,
             &message_digest,
             self.signing_time,
-            self.binary_signing_time
         );
 
         // Sign signed attributes with a one-off key.
@@ -965,7 +903,6 @@ impl SignedObjectBuilder {
             signature,
             message_digest,
             signing_time: self.signing_time,
-            binary_signing_time: self.binary_signing_time,
         })
     }
 }

@@ -426,19 +426,12 @@ pub struct SignerInfo {
     //--- SignedAttributes
     //
     message_digest: MessageDigest,
-    signing_time: Option<Time>,
-    binary_signing_time: Option<u64>,
+    signing_time: Time,
 }
 
 impl SignerInfo {
-    /// Returns the signing time if available.
-    pub fn signing_time(&self) -> Option<Time> {
+    pub fn signing_time(&self) -> Time {
         self.signing_time
-    }
-
-    /// Returns the binary signing time if available.
-    pub fn binary_signing_time(&self) -> Option<u64> {
-        self.binary_signing_time
     }
 
     pub fn take_opt_from<S: decode::Source>(
@@ -470,7 +463,6 @@ impl SignerInfo {
                 signature,
                 message_digest: attrs.1,
                 signing_time: attrs.3,
-                binary_signing_time: attrs.4
             })
         })
     }
@@ -1306,8 +1298,7 @@ impl RtaBuilder {
         &mut self,
         signer: &S,
         key: &S::KeyId,
-        signing_time: Option<Time>,
-        binary_signing_time: Option<u64>,
+        signing_time: Time,
     ) -> Result<(), SigningError<S::Error>> {
         // Produce the content digest
         let message_digest = self.digest_algorithm.digest(
@@ -1319,7 +1310,6 @@ impl RtaBuilder {
             &oid::CT_RESOURCE_TAGGED_ATTESTATION,
             &message_digest,
             signing_time,
-            binary_signing_time
         );
 
         // Sign those attributes
@@ -1335,7 +1325,6 @@ impl RtaBuilder {
             signature,
             message_digest,
             signing_time,
-            binary_signing_time
         });
         Ok(())
     }
