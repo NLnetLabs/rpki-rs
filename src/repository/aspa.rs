@@ -16,7 +16,7 @@ use bcder::encode::{PrimitiveContent, Values};
 use crate::oid;
 use crate::crypto::{Signer, SigningError};
 use crate::resources::asn::SmallAsnSet;
-use crate::util::base64;
+#[cfg(feature = "serde")] use crate::util::base64;
 use super::cert::{Cert, ResourceCert};
 use super::error::{ValidationError, VerificationError};
 use super::resources::{AsBlock, AsBlocks, AsBlocksBuilder, Asn, AsResources};

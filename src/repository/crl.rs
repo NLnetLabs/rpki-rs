@@ -23,7 +23,7 @@ use crate::crypto::{
     KeyIdentifier, PublicKey, RpkiSignatureAlgorithm, SignatureAlgorithm,
     Signer, SigningError,
 };
-use crate::util::base64;
+#[cfg(feature = "serde")] use crate::util::base64;
 use super::error::VerificationError;
 use super::x509::{
     Name, RepresentationError, Serial, SignedData, Time, encode_extension,

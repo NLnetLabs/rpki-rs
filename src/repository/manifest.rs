@@ -17,7 +17,7 @@ use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use crate::{oid, uri};
 use crate::crypto::{DigestAlgorithm, Signer, SigningError};
-use crate::util::base64;
+#[cfg(feature = "serde")] use crate::util::base64;
 use super::cert::{Cert, ResourceCert};
 use super::error::{ValidationError, VerificationError};
 use super::sigobj::{SignedObject, SignedObjectBuilder};
