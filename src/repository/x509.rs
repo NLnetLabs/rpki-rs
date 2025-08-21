@@ -74,8 +74,12 @@ impl Name {
     ) -> Result<Self, DecodeError<S::Error>> {
         cons.capture(|cons| {
             cons.take_sequence(|cons| { // RDNSequence
+                let mut empty_sequence = true;
                 while let Some(()) = cons.take_opt_set(|cons| {
+                    empty_sequence = false;
+                    let mut empty_set = true;
                     while let Some(()) = cons.take_opt_sequence(|cons| {
+                        empty_set = false;
                         Oid::skip_in(cons)?;
                         if cons.skip_one()?.is_none() {
                             return Err(cons.content_err(
@@ -84,8 +88,18 @@ impl Name {
                         }
                         Ok(())
                     })? { }
+                    if empty_set {
+                        return Err(cons.content_err(
+                            "empty relative distinguished name"
+                        ));
+                    }
                     Ok(())
                 })? { }
+                if empty_sequence {
+                    return Err(cons.content_err(
+                        "empty distinguished name"
+                    ))
+                }
                 Ok(())
             })
         }).map(Name)
