@@ -674,8 +674,8 @@ mod signer_test {
             12u64.into(), Time::now(), Time::next_week(),
             DigestAlgorithm::default(),
             [
-                FileAndHash::new(b"file".as_ref(), b"hash".as_ref()),
-                FileAndHash::new(b"file".as_ref(), b"hash".as_ref()),
+                FileAndHash::new(b"file.cer".as_ref(), b"hash".as_ref()),
+                FileAndHash::new(b"file.cer".as_ref(), b"hash".as_ref()),
             ].iter()
         );
 
