@@ -432,10 +432,9 @@ impl FileAndHash<Bytes, Bytes> {
     ) -> Result<Option<Self>, DecodeError<S::Error>> {
         cons.take_opt_sequence(|cons| {
             let file = Ia5String::take_from(cons)?.into_bytes();
-            let file = match Self::validate_file_name(file) {
-                Ok(file) => file,
-                Err(err) => { return Err(cons.content_err(err)); }
-            };
+            if let Err(err) = Self::validate_file_name(&file) {
+                return Err(cons.content_err(err)); 
+            }
             Ok(FileAndHash {
                 file,
                 hash: BitString::take_from(cons)?.octet_bytes(),
@@ -450,11 +449,12 @@ impl FileAndHash<Bytes, Bytes> {
     /// (UNDERSCORE), followed by a single . (DOT), followed by a three letter 
     /// extension.  The extension MUST be one of those enumerated in the "RPKI 
     /// Repository Name Schemes" registry maintained by IANA
-    fn validate_file_name(name: Bytes) -> Result<Bytes, &'static str> {
+    fn validate_file_name(name: &[u8]) -> Result<(), &'static str> {
         fn valid_rfc9286_character(c: u8) -> bool {
             c == b'-' || c == b'_' || c.is_ascii_alphanumeric()
         }
-        let mut n = name.iter().as_slice();
+        
+        let mut n = name;
         while let Some((c, tail)) = n.split_first() {
             n = tail;
             if *c == b'.' {
@@ -470,7 +470,7 @@ impl FileAndHash<Bytes, Bytes> {
         // would be brittle, so as long as it is three valid letters we will
         // accept it. 
         match n.len() == 3 && n.iter().all(|c| c.is_ascii_alphabetic()) {
-            true => Ok(name),
+            true => Ok(()),
             false => Err("Manifest extension is not RFC 9286 4.2.2 compliant")
         }
     }
@@ -622,7 +622,7 @@ mod test {
     #[test]
     fn manifest_file_validation() {
         fn test_name(x: &'static str) -> bool {
-            FileAndHash::validate_file_name(x.into()).is_ok()
+            FileAndHash::validate_file_name(x.as_bytes()).is_ok()
         } 
 
         assert!(test_name("correct.cer"));
