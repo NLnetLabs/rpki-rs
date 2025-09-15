@@ -444,6 +444,14 @@ impl FileAndHash<Bytes, Bytes> {
         })
     }
 
+    fn valid_rfc9286_character(c: u8) -> bool {
+        c == b'-' || //-
+        c == b'_' || //_
+        (c >= 0x30 && c <= 0x39) || //0-9
+        (c >= 0x41 && c <= 0x5A) || //A-Z
+        (c >= 0x61 && c <= 0x7A) //a-z
+    }
+
     /// Check whether the file name matches RFC 9286 4.2.2:
     /// 
     /// Names that appear in the fileList MUST consist of one or more 
@@ -452,33 +460,27 @@ impl FileAndHash<Bytes, Bytes> {
     /// extension.  The extension MUST be one of those enumerated in the "RPKI 
     /// Repository Name Schemes" registry maintained by IANA
     pub fn validate_file_name(string: &Ia5String) -> bool {
-        let mut exts: Option<String> = None;
-        for c in string.chars() {
-            if c.is_alphanumeric() || c == '-' || c == '_' {
-                if let Some(e) = &mut exts {
-                    // This is part of the extension
-                    e.push(c);
-                }
-            }
-            else if c == '.' {
-                if exts.is_some() {
-                    // There is more than one dot
-                    return false;
-                }
-                exts = Some(String::with_capacity(3));
+        let Some(mut string) = string.as_slice() else {
+            return false;
+        };
+        while let Some((c, tail)) = string.split_first() {
+            string = tail;
+            if *c == b'.' {
+                break;
             } 
-            else {
+            else if !Self::valid_rfc9286_character(*c) {
                 return false;
             }
         }
-        if let Some(ext) = &exts {
-            // Now you could check whether this extension matches one in the
-            // list ["asa", "cer", "crl", "gbr", "mft", "roa", "sig", "tak"],
-            // but that would be brittle, so as long as it is three characters
-            // we will accept it.
-            return ext.len() == 3;
-        }
-        false
+
+        // Now you could check whether this extension matches one in the list 
+        // ["asa", "cer", "crl", "gbr", "mft", "roa", "sig", "tak"],  but that 
+        // would be brittle, so as long as it is three valid characters we 
+        // will accept it.
+        string.len() == 3 &&
+            Self::valid_rfc9286_character(string[0]) &&
+            Self::valid_rfc9286_character(string[1]) &&
+            Self::valid_rfc9286_character(string[2])
     }
 }
 
