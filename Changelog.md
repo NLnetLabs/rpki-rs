@@ -9,7 +9,7 @@ Breaking changes
 
 New
 
-* Implement `std::error::Error::source` for  `xml::decode::Error` and
+* Implemented `std::error::Error::source` for  `xml::decode::Error` and
   `rrdp::ProcessError` to provide access to underlying error. ([#335]);
 * Implemented updated requirements for signed objects from RFC 9589 making
   the Signing Time attribute mandatory and the Binary Signing Time
@@ -22,12 +22,14 @@ New
   These issues were reported by Zizhi Shang, Zhechao Lin, Jiahao Cao,
   Yangyang Wang, and Mingwei Xu of the Institute for Network Sciences and
   Cyberspace (INSC), Tsinghua University.
-
 * Disallow empty issuer and subject names in resource certificates.
 
   This issue was reported by Zhechao Lin, Zizhi Shang, Jiahao Cao, Yangyang
   Wang, and Mingwei Xu of the Institute for Network Sciences and Cyberspace,
   Tsinghua University.
+* Added a check for allowed characters in the file names of manifests
+  according to the new rules introduced in section 4.2.2 of RFC 9286.
+  ([#342])
 
 Bug fixes
 
@@ -42,6 +44,7 @@ Other changes
 [#338]: https://github.com/NLnetLabs/rpki-rs/pull/338
 [#339]: https://github.com/NLnetLabs/rpki-rs/pull/339
 [#340]: https://github.com/NLnetLabs/rpki-rs/pull/340
+[#342]: https://github.com/NLnetLabs/rpki-rs/pull/342
 
 
 ## 0.18.6
