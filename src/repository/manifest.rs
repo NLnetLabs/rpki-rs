@@ -431,11 +431,49 @@ impl FileAndHash<Bytes, Bytes> {
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, DecodeError<S::Error>> {
         cons.take_opt_sequence(|cons| {
+            let file = Ia5String::take_from(cons)?.into_bytes();
+            if let Err(err) = Self::validate_file_name(&file) {
+                return Err(cons.content_err(err)); 
+            }
             Ok(FileAndHash {
-                file: Ia5String::take_from(cons)?.into_bytes(),
+                file,
                 hash: BitString::take_from(cons)?.octet_bytes(),
             })
         })
+    }
+
+    /// Check whether the file name matches RFC 9286 4.2.2:
+    /// 
+    /// Names that appear in the fileList MUST consist of one or more 
+    /// characters chosen from the set a-z, A-Z, 0-9, - (HYPHEN), or _ 
+    /// (UNDERSCORE), followed by a single . (DOT), followed by a three letter 
+    /// extension.  The extension MUST be one of those enumerated in the "RPKI 
+    /// Repository Name Schemes" registry maintained by IANA
+    fn validate_file_name(name: &[u8]) -> Result<(), &'static str> {
+        fn valid_rfc9286_character(c: u8) -> bool {
+            c == b'-' || c == b'_' || c.is_ascii_alphanumeric()
+        }
+
+        let mut n = name;
+        while let Some((c, tail)) = n.split_first() {
+            n = tail;
+            if *c == b'.' {
+                break;
+            } 
+            else if !valid_rfc9286_character(*c) {
+                return Err("manifest filename is not RFC 9286 4.2.2 compliant");
+            }
+        }
+
+        // Now you could check whether this extension matches one in the list 
+        // ["asa", "cer", "crl", "gbr", "mft", "roa", "sig", "tak"],  but that 
+        // would be brittle, so as long as it is three valid letters we will
+        // accept it. 
+        if n.len() != 3 || !n.iter().all(|c| c.is_ascii_alphabetic()) {
+            return Err("manifest extension is not RFC 9286 4.2.2 compliant");
+        }
+
+        Ok(())
     }
 }
 
@@ -580,6 +618,21 @@ mod test {
                 false,
             ).is_err()
         );
+    }
+
+    #[test]
+    fn manifest_file_validation() {
+        fn test_name(x: &'static str) -> bool {
+            FileAndHash::validate_file_name(x.as_bytes()).is_ok()
+        } 
+
+        assert!(test_name("correct.cer"));
+        assert!(test_name("correct.ASA"));
+        assert!(!test_name("slash//es.mft"));
+        assert!(test_name("unknownextension.abc"));
+        assert!(!test_name("new\r\nlines.gbr"));
+        assert!(!test_name("multiple.dots.in.file.name.roa"));
+        assert!(!test_name("too_long_extension.koen"));
     }
 }
 
