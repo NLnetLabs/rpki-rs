@@ -29,7 +29,7 @@ New
   Tsinghua University.
 * Added a check for allowed characters in the file names of manifests
   according to the new rules introduced in section 4.2.2 of RFC 9286.
-  ([#342])
+  ([#342], [#343])
 
 Bug fixes
 
@@ -45,6 +45,7 @@ Other changes
 [#339]: https://github.com/NLnetLabs/rpki-rs/pull/339
 [#340]: https://github.com/NLnetLabs/rpki-rs/pull/340
 [#342]: https://github.com/NLnetLabs/rpki-rs/pull/342
+[#343]: https://github.com/NLnetLabs/rpki-rs/pull/343
 
 
 ## 0.18.6
