@@ -431,11 +431,54 @@ impl FileAndHash<Bytes, Bytes> {
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, DecodeError<S::Error>> {
         cons.take_opt_sequence(|cons| {
+            let file = Ia5String::take_from(cons)?;
+            if !Self::validate_file_name(&file) {
+                return Err(cons.content_err(
+                    "Manifest filename is not RFC 9286 4.2.2 compliant"
+                ));
+            }
             Ok(FileAndHash {
-                file: Ia5String::take_from(cons)?.into_bytes(),
+                file: file.into_bytes(),
                 hash: BitString::take_from(cons)?.octet_bytes(),
             })
         })
+    }
+
+    /// Check whether the file name matches RFC 9286 4.2.2:
+    /// 
+    /// Names that appear in the fileList MUST consist of one or more 
+    /// characters chosen from the set a-z, A-Z, 0-9, - (HYPHEN), or _ 
+    /// (UNDERSCORE), followed by a single . (DOT), followed by a three letter 
+    /// extension.  The extension MUST be one of those enumerated in the "RPKI 
+    /// Repository Name Schemes" registry maintained by IANA
+    pub fn validate_file_name(string: &Ia5String) -> bool {
+        let mut exts: Option<String> = None;
+        for c in string.chars() {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                if let Some(e) = &mut exts {
+                    // This is part of the extension
+                    e.push(c);
+                }
+            }
+            else if c == '.' {
+                if exts.is_some() {
+                    // There is more than one dot
+                    return false;
+                }
+                exts = Some(String::with_capacity(3));
+            } 
+            else {
+                return false;
+            }
+        }
+        if let Some(ext) = &exts {
+            // Now you could check whether this extension matches one in the
+            // list ["asa", "cer", "crl", "gbr", "mft", "roa", "sig", "tak"],
+            // but that would be brittle, so as long as it is three characters
+            // we will accept it.
+            return ext.len() == 3;
+        }
+        false
     }
 }
 
@@ -525,6 +568,8 @@ impl From<ManifestHashMismatch> for VerificationError {
 
 #[cfg(test)]
 mod test {
+    use std::str::FromStr;
+
     use crate::repository::tal::TalInfo;
     use super::*;
 
@@ -580,6 +625,21 @@ mod test {
                 false,
             ).is_err()
         );
+    }
+
+    #[test]
+    fn manifest_file_validation() {
+        let test_name = 
+            |x| FileAndHash::validate_file_name(
+                &Ia5String::from_str(x).unwrap()
+            );
+
+        assert!(test_name("correct.cer"));
+        assert!(test_name("correct.ASA"));
+        assert!(!test_name("slash//es.mft"));
+        assert!(test_name("unknownextension.abc"));
+        assert!(!test_name("new\r\nlines.gbr"));
+        assert!(!test_name("multiple.dots.in.file.name.roa"));
     }
 }
 
