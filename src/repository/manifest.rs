@@ -424,7 +424,6 @@ impl FileAndHash<Bytes, Bytes> {
             if let Err(err) = Self::validate_file_name(&file) {
                 return Err(cons.content_err(err)); 
             }
-            let _ = Ia5String::take_from(cons)?;
             BitString::skip_in(cons)?;
             Ok(())
         })
@@ -635,6 +634,7 @@ mod test {
         assert!(!test_name("slash//es.mft"));
         assert!(test_name("unknownextension.abc"));
         assert!(!test_name("new\r\nlines.gbr"));
+        assert!(test_name("dashes-and_underscores.gbr"));
         assert!(!test_name("multiple.dots.in.file.name.roa"));
         assert!(!test_name("too_long_extension.koen"));
     }
