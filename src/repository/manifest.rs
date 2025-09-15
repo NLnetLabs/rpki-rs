@@ -420,6 +420,10 @@ impl FileAndHash<Bytes, Bytes> {
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<()>, DecodeError<S::Error>> {
         cons.take_opt_sequence(|cons| {
+            let file = Ia5String::take_from(cons)?.into_bytes();
+            if let Err(err) = Self::validate_file_name(&file) {
+                return Err(cons.content_err(err)); 
+            }
             let _ = Ia5String::take_from(cons)?;
             BitString::skip_in(cons)?;
             Ok(())
