@@ -473,12 +473,12 @@ impl FileAndHash<Bytes, Bytes> {
 
         // Now you could check whether this extension matches one in the list 
         // ["asa", "cer", "crl", "gbr", "mft", "roa", "sig", "tak"],  but that 
-        // would be brittle, so as long as it is three valid characters we 
-        // will accept it.
+        // would be brittle, so as long as it is three valid letters we will
+        // accept it.
         string.len() == 3 &&
-            Self::valid_rfc9286_character(string[0]) &&
-            Self::valid_rfc9286_character(string[1]) &&
-            Self::valid_rfc9286_character(string[2])
+            string[0].is_ascii_alphabetic() &&
+            string[1].is_ascii_alphabetic() &&
+            string[2].is_ascii_alphabetic()
     }
 }
 
