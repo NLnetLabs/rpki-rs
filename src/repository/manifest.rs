@@ -453,7 +453,7 @@ impl FileAndHash<Bytes, Bytes> {
         fn valid_rfc9286_character(c: u8) -> bool {
             c == b'-' || c == b'_' || c.is_ascii_alphanumeric()
         }
-        
+
         let mut n = name;
         while let Some((c, tail)) = n.split_first() {
             n = tail;
@@ -461,7 +461,7 @@ impl FileAndHash<Bytes, Bytes> {
                 break;
             } 
             else if !valid_rfc9286_character(*c) {
-                return Err("Manifest filename is not RFC 9286 4.2.2 compliant");
+                return Err("manifest filename is not RFC 9286 4.2.2 compliant");
             }
         }
 
@@ -469,10 +469,11 @@ impl FileAndHash<Bytes, Bytes> {
         // ["asa", "cer", "crl", "gbr", "mft", "roa", "sig", "tak"],  but that 
         // would be brittle, so as long as it is three valid letters we will
         // accept it. 
-        match n.len() == 3 && n.iter().all(|c| c.is_ascii_alphabetic()) {
-            true => Ok(()),
-            false => Err("Manifest extension is not RFC 9286 4.2.2 compliant")
+        if n.len() != 3 || !n.iter().all(|c| c.is_ascii_alphabetic()) {
+            return Err("manifest extension is not RFC 9286 4.2.2 compliant");
         }
+
+        Ok(())
     }
 }
 
