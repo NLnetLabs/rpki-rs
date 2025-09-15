@@ -447,9 +447,7 @@ impl FileAndHash<Bytes, Bytes> {
     fn valid_rfc9286_character(c: u8) -> bool {
         c == b'-' || //-
         c == b'_' || //_
-        (c >= 0x30 && c <= 0x39) || //0-9
-        (c >= 0x41 && c <= 0x5A) || //A-Z
-        (c >= 0x61 && c <= 0x7A) //a-z
+        c.is_ascii_alphanumeric()
     }
 
     /// Check whether the file name matches RFC 9286 4.2.2:
