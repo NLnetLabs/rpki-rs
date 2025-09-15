@@ -431,23 +431,16 @@ impl FileAndHash<Bytes, Bytes> {
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<Self>, DecodeError<S::Error>> {
         cons.take_opt_sequence(|cons| {
-            let file = Ia5String::take_from(cons)?;
-            if !Self::validate_file_name(&file) {
-                return Err(cons.content_err(
-                    "Manifest filename is not RFC 9286 4.2.2 compliant"
-                ));
-            }
+            let file = Ia5String::take_from(cons)?.into_bytes();
+            let file = match Self::validate_file_name(file) {
+                Ok(file) => file,
+                Err(err) => { return Err(cons.content_err(err)); }
+            };
             Ok(FileAndHash {
-                file: file.into_bytes(),
+                file,
                 hash: BitString::take_from(cons)?.octet_bytes(),
             })
         })
-    }
-
-    fn valid_rfc9286_character(c: u8) -> bool {
-        c == b'-' || //-
-        c == b'_' || //_
-        c.is_ascii_alphanumeric()
     }
 
     /// Check whether the file name matches RFC 9286 4.2.2:
@@ -457,28 +450,29 @@ impl FileAndHash<Bytes, Bytes> {
     /// (UNDERSCORE), followed by a single . (DOT), followed by a three letter 
     /// extension.  The extension MUST be one of those enumerated in the "RPKI 
     /// Repository Name Schemes" registry maintained by IANA
-    pub fn validate_file_name(string: &Ia5String) -> bool {
-        let Some(mut string) = string.as_slice() else {
-            return false;
-        };
-        while let Some((c, tail)) = string.split_first() {
-            string = tail;
+    fn validate_file_name(name: Bytes) -> Result<Bytes, &'static str> {
+        fn valid_rfc9286_character(c: u8) -> bool {
+            c == b'-' || c == b'_' || c.is_ascii_alphanumeric()
+        }
+        let mut n = name.iter().as_slice();
+        while let Some((c, tail)) = n.split_first() {
+            n = tail;
             if *c == b'.' {
                 break;
             } 
-            else if !Self::valid_rfc9286_character(*c) {
-                return false;
+            else if !valid_rfc9286_character(*c) {
+                return Err("Manifest filename is not RFC 9286 4.2.2 compliant");
             }
         }
 
         // Now you could check whether this extension matches one in the list 
         // ["asa", "cer", "crl", "gbr", "mft", "roa", "sig", "tak"],  but that 
         // would be brittle, so as long as it is three valid letters we will
-        // accept it.
-        string.len() == 3 &&
-            string[0].is_ascii_alphabetic() &&
-            string[1].is_ascii_alphabetic() &&
-            string[2].is_ascii_alphabetic()
+        // accept it. 
+        match n.len() == 3 && n.iter().all(|c| c.is_ascii_alphabetic()) {
+            true => Ok(name),
+            false => Err("Manifest extension is not RFC 9286 4.2.2 compliant")
+        }
     }
 }
 
@@ -568,8 +562,6 @@ impl From<ManifestHashMismatch> for VerificationError {
 
 #[cfg(test)]
 mod test {
-    use std::str::FromStr;
-
     use crate::repository::tal::TalInfo;
     use super::*;
 
@@ -629,10 +621,9 @@ mod test {
 
     #[test]
     fn manifest_file_validation() {
-        let test_name = 
-            |x| FileAndHash::validate_file_name(
-                &Ia5String::from_str(x).unwrap()
-            );
+        fn test_name(x: &'static str) -> bool {
+            FileAndHash::validate_file_name(x.into()).is_ok()
+        } 
 
         assert!(test_name("correct.cer"));
         assert!(test_name("correct.ASA"));
@@ -640,6 +631,7 @@ mod test {
         assert!(test_name("unknownextension.abc"));
         assert!(!test_name("new\r\nlines.gbr"));
         assert!(!test_name("multiple.dots.in.file.name.roa"));
+        assert!(!test_name("too_long_extension.koen"));
     }
 }
 
