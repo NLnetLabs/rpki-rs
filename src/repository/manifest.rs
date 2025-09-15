@@ -420,7 +420,10 @@ impl FileAndHash<Bytes, Bytes> {
         cons: &mut decode::Constructed<S>
     ) -> Result<Option<()>, DecodeError<S::Error>> {
         cons.take_opt_sequence(|cons| {
-            let _ = Ia5String::take_from(cons)?;
+            let file = Ia5String::take_from(cons)?.into_bytes();
+            if let Err(err) = Self::validate_file_name(&file) {
+                return Err(cons.content_err(err)); 
+            }
             BitString::skip_in(cons)?;
             Ok(())
         })
@@ -631,6 +634,7 @@ mod test {
         assert!(!test_name("slash//es.mft"));
         assert!(test_name("unknownextension.abc"));
         assert!(!test_name("new\r\nlines.gbr"));
+        assert!(test_name("dashes-and_underscores.gbr"));
         assert!(!test_name("multiple.dots.in.file.name.roa"));
         assert!(!test_name("too_long_extension.koen"));
     }
@@ -670,8 +674,8 @@ mod signer_test {
             12u64.into(), Time::now(), Time::next_week(),
             DigestAlgorithm::default(),
             [
-                FileAndHash::new(b"file".as_ref(), b"hash".as_ref()),
-                FileAndHash::new(b"file".as_ref(), b"hash".as_ref()),
+                FileAndHash::new(b"file.cer".as_ref(), b"hash".as_ref()),
+                FileAndHash::new(b"file.cer".as_ref(), b"hash".as_ref()),
             ].iter()
         );
 
