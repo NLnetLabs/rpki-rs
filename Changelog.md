@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased next version
+## 0.19.0
+
+Released 2025-09-18.
 
 Breaking changes
 
@@ -30,8 +32,6 @@ New
 * Added a check for allowed characters in the file names of manifests
   according to the new rules introduced in section 4.2.2 of RFC 9286.
   ([#342], [#343])
-
-Bug fixes
 
 Other changes
 
