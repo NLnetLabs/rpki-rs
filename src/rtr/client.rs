@@ -8,12 +8,13 @@
 //! applies it to the target.
 //!
 //! For more information on how to use the client, see the [`Client`] type.
-use std::{error, fmt, io};
+use std::{cmp, error, fmt, io};
 use std::future::Future;
 use tokio::time::{timeout, timeout_at, Duration, Instant};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use super::payload::{Action, Payload, Timing};
 use super::pdu;
+use super::server::MAX_VERSION;
 use super::state::State;
 
 
@@ -121,13 +122,16 @@ pub struct Client<Sock, Target> {
     /// If this is `None`, we do a reset query next.
     state: Option<State>,
 
-    /// The RRDP version to use.
+    /// The RTR version to use.
     ///
     /// If this is `None` we haven’t spoken with the server yet. In this
     /// case, we use 1 and accept any version from the server. Otherwise 
     /// send this version and receving a differing version from the server
     /// is an error as it is not allowed to change its mind halfway.
     version: Option<u8>,
+
+    /// The RTR version to start with.
+    initial_version: u8,
 
     /// The timing parameters reported by the server.
     ///
@@ -160,9 +164,27 @@ impl<Sock, Target> Client<Sock, Target> {
         target: Target,
         state: Option<State>
     ) -> Self {
+        Self::with_initial_version(INITIAL_VERSION, sock, target, state)
+    }
+
+    /// Creates a new client starting with the given RTR version.
+    ///
+    /// This is identical [`new`][`Self::new`] but sets the initial version
+    /// to the given value. Note that `version` is quietly capped to the
+    /// largest version we support.
+    ///
+    /// The client will downgrade to a lower version if necessary to talk to
+    /// the server.
+    pub fn with_initial_version(
+        initial_version: u8,
+        sock: Sock,
+        target: Target,
+        state: Option<State>
+    ) -> Self {
         Client {
             sock, target, state,
             version: None,
+            initial_version: cmp::min(initial_version, MAX_VERSION),
             timing: Timing::default(),
             next_update: None,
         }
@@ -193,7 +215,7 @@ impl<Sock, Target> Client<Sock, Target> {
 
     /// Returns the protocol version to use.
     fn version(&self) -> u8 {
-        self.version.unwrap_or(INITIAL_VERSION)
+        self.version.unwrap_or(self.initial_version)
     }
 }
 
@@ -272,15 +294,38 @@ where
     async fn serial(
         &mut self, state: State
     ) -> Result<Option<Target::Update>, io::Error> {
-        pdu::SerialQuery::new(
-            self.version(), state,
-        ).write(&mut self.sock).await?;
-        self.sock.flush().await?;
-        let start = match self.try_io(FirstReply::read).await? {
-            FirstReply::Response(start) => start,
-            FirstReply::Reset => {
-                self.state = None;
-                return Ok(None)
+        let start = loop {
+            pdu::SerialQuery::new(
+                self.version(), state,
+            ).write(&mut self.sock).await?;
+            self.sock.flush().await?;
+            match self.try_io(FirstSerialReply::read).await? {
+                FirstSerialReply::Response(start) => break start,
+                FirstSerialReply::Reset => {
+                    self.state = None;
+                    return Ok(None)
+                }
+                FirstSerialReply::VersionError(version) => {
+                    if self.version.is_some() {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "version error after successful version \
+                             negotiation"
+                        ));
+                    }
+                    // We sent the query with INITIAL_VERSION, so the
+                    // returned version must be less.
+                    if version >= INITIAL_VERSION {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "version error with larger version"
+                        ));
+                    }
+
+                    // Try again with the requested version. This will also
+                    // force the loop to terminate on next try.
+                    self.version = Some(version);
+                }
             }
         };
         self.check_version(start.version())?;
@@ -322,13 +367,36 @@ where
 
     /// Performs a reset query.
     pub async fn reset(&mut self) -> Result<Target::Update, io::Error> {
-        pdu::ResetQuery::new(
-            self.version()
-        ).write(&mut self.sock).await?;
-        self.sock.flush().await?;
-        let start = self.try_io(|sock| {
-            pdu::CacheResponse::read(sock)
-        }).await?;
+        let start = loop {
+            pdu::ResetQuery::new(
+                self.version()
+            ).write(&mut self.sock).await?;
+            self.sock.flush().await?;
+            match self.try_io(FirstResetReply::read).await? {
+                FirstResetReply::Response(start) => break start,
+                FirstResetReply::VersionError(version) => {
+                    if self.version.is_some() {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "version error after successful version \
+                             negotiation"
+                        ));
+                    }
+                    // We sent the query with INITIAL_VERSION, so the
+                    // returned version must be less.
+                    if version >= INITIAL_VERSION {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "version error with larger version"
+                        ));
+                    }
+
+                    // Try again with the requested version. This will also
+                    // force the loop to terminate on next try.
+                    self.version = Some(version);
+                }
+            }
+        };
         self.check_version(start.version())?;
         let mut target = self.target.start(true);
         loop {
@@ -440,18 +508,24 @@ where
 }
 
 
-//------------ FirstReply ----------------------------------------------------
+//------------ FirstSerialReply ----------------------------------------------
 
 /// The first reply from a server in response to a serial query.
-enum FirstReply {
+enum FirstSerialReply {
     /// A cache response. Actual data is to follow.
     Response(pdu::CacheResponse),
 
     /// A reset response. We need to retry with a reset query.
     Reset,
+
+    /// An unsupported version error.
+    ///
+    /// The included value is the version reported by the server as part of
+    /// the error PDU, i.e., the version that server wants to use.
+    VersionError(u8)
 }
 
-impl FirstReply {
+impl FirstSerialReply {
     /// Reads the first reply from a socket.
     ///
     /// If any other reply than a cache response or reset response is
@@ -464,12 +538,71 @@ impl FirstReply {
             pdu::CacheResponse::PDU => {
                 pdu::CacheResponse::read_payload(
                     header, sock
-                ).await.map(FirstReply::Response)
+                ).await.map(FirstSerialReply::Response)
             }
             pdu::CacheReset::PDU => {
                 pdu::CacheReset::read_payload(
                     header, sock
-                ).await.map(|_| FirstReply::Reset)
+                ).await.map(|_| FirstSerialReply::Reset)
+            }
+            pdu::Error::PDU
+                if header.session()
+                    == pdu::ErrorCode::UNSUPPORTED_PROTOCOL_VERSION
+            => {
+                pdu::Error::skip_payload(header, sock).await?;
+                Ok(Self::VersionError(header.version()))
+            }
+            pdu::Error::PDU => {
+                Err(io::Error::other(
+                    format!("server reported error {}", header.session())
+                ))
+            }
+            pdu => {
+                Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("unexpected PDU {pdu}")
+                ))
+            }
+        }
+    }
+}
+
+
+//------------ FirstResetReply -----------------------------------------------
+
+/// The first reply from a server in response to a reset query.
+enum FirstResetReply {
+    /// A cache response. Actual data is to follow.
+    Response(pdu::CacheResponse),
+
+    /// An unsupported version error.
+    ///
+    /// The included value is the version reported by the server as part of
+    /// the error PDU, i.e., the version that server wants to use.
+    VersionError(u8)
+}
+
+impl FirstResetReply {
+    /// Reads the first reply from a socket.
+    ///
+    /// If any other reply than a cache response or reset response is
+    /// received or anything else goes wrong, returns an error.
+    async fn read<Sock: AsyncRead + Unpin>(
+        sock: &mut Sock
+    ) -> Result<Self, io::Error> {
+        let header = pdu::Header::read(sock).await?;
+        match header.pdu() {
+            pdu::CacheResponse::PDU => {
+                pdu::CacheResponse::read_payload(
+                    header, sock
+                ).await.map(Self::Response)
+            }
+            pdu::Error::PDU
+                if header.session()
+                    == pdu::ErrorCode::UNSUPPORTED_PROTOCOL_VERSION
+            => {
+                pdu::Error::skip_payload(header, sock).await?;
+                Ok(Self::VersionError(header.version()))
             }
             pdu::Error::PDU => {
                 Err(io::Error::other(
