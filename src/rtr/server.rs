@@ -24,6 +24,11 @@ use super::state::State;
 /// We support all protocol versions from 0 up to and including this value.
 const MAX_VERSION: u8 = 2;
 
+/// The error message if the maximum supported protocol version is exceeded.
+const MAX_VERSION_ERROR: &str
+    = "only versions 0 up to and including 2 supported";
+
+
 //============ Traits ========================================================
 
 //------------ PayloadSource et al. ------------------------------------------
@@ -342,11 +347,7 @@ where Sock: AsyncRead + Unpin {
                     MAX_VERSION, // respond with what they should try
                     4,
                     header,
-                    concat!(
-                        "only versions 0 up to and including ",
-                        stringify!(MAX_VERSION),
-                        " supported"
-                    )
+                    MAX_VERSION_ERROR,
                 )
             ))
         }
