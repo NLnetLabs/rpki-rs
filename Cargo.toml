@@ -19,7 +19,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 arbitrary       = { version = "1", optional = true, features = ["derive"] }
 base64          = "0.22"
-bcder           = { optional = true, git = "https://github.com/NLnetLabs/bcder.git" }
+bcder           = { version = "0.7.6", optional = true }
 bytes           = "1.0"
 chrono          = { version = "0.4.35", features = [ "serde" ] }
 futures-util    = { version = "0.3", optional = true }
