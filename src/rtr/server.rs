@@ -22,7 +22,7 @@ use super::state::State;
 /// The maximum protocol version we support.
 ///
 /// We support all protocol versions from 0 up to and including this value.
-const MAX_VERSION: u8 = 2;
+pub(super) const MAX_VERSION: u8 = 2;
 
 /// The error message if the maximum supported protocol version is exceeded.
 const MAX_VERSION_ERROR: &str
