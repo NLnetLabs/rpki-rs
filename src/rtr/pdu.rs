@@ -6,7 +6,7 @@
 //! RFC 8210. Annoyingly, the format of the `EndOfData` PDU changes between
 //! the two versions.
 
-use std::{borrow, error, fmt, io, mem, ops, slice};
+use std::{cmp, borrow, error, fmt, io, mem, ops, slice};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use bytes::Bytes;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -1575,6 +1575,31 @@ impl Error {
         Error { octets }
     }
 
+    /// Skips over the payload of the error PDU.
+    pub async fn skip_payload<Sock: AsyncRead + Unpin>(
+        header: Header, sock: &mut Sock
+    ) -> Result<(), io::Error> {
+        let Some(mut remaining) = header.pdu_len()?.checked_sub(
+            mem::size_of::<Header>()
+        ) else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "PDU size smaller than header size",
+            ))
+        };
+
+        let mut buf = [0u8; 1024];
+        while remaining > 0 {
+            let read_len = cmp::min(remaining, mem::size_of_val(&buf));
+            let read = sock.read(
+                // Safety: We limited the length to the buffer size.
+                unsafe { buf.get_unchecked_mut(..read_len) }
+            ).await?;
+            remaining -= read;
+        }
+        Ok(())
+    }
+
     /// Writes the PUD to a writer.
     pub async fn write<A: AsyncWrite + Unpin>(
         &self, a: &mut A
@@ -1595,6 +1620,42 @@ impl AsRef<[u8]> for Error {
 impl AsMut<[u8]> for Error {
     fn as_mut(&mut self) -> &mut [u8] {
         self.octets.as_mut()
+    }
+}
+
+
+//------------ ErrorCode -----------------------------------------------------
+
+/// An error code.
+///
+/// This type wraps the raw error code that is part of the error PDU.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ErrorCode(pub u16);
+
+impl ErrorCode {
+    pub const CORRUPT_DATA: Self = Self(0);
+    pub const INTERNAL_ERROR: Self = Self(1);
+    pub const NO_DATA_AVAILABLE: Self = Self(2);
+    pub const INVALID_REQUEST: Self = Self(3);
+    pub const UNSUPPORTED_PROTOCOL_VERSION: Self = Self(4);
+    pub const UNSUPPORTED_PDU_TYPE: Self = Self(5);
+    pub const WITHDRAWAL_OF_UNKNOWN_RECORD: Self = Self(6);
+    pub const DUPLICATE_ANNOUNCEMENT_RECEIVED: Self = Self(7);
+    pub const UNEXPECTED_PROTOCOL_VERSION: Self = Self(8);
+    pub const ASPA_PROVIDER_LIST_ERROR: Self = Self(9);
+    pub const TRANSPORT_ERROR: Self = Self(10);
+    pub const ORDERING_ERROR: Self = Self(11);
+}
+
+impl PartialEq<u16> for ErrorCode {
+    fn eq(&self, other: &u16) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<ErrorCode> for u16 {
+    fn eq(&self, other: &ErrorCode) -> bool {
+        *self == other.0
     }
 }
 
@@ -1671,6 +1732,8 @@ impl Header {
     ///
     /// Since at least in theory `usize` may only be 16 bit long, the
     /// conversion can fail.
+    ///
+    /// This is the length of the full PDU including the header.
     pub fn pdu_len(self) -> Result<usize, io::Error> {
         usize::try_from(self.length()).map_err(|_| {
             io::Error::new(
