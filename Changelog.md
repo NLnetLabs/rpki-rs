@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased next version
+
+Breaking changes
+
+New
+
+Bug fixes
+
+Other changes
+
+
 ## 0.19.1
 
 Released 2025-09-23.
