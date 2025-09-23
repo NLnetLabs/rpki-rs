@@ -1,17 +1,13 @@
 # Changelog
 
-## Unreleased next version
+## 0.19.1
 
-Breaking changes
+Released 2025-09-23.
 
 New
 
 * Changed the version negotiation mechanism of the RTR client to follow
   [draft-ietf-sidrops-8210bis]. ([#346])
-
-Bug fixes
-
-Other changes
 
 [#346]: https://github.com/NLnetLabs/rpki-rs/pull/346
 [draft-ietf-sidrops-8210bis]: https://datatracker.ietf.org/doc/draft-ietf-sidrops-8210bis/
