@@ -4,13 +4,13 @@
 //!
 //! [rfc9323]: https://datatracker.ietf.org/doc/rfc9323/
 
-use std::ops;
 use bcder::{Ia5String, decode, encode};
 use bcder::{Captured, Mode, OctetString, Tag};
 use bcder::decode::{DecodeError, IntoSource, Source};
 use bcder::encode::Values;
 use bytes::Bytes;
 use crate::crypto:: DigestAlgorithm;
+use crate::repository::error::VerificationError;
 use crate::repository::sigobj::SignedObject;
 use super::cert::ResourceCert;
 use super::error::ValidationError;
@@ -64,36 +64,37 @@ impl Rsc {
     /// You need to pass in the certificate of the issuing CA. If validation
     /// succeeds, the result will be the EE certificate of the manifest and
     /// the manifest content.
-    pub fn validate(
+    pub fn process(
         self,
         cert: &ResourceCert,
         strict: bool,
     ) -> Result<(ResourceCert, ResourceSignedChecklist), ValidationError> {
-        self.validate_at(cert, strict, Time::now())
+        self.process_at(cert, strict, Time::now())
     }
 
-    pub fn validate_at(
+    pub fn process_at(
         self,
         cert: &ResourceCert,
         strict: bool,
         now: Time
     ) -> Result<(ResourceCert, ResourceSignedChecklist), ValidationError> {
+        // Check for consistency within the object... If the ResourceBlock
+        // exceeds the resources on the certificate, then that's a fail.
+        let signed_cert = self.signed().cert();
+        self.as_ref().as_resources().verify_covered(signed_cert.as_resources())
+            .map_err(|err| VerificationError::new(err.to_string()))?;
+        self.as_ref().v4_resources().verify_covered(signed_cert.v4_resources())
+            .map_err(|err| VerificationError::new(err.v4().to_string()))?;
+        self.as_ref().v6_resources().verify_covered(signed_cert.v6_resources())
+            .map_err(|err| VerificationError::new(err.v6().to_string()))?;
+
         let cert = self.signed.validate_at(cert, strict, now)?;
         Ok((cert, self.content))
     }
 }
 
 
-//--- Deref and AsRef
-
-impl ops::Deref for Rsc {
-    type Target = ResourceSignedChecklist;
-
-    fn deref(&self) -> &Self::Target {
-        self.content()
-    }
-}
-
+//--- AsRef
 impl AsRef<ResourceSignedChecklist> for Rsc {
     fn as_ref(&self) -> &ResourceSignedChecklist {
         self.content()
@@ -378,7 +379,7 @@ mod tests {
         let data = bytes::Bytes::from(data.to_vec());
         crate::repository::Rsc::decode(data.clone(), false).unwrap();
         let rsc = crate::repository::Rsc::decode(data.clone(), true).unwrap();
-        assert!(rsc.iter().all(|item| 
+        assert!(rsc.as_ref().iter().all(|item| 
             item.file_name() == Some(&bytes::Bytes::from("test.txt"))));
     }
 }
