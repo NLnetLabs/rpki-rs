@@ -81,26 +81,17 @@ impl Rsc {
         // Check for consistency within the object... If the ResourceBlock
         // exceeds the resources on the certificate, then that's a fail.
         let signed_cert = self.signed().cert();
-        self.as_ref().as_resources().verify_covered(signed_cert.as_resources())
+        self.content().as_resources().verify_covered(signed_cert.as_resources())
             .map_err(|err| VerificationError::new(err.to_string()))?;
-        self.as_ref().v4_resources().verify_covered(signed_cert.v4_resources())
+        self.content().v4_resources().verify_covered(signed_cert.v4_resources())
             .map_err(|err| VerificationError::new(err.v4().to_string()))?;
-        self.as_ref().v6_resources().verify_covered(signed_cert.v6_resources())
+        self.content().v6_resources().verify_covered(signed_cert.v6_resources())
             .map_err(|err| VerificationError::new(err.v6().to_string()))?;
 
         let cert = self.signed.validate_at(cert, strict, now)?;
         Ok((cert, self.content))
     }
 }
-
-
-//--- AsRef
-impl AsRef<ResourceSignedChecklist> for Rsc {
-    fn as_ref(&self) -> &ResourceSignedChecklist {
-        self.content()
-    }
-}
-
 
 //------------ ResourceSignedChecklist ---------------------------------------
 
@@ -379,7 +370,7 @@ mod tests {
         let data = bytes::Bytes::from(data.to_vec());
         crate::repository::Rsc::decode(data.clone(), false).unwrap();
         let rsc = crate::repository::Rsc::decode(data.clone(), true).unwrap();
-        assert!(rsc.as_ref().iter().all(|item| 
+        assert!(rsc.content().iter().all(|item| 
             item.file_name() == Some(&bytes::Bytes::from("test.txt"))));
     }
 }
