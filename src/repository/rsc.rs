@@ -364,13 +364,73 @@ impl FileNameAndHash {
 
 mod tests {
     #[test]
-    fn decode_rsc() {
+    fn decode_rsc_apnic() {
         let data = 
             include_bytes!("../../test-data/rsc/apnictraining-test.sig");
         let data = bytes::Bytes::from(data.to_vec());
         crate::repository::Rsc::decode(data.clone(), false).unwrap();
         let rsc = crate::repository::Rsc::decode(data.clone(), true).unwrap();
+
+        let digest = rsc.content().digest_algorithm().digest(
+            include_bytes!("../../test-data/rsc/test.txt")
+        );
         assert!(rsc.content().iter().all(|item| 
-            item.file_name() == Some(&bytes::Bytes::from("test.txt"))));
+            item.file_name() == Some(&bytes::Bytes::from("test.txt"))
+            && item.hash() == digest.as_ref()));
+    }
+
+    #[test]
+    fn decode_rsc_correct() {
+        let data = 
+            include_bytes!("../../test-data/rsc/koen.sig");
+        let data = bytes::Bytes::from(data.to_vec());
+        crate::repository::Rsc::decode(data.clone(), false).unwrap();
+        let rsc = crate::repository::Rsc::decode(data.clone(), true).unwrap();
+
+        let digest = rsc.content().digest_algorithm().digest(
+            include_bytes!("../../test-data/rsc/koen.txt")
+        );
+        assert!(rsc.content().iter().all(|item| 
+            item.file_name() == Some(&bytes::Bytes::from("koen.txt"))
+            && item.hash() == digest.as_ref()));
+    }
+
+    #[test]
+    fn decode_rsc_correct_unnamed() {
+        let data = 
+            include_bytes!("../../test-data/rsc/koen-unnamed.sig");
+        let data = bytes::Bytes::from(data.to_vec());
+        crate::repository::Rsc::decode(data.clone(), false).unwrap();
+        let rsc = crate::repository::Rsc::decode(data.clone(), true).unwrap();
+
+        let digest = rsc.content().digest_algorithm().digest(
+            include_bytes!("../../test-data/rsc/koen.txt")
+        );
+        assert!(rsc.content().iter().all(|item| 
+            item.file_name() == None
+            && item.hash() == digest.as_ref()));
+    }
+
+    #[test]
+    fn decode_rsc_multiple() {
+        let data = 
+            include_bytes!("../../test-data/rsc/koen-multiple.sig");
+        let data = bytes::Bytes::from(data.to_vec());
+        crate::repository::Rsc::decode(data.clone(), false).unwrap();
+        let rsc = crate::repository::Rsc::decode(data.clone(), true).unwrap();
+
+        let digest = rsc.content().digest_algorithm().digest(
+            include_bytes!("../../test-data/rsc/koen.txt")
+        );
+        assert!(rsc.content().iter().any(|item| 
+            item.file_name() == None
+            && item.hash() == digest.as_ref()));
+
+        let digest = rsc.content().digest_algorithm().digest(
+            include_bytes!("../../test-data/rsc/martin.txt")
+        );
+        assert!(rsc.content().iter().any(|item| 
+            item.file_name() == Some(&bytes::Bytes::from("martin.txt"))
+            && item.hash() == digest.as_ref()));
     }
 }
