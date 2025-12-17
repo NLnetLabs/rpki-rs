@@ -12,6 +12,7 @@ pub use self::cert::{Cert, ResourceCert};
 pub use self::crl::Crl;
 pub use self::manifest::Manifest;
 pub use self::roa::Roa;
+pub use self::rsc::Rsc;
 pub use self::rta::Rta;
 pub use self::tal::Tal;
 
@@ -25,6 +26,7 @@ pub mod error;
 pub mod manifest;
 pub mod resources;
 pub mod roa;
+pub mod rsc;
 pub mod rta;
 pub mod sigobj;
 pub mod tal;
