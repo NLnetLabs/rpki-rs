@@ -1206,8 +1206,6 @@ impl Payload {
     pub fn to_payload(
         &self
     ) -> Result<(payload::Action, payload::Payload), Error> {
-        let action = payload::Action::from_flags(self.flags());
-
         fn make_payload(
             action: &Action,
             payload: &Payload,
@@ -1254,6 +1252,7 @@ impl Payload {
             }
         }
 
+        let action = payload::Action::from_flags(self.flags());
         Ok((
             action,
             make_payload(&action, self).map_err(|text| {
