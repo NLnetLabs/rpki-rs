@@ -8,7 +8,12 @@ New
 
 Bug fixes
 
+* When creating RTR ASPA PDUs, the provider ASN set is forced to be empty
+  in a withdrawal.
+
 Other changes
+
+[#350]: https://github.com/NLnetLabs/rpki-rs/pull/350
 
 
 ## 0.19.1
