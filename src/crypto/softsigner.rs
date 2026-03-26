@@ -1,37 +1,27 @@
-//! A signer atop the OpenSSL library.
-//!
-//! Because this adds a dependency to openssl libs this is disabled by
-//! default and should only be used by implementations that need to use
-//! software keys to sign things, such as an RPKI Certificate Authority or
-//! Publication Server. In particular, this is not required when validating.
+//! A signer storing private keys in memory.
 
 use std::io;
 use std::sync::{Arc, RwLock};
 use bcder::decode::IntoSource;
-use openssl::rsa::Rsa;
-use openssl::pkey::{PKey, Private};
-use openssl::hash::MessageDigest;
-use ring::rand;
-use ring::rand::SecureRandom;
+use aws_lc_rs::{rand, rsa, signature};
+use aws_lc_rs::rand::SecureRandom;
+use aws_lc_rs::signature::KeyPair as _;
 use super::keys::{PublicKey, PublicKeyFormat};
 use super::signer::{KeyError, Signer, SigningAlgorithm, SigningError};
 use super::signature::{SignatureAlgorithm, Signature};
 
 
+//------------ SoftSigner -------------------------------------------------
 
-//------------ OpenSslSigner -------------------------------------------------
-
-/// An OpenSSL based signer.
-///
-/// Keeps the keys in memory (for now).
-pub struct OpenSslSigner {
+/// A signer keeping keys in memory.
+pub struct SoftSigner {
     keys: RwLock<Vec<Option<Arc<KeyPair>>>>,
     rng: rand::SystemRandom,
 }
 
-impl OpenSslSigner {
-    pub fn new() -> OpenSslSigner {
-        OpenSslSigner {
+impl SoftSigner {
+    pub fn new() -> SoftSigner {
+        SoftSigner {
             keys: Default::default(),
             rng: rand::SystemRandom::new(),
         }
@@ -76,7 +66,7 @@ impl OpenSslSigner {
     }
 }
 
-impl Signer for OpenSslSigner {
+impl Signer for SoftSigner {
     type KeyId = KeyId;
     type Error = io::Error;
 
@@ -105,7 +95,9 @@ impl Signer for OpenSslSigner {
         algorithm: Alg,
         data: &D
     ) -> Result<Signature<Alg>, SigningError<Self::Error>> {
-        self.get_key(*key)?.sign(algorithm, data.as_ref()).map_err(Into::into)
+        self.get_key(*key)?.sign(
+            algorithm, data.as_ref(), &self.rng,
+        ).map_err(Into::into)
     }
 
     fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
@@ -115,7 +107,7 @@ impl Signer for OpenSslSigner {
     ) -> Result<(Signature<Alg>, PublicKey), Self::Error> {
         let key = KeyPair::new(algorithm.public_key_format())?;
         let info = key.get_key_info()?;
-        let sig = key.sign(algorithm, data.as_ref())?;
+        let sig = key.sign(algorithm, data.as_ref(), &self.rng)?;
         Ok((sig, info))
     }
 
@@ -127,7 +119,7 @@ impl Signer for OpenSslSigner {
 }
 
 
-impl Default for OpenSslSigner {
+impl Default for SoftSigner {
     fn default() -> Self {
         Self::new()
     }
@@ -147,52 +139,54 @@ pub struct KeyId(usize);
 //------------ KeyPair -------------------------------------------------------
 
 /// A key pair kept by the signer.
-struct KeyPair(PKey<Private>);
+struct KeyPair(rsa::KeyPair);
 
 impl KeyPair {
     fn new(algorithm: PublicKeyFormat) -> Result<Self, io::Error> {
         if algorithm != PublicKeyFormat::Rsa {
             return Err(io::Error::other("invalid algorithm"));
         }
-        // Issues unwrapping this indicate a bug in the openssl library.
-        // So, there is no way to recover.
-        let rsa = Rsa::generate(2048)?;
-        let pkey = PKey::from_rsa(rsa)?;
-        Ok(KeyPair(pkey))
+
+        rsa::KeyPair::generate(
+            rsa::KeySize::Rsa2048
+        ).map(Self).map_err(io::Error::other)
     }
 
     fn from_der(der: &[u8]) -> Result<Self, io::Error> {
-        let res = PKey::private_key_from_der(der)?;
-        if res.bits() != 2048 {
+        let res = rsa::KeyPair::from_der(der).map_err(io::Error::other)?;
+        if res.public_modulus_len() != 2048 / 8 {
             return Err(io::Error::other(
-                format!("invalid key length {}", res.bits())
+                format!(
+                    "invalid key length {}", res.public_modulus_len() * 8
+                )
             ))
         }
         Ok(KeyPair(res))
     }
 
     fn from_pem(pem: &[u8]) -> Result<Self, io::Error> {
-        let res = PKey::private_key_from_pem(pem)?;
-        if res.bits() != 2048 {
+        let res = rsa::KeyPair::from_pkcs8(pem).map_err(io::Error::other)?;
+        if res.public_modulus_len() != 2048 / 8 {
             return Err(io::Error::other(
-                format!("invalid key length {}", res.bits())
+                format!(
+                    "invalid key length {}", res.public_modulus_len() * 8
+                )
             ))
         }
         Ok(KeyPair(res))
     }
 
-    fn get_key_info(&self) -> Result<PublicKey, io::Error>
-    {
-        // Issues unwrapping this indicate a bug in the openssl
-        // library. So, there is no way to recover.
-        let der = self.0.rsa().unwrap().public_key_to_der()?;
-        Ok(PublicKey::decode(der.as_slice().into_source()).unwrap())
+    fn get_key_info(&self) -> Result<PublicKey, io::Error> {
+        PublicKey::decode(
+            self.0.public_key().as_ref().into_source()
+        ).map_err(io::Error::other)
     }
 
     fn sign<Alg: SignatureAlgorithm>(
         &self,
         algorithm: Alg,
-        data: &[u8]
+        data: &[u8],
+        rng: &dyn rand::SecureRandom,
     ) -> Result<Signature<Alg>, io::Error> {
         if !matches!(
             algorithm.signing_algorithm(), SigningAlgorithm::RsaSha256
@@ -201,11 +195,12 @@ impl KeyPair {
                 "invalid algorithm"
             ));
         }
-        let mut signer = ::openssl::sign::Signer::new(
-            MessageDigest::sha256(), &self.0
-        )?;
-        signer.update(data)?;
-        Ok(Signature::new(algorithm, signer.sign_to_vec()?.into()))
+
+        let mut signature = vec![0; self.0.public_modulus_len()];
+        self.0.sign(
+            &signature::RSA_PKCS1_SHA256, rng, data, &mut signature
+        ).map_err(io::Error::other)?;
+        Ok(Signature::new(algorithm, signature.into()))
     }
 }
 
@@ -220,7 +215,7 @@ pub mod tests {
 
     #[test]
     fn info_sign_delete() {
-        let s = OpenSslSigner::new();
+        let s = SoftSigner::new();
         let ki = s.create_key(PublicKeyFormat::Rsa).unwrap();
         let data = b"foobar";
         let _ = s.get_key_info(&ki).unwrap();
@@ -230,7 +225,7 @@ pub mod tests {
     
     #[test]
     fn one_off() {
-        let s = OpenSslSigner::new();
+        let s = SoftSigner::new();
         s.sign_one_off(RpkiSignatureAlgorithm::default(), b"foobar").unwrap();
     }
 }

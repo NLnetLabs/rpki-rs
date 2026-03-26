@@ -1928,13 +1928,13 @@ mod signer_test {
     use crate::{
         ca::idcert::IdCert,
         crypto::{
-            softsigner::{KeyId, OpenSslSigner},
+            softsigner::{KeyId, SoftSigner},
             PublicKeyFormat,
         },
     };
 
     fn sign_and_validate_msg(
-        signer: &OpenSslSigner,
+        signer: &SoftSigner,
         signing_key: KeyId,
         validation_key: &PublicKey,
         message: Message,
@@ -1955,7 +1955,7 @@ mod signer_test {
 
     #[test]
     fn sign_and_validate() {
-        let signer = OpenSslSigner::new();
+        let signer = SoftSigner::new();
 
         let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
         let cert = IdCert::new_ta(

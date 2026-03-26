@@ -26,7 +26,7 @@ use std::io::Read;
 use std::ops::Deref;
 use bytes::Bytes;
 use log::info;
-use ring::digest;
+use aws_lc_rs::digest;
 use uuid::Uuid;
 use crate::{uri, xml};
 use crate::util::base64;

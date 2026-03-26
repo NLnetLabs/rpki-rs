@@ -26,12 +26,11 @@ futures-util    = { version = "0.3", optional = true }
 log             = "0.4.7"
 openssl         = { version = "0.10.23", optional = true }
 quick-xml       = { version = "0.39.0", optional = true }
-ring            = { version = "0.17.6", optional = true }
+aws-lc-rs       = { version = "1.16.2", optional = true }
 serde           = { version = "1.0.103", optional = true, features = [ "derive" ] }
 serde_json      = { version = "1.0.40", optional = true }
 tokio           = { version = "1.0", optional = true, features = ["io-util",  "net", "rt", "sync", "time"] }
 uuid            = "1.1"
-untrusted       = { version = "0.9", optional = true }
 
 [dev-dependencies]
 serde_json      = "1.0.40"
@@ -49,9 +48,9 @@ default = []
 
 # Main components of the crate.
 ca         = [ "repository", "serde-support", "rrdp" ]
-crypto     = [ "bcder", "ring", "untrusted" ]
+crypto     = [ "bcder", "aws-lc-rs" ]
 repository = [ "bcder", "crypto" ]
-rrdp       = [ "xml", "ring" ]
+rrdp       = [ "xml", "aws-lc-rs" ]
 rtr        = [ "futures-util", "tokio" ]
 slurm      = [ "rtr", "serde-support", "serde_json" ]
 
