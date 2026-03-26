@@ -3,7 +3,7 @@
 use std::io;
 use std::sync::{Arc, RwLock};
 use bcder::decode::IntoSource;
-use aws_lc_rs::{rand, rsa, signature};
+use aws_lc_rs::{encoding, rand, rsa, signature};
 use aws_lc_rs::rand::SecureRandom;
 use aws_lc_rs::signature::KeyPair as _;
 use super::keys::{PublicKey, PublicKeyFormat};
@@ -178,7 +178,9 @@ impl KeyPair {
 
     fn get_key_info(&self) -> Result<PublicKey, io::Error> {
         PublicKey::decode(
-            self.0.public_key().as_ref().into_source()
+            encoding::AsDer::<encoding::PublicKeyX509Der>::as_der(
+                self.0.public_key()
+            ).map_err(io::Error::other)?.as_ref().into_source()
         ).map_err(io::Error::other)
     }
 
@@ -218,9 +220,10 @@ pub mod tests {
         let s = SoftSigner::new();
         let ki = s.create_key(PublicKeyFormat::Rsa).unwrap();
         let data = b"foobar";
-        let _ = s.get_key_info(&ki).unwrap();
-        let _ = s.sign(&ki, RpkiSignatureAlgorithm::default(), data).unwrap();
+        let key = s.get_key_info(&ki).unwrap();
+        let sig = s.sign(&ki, RpkiSignatureAlgorithm::default(), data).unwrap();
         s.destroy_key(&ki).unwrap();
+        key.verify(data, &sig).unwrap();
     }
     
     #[test]
