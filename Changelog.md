@@ -4,11 +4,20 @@
 
 Breaking changes
 
+* Renamed the `OpenSslSigner` to `SoftSigner` since it doesn’t use OpenSSL
+  any more. ([#358])
+
 New
+
+* Removed the dependencies on _ring_ and OpenSSL and replaced them with
+  [aws-lc-rs]. ([#358])
 
 Bug fixes
 
 Other changes
+
+[#358]: https://github.com/NLnetLabs/rpki-rs/pull/358
+[aws-lc-rs]: https://crates.io/crates/aws-lc-rs
 
 
 ## 0.19.2
