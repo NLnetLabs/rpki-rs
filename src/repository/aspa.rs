@@ -575,9 +575,9 @@ mod signer_test {
     #[test]
     fn provider_asn_size() {
         fn make_aspa(len: usize) -> Captured {
-            let mut builder = AspaBuilder::empty(0.into());
+            let mut builder = AspaBuilder::empty(1.into());
             for i in 0..(len as u32) {
-                builder.add_provider(Asn::from(i + 1)).unwrap();
+                builder.add_provider(Asn::from(i + 2)).unwrap();
             }
             builder.into_attestation().encode_ref().to_captured(Mode::Der)
         }
