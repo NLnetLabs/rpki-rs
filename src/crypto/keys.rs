@@ -9,10 +9,9 @@ use bcder::decode::{ContentError, DecodeError, Source};
 use bcder::int::{InvalidInteger, Unsigned};
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
-use ring::{digest, signature};
-use ring::error::Unspecified;
-use ring::signature::VerificationAlgorithm;
-use untrusted::Input;
+use aws_lc_rs::{digest, signature};
+use aws_lc_rs::error::Unspecified;
+use aws_lc_rs::signature::VerificationAlgorithm;
 use crate::oid;
 #[cfg(feature = "serde")] use crate::util::base64;
 use crate::util::hex;
@@ -137,18 +136,18 @@ impl PublicKeyFormat{
 
     fn verify(
         self,
-        bits: Input<'_>,
-        message: Input<'_>,
-        signature: Input<'_>,
+        bits: &[u8],
+        message: &[u8],
+        signature: &[u8],
     ) -> Result<(), SignatureVerificationError> {
         match self {
             PublicKeyFormat::Rsa => {
-                signature::RSA_PKCS1_2048_8192_SHA256.verify(
+                signature::RSA_PKCS1_2048_8192_SHA256.verify_sig(
                     bits, message, signature
                 ).map_err(Into::into)
             }
             PublicKeyFormat::EcdsaP256 => {
-                signature::ECDSA_P256_SHA256_ASN1.verify(
+                signature::ECDSA_P256_SHA256_ASN1.verify_sig(
                     bits, message, signature
                 ).map_err(Into::into)
             }
@@ -281,9 +280,7 @@ impl PublicKey {
             return Err(SignatureVerificationError(()))
         }
         self.algorithm.verify(
-            Input::from(self.bits()),
-            Input::from(message),
-            Input::from(signature.value().as_ref())
+            self.bits(), message, signature.value().as_ref()
         )
     }
 }

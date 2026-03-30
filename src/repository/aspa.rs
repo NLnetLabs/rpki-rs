@@ -449,7 +449,7 @@ mod signer_test {
     use crate::uri;
     use crate::repository::cert::{KeyUsage, Overclaim, TbsCert};
     use crate::crypto::PublicKeyFormat;
-    use crate::crypto::softsigner::OpenSslSigner;
+    use crate::crypto::softsigner::SoftSigner;
     use crate::repository::resources::Prefix;
     use crate::repository::tal::TalInfo;
     use crate::repository::x509::Validity;
@@ -459,7 +459,7 @@ mod signer_test {
         customer_as: Asn,
         mut providers: Vec<Asn>,
     ) -> Aspa {
-        let signer = OpenSslSigner::new();
+        let signer = SoftSigner::new();
 
         let issuer_key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
         let issuer_uri = uri::Rsync::from_str(

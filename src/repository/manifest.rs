@@ -645,14 +645,14 @@ mod signer_test {
     use std::str::FromStr;
     use crate::repository::cert::{KeyUsage, Overclaim, TbsCert};
     use crate::crypto::PublicKeyFormat;
-    use crate::crypto::softsigner::OpenSslSigner;
+    use crate::crypto::softsigner::SoftSigner;
     use crate::repository::resources::{Asn, Prefix};
     use crate::repository::tal::TalInfo;
     use crate::repository::x509::Validity;
     use super::*;
 
     fn make_test_manifest() -> Manifest {
-        let signer = OpenSslSigner::new();
+        let signer = SoftSigner::new();
         let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
         let pubkey = signer.get_key_info(&key).unwrap();
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();

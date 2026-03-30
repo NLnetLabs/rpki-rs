@@ -874,12 +874,12 @@ mod tests {
 
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
-    use crate::crypto::{softsigner::OpenSslSigner, PublicKeyFormat};
+    use crate::crypto::{softsigner::SoftSigner, PublicKeyFormat};
     use super::*;
     
     #[test]
     fn encode_and_sign_signed_message() {
-        let signer = OpenSslSigner::new();
+        let signer = SoftSigner::new();
 
         let ta_key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
         let ta_cert = IdCert::new_ta(

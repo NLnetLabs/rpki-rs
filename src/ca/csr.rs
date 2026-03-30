@@ -576,10 +576,10 @@ mod test {
     #[cfg(all(test, feature="softkeys"))]
     fn build_csr() {
 
-        use crate::crypto::softsigner::OpenSslSigner;
+        use crate::crypto::softsigner::SoftSigner;
         use crate::crypto::PublicKeyFormat;
 
-        let signer = OpenSslSigner::new();
+        let signer = SoftSigner::new();
         let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
 
 
@@ -632,7 +632,7 @@ mod signer_test {
     #[test]
     fn router_cert_from_csr() {
         use crate::crypto::keys::PublicKeyFormat;
-        use crate::crypto::softsigner::OpenSslSigner;
+        use crate::crypto::softsigner::SoftSigner;
         use crate::repository::cert::{Cert, Overclaim};
         use crate::repository::resources::{Asn, Prefix};
         use crate::repository::x509::Validity;
@@ -642,7 +642,7 @@ mod signer_test {
         let csr = BgpsecCsr::decode(bytes.as_ref()).unwrap();
         csr.verify_signature().unwrap();
 
-        let signer = OpenSslSigner::new();
+        let signer = SoftSigner::new();
         let ca_key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
         let ca_pubkey = signer.get_key_info(&ca_key).unwrap();
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
