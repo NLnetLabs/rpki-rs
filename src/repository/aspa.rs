@@ -573,6 +573,18 @@ mod signer_test {
     }
 
     #[test]
+    #[should_panic]
+    fn customer_as0() {
+        make_aspa(0.into(), Vec::new());
+    }
+
+    #[test]
+    #[should_panic]
+    fn provider_as0_non_singleton() {
+        make_aspa(1.into(), vec![0.into(), 2.into()]);
+    }
+
+    #[test]
     fn provider_asn_size() {
         fn make_aspa(len: usize) -> Captured {
             let mut builder = AspaBuilder::empty(1.into());
