@@ -1190,19 +1190,12 @@ mod signer_test {
 /// Time                    ::= CHOICE {
 ///     utcTime                 UTCTime,
 ///     generalizedTime         GeneralizedTime }
-///
-/// BinarySigningTime       ::= BinaryTime
-///
-/// BinaryTime              ::= INTEGER (0..MAX)
 /// ```
 ///
-/// The two mandatory attributes are _ContentType_ and _MessageDigest_. The
-/// content type attribute must be the same as the _eContentType_ field of
-/// the _encapContentInfo_. The message digest attribute contains the digest
-/// value of the (actual) content.
-///
-/// The _SigningTime_ and _BinarySigningTime_ attributes are optional. Their
-/// presence is not considered when validating a signed object.
+/// The three mandatory attributes are _ContentType_, _MessageDigest_, and
+/// _SigningTime. The content type attribute must be the same as the 
+/// _eContentType_ field of the _encapContentInfo_. The message digest 
+/// attribute contains the digest value of the (actual) content.
 ///
 /// No other attribute may be present.
 ///
