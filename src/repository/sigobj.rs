@@ -263,6 +263,14 @@ impl SignedObject {
                 "message digest mismatch in signed object"
             ))
         }
+        if self.signing_time() < self.cert().validity().not_before() ||
+            self.signing_time() > self.cert().validity().not_after() {
+            return Err(VerificationError::new(
+                "signing time is not between not_before and not_after \
+                validity times"
+            ));
+        }
+            
         let msg = self.signed_attrs.encode_verify();
         self.cert.subject_public_key_info().verify(
             &msg,
