@@ -3,8 +3,6 @@
 use libfuzzer_sys::fuzz_target;
 use std::str::FromStr;
 
-fuzz_target!(|data: &[u8]| {
-    if let Ok(s) = std::str::from_utf8(data) {
-        let _ = rpki::resources::Asn::from_str(s);
-    }
+fuzz_target!(|data: &str| {
+    let _ = rpki::resources::Asn::from_str(data);
 });
