@@ -14,9 +14,12 @@ New
 
 Bug fixes
 
+* Fix a panic when parsing AS numbers from strings. ([#359])
+
 Other changes
 
 [#358]: https://github.com/NLnetLabs/rpki-rs/pull/358
+[#359]: https://github.com/NLnetLabs/rpki-rs/pull/359
 [aws-lc-rs]: https://crates.io/crates/aws-lc-rs
 
 
