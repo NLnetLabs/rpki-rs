@@ -26,3 +26,10 @@ name = "decode_objects"
 path = "fuzz_targets/decode_objects.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "parse_asn"
+path = "fuzz_targets/parse_asn.rs"
+test = false
+doc = false
+bench = false

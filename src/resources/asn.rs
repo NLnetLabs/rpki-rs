@@ -99,16 +99,20 @@ impl FromStr for Asn {
     type Err = ParseAsnError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = if s.len() > 2 && s[..2].eq_ignore_ascii_case("as") {
-            &s[2..]
-        } else {
-            s
-        };
-
-        u32::from_str(s).map(Asn).map_err(|_| ParseAsnError)
+        u32::from_str(strip_as(s))
+            .map(Asn)
+            .map_err(|_| ParseAsnError)
     }
 }
 
+fn strip_as(s: &str) -> &str {
+    if let Some((prefix, rest)) = s.split_at_checked(2) {
+        if prefix.eq_ignore_ascii_case("as") {
+            return rest;
+        }
+    }
+    s
+}
 
 //--- Serialize and Deserialize
 
@@ -627,6 +631,11 @@ mod tests {
         assert_eq!("".parse::<Asn>(), Err(ParseAsnError));
         assert_eq!("-1234".parse::<Asn>(), Err(ParseAsnError));
         assert_eq!("4294967296".parse::<Asn>(), Err(ParseAsnError));
+
+        // Code point 0x80 is outside of ASCII and therefore is more
+        // than two bytes. Splitting on 2 bytes would result in a
+        // panic.
+        assert_eq!("a\u{80}123".parse::<Asn>(), Err(ParseAsnError));
     }
 
 
