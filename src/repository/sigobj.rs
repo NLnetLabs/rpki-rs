@@ -263,11 +263,15 @@ impl SignedObject {
                 "message digest mismatch in signed object"
             ))
         }
-        if self.signing_time() < self.cert().validity().not_before() ||
-            self.signing_time() > self.cert().validity().not_after() {
+        if self.signing_time() < self.cert().validity().not_before() {
             return Err(VerificationError::new(
-                "signing time is not between not_before and not_after \
-                validity times"
+                "signing time is before not_before validity time"
+            ));
+        }
+
+        if self.signing_time() > self.cert().validity().not_after() {
+            return Err(VerificationError::new(
+                "signing time is after not_after validity time"
             ));
         }
             
