@@ -1769,17 +1769,10 @@ mod signer_test {
 
     #[test]
     fn base_64_size() {
+        const SIZES: &[usize] = &[0, 10, 16, 256, 1024, 1025, 12322];
 
-        fn random_bytes(size: usize) -> Vec<u8> {
-            let mut bytes = [0; 65535];
-            openssl::rand::rand_bytes(&mut bytes).unwrap();
-            Vec::from(&bytes[0..size])
-        }
-
-        let sizes = &[0, 10, 16, 256, 1024, 1025, 12322];
-
-        for size in sizes {
-            let buf = random_bytes(*size);
+        for size in SIZES {
+            let buf = vec![0x12; *size];
             let base64 = Base64::from_content(&buf);
 
             assert!(base64.size_approx() - buf.len() < 4);

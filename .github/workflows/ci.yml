@@ -7,7 +7,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
-        rust: [1.85.0, stable, beta, nightly]
+        rust: [1.85.0, stable, nightly]
     steps:
     - name: Checkout repository
       uses: actions/checkout@v1
@@ -22,6 +22,9 @@ jobs:
     #
     # On Windows, we don’t ever want to have to deal with OpenSSL, so we have
     # a special feature __windows_ci_all that replaces --all-features.
+
+    - if: matrix.rust != 'stable' && matrix.rust != 'nightly'
+      run: rm Cargo.lock
 
     # Clippy.
     #
