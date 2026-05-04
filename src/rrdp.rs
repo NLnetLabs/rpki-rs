@@ -21,7 +21,7 @@
 
 #![cfg(feature = "rrdp")]
 
-use std::{error, fmt, hash, io, str};
+use std::{cmp, error, fmt, hash, io, str};
 use std::io::Read;
 use std::ops::Deref;
 use bytes::Bytes;
@@ -145,7 +145,7 @@ impl NotificationFile {
     /// appear at the beginning of the sequence.
     pub fn reverse_sort_deltas(&mut self) {
         if let Ok(ref mut deltas) = self.deltas {
-            deltas.sort_by(|a,b| b.serial.cmp(&a.serial));
+            deltas.sort_by_key(|a| cmp::Reverse(a.serial))
         }
     }
 
