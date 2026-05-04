@@ -25,6 +25,7 @@ bytes           = "1.11"
 chrono          = { version = "0.4.35", features = [ "serde" ] }
 futures-util    = { version = "0.3", optional = true }
 log             = "0.4.7"
+openssl         = { version = "0.10.23", optional = true }
 quick-xml       = { version = "0.39.0", optional = true }
 aws-lc-rs       = { version = "1.16.2", optional = true }
 serde           = { version = "1.0.103", optional = true, features = [ "derive" ] }
@@ -64,7 +65,7 @@ xml = [ "quick-xml" ]
 # Extra features provided.
 arbitrary = ["dep:arbitrary", "chrono/arbitrary"]
 serde-support = ["serde"]
-softkeys = [ "aws-lc-rs" ]
+softkeys = [ "openssl" ]
 
 # Dummy features for Windows CI runs where we don’t want to have to deal
 # with OpenSSL
