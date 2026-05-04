@@ -7,8 +7,14 @@ Breaking changes
 * Renamed the `OpenSslSigner` to `SoftSigner` since it doesn’t use OpenSSL
   any more. ([#358])
 
+Improvements
+
+* Made the fields of `CrlEntry` public. ([#368])
+
 New
 
+* Added optional conversion of `x509::Serial` to [num-bigint] types.
+  ([#368])
 * Removed the dependencies on _ring_ and OpenSSL and replaced them with
   [aws-lc-rs]. ([#358])
 
@@ -20,7 +26,9 @@ Other changes
 
 [#358]: https://github.com/NLnetLabs/rpki-rs/pull/358
 [#359]: https://github.com/NLnetLabs/rpki-rs/pull/359
+[#368]: https://github.com/NLnetLabs/rpki-rs/pull/368
 [aws-lc-rs]: https://crates.io/crates/aws-lc-rs
+[num-bigint]: https://crates.io/crates/num-bigint
 
 
 ## 0.19.2

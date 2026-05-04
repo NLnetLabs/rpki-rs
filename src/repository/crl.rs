@@ -604,10 +604,10 @@ impl Iterator for RevokedCertificatesIter {
 #[derive(Clone, Copy, Debug)]
 pub struct CrlEntry {
     /// The serial number of the revoked certificate.
-    user_certificate: Serial,
+    pub user_certificate: Serial,
 
     /// The time of revocation.
-    revocation_date: Time,
+    pub revocation_date: Time,
 }
 
 impl CrlEntry {
