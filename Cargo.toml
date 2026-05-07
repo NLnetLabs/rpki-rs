@@ -1,8 +1,9 @@
 [package]
 name = "rpki"
-version = "0.19.1"
+version = "0.20.0-dev"
+rust-version = "1.85"
 edition = "2021"
-rust-version = "1.82"
+resolver = "3" # Can be removed when edition becomes 2024.
 authors = ["NLnet Labs <rpki-team@nlnetlabs.nl>"]
 description = "A library for validating and creating RPKI data."
 documentation = "https://docs.rs/rpki/"
@@ -17,21 +18,21 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-arbitrary       = { version = "1", optional = true, features = ["derive"] }
 base64          = "0.22"
+bytes           = "1.11"
+log             = "0.4.7"
+uuid            = "1.1"
+
+arbitrary       = { version = "1", optional = true, features = ["derive"] }
 bcder           = { version = "0.7.6", optional = true, git = "https://github.com/NLnetLabs/bcder.git", branch = "rsc-support"}
-bytes           = "1.0"
 chrono          = { version = "0.4.35", features = [ "serde" ] }
 futures-util    = { version = "0.3", optional = true }
-log             = "0.4.7"
-openssl         = { version = "0.10.23", optional = true }
-quick-xml       = { version = "0.38.0", optional = true }
-ring            = { version = "0.17.6", optional = true }
+num-bigint      = { version = "0.4.6", optional = true }
+quick-xml       = { version = "0.39.0", optional = true }
+aws-lc-rs       = { version = "1.16.2", optional = true }
 serde           = { version = "1.0.103", optional = true, features = [ "derive" ] }
 serde_json      = { version = "1.0.40", optional = true }
 tokio           = { version = "1.0", optional = true, features = ["io-util",  "net", "rt", "sync", "time"] }
-uuid            = "1.1"
-untrusted       = { version = "0.9", optional = true }
 
 [dev-dependencies]
 serde_json      = "1.0.40"
@@ -41,7 +42,7 @@ hyper           = { version = "1.3.1", features = ["server", "http1"] }
 hyper-util      = { version = "0.1", features = ["server", "tokio"] }
 http-body-util  = "0.1"
 futures-util    = "0.3.31"
-reqwest         = { version = "0.12.9", features = ["gzip", "stream", "blocking"] }
+reqwest         = { version = "0.13.1", features = ["gzip", "stream", "blocking"] }
 
 
 [features]
@@ -49,9 +50,9 @@ default = [ "repository", "rrdp" ]
 
 # Main components of the crate.
 ca         = [ "repository", "serde-support", "rrdp" ]
-crypto     = [ "bcder", "ring", "untrusted" ]
+crypto     = [ "bcder", "aws-lc-rs" ]
 repository = [ "bcder", "crypto" ]
-rrdp       = [ "xml", "ring" ]
+rrdp       = [ "xml", "aws-lc-rs" ]
 rtr        = [ "futures-util", "tokio" ]
 slurm      = [ "rtr", "serde-support", "serde_json" ]
 
@@ -65,7 +66,7 @@ xml = [ "quick-xml" ]
 # Extra features provided.
 arbitrary = ["dep:arbitrary", "chrono/arbitrary"]
 serde-support = ["serde"]
-softkeys = [ "openssl" ]
+softkeys = [ "aws-lc-rs" ]
 
 # Dummy features for Windows CI runs where we don’t want to have to deal
 # with OpenSSL

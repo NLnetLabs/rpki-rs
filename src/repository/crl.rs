@@ -604,10 +604,10 @@ impl Iterator for RevokedCertificatesIter {
 #[derive(Clone, Copy, Debug)]
 pub struct CrlEntry {
     /// The serial number of the revoked certificate.
-    user_certificate: Serial,
+    pub user_certificate: Serial,
 
     /// The time of revocation.
-    revocation_date: Time,
+    pub revocation_date: Time,
 }
 
 impl CrlEntry {
@@ -812,12 +812,12 @@ mod test {
 mod signer_test {
     use super::*;
     use crate::crypto::PublicKeyFormat;
-    use crate::crypto::softsigner::OpenSslSigner;
+    use crate::crypto::softsigner::SoftSigner;
 
     #[test]
     fn build_ta_cert() {
         // CRL with two CrlEntries.
-        let signer = OpenSslSigner::new();
+        let signer = SoftSigner::new();
         let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
         let pubkey = signer.get_key_info(&key).unwrap();
         let crl = TbsCertList::new(

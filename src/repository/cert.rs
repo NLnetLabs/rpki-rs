@@ -2920,14 +2920,14 @@ mod test {
 mod signer_test {
     use std::str::FromStr;
     use crate::crypto::PublicKeyFormat;
-    use crate::crypto::softsigner::OpenSslSigner;
+    use crate::crypto::softsigner::SoftSigner;
     use crate::repository::resources::{Asn, Prefix};
     use super::*;
 
 
     #[test]
     fn build_ta_cert() {
-        let signer = OpenSslSigner::new();
+        let signer = SoftSigner::new();
         let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
         let pubkey = signer.get_key_info(&key).unwrap();
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();

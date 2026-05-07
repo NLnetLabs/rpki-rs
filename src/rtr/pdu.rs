@@ -12,6 +12,7 @@ use bytes::Bytes;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use crate::resources::addr::{MaxLenPrefix, Prefix};
 use crate::resources::asn::Asn;
+use crate::rtr::Action;
 use crate::util::base64;
 use super::payload;
 use super::state::{Serial, State};
@@ -1206,6 +1207,7 @@ impl Payload {
         &self
     ) -> Result<(payload::Action, payload::Payload), Error> {
         fn make_payload(
+            action: &Action,
             payload: &Payload,
         ) -> Result<payload::Payload, &'static str> {
             match payload {
@@ -1238,16 +1240,22 @@ impl Payload {
                     ))
                 }
                 Payload::Aspa(aspa) => {
-                    Ok(payload::Payload::aspa(
-                        aspa.customer(), aspa.providers().clone(),
-                    ))
+                    Ok(match action {
+                        Action::Withdraw => payload::Payload::aspa(
+                            aspa.customer(), ProviderAsns::empty(),
+                        ),
+                        _ => payload::Payload::aspa(
+                            aspa.customer(), aspa.providers().clone(),
+                        ),
+                    })
                 }
             }
         }
 
+        let action = payload::Action::from_flags(self.flags());
         Ok((
-            payload::Action::from_flags(self.flags()),
-            make_payload(self).map_err(|text| {
+            action,
+            make_payload(&action, self).map_err(|text| {
                 Error::new(
                     self.version(), 0, self.as_partial_slice(), text.as_bytes()
                 )

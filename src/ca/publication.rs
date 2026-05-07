@@ -1679,11 +1679,11 @@ mod signer_test {
 
     use crate::{
         ca::idcert::IdCert,
-        crypto::{softsigner::{OpenSslSigner, KeyId}, PublicKeyFormat}
+        crypto::{softsigner::{SoftSigner, KeyId}, PublicKeyFormat}
     };
 
     fn sign_and_validate_msg(
-        signer: &OpenSslSigner,
+        signer: &SoftSigner,
         signing_key: KeyId,
         validation_key: &PublicKey,
         message: Message
@@ -1736,7 +1736,7 @@ mod signer_test {
 
     #[test]
     fn sign_and_validate() {
-        let signer = OpenSslSigner::new();
+        let signer = SoftSigner::new();
 
         let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
         let cert = IdCert::new_ta(
@@ -1769,17 +1769,10 @@ mod signer_test {
 
     #[test]
     fn base_64_size() {
+        const SIZES: &[usize] = &[0, 10, 16, 256, 1024, 1025, 12322];
 
-        fn random_bytes(size: usize) -> Vec<u8> {
-            let mut bytes = [0; 65535];
-            openssl::rand::rand_bytes(&mut bytes).unwrap();
-            Vec::from(&bytes[0..size])
-        }
-
-        let sizes = &[0, 10, 16, 256, 1024, 1025, 12322];
-
-        for size in sizes {
-            let buf = random_bytes(*size);
+        for size in SIZES {
+            let buf = vec![0x12; *size];
             let base64 = Base64::from_content(&buf);
 
             assert!(base64.size_approx() - buf.len() < 4);

@@ -494,6 +494,34 @@ impl From<Serial> for String {
     }
 }
 
+#[cfg(feature = "num-bigint")]
+impl From<Serial> for num_bigint::BigInt {
+    fn from(serial: Serial) -> Self {
+        Self::from_bytes_be(num_bigint::Sign::Plus, &serial.0)
+    }
+}
+
+#[cfg(feature = "num-bigint")]
+impl From<Serial> for num_bigint::BigUint {
+    fn from(serial: Serial) -> Self {
+        Self::from_bytes_be(&serial.0)
+    }
+}
+
+#[cfg(feature = "num-bigint")]
+impl num_bigint::ToBigInt for Serial {
+    fn to_bigint(&self) -> Option<num_bigint::BigInt> {
+        Some(From::from(*self))
+    }
+}
+
+#[cfg(feature = "num-bigint")]
+impl num_bigint::ToBigUint for Serial {
+    fn to_biguint(&self) -> Option<num_bigint::BigUint> {
+        Some(From::from(*self))
+    }
+}
+
 impl FromStr for Serial {
     type Err = RepresentationError;
 
