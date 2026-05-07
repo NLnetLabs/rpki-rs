@@ -81,6 +81,10 @@ impl SignedObject {
     pub fn signing_time(&self) -> Time {
         self.signing_time
     }
+
+    pub fn digest_algorithm(&self) -> DigestAlgorithm {
+        self.digest_algorithm
+    }
 }
 
 /// # Decoding, Validation, and Encoding
