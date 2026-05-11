@@ -80,6 +80,8 @@ impl Rsync {
         if !starts_with_ignore_case(&bytes, b"rsync://") {
             return Err(Error::BadScheme)
         }
+        Self::check_path(&bytes[8..])?;
+
         let (authority, module) = {
             let mut parts = bytes[8..].splitn(3, |ch| *ch == b'/');
             let authority = match parts.next().map(|s| s.len()) {
@@ -103,7 +105,6 @@ impl Rsync {
         let path_start = module_start + module + 1;
 
         let res = Rsync { bytes, module_start, path_start };
-        Self::check_path(res.module_name_and_path().as_bytes())?;
         Ok(res)
     }
 
@@ -229,14 +230,6 @@ impl Rsync {
     /// Returns the URI’s path as a bytes slice.
     pub fn path_bytes(&self) -> &[u8] {
         &self.bytes[self.path_start..]
-    }
-
-    /// Returns the URI’s module and path as a string slice.
-    ///
-    /// The string will contain the module name followed by a slash followed
-    /// by the path compontent.
-    pub fn module_name_and_path(&self) -> &str {
-        &self.as_str()[self.module_start..]
     }
 
     /// Converts the URI into one representing a directory.
@@ -1098,6 +1091,12 @@ mod tests {
         assert!(Rsync::from_str("rsync:// host/module/foo/bar").is_err());
         assert!(Rsync::from_str("rsync://host/ module/foo/bar").is_err());
         assert!(Rsync::from_str("rsync://host/module/f oo/bar").is_err());
+        assert!(Rsync::from_str("rsync://../module/foo/bar").is_err());
+        assert!(Rsync::from_str("rsync://../module/").is_err());
+        assert!(Rsync::from_str("rsync://../").is_err());
+        assert!(Rsync::from_str("rsync://./module/foo/bar").is_err());
+        assert!(Rsync::from_str("rsync://./module/").is_err());
+        assert!(Rsync::from_str("rsync://./").is_err());
         assert!(Rsync::from_str("rsync://host/module/../bar").is_err());
         assert!(Rsync::from_str("rsync://host/module/foo/..").is_err());
         assert!(Rsync::from_str("rsync://host/module/foo/../").is_err());
@@ -1120,13 +1119,11 @@ mod tests {
         assert_eq!(uri.authority(), "host");
         assert_eq!(uri.module_name(), "module");
         assert_eq!(uri.path(), "foo/bar");
-        assert_eq!(uri.module_name_and_path(), "module/foo/bar");
 
         let uri = Rsync::from_slice(b"rsync://host/module/").unwrap();
         assert_eq!(uri.authority(), "host");
         assert_eq!(uri.module_name(), "module");
         assert_eq!(uri.path(), "");
-        assert_eq!(uri.module_name_and_path(), "module/");
     }
 
     #[test]
