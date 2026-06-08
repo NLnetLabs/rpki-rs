@@ -2,8 +2,7 @@
 name = "rpki"
 version = "0.20.0-dev"
 rust-version = "1.85"
-edition = "2021"
-resolver = "3" # Can be removed when edition becomes 2024.
+edition = "2024"
 authors = ["NLnet Labs <rpki-team@nlnetlabs.nl>"]
 description = "A library for validating and creating RPKI data."
 documentation = "https://docs.rs/rpki/"

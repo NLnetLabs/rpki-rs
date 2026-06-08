@@ -417,7 +417,7 @@ impl RoaIpAddress {
         Ok(Some(()))
     }
 
-    fn encode(&self) -> impl encode::Values {
+    fn encode(self) -> impl encode::Values {
         encode::sequence((
             self.prefix.encode(),
             self.max_length.map(|v| v.encode())
@@ -653,7 +653,7 @@ impl RoaIpAddressesBuilder {
 
     pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence(
-            encode::slice(self.addrs.as_slice(), |v: &RoaIpAddress| v.encode())
+            encode::slice(self.addrs.as_slice(), |v| v.encode())
         )
     }
 }
