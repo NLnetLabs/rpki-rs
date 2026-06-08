@@ -2,6 +2,8 @@
 
 ## 0.19.3
 
+Released 2026-06-08.
+
 Bug fixes
 
 * Extended the check for illegal path components in rsync URIs to also
