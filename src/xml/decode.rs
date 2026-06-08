@@ -2,6 +2,7 @@
 use std::{error, fmt, io, str};
 use std::borrow::Cow;
 use bytes::Bytes;
+use quick_xml::XmlVersion;
 use quick_xml::encoding::EncodingError;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::events::attributes::AttrError;
@@ -475,7 +476,7 @@ pub struct AttrValue<'a>(quick_xml::events::attributes::Attribute<'a>);
 
 impl AttrValue<'_> {
     pub fn ascii_into<T: str::FromStr>(self) -> Result<T, Error> {
-        let s = self.0.unescape_value()?;
+        let s = self.0.normalized_value(XmlVersion::Implicit1_0)?;
         if !s.is_ascii() {
             return Err(Error::Malformed)
         }
@@ -483,7 +484,7 @@ impl AttrValue<'_> {
     }
 
     pub fn into_ascii_bytes(self) -> Result<Bytes, Error> {
-        let s = self.0.unescape_value()?;
+        let s = self.0.normalized_value(XmlVersion::Implicit1_0)?;
         if !s.is_ascii() {
             return Err(Error::Malformed)
         }
