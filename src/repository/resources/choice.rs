@@ -44,7 +44,7 @@ impl<T> ResourcesChoice<T> {
         match self {
             ResourcesChoice::Missing => Ok(Default::default()),
             ResourcesChoice::Inherit => Err(InheritedResources),
-            ResourcesChoice::Blocks(ref some) => Ok(some.clone()),
+            ResourcesChoice::Blocks(some) => Ok(some.clone()),
         }
     }
 

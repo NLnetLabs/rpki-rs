@@ -1617,8 +1617,8 @@ impl From<XmlError> for ProcessError {
 impl fmt::Display for ProcessError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ProcessError::Io(ref inner) => inner.fmt(f),
-            ProcessError::Xml(ref inner) => inner.fmt(f),
+            ProcessError::Io(inner) => inner.fmt(f),
+            ProcessError::Xml(inner) => inner.fmt(f),
         }
     }
 }
