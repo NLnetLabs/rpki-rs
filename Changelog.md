@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.19.3
+
+Bug fixes
+
+* Extended the check for illegal path components in rsync URIs to also
+  include the authority and module parts. ([#370])
+
+  This fixes a path traversal vulnerability that has been assigned
+  [CVE-2026-49233].
+
+* Fixed a panic when parsing certain AS numbers from strings. ([#359],
+  [#373])
+
+  This fixes a vulnerability that has been assigned [CVE-2026-49234].
+
+* Upgraded quick-xml to at least 0.39.4 to fix a regression in XML parsing
+  that may lead a panic on certain crated XML files. ([#372])
+
+  This fixes a vulnerability that has been assigned [CVE-2026-49235].
+
+[#359]: https://github.com/NLnetLabs/rpki-rs/pull/359
+[#370]: https://github.com/NLnetLabs/rpki-rs/pull/370
+[#372]: https://github.com/NLnetLabs/rpki-rs/pull/372
+[#373]: https://github.com/NLnetLabs/rpki-rs/pull/373
+[CVE-2026-49233]: https://nlnetlabs.nl/downloads/routinator/CVE-2026-49233.txt
+[CVE-2026-49234]: https://nlnetlabs.nl/downloads/routinator/CVE-2026-49234.txt
+[CVE-2026-49235]: https://nlnetlabs.nl/downloads/routinator/CVE-2026-49235.txt
+
 ## 0.19.2
 
 Released 2026-01-29.
