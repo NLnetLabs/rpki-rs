@@ -12,7 +12,7 @@ libfuzzer-sys = "0.4"
 
 [dependencies.rpki]
 path = ".."
-features = ["repository"]
+features = ["repository", "rrdp"]
 
 # Prevent this from interfering with workspaces
 [workspace]
@@ -30,6 +30,14 @@ doc = false
 [[bin]]
 name = "parse_asn"
 path = "fuzz_targets/parse_asn.rs"
+test = false
+doc = false
+bench = false
+
+
+[[bin]]
+name = "parse_rrdp"
+path = "fuzz_targets/parse_rrdp.rs"
 test = false
 doc = false
 bench = false
