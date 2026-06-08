@@ -1951,4 +1951,13 @@ mod test {
             ["https://foo.bar/", "https://foo.local/4"],
         ));
     }
+
+    /// Regression test for an panic in quick-xml 0.39.0.
+    #[test]
+    fn doctype_panic_regression() {
+        let reader = std::io::BufReader::with_capacity(
+            8, "<!d[<>23456789".as_bytes()
+        );
+        let _  = NotificationFile::parse(reader);
+    }
 }
