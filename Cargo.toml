@@ -2,7 +2,7 @@
 name = "rpki"
 version = "0.19.2"
 edition = "2021"
-rust-version = "1.83"
+rust-version = "1.86"
 authors = ["NLnet Labs <rpki-team@nlnetlabs.nl>"]
 description = "A library for validating and creating RPKI data."
 documentation = "https://docs.rs/rpki/"
@@ -11,6 +11,7 @@ repository = "https://github.com/NLnetLabs/rpki-rs"
 keywords = ["rpki", "routing-security"]
 categories = ["network-programming"]
 license = "BSD-3-Clause"
+resolver = "3"
 
 [package.metadata.docs.rs]
 all-features = true
