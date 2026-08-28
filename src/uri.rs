@@ -278,7 +278,7 @@ impl Rsync {
         }
     }
 
-    /// Returns a copy of the URI extends by the given path.
+    /// Returns a copy of the URI extended by the given path.
     ///
     /// Returns an error if `path` contains illegal characters or path
     /// segments that are empty or comprised of only a single or double full
