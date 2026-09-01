@@ -125,6 +125,11 @@ impl AsProviderAttestation {
             // must be 1!
             cons.take_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(1))?;
             let customer_as = Asn::take_from(cons)?;
+            if customer_as == Asn::from_u32(0) {
+                return Err(cons.content_err(
+                    "customer is not allowed to be AS0"
+                ));
+            }
             let provider_as_set = ProviderAsSet::take_from(
                 cons, customer_as
             )?;
@@ -147,14 +152,20 @@ impl AsProviderAttestation {
                 "customer AS not covered by certificate"
             ).into());
         }
-        if cert.as_cert().as_resources().is_inherited() {
-            return Err(VerificationError::new(
-                "certificate contains inherited AS resources"
-            ).into());
-        }
         if cert.as_cert().has_ip_resources() {
             return Err(VerificationError::new(
                 "certificate contains IP resources"
+            ).into());
+        }
+        if let Ok(blocks) = cert.as_cert().as_resources().to_blocks() {
+            if blocks.asn_count() > 1 {
+                return Err(VerificationError::new(
+                    "certificate contains too many AS resources"
+                ).into());
+            }
+        } else {
+            return Err(VerificationError::new(
+                "certificate contains inherited AS resources"
             ).into());
         }
 
@@ -213,7 +224,7 @@ pub struct ProviderAsSet {
 
 impl ProviderAsSet {
     /// The maximum number of ASNs allowed in the set.
-    const MAX_LEN: usize = 16380;
+    const MAX_LEN: usize = 10000;
 
     #[allow(clippy::len_without_is_empty)] // never empty
     pub fn len(&self) -> usize {
@@ -234,12 +245,13 @@ impl ProviderAsSet {
 
     /// Takes the provider ASN sequence from an encoded source.
     ///
-    /// Enforces a maxium size of 16380 ASNs.
+    /// Enforces a maxium size of 10000 ASNs.
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>,
         customer_as: Asn,
     ) -> Result<Self, DecodeError<S::Error>> {
         let mut len = 0;
+        let asn0 = Asn::from_u32(0);
         let captured = cons.take_sequence(|cons| {
             cons.capture(|cons| {
                 let mut last: Option<Asn> = None;
@@ -257,6 +269,11 @@ impl ProviderAsSet {
                         ));
                     }
                     if let Some(last) = last {
+                        if last == asn0 || asn == asn0 {
+                            return Err(cons.content_err(
+                                "AS0 in non-singleton provider set"
+                            ));
+                        }
                         match last.cmp(&asn) {
                             Ordering::Less => { }
                             Ordering::Equal => {
@@ -556,11 +573,23 @@ mod signer_test {
     }
 
     #[test]
+    #[should_panic]
+    fn customer_as0() {
+        make_aspa(0.into(), Vec::new());
+    }
+
+    #[test]
+    #[should_panic]
+    fn provider_as0_non_singleton() {
+        make_aspa(1.into(), vec![0.into(), 2.into()]);
+    }
+
+    #[test]
     fn provider_asn_size() {
         fn make_aspa(len: usize) -> Captured {
-            let mut builder = AspaBuilder::empty(0.into());
+            let mut builder = AspaBuilder::empty(1.into());
             for i in 0..(len as u32) {
-                builder.add_provider(Asn::from(i + 1)).unwrap();
+                builder.add_provider(Asn::from(i + 2)).unwrap();
             }
             builder.into_attestation().encode_ref().to_captured(Mode::Der)
         }
