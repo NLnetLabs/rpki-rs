@@ -1,9 +1,8 @@
 [package]
 name = "rpki"
 version = "0.20.0-dev"
-rust-version = "1.85"
-edition = "2021"
-resolver = "3" # Can be removed when edition becomes 2024.
+rust-version = "1.87"
+edition = "2024"
 authors = ["NLnet Labs <rpki-team@nlnetlabs.nl>"]
 description = "A library for validating and creating RPKI data."
 documentation = "https://docs.rs/rpki/"
@@ -28,7 +27,7 @@ bcder           = { version = "0.7.7", optional = true }
 chrono          = { version = "0.4.35", features = [ "serde" ] }
 futures-util    = { version = "0.3", optional = true }
 num-bigint      = { version = "0.4.6", optional = true }
-quick-xml       = { version = "0.39.0", optional = true }
+quick-xml       = { version = "0.39.4", optional = true }
 aws-lc-rs       = { version = "1.16.2", optional = true }
 serde           = { version = "1.0.103", optional = true, features = [ "derive" ] }
 serde_json      = { version = "1.0.40", optional = true }

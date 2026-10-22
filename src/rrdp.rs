@@ -1617,8 +1617,8 @@ impl From<XmlError> for ProcessError {
 impl fmt::Display for ProcessError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ProcessError::Io(ref inner) => inner.fmt(f),
-            ProcessError::Xml(ref inner) => inner.fmt(f),
+            ProcessError::Io(inner) => inner.fmt(f),
+            ProcessError::Xml(inner) => inner.fmt(f),
         }
     }
 }
@@ -1950,5 +1950,14 @@ mod test {
             "https://foo.bar/1/2/3",
             ["https://foo.bar/", "https://foo.local/4"],
         ));
+    }
+
+    /// Regression test for an panic in quick-xml 0.39.0.
+    #[test]
+    fn doctype_panic_regression() {
+        let reader = std::io::BufReader::with_capacity(
+            8, "<!d[<>23456789".as_bytes()
+        );
+        let _  = NotificationFile::parse(reader);
     }
 }
