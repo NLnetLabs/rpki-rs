@@ -96,7 +96,7 @@ impl Rsc {
     ) -> Result<(ResourceCert, ResourceSignedChecklist), ValidationError>
     where F: FnOnce(&Cert) -> Result<(), ValidationError> {
         self.inspect_resources()?;
-        let cert = self.signed.validate(issuer, strict)?;
+        let cert = self.signed.validate_detached(issuer, strict)?;
         check_crl(cert.as_ref())?;
         Ok((cert, self.content))
     }

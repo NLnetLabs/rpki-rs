@@ -231,6 +231,30 @@ impl SignedObject {
         self.cert.validate_ee_at(issuer, strict, now)
     }
 
+    /// Validates the signed object.
+    ///
+    /// Upon success, the method returns the validated EE certificate of the
+    /// object.
+    pub fn validate_detached(
+        self,
+        issuer: &ResourceCert,
+        strict: bool,
+    ) -> Result<ResourceCert, ValidationError> {
+        self.validate_detached_at(issuer, strict, Time::now())
+    }
+
+    /// Validates the signed object at he given time.
+    pub fn validate_detached_at(
+        self,
+        issuer: &ResourceCert,
+        strict: bool,
+        now: Time,
+    ) -> Result<ResourceCert, ValidationError> {
+        self.inspect(strict)?;
+        self.verify(strict)?;
+        self.cert.validate_detached_ee_at(issuer, strict, now)
+    }
+
     /// Validates that the signed object complies with the specification.
     ///
     /// This is item 1 of [RFC 6488]`s section 3.
