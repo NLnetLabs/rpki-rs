@@ -33,7 +33,7 @@
     ],
     "aspaFilters": [
       {
-        "customerAsid": 64496,
+        "customerAsn": 64496,
         "comment": "ASPAs matching Customer ASID 64496"
       }
     ]
