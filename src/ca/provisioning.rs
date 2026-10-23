@@ -279,26 +279,26 @@ impl Message {
         let mut payload_type: Option<PayloadType> = None;
 
         let mut outer = reader.start(|element| {
-            if element.name().local() != b"message" {
+            if element.name().local() != "message" {
                 return Err(XmlError::Malformed);
             }
 
             element.attributes(|name, value| match name {
-                b"version" => {
+                "version" => {
                     if value.ascii_into::<String>()? != VERSION {
                         return Err(XmlError::Malformed);
                     }
                     Ok(())
                 }
-                b"sender" => {
+                "sender" => {
                     sender = Some(value.ascii_into()?);
                     Ok(())
                 }
-                b"recipient" => {
+                "recipient" => {
                     recipient = Some(value.ascii_into()?);
                     Ok(())
                 }
-                b"type" => {
+                "type" => {
                     payload_type = Some(value.ascii_into()?);
                     Ok(())
                 }
@@ -529,24 +529,24 @@ impl IssuanceRequest {
         let mut limit = RequestResourceLimit::default();
 
         let mut request_el = content.take_element(reader, |element| {
-            if element.name().local() != b"request" {
+            if element.name().local() != "request" {
                 return Err(XmlError::Malformed);
             }
 
             element.attributes(|name, value| match name {
-                b"class_name" => {
+                "class_name" => {
                     class_name = Some(value.ascii_into()?);
                     Ok(())
                 }
-                b"req_resource_set_as" => {
+                "req_resource_set_as" => {
                     limit.with_asn(value.ascii_into()?);
                     Ok(())
                 }
-                b"req_resource_set_ipv4" => {
+                "req_resource_set_ipv4" => {
                     limit.with_ipv4(value.ascii_into()?);
                     Ok(())
                 }
-                b"req_resource_set_ipv6" => {
+                "req_resource_set_ipv6" => {
                     limit.with_ipv6(value.ascii_into()?);
                     Ok(())
                 }
@@ -1034,16 +1034,16 @@ impl KeyElement {
         let mut key = None;
 
         content.take_element(reader, |element| {
-            if element.name().local() != b"key" {
+            if element.name().local() != "key" {
                 return Err(XmlError::Malformed);
             }
 
             element.attributes(|name, value| match name {
-                b"class_name" => {
+                "class_name" => {
                     class_name = Some(value.ascii_into()?);
                     Ok(())
                 }
-                b"ski" => {
+                "ski" => {
                     let base64_str: String = value.ascii_into()?;
                     let bytes = base64::Slurm.decode(
                         &base64_str
@@ -1261,37 +1261,37 @@ impl ResourceClassEntitlements {
         let mut not_after: Option<Time> = None;
 
         let class_element = content.take_opt_element(reader, |element| {
-            if element.name().local() != b"class" {
+            if element.name().local() != "class" {
                 return Err(XmlError::Malformed);
             }
 
             element.attributes(|name, value| match name {
-                b"class_name" => {
+                "class_name" => {
                     class_name = Some(value.ascii_into()?);
                     Ok(())
                 }
-                b"cert_url" => {
+                "cert_url" => {
                     cert_url = Some(value.ascii_into()?);
                     Ok(())
                 }
-                b"resource_set_as" => {
+                "resource_set_as" => {
                     resource_set.set_asn(value.ascii_into()?);
                     Ok(())
                 }
-                b"resource_set_ipv4" => {
+                "resource_set_ipv4" => {
                     resource_set.set_ipv4(value.ascii_into()?);
                     Ok(())
                 }
-                b"resource_set_ipv6" => {
+                "resource_set_ipv6" => {
                     resource_set.set_ipv6(value.ascii_into()?);
                     Ok(())
                 }
-                b"resource_set_notafter" => {
+                "resource_set_notafter" => {
                     let date_time: DateTime<Utc> = value.ascii_into()?;
                     not_after = Some(Time::new(date_time));
                     Ok(())
                 }
-                b"suggested_sia_head" => {
+                "suggested_sia_head" => {
                     // safe to ignore - optional and replaced by 'sia_base'
                     // in the RFC 8183 Repository Response.
                     Ok(())
@@ -1328,26 +1328,26 @@ impl ResourceClassEntitlements {
             let mut req_limit = RequestResourceLimit::default();
 
             let cert_el = class_element.take_opt_element(reader, |el| match el.name().local() {
-                b"certificate" => el.attributes(|name, value| match name {
-                    b"cert_url" => {
+                "certificate" => el.attributes(|name, value| match name {
+                    "cert_url" => {
                         url = Some(value.ascii_into()?);
                         Ok(())
                     }
-                    b"req_resource_set_as" => {
+                    "req_resource_set_as" => {
                         req_limit.with_asn(value.ascii_into()?);
                         Ok(())
                     }
-                    b"req_resource_set_ipv4" => {
+                    "req_resource_set_ipv4" => {
                         req_limit.with_ipv4(value.ascii_into()?);
                         Ok(())
                     }
-                    b"req_resource_set_ipv6" => {
+                    "req_resource_set_ipv6" => {
                         req_limit.with_ipv6(value.ascii_into()?);
                         Ok(())
                     }
                     _ => Err(XmlError::Malformed),
                 }),
-                b"issuer" => {
+                "issuer" => {
                     was_issuer = true;
                     Ok(())
                 }
@@ -1530,7 +1530,7 @@ impl NotPerformedResponse {
         reader: &mut xml::decode::Reader<R>,
     ) -> Result<Self, Error> {
         let mut status_element = content.take_element(reader, |element| {
-            if element.name().local() != b"status" {
+            if element.name().local() != "status" {
                 Err(XmlError::Malformed)
             } else {
                 Ok(())
@@ -1545,7 +1545,7 @@ impl NotPerformedResponse {
 
         let mut description = None;
         if let Some(mut element) = content.take_opt_element(reader, |element| {
-            if element.name().local() != b"description" {
+            if element.name().local() != "description" {
                 Err(XmlError::Malformed)
             } else {
                 Ok(())

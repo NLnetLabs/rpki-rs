@@ -1,6 +1,5 @@
 
 use std::{error, fmt, io, str};
-use std::borrow::Cow;
 use bytes::Bytes;
 use quick_xml::XmlVersion;
 use quick_xml::encoding::EncodingError;
@@ -119,7 +118,7 @@ impl<'b, 'n> Element<'b, 'n> {
     /// attribute names will lead to an error.
     pub fn attributes<F, E>(&self, mut op: F) -> Result<(), E>
     where
-        F: FnMut(&[u8], AttrValue) -> Result<(), E>,
+        F: FnMut(&str, AttrValue) -> Result<(), E>,
         E: From<Error>
     {
         for attr in self.start.attributes() {
@@ -394,18 +393,18 @@ impl Content {
 /// The name of a tag or attribute.
 #[derive(Clone, Copy,Eq, Hash, PartialEq)]
 pub struct Name<'n, 'l> {
-    namespace: Option<&'n [u8]>,
-    local: &'l [u8],
+    namespace: Option<&'n str>,
+    local: &'l str,
 }
 
 impl<'n, 'l> Name<'n, 'l> {
     /// Creates a new name from its components.
-    fn new(namespace: Option<&'n [u8]>, local: &'l [u8]) -> Self {
+    fn new(namespace: Option<&'n str>, local: &'l str) -> Self {
         Name { namespace, local }
     }
 
     /// Creates a qualified name from a namespace and a local name.
-    pub const fn qualified(namespace: &'n [u8], local: &'l [u8]) -> Self {
+    pub const fn qualified(namespace: &'n str, local: &'l str) -> Self {
         Name {
             namespace: Some(namespace),
             local
@@ -413,18 +412,18 @@ impl<'n, 'l> Name<'n, 'l> {
     }
 
     /// Creates an unqualified name from only a local name.
-    pub const fn unqualified(local: &'l [u8]) -> Self {
+    pub const fn unqualified(local: &'l str) -> Self {
         Name {
             namespace: None,
             local
         }
     }
 
-    pub fn namespace(&self) -> Option<&[u8]> {
+    pub fn namespace(&self) -> Option<&str> {
         self.namespace
     }
 
-    pub fn local(&self) -> &[u8] {
+    pub fn local(&self) -> &str {
         self.local
     }
 
@@ -437,33 +436,21 @@ impl fmt::Debug for Name<'_, '_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Name(")?;
         if let Some(ns) = self.namespace {
-            write!(f, "{}:", String::from_utf8_lossy(ns))?;
+            write!(f, "{}:", ns)?;
         }
-        write!(f, "{}", String::from_utf8_lossy(self.local))
-    }
-}
-
-impl<'l> From<&'l [u8]> for Name<'_, 'l> {
-    fn from(local: &'l [u8]) -> Self {
-        Name::unqualified(local)
+        write!(f, "{}", self.local)
     }
 }
 
 impl<'l> From<&'l str> for Name<'_, 'l> {
     fn from(local: &'l str) -> Self {
-        Name::unqualified(local.as_bytes())
-    }
-}
-
-impl<'n, 'l> From<(&'n [u8], &'l [u8])> for Name<'n, 'l> {
-    fn from((namespace, local): (&'n [u8], &'l [u8])) -> Self {
-        Name::qualified(namespace, local)
+        Name::unqualified(local)
     }
 }
 
 impl<'n, 'l> From<(&'n str, &'l str)> for Name<'n, 'l> {
     fn from((namespace, local): (&'n str, &'l str)) -> Self {
-        Name::qualified(namespace.as_bytes(), local.as_bytes())
+        Name::qualified(namespace, local)
     }
 }
 
@@ -498,19 +485,17 @@ impl AttrValue<'_> {
 pub struct Text<'a>(quick_xml::events::BytesText<'a>);
 
 impl Text<'_> {
-    pub fn to_utf8(&self) -> Result<Cow<'_, str>, Error> {
-        Ok(self.0.decode()?)
+    pub fn to_utf8(&self) -> &str {
+        &self.0
     }
 
-    pub fn to_ascii(&self) -> Result<Cow<'_, str>, Error> {
+    pub fn to_ascii(&self) -> Result<&str, Error> {
         // XXX Shouldn’t this reject non-ASCII Unicode?
-        Ok(self.0.decode()?)
+        Ok(&self.0)
     }
 
     pub fn base64_decode(&self) -> Result<Vec<u8>, Error> {
-        base64::Xml.decode(
-            self.to_utf8()?.as_ref()
-        ).map_err(|_| Error::Malformed)
+        base64::Xml.decode(&self.to_utf8()).map_err(|_| Error::Malformed)
     }
 }
 

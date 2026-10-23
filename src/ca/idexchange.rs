@@ -24,23 +24,23 @@ use crate::xml::decode::{Error as XmlError, Name};
 
 // Constants for the RFC 8183 XML
 const VERSION: &str = "1";
-const NS: &[u8] = b"http://www.hactrn.net/uris/rpki/rpki-setup/";
+const NS: &str = "http://www.hactrn.net/uris/rpki/rpki-setup/";
 // The following is technically wrong, but was used in Krill < 0.10.0
-const NS_NO_SLASH: &[u8] = b"http://www.hactrn.net/uris/rpki/rpki-setup";
+const NS_NO_SLASH: &str = "http://www.hactrn.net/uris/rpki/rpki-setup";
 
-const CHILD_REQUEST: Name = Name::unqualified(b"child_request");
-const CHILD_BPKI_TA: Name = Name::unqualified(b"child_bpki_ta");
+const CHILD_REQUEST: Name = Name::unqualified("child_request");
+const CHILD_BPKI_TA: Name = Name::unqualified("child_bpki_ta");
 
-const PUBLISHER_REQUEST: Name = Name::unqualified(b"publisher_request");
-const PUBLISHER_BPKI_TA: Name = Name::unqualified(b"publisher_bpki_ta");
+const PUBLISHER_REQUEST: Name = Name::unqualified("publisher_request");
+const PUBLISHER_BPKI_TA: Name = Name::unqualified("publisher_bpki_ta");
 
-const PARENT_RESPONSE: Name = Name::unqualified(b"parent_response");
-const PARENT_BPKI_TA: Name = Name::unqualified(b"parent_bpki_ta");
-const PARENT_REFERRAL: Name = Name::unqualified(b"referral");
-const PARENT_OFFER: Name = Name::unqualified(b"offer");
+const PARENT_RESPONSE: Name = Name::unqualified("parent_response");
+const PARENT_BPKI_TA: Name = Name::unqualified("parent_bpki_ta");
+const PARENT_REFERRAL: Name = Name::unqualified("referral");
+const PARENT_OFFER: Name = Name::unqualified("offer");
 
-const REPOSITORY_RESPONSE: Name = Name::unqualified(b"repository_response");
-const REPOSITORY_BPKI_TA: Name = Name::unqualified(b"repository_bpki_ta");
+const REPOSITORY_RESPONSE: Name = Name::unqualified("repository_response");
+const REPOSITORY_BPKI_TA: Name = Name::unqualified("repository_bpki_ta");
 
 //------------ Handle --------------------------------------------------------
 
@@ -404,17 +404,17 @@ impl ChildRequest {
             }
 
             element.attributes(|name, value| match name {
-                b"version" => {
+                "version" => {
                     if value.ascii_into::<String>()? != VERSION {
                         return Err(XmlError::Malformed);
                     }
                     Ok(())
                 }
-                b"child_handle" => {
+                "child_handle" => {
                     child_handle = Some(value.ascii_into()?);
                     Ok(())
                 }
-                b"tag" => {
+                "tag" => {
                     tag = Some(value.ascii_into()?);
                     Ok(())
                 }
@@ -597,32 +597,31 @@ impl ParentResponse {
             }
 
             element.attributes(|name, value| match name {
-                b"version" => {
+                "version" => {
                     if value.ascii_into::<String>()? != VERSION {
                         return Err(XmlError::Malformed);
                     }
                     Ok(())
                 }
-                b"service_uri" => {
+                "service_uri" => {
                     service_uri = Some(value.ascii_into()?);
                     Ok(())
                 }
-                b"parent_handle" => {
+                "parent_handle" => {
                     parent_handle = Some(value.ascii_into()?);
                     Ok(())
                 }
-                b"child_handle" => {
+                "child_handle" => {
                     child_handle = Some(value.ascii_into()?);
                     Ok(())
                 }
-                b"tag" => {
+                "tag" => {
                     tag = Some(value.ascii_into()?);
                     Ok(())
                 }
                 _ => {
                     debug!(
-                        "Ignoring attribute in <parent_response />: {:?}",
-                        from_utf8(name).unwrap_or("can't parse attr!?")
+                        "Ignoring attribute in <parent_response />: {name}"
                     );
                     Ok(())
                 }
@@ -832,17 +831,17 @@ impl PublisherRequest {
             }
 
             element.attributes(|name, value| match name {
-                b"version" => {
+                "version" => {
                     if value.ascii_into::<String>()? != VERSION {
                         return Err(XmlError::Malformed);
                     }
                     Ok(())
                 }
-                b"publisher_handle" => {
+                "publisher_handle" => {
                     publisher_handle = Some(value.ascii_into()?);
                     Ok(())
                 }
-                b"tag" => {
+                "tag" => {
                     tag = Some(value.ascii_into()?);
                     Ok(())
                 }
@@ -1048,36 +1047,35 @@ impl RepositoryResponse {
             }
 
             element.attributes(|name, value| match name {
-                b"version" => {
+                "version" => {
                     if value.ascii_into::<String>()? != VERSION {
                         return Err(XmlError::Malformed);
                     }
                     Ok(())
                 }
-                b"service_uri" => {
+                "service_uri" => {
                     service_uri = Some(value.ascii_into()?);
                     Ok(())
                 }
-                b"publisher_handle" => {
+                "publisher_handle" => {
                     publisher_handle = Some(value.ascii_into()?);
                     Ok(())
                 }
-                b"sia_base" => {
+                "sia_base" => {
                     sia_base = Some(value.ascii_into()?);
                     Ok(())
                 }
-                b"rrdp_notification_uri" => {
+                "rrdp_notification_uri" => {
                     rrdp_notification_uri = Some(value.ascii_into()?);
                     Ok(())
                 }
-                b"tag" => {
+                "tag" => {
                     tag = Some(value.ascii_into()?);
                     Ok(())
                 }
                 _ => {
                     debug!(
-                        "Ignoring attribute in <parent_response />: {:?}",
-                        from_utf8(name).unwrap_or("can't parse attr!?")
+                        "Ignoring attribute in <parent_response />: {name}"
                     );
                     Ok(())
                 }
