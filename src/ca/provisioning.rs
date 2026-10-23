@@ -1538,7 +1538,7 @@ impl NotPerformedResponse {
         })?;
 
         let status = status_element.take_text(reader, |text| {
-            u64::from_str(&text.to_ascii()?).map_err(|_| XmlError::Malformed)
+            u64::from_str(text.to_ascii()?).map_err(|_| XmlError::Malformed)
         })?;
 
         status_element.take_end(reader)?;

@@ -495,7 +495,7 @@ impl Text<'_> {
     }
 
     pub fn base64_decode(&self) -> Result<Vec<u8>, Error> {
-        base64::Xml.decode(&self.to_utf8()).map_err(|_| Error::Malformed)
+        base64::Xml.decode(self.to_utf8()).map_err(|_| Error::Malformed)
     }
 }
 
