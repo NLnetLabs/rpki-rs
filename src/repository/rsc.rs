@@ -415,9 +415,10 @@ mod tests {
         let digest = rsc.content().digest_algorithm().digest(
             include_bytes!("../../test-data/rsc/koen.txt")
         );
-        assert!(rsc.content().iter().all(|item| 
-            item.file_name() == None
-            && item.hash() == digest.as_ref()));
+        assert!(rsc.content().iter().all(|item| {
+            item.file_name().is_none()
+            && item.hash() == digest.as_ref()
+        }));
     }
 
     #[test]
@@ -431,9 +432,10 @@ mod tests {
         let digest = rsc.content().digest_algorithm().digest(
             include_bytes!("../../test-data/rsc/koen.txt")
         );
-        assert!(rsc.content().iter().any(|item| 
-            item.file_name() == None
-            && item.hash() == digest.as_ref()));
+        assert!(rsc.content().iter().any(|item| {
+            item.file_name().is_none()
+            && item.hash() == digest.as_ref()
+        }));
 
         let digest = rsc.content().digest_algorithm().digest(
             include_bytes!("../../test-data/rsc/martin.txt")
