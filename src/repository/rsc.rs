@@ -10,14 +10,12 @@ use bcder::decode::{DecodeError, IntoSource, Source};
 use bcder::encode::Values;
 use bytes::Bytes;
 use crate::crypto:: DigestAlgorithm;
-use crate::repository::error::VerificationError;
 use crate::repository::sigobj::SignedObject;
-use super::cert::ResourceCert;
-use super::error::ValidationError;
+use super::cert::{Cert, ResourceCert};
+use super::error::{InspectionError, ValidationError};
 use super::resources::{
     AddressFamily, AsBlocks, IpBlocks,
 };
-use super::x509::Time;
 
 
 //------------ Rsc -----------------------------------------------------------
@@ -31,6 +29,10 @@ pub struct Rsc {
 impl Rsc {
     pub fn content(&self) -> &ResourceSignedChecklist {
         &self.content
+    }
+
+    pub fn into_content(self) -> ResourceSignedChecklist {
+        self.content
     }
 
     pub fn decode<S: IntoSource>(
@@ -59,36 +61,43 @@ impl Rsc {
 }
 
 impl Rsc {
+    /// Verify that the resources on the content are covered by the cert.
+    pub fn inspect_resources(&self) -> Result<(), InspectionError> {
+        let cert = self.signed().cert();
+        self.content().as_resources().verify_covered(
+            cert.as_resources()
+        ).map_err(|err| InspectionError::new(err.to_string()))?;
+        self.content().v4_resources().verify_covered(
+            cert.v4_resources()
+        ).map_err(|err| InspectionError::new(err.v4().to_string()))?;
+        self.content().v6_resources().verify_covered(
+            cert.v6_resources()
+        ).map_err(|err| InspectionError::new(err.v6().to_string()))?;
+        Ok(())
+    }
+
+    /// Returns whether the given CA certificate issued this RSC.
+    pub fn is_issuer(
+        &self, ca_cert: &ResourceCert, strict: bool
+    ) -> bool {
+        self.signed.cert().verify_issuer_claim(ca_cert, strict).is_ok()
+    }
+
     /// Validates the RSC.
     ///
     /// You need to pass in the certificate of the issuing CA. If validation
     /// succeeds, the result will be the EE certificate of the manifest and
     /// the manifest content.
-    pub fn process(
+    pub fn process<F>(
         self,
-        cert: &ResourceCert,
+        issuer: &ResourceCert,
         strict: bool,
-    ) -> Result<(ResourceCert, ResourceSignedChecklist), ValidationError> {
-        self.process_at(cert, strict, Time::now())
-    }
-
-    pub fn process_at(
-        self,
-        cert: &ResourceCert,
-        strict: bool,
-        now: Time
-    ) -> Result<(ResourceCert, ResourceSignedChecklist), ValidationError> {
-        // Check for consistency within the object... If the ResourceBlock
-        // exceeds the resources on the certificate, then that's a fail.
-        let signed_cert = self.signed().cert();
-        self.content().as_resources().verify_covered(signed_cert.as_resources())
-            .map_err(|err| VerificationError::new(err.to_string()))?;
-        self.content().v4_resources().verify_covered(signed_cert.v4_resources())
-            .map_err(|err| VerificationError::new(err.v4().to_string()))?;
-        self.content().v6_resources().verify_covered(signed_cert.v6_resources())
-            .map_err(|err| VerificationError::new(err.v6().to_string()))?;
-
-        let cert = self.signed.validate_at(cert, strict, now)?;
+        check_crl: F
+    ) -> Result<(ResourceCert, ResourceSignedChecklist), ValidationError>
+    where F: FnOnce(&Cert) -> Result<(), ValidationError> {
+        self.inspect_resources()?;
+        let cert = self.signed.validate(issuer, strict)?;
+        check_crl(cert.as_ref())?;
         Ok((cert, self.content))
     }
 }
