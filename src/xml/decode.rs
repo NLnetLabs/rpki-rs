@@ -549,7 +549,7 @@ impl<R: io::BufRead> io::BufRead for BufReadCounter<R> {
             return Err(
                 io::Error::other(
                     format!("Trip is over limit ({:?}/{:?})", 
-                        &self.trip, &self.limit))
+                        self.trip, self.limit))
             );
         }
         self.reader.fill_buf()

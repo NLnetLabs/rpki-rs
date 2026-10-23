@@ -34,10 +34,23 @@ test = false
 doc = false
 bench = false
 
-
 [[bin]]
 name = "parse_rrdp"
 path = "fuzz_targets/parse_rrdp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "uri_rsync"
+path = "fuzz_targets/uri_rsync.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "uri_https"
+path = "fuzz_targets/uri_https.rs"
 test = false
 doc = false
 bench = false
