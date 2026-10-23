@@ -417,7 +417,7 @@ impl RoaIpAddress {
         Ok(Some(()))
     }
 
-    fn encode(&self) -> impl encode::Values {
+    fn encode(self) -> impl encode::Values {
         encode::sequence((
             self.prefix.encode(),
             self.max_length.map(|v| v.encode())
@@ -653,7 +653,7 @@ impl RoaIpAddressesBuilder {
 
     pub fn encode_ref(&self) -> impl encode::Values + '_ {
         encode::sequence(
-            encode::slice(self.addrs.as_slice(), |v: &RoaIpAddress| v.encode())
+            encode::slice(self.addrs.as_slice(), |v| v.encode())
         )
     }
 }
@@ -759,14 +759,14 @@ mod signer_test {
     use std::str::FromStr;
     use crate::uri;
     use crate::crypto::PublicKeyFormat;
-    use crate::crypto::softsigner::OpenSslSigner;
+    use crate::crypto::softsigner::SoftSigner;
     use crate::repository::cert::{KeyUsage, Overclaim, TbsCert};
     use crate::repository::tal::TalInfo;
     use crate::repository::x509::Validity;
     use super::*;
 
     fn make_roa() -> Roa {
-        let signer = OpenSslSigner::new();
+        let signer = SoftSigner::new();
         let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
         let pubkey = signer.get_key_info(&key).unwrap();
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();

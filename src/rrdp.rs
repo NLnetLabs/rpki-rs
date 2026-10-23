@@ -21,12 +21,12 @@
 
 #![cfg(feature = "rrdp")]
 
-use std::{error, fmt, hash, io, str};
+use std::{cmp, error, fmt, hash, io, str};
 use std::io::Read;
 use std::ops::Deref;
 use bytes::Bytes;
 use log::info;
-use ring::digest;
+use aws_lc_rs::digest;
 use uuid::Uuid;
 use crate::{uri, xml};
 use crate::util::base64;
@@ -145,7 +145,7 @@ impl NotificationFile {
     /// appear at the beginning of the sequence.
     pub fn reverse_sort_deltas(&mut self) {
         if let Ok(ref mut deltas) = self.deltas {
-            deltas.sort_by(|a,b| b.serial.cmp(&a.serial));
+            deltas.sort_by_key(|a| cmp::Reverse(a.serial))
         }
     }
 
@@ -1617,8 +1617,8 @@ impl From<XmlError> for ProcessError {
 impl fmt::Display for ProcessError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ProcessError::Io(ref inner) => inner.fmt(f),
-            ProcessError::Xml(ref inner) => inner.fmt(f),
+            ProcessError::Io(inner) => inner.fmt(f),
+            ProcessError::Xml(inner) => inner.fmt(f),
         }
     }
 }
@@ -1950,5 +1950,14 @@ mod test {
             "https://foo.bar/1/2/3",
             ["https://foo.bar/", "https://foo.local/4"],
         ));
+    }
+
+    /// Regression test for an panic in quick-xml 0.39.0.
+    #[test]
+    fn doctype_panic_regression() {
+        let reader = std::io::BufReader::with_capacity(
+            8, "<!d[<>23456789".as_bytes()
+        );
+        let _  = NotificationFile::parse(reader);
     }
 }

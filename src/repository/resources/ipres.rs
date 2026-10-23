@@ -1516,7 +1516,7 @@ impl encode::PrimitiveContent for Prefix {
     const TAG: Tag = Tag::BIT_STRING;
 
     fn encoded_len(&self, _: Mode) -> usize {
-        if self.len % 8 == 0 {
+        if self.len.is_multiple_of(8) {
             self.len as usize / 8 + 1
         }
         else {
@@ -1545,7 +1545,7 @@ impl encode::PrimitiveContent for Prefix {
         */
 
         let addr = self.addr.to_bytes();
-        if self.len % 8 == 0 {
+        if self.len.is_multiple_of(8) {
             target.write_all(&[0])?;
             target.write_all(&addr[..(self.len / 8) as usize])
         }

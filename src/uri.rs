@@ -80,6 +80,8 @@ impl Rsync {
         if !starts_with_ignore_case(&bytes, b"rsync://") {
             return Err(Error::BadScheme)
         }
+        Self::check_path(&bytes[8..])?;
+
         let (authority, module) = {
             let mut parts = bytes[8..].splitn(3, |ch| *ch == b'/');
             let authority = match parts.next().map(|s| s.len()) {
@@ -103,7 +105,6 @@ impl Rsync {
         let path_start = module_start + module + 1;
 
         let res = Rsync { bytes, module_start, path_start };
-        Self::check_path(res.path().as_bytes())?;
         Ok(res)
     }
 
@@ -277,7 +278,7 @@ impl Rsync {
         }
     }
 
-    /// Returns a copy of the URI extends by the given path.
+    /// Returns a copy of the URI extended by the given path.
     ///
     /// Returns an error if `path` contains illegal characters or path
     /// segments that are empty or comprised of only a single or double full
@@ -1090,6 +1091,26 @@ mod tests {
         assert!(Rsync::from_str("rsync:// host/module/foo/bar").is_err());
         assert!(Rsync::from_str("rsync://host/ module/foo/bar").is_err());
         assert!(Rsync::from_str("rsync://host/module/f oo/bar").is_err());
+        assert!(Rsync::from_str("rsync://../module/foo/bar").is_err());
+        assert!(Rsync::from_str("rsync://../module/").is_err());
+        assert!(Rsync::from_str("rsync://../").is_err());
+        assert!(Rsync::from_str("rsync://./module/foo/bar").is_err());
+        assert!(Rsync::from_str("rsync://./module/").is_err());
+        assert!(Rsync::from_str("rsync://./").is_err());
+        assert!(Rsync::from_str("rsync://host/module/../bar").is_err());
+        assert!(Rsync::from_str("rsync://host/module/foo/..").is_err());
+        assert!(Rsync::from_str("rsync://host/module/foo/../").is_err());
+        assert!(Rsync::from_str("rsync://host/module/foo/../bar").is_err());
+        assert!(Rsync::from_str("rsync://host/module/./bar").is_err());
+        assert!(Rsync::from_str("rsync://host/module/foo/.").is_err());
+        assert!(Rsync::from_str("rsync://host/module/foo/./").is_err());
+        assert!(Rsync::from_str("rsync://host/module/foo/./bar").is_err());
+        assert!(Rsync::from_str("rsync://host/../foo/bar").is_err());
+        assert!(Rsync::from_str("rsync://host/../").is_err());
+        assert!(Rsync::from_str("rsync://host/..").is_err());
+        assert!(Rsync::from_str("rsync://host/./foo/bar").is_err());
+        assert!(Rsync::from_str("rsync://host/./").is_err());
+        assert!(Rsync::from_str("rsync://host/.").is_err());
     }
 
     #[test]

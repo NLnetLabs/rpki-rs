@@ -4,7 +4,7 @@ use std::io;
 use std::io::Read;
 use std::fs::File;
 use std::path::Path;
-use ring::digest;
+use aws_lc_rs::digest;
 use bcder::{decode, encode};
 use bcder::decode::DecodeError;
 use bcder::encode::PrimitiveContent;
@@ -12,7 +12,7 @@ use bcder::Tag;
 use crate::oid;
 
 // Re-export the things from ring for actual digest generation.
-pub use ring::digest::Digest;
+pub use aws_lc_rs::digest::Digest;
 
 
 //------------ DigestAlgorithm -----------------------------------------------
