@@ -788,9 +788,11 @@ impl FromStr for AsBlock {
                         .map_err(|_| FromStrError::BadRange)?;
                     let max = Asn::from_str(max_str)
                         .map_err(|_| FromStrError::BadRange)?;
+
                     if min > max {
                         return Err(FromStrError::BadRange);
                     }
+
                     Ok(AsBlock::Range(AsRange { min, max }))
                 }
             }
@@ -1133,6 +1135,8 @@ mod test {
 
         // Bad
         assert!(AsBlock::from_str("AS1-").is_err());
+
+        assert!(AsBlock::from_str("AS2-AS1").is_err())
     }
 
     #[test]
