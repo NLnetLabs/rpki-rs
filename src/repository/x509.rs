@@ -1038,38 +1038,32 @@ impl ops::Sub<TimeDelta> for Time {
 fn read_two_char<S: decode::Source>(
     source: &mut S
 ) -> Result<u32, DecodeError<S::Error>> {
-    let mut s = [0u8; 2];
-    s[0] = source.take_u8()?;
-    s[1] = source.take_u8()?;
-    let s = match str::from_utf8(&s[..]) {
-        Ok(s) => s,
-        Err(_err) => {
-            return Err(source.content_err("malformed time value"))
-        }
-    };
-    u32::from_str(s).map_err(|_err| {
-        source.content_err("malformed time value")
-    })
+    Ok(
+        read_ascii_digit(source)? * 10
+        + read_ascii_digit(source)?
+    )
 }
 
 
 fn read_four_char<S: decode::Source>(
     source: &mut S
 ) -> Result<u32, DecodeError<S::Error>> {
-    let mut s = [0u8; 4];
-    s[0] = source.take_u8()?;
-    s[1] = source.take_u8()?;
-    s[2] = source.take_u8()?;
-    s[3] = source.take_u8()?;
-    let s = match str::from_utf8(&s[..]) {
-        Ok(s) => s,
-        Err(_err) => {
-            return Err(source.content_err("malformed time value"))
-        }
-    };
-    u32::from_str(s).map_err(|_err| {
-        source.content_err("malformed time value")
-    })
+    Ok(
+        read_ascii_digit(source)? * 1000
+        + read_ascii_digit(source)? * 100
+        + read_ascii_digit(source)? * 10
+        + read_ascii_digit(source)?
+    )
+}
+
+fn read_ascii_digit<S: decode::Source>(
+    source: &mut S
+) -> Result<u32, DecodeError<S::Error>> {
+    let s = source.take_u8()?;
+    if !s.is_ascii_digit() {
+        return Err(source.content_err("malformed time value"))
+    }
+    Ok(u32::from(s - b'0'))
 }
 
 
@@ -1311,8 +1305,9 @@ impl error::Error for ValidityPeriodError { }
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::convert::Infallible;
     use bcder::decode::Constructed;
-    use bcder::encode::Values;
+    use bcder::encode::{PrimitiveContent, Values};
 
     #[test]
     fn signed_data_decode_then_encode() {
@@ -1446,6 +1441,42 @@ mod test {
         assert_eq!(future.hour(), 16);
         assert_eq!(future.minute(), 39);
         assert_eq!(future.second(), 57);
+    }
+
+    #[test]
+    fn time_take_from_utc_time() {
+        fn encode_decode(s: &str) -> Result<Time, DecodeError<Infallible>> {
+            s.as_bytes().encode_as(
+                Tag::UTC_TIME
+            ).to_captured(Mode::Der).decode(Time::take_from)
+        }
+
+        assert_eq!(
+            encode_decode("301001163015Z").unwrap(),
+            Time::from_parts((2030, 10, 1, 16, 30, 15)).unwrap()
+        );
+        assert_eq!(
+            encode_decode("801001163015Z").unwrap(),
+            Time::from_parts((1980, 10, 1, 16, 30, 15)).unwrap()
+        );
+        assert!(encode_decode("30a001163015Z").is_err());
+        assert!(encode_decode("30+001163015Z").is_err());
+    }
+
+    #[test]
+    fn time_take_from_generalized_time() {
+        fn encode_decode(s: &str) -> Result<Time, DecodeError<Infallible>> {
+            s.as_bytes().encode_as(
+                Tag::GENERALIZED_TIME
+            ).to_captured(Mode::Der).decode(Time::take_from)
+        }
+
+        assert_eq!(
+            encode_decode("20301001163015Z").unwrap(),
+            Time::from_parts((2030, 10, 1, 16, 30, 15)).unwrap()
+        );
+        assert!(encode_decode("2030a001163015Z").is_err());
+        assert!(encode_decode("2030+001163015Z").is_err());
     }
 }
 

@@ -1459,6 +1459,9 @@ impl<'de> Deserialize<'de> for Base64 {
         D: Deserializer<'de>,
     {
         let string = String::deserialize(deserializer)?;
+        if base64::Xml.decode(&string).is_err() {
+            return Err(serde::de::Error::custom("string is not valid base64"));
+        }
         Ok(Base64(string.into()))
     }
 }
@@ -1668,6 +1671,13 @@ mod tests {
         let re_decoded = Message::decode(re_encoded.as_bytes()).unwrap();
 
         assert_eq!(msg, re_decoded);
+    }
+
+    #[test]
+    fn deserialize_invalid_base64() {
+        assert!(
+            serde_json::from_str::<Base64>("\"????????\"").is_err()
+        );
     }
 }
 

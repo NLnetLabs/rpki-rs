@@ -254,77 +254,81 @@ impl NotificationFile {
         )?;
 
         let mut snapshot = None;
-        let mut deltas = Ok(vec![]);
-
-        while let Some(mut content) = outer.take_opt_element_with_limit(
+        let mut content = outer.take_element_with_limit(
             &mut reader,
             |element| {
-                match element.name() {
-                    SNAPSHOT => {
-                        if snapshot.is_some() {
-                            return Err(XmlError::Malformed)
-                        }
-                        let mut uri = None;
-                        let mut hash = None;
-                        element.attributes(|name, value| match name {
-                            "uri" => {
-                                uri = Some(value.ascii_into()?);
-                                Ok(())
-                            }
-                            "hash" => {
-                                hash = Some(value.ascii_into()?);
-                                Ok(())
-                            }
-                            _ => Err(XmlError::Malformed)
-                        })?;
-                        match (uri, hash) {
-                            (Some(uri), Some(hash)) => {
-                                snapshot = Some(UriAndHash::new(uri, hash));
-                                Ok(())
-                            }
-                            _ => Err(XmlError::Malformed)
-                        }
+                if element.name() != SNAPSHOT {
+                    return Err(XmlError::Malformed);
+                }
+
+                let mut uri = None;
+                let mut hash = None;
+                element.attributes(|name, value| match name {
+                    "uri" => {
+                        uri = Some(value.ascii_into()?);
+                        Ok(())
                     }
-                    DELTA => {
-                        let mut serial = None;
-                        let mut uri = None;
-                        let mut hash = None;
-                        element.attributes(|name, value| match name {
-                            "serial" => {
-                                serial = Some(value.ascii_into()?);
-                                Ok(())
-                            }
-                            "uri" => {
-                                uri = Some(value.ascii_into()?);
-                                Ok(())
-                            }
-                            "hash" => {
-                                hash = Some(value.ascii_into()?);
-                                Ok(())
-                            }
-                            _ => Err(XmlError::Malformed)
-                        })?;
-                        let (serial, uri, hash) = match (serial, uri, hash) {
-                            (Some(serial), Some(uri), Some(hash)) =>  {
-                                (serial, uri, hash)
-                            }
-                            _ => return Err(XmlError::Malformed)
-                        };
-                        if let Some(limit) = delta_limit {
-                            let len = deltas.as_ref().map(|deltas| {
-                                deltas.len()
-                            }).unwrap_or(0);
-                            if len >= limit {
-                                deltas = Err(DeltaListError::Oversized);
-                            }
-                        }
-                        if let Ok(ref mut deltas) = deltas {
-                            deltas.push(DeltaInfo::new(serial, uri, hash))
-                        }
+                    "hash" => {
+                        hash = Some(value.ascii_into()?);
+                        Ok(())
+                    }
+                    _ => Err(XmlError::Malformed)
+                })?;
+                match (uri, hash) {
+                    (Some(uri), Some(hash)) => {
+                        snapshot = Some(UriAndHash::new(uri, hash));
                         Ok(())
                     }
                     _ => Err(XmlError::Malformed)
                 }
+            },
+            MAX_HEADER_SIZE
+        )?;
+        content.take_end(&mut reader)?;
+
+        let mut deltas = Ok(vec![]);
+        while let Some(mut content) = outer.take_opt_element_with_limit(
+            &mut reader,
+            |element| {
+                if element.name() != DELTA {
+                    return Err(XmlError::Malformed);
+                }
+                let mut serial = None;
+                let mut uri = None;
+                let mut hash = None;
+                element.attributes(|name, value| match name {
+                    b"serial" => {
+                        serial = Some(value.ascii_into()?);
+                        Ok(())
+                    }
+                    b"uri" => {
+                        uri = Some(value.ascii_into()?);
+                        Ok(())
+                    }
+                    b"hash" => {
+                        hash = Some(value.ascii_into()?);
+                        Ok(())
+                    }
+                    _ => Err(XmlError::Malformed)
+                })?;
+                let (serial, uri, hash) = match (serial, uri, hash) {
+                    (Some(serial), Some(uri), Some(hash)) =>  {
+                        (serial, uri, hash)
+                    }
+                    _ => return Err(XmlError::Malformed)
+                };
+                if let Some(limit) = delta_limit {
+                    let len = deltas.as_ref().map(|deltas| {
+                        deltas.len()
+                    }).unwrap_or(0);
+                    if len >= limit {
+                        deltas = Err(DeltaListError::Oversized);
+                    }
+                }
+                if let Ok(ref mut deltas) = deltas {
+                    deltas.push(DeltaInfo::new(serial, uri, hash))
+                }
+                Ok(())
             },
             MAX_HEADER_SIZE
         )? {
@@ -1833,9 +1837,23 @@ mod test {
             from_utf8_unchecked(vec.as_ref())
         };
 
-        let notification_parsed = NotificationFile::parse(xml.as_bytes()).unwrap();
+        let notification_parsed = NotificationFile::parse(
+            xml.as_bytes()
+        ).unwrap();
 
         assert_eq!(notification, notification_parsed);
+    }
+
+    #[test]
+    fn oversized_notification() {
+        let notification = NotificationFile::parse_limited(
+            include_bytes!("../test-data/rrdp/ripe-notification.xml").as_ref(),
+            10
+        ).unwrap();
+        assert!(matches!(
+            notification.delta_status(),
+            Err(DeltaListError::Oversized)
+        ));
     }
 
     #[test]
@@ -1952,7 +1970,7 @@ mod test {
         ));
     }
 
-    /// Regression test for an panic in quick-xml 0.39.0.
+    /// Regression test for a panic in quick-xml 0.39.0.
     #[test]
     fn doctype_panic_regression() {
         let reader = std::io::BufReader::with_capacity(

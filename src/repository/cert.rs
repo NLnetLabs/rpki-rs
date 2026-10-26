@@ -897,15 +897,22 @@ impl Cert {
         }
 
         // 4.8.8.  Subject Information Access.
-        if self.ca_repository().is_none() {
+        let Some(ca_repository) = self.ca_repository() else {
             return Err(InspectionError::new(
                 "missing id-ad-caRepository SIA instance in CA certificate"
             ))
-        }
-        if self.rpki_manifest().is_none() {
+        };
+        let Some(manifest) = self.rpki_manifest() else {
             return Err(InspectionError::new(
                 "missing id-ad-rpkiManifest SIA instance in CA certificate"
             ))
+        };
+        if !manifest.parent().is_some_and(
+            |p| p.is_identical_to(ca_repository)
+        ) {
+            return Err(InspectionError::new(
+                "id-ad-rpkiManifest is not a child of id-ad-caRepository"
+            )) 
         }
         if self.signed_object().is_some() {
             return Err(InspectionError::new(
@@ -2931,6 +2938,7 @@ mod signer_test {
         let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
         let pubkey = signer.get_key_info(&key).unwrap();
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
+        let mft_uri = uri::Rsync::from_str("rsync://example.com/m/p/mft.mft").unwrap();
         let mut cert = TbsCert::new(
             12u64.into(), pubkey.to_subject_name(),
             Validity::from_secs(86400), None, pubkey, KeyUsage::Ca,
@@ -2938,7 +2946,7 @@ mod signer_test {
         );
         cert.set_basic_ca(Some(true));
         cert.set_ca_repository(Some(uri.clone()));
-        cert.set_rpki_manifest(Some(uri));
+        cert.set_rpki_manifest(Some(mft_uri));
         cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_as_resource_blocks(|b| b.push((Asn::MIN, Asn::MAX)));

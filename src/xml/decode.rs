@@ -175,7 +175,7 @@ impl Content {
                 Event::Empty(start) => {
                     op(Element::new(start, ns))?;
                     return Ok(
-                        Content { empty: false }
+                        Content { empty: true }
                     )
                 }
                 Event::Comment(_) => { }
