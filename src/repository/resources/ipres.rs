@@ -940,16 +940,26 @@ impl AddressRange {
         AddressRange { min, max }
     }
 
+    /// Creates a new address range checking that `min` is less than `max`.
+    fn new_checked(min: Addr, max: Addr) -> Result<Self, FromStrError> {
+        if min > max {
+            Err(FromStrError::BadRange)
+        }
+        else {
+            Ok(Self::new(min, max))
+        }
+    }
+
     /// Creates a new range from a string with known separator position.
     fn from_str_sep(s: &str, sep: usize) -> Result<Self, FromStrError> {
         let min = IpAddr::from_str(&s[..sep])?;
         let max = IpAddr::from_str(&s[sep + 1..])?;
         match (min.is_ipv4(), max.is_ipv4()) {
             (true, true) => {
-                Ok(Self::new(min.into(), Addr::from(max).to_max(32)))
+                Self::new_checked(min.into(), Addr::from(max).to_max(32))
             }
             (false, false) => {
-                Ok(Self::new(min.into(), max.into()))
+                Self::new_checked(min.into(), max.into())
             }
             _ => Err(FromStrError::FamilyMismatch)
         }
@@ -957,10 +967,10 @@ impl AddressRange {
 
     /// Creates a new range from an IPv4 string with known separator.
     fn from_v4_str_sep(s: &str, sep: usize) -> Result<Self, FromStrError> {
-        Ok(Self::new(
+        Self::new_checked(
             Ipv4Addr::from_str(&s[..sep])?.into(),
             Addr::from(Ipv4Addr::from_str(&s[sep + 1..])?).to_max(32)
-        ))
+        )
     }
 
     /// Creates a new range from an IPv4 string.
@@ -971,10 +981,10 @@ impl AddressRange {
 
     /// Creates a new range from an IPv6 string with known separator.
     fn from_v6_str_sep(s: &str, sep: usize) -> Result<Self, FromStrError> {
-        Ok(Self::new(
+        Self::new_checked(
             Ipv6Addr::from_str(&s[..sep])?.into(),
             Ipv6Addr::from_str(&s[sep + 1..])?.into()
-        ))
+        )
     }
 
     /// Creates a new range from an IPv4 string.
@@ -2166,6 +2176,7 @@ pub enum FromStrError {
     MissingSeparator,
     FamilyMismatch,
     BadBlocks,
+    BadRange,
 }
 
 impl From<AddrParseError> for FromStrError {
@@ -2192,6 +2203,8 @@ impl fmt::Display for FromStrError {
                 => f.write_str("address family mismatch"),
             FromStrError::BadBlocks
                 => f.write_str("cannot parse blocks"),
+            FromStrError::BadRange
+                => f.write_str("invalid address range"),
         }
     }
 }
@@ -2406,9 +2419,9 @@ mod tests {
         let smaller_left = IpBlocks::from_str("10.0.0.0/17").unwrap();
         let smaller_right = IpBlocks::from_str("10.0.0.0/17").unwrap();
         let smaller = IpBlocks::from_str("10.0.0.1-10.0.255.254").unwrap();
-        let bigger_left = IpBlocks::from_str("19.9.9.255-10.0.255.255").unwrap();
-        let bigger_right = IpBlocks::from_str("19.9.9.255-10.1.0.0").unwrap();
-        let bigger = IpBlocks::from_str("19.9.9.255-10.1.0.0").unwrap();
+        let bigger_left = IpBlocks::from_str("9.9.9.255-10.0.255.255").unwrap();
+        let bigger_right = IpBlocks::from_str("10.0.10.0-10.1.0.0").unwrap();
+        let bigger = IpBlocks::from_str("9.9.9.255-10.1.0.0").unwrap();
 
         assert!(super_set.contains(&same));
         assert!(super_set.contains(&higher_block));
@@ -2809,6 +2822,12 @@ mod tests {
 
             assert_eq!(1, prefixes.count());
         }
+    }
+
+    #[test]
+    fn range_from_str_inverted_range() {
+        assert!(AddressRange::from_str("127.0.0.1-100.0.0.0").is_err());
+        assert!(AddressRange::from_str("D000::1-0d00::").is_err());
     }
 }
 

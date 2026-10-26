@@ -788,6 +788,9 @@ impl FromStr for AsBlock {
                         .map_err(|_| FromStrError::BadRange)?;
                     let max = Asn::from_str(max_str)
                         .map_err(|_| FromStrError::BadRange)?;
+                    if min > max {
+                        return Err(FromStrError::BadRange);
+                    }
                     Ok(AsBlock::Range(AsRange { min, max }))
                 }
             }
@@ -1222,5 +1225,10 @@ mod test {
         let deser_as_resources = serde_json::from_str(&json).unwrap();
 
         assert_eq!(as_resources, deser_as_resources)
+    }
+
+    #[test]
+    fn as_block_from_str_inverted_range() {
+        assert!(AsBlock::from_str("As10-AS2").is_err());
     }
 }
