@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased next version
+## 0.20.0
+
+Released 2026-10-26.
 
 Breaking changes
 
@@ -50,8 +52,6 @@ Bug fixes
 * Fixed string parsing of X.509 times. Previously, a `+` was accepted in
   the compontents. ([#399])
 
-Other changes
-
 [#358]: https://github.com/NLnetLabs/rpki-rs/pull/358
 [#368]: https://github.com/NLnetLabs/rpki-rs/pull/368
 [#386]: https://github.com/NLnetLabs/rpki-rs/pull/386
@@ -70,6 +70,7 @@ Other changes
 [#399]: https://github.com/NLnetLabs/rpki-rs/pull/399
 [aws-lc-rs]: https://crates.io/crates/aws-lc-rs
 [num-bigint]: https://crates.io/crates/num-bigint
+
 
 ## 0.19.3
 
