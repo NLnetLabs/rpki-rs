@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased next version
+
+Breaking changes
+
+Improvements
+
+New
+
+Bug fixes
+
+Other changes
+
+
 ## 0.20.0
 
 Released 2026-10-26.
