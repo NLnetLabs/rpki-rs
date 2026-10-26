@@ -278,7 +278,7 @@ impl Rsync {
         }
     }
 
-    /// Returns a copy of the URI extended by the given path.
+    /// Returns a copy of the URI extends by the given path.
     ///
     /// Returns an error if `path` contains illegal characters or path
     /// segments that are empty or comprised of only a single or double full
@@ -379,6 +379,33 @@ impl Rsync {
             Some(path) => !path.is_empty(),
             None => false
         }
+    }
+
+    /// Returns whether the two URIs are equal to each other, dealing with
+    /// trailing slashes.
+    pub fn is_identical_to(&self, other: &Rsync) -> bool {
+        if self.canonical_authority() != other.canonical_authority() {
+            return false;
+        }
+
+        if !self.eq_module(other) {
+            return false;
+        }
+
+        let self_path = self.path();
+        let other_path = other.path();
+
+        let self_path = match self_path.strip_suffix("/") {
+            Some(path) => path,
+            None => self_path,
+        };
+        
+        let other_path = match other_path.strip_suffix("/") {
+            Some(path) => path,
+            None => other_path,
+        };
+
+        self_path == other_path
     }
 
     /// Returns whether the two URIs are in the same module.
@@ -1488,6 +1515,47 @@ mod tests {
         assert!(!m2_a_b.is_parent_of(&m_a));
         assert!(!m2_a_b.is_parent_of(&m_a_b));
         assert!(!m2_a_b.is_parent_of(&m2_a_b));
+    }
+
+    #[test]
+    fn rsync_is_identical_to() {
+        fn test(a: &str, b: &str) -> bool {
+            Rsync::from_string(String::from(a)).unwrap().is_identical_to(
+                &Rsync::from_string(String::from(b)).unwrap()
+            )
+        }
+        assert!(test(
+            "rsync://example.org/module/some/path", 
+            "rsync://example.org/module/some/path"
+        ));
+        assert!(!test(
+            "rsync://example.org/module/some/path", 
+            "rsync://example.org/module/some/path2"
+        ));
+        assert!(test(
+            "rsync://example.org/module/some/path/", 
+            "rsync://example.org/module/some/path"
+        ));
+        assert!(test(
+            "rsync://example.org/module/some/path", 
+            "rsync://example.org/module/some/path/"
+        ));
+        assert!(test(
+            "rsync://example.org/module/some/path", 
+            "rsync://EXAMPLE.ORG/module/some/path"
+        ));
+        assert!(!test(
+            "rsync://example.org/module/some/PATH", 
+            "rsync://example.org/module/some/path"
+        ));
+        assert!(!test(
+            "rsync://example.org/module2/some/path", 
+            "rsync://example.org/module/some/path"
+        ));
+        assert!(!test(
+            "rsync://example.net/module/some/path", 
+            "rsync://example.org/module/some/path"
+        ));
     }
 
     #[test]
