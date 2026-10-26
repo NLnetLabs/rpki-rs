@@ -457,23 +457,43 @@ impl FileAndHash<Bytes, Bytes> {
             c == b'-' || c == b'_' || c.is_ascii_alphanumeric()
         }
 
-        let mut n = name;
-        while let Some((c, tail)) = n.split_first() {
-            n = tail;
-            if *c == b'.' {
-                break;
-            } 
-            else if !valid_rfc9286_character(*c) {
-                return Err("manifest filename is not RFC 9286 4.2.2 compliant");
-            }
+        let Some(dot_idx) = name.iter().position(|ch| *ch == b'.') else {
+            return Err("manifest filename without an extension")
+        };
+
+        // Panic: We assume that Iterator::position works as advertised.
+        #[allow(clippy::indexing_slicing)]
+        let basename = &name[..dot_idx];
+
+        if basename.is_empty() {
+            return Err("empty manifest basename (RFC 9286 4.2.2)")
+        }
+        if basename.iter().any(|ch| !valid_rfc9286_character(*ch)) {
+            return Err(
+                "illegal character in manifest file name (RFC 9286 4.2.2)"
+            )
         }
 
-        // Now you could check whether this extension matches one in the list 
-        // ["asa", "cer", "crl", "gbr", "mft", "roa", "sig", "tak"],  but that 
-        // would be brittle, so as long as it is three valid letters we will
-        // accept it. 
-        if n.len() != 3 || !n.iter().all(|c| c.is_ascii_alphabetic()) {
-            return Err("manifest extension is not RFC 9286 4.2.2 compliant");
+        let Some(ext_idx) = dot_idx.checked_add(1) else {
+            return Err("excessively large manifest file name");
+        };
+
+        // Panic: dot_idx pointed to a dot, so the index after is still valid.
+        #[allow(clippy::indexing_slicing)]
+        let ext = &name[ext_idx..];
+
+        // RFC 9286 4.2.2 demands that the extensiom is one of the registered
+        // ones, but that would be brittle, so as long as it is three valid
+        // letters we will accept it. 
+        if ext.len() != 3 {
+            return Err(
+                "manifest filename with invalid extension (RFC 9286 4.2.2)"
+            )
+        }
+        if ext.iter().any(|ch| !ch.is_ascii_alphabetic()) {
+            return Err(
+                "illegal character in manifest file name (RFC 9286 4.2.2)"
+            )
         }
 
         Ok(())
@@ -714,6 +734,22 @@ mod signer_test {
             mft.to_captured().into_bytes(),
             deser_mft.to_captured().into_bytes()
         );
+    }
+
+    #[test]
+    fn file_and_hash_validate_file_name() {
+        assert!(FileAndHash::validate_file_name(b"f-_oo00F.bar").is_ok());
+        assert!(FileAndHash::validate_file_name(b".bar").is_err());
+        assert!(FileAndHash::validate_file_name(b"bar.").is_err());
+        assert!(FileAndHash::validate_file_name(b"bar.b").is_err());
+        assert!(FileAndHash::validate_file_name(b"bar.ba").is_err());
+        assert!(FileAndHash::validate_file_name(b"bar.barb").is_err());
+        assert!(FileAndHash::validate_file_name(b".").is_err());
+        assert!(FileAndHash::validate_file_name(b"bar").is_err());
+        assert!(FileAndHash::validate_file_name(b"").is_err());
+        assert!(FileAndHash::validate_file_name(b"a$(.bar").is_err());
+        assert!(FileAndHash::validate_file_name(b"bar.a$(").is_err());
+        assert!(FileAndHash::validate_file_name(b"bar.a00").is_err());
     }
 }
 
