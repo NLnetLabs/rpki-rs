@@ -264,11 +264,6 @@ impl SignedObject {
             ))
         }
 
-        if self.signing_time() < self.cert().validity().not_before() {
-            return Err(VerificationError::new(
-                "signing time is before not_before validity time"
-            ));
-        }
         if self.signing_time() > self.cert().validity().not_after() {
             return Err(VerificationError::new(
                 "signing time is after not_after validity time"
