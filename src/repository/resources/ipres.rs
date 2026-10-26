@@ -1161,9 +1161,17 @@ impl AddressRange {
         content: &mut decode::Content<S>
     ) -> Result<Self, DecodeError<S::Error>> {
         let cons = content.as_constructed()?;
+
+        let min = Prefix::take_from(cons)?.min();
+        let max = Prefix::take_from(cons)?.max();
+
+        if min > max {
+            return Err(cons.content_err("min is larger than max"));
+        }
+
         Ok(AddressRange {
-            min: Prefix::take_from(cons)?.min(),
-            max: Prefix::take_from(cons)?.max(),
+            min,
+            max,
         })
     }
 
@@ -1179,6 +1187,10 @@ impl AddressRange {
         let max = Self::check_len(
             Prefix::take_from(cons)?, family,
         ).map_err(|err| cons.content_err(err))?;
+
+        if min.min() > max.max() {
+            return Err(cons.content_err("min is larger than max"));
+        }
 
         Ok(AddressRange {
             min: min.min(),
@@ -2809,6 +2821,27 @@ mod tests {
 
             assert_eq!(1, prefixes.count());
         }
+    }
+
+    #[test]
+    fn range_reverse() {
+        // Test that a AsRange with a min larger than max is rejected when
+        // parsing.
+        use bcder::encode::Values;
+        use bcder::Mode::Der;
+
+        assert!(
+            Der.decode(
+                    AddressRange::new(
+                        1001.into(), 1000.into()
+                    ).encode().to_captured(Der),
+                |cons| {
+                    cons.take_value(|_, content| {
+                        AddressRange::parse_content(content)
+                    })
+                }
+            ).is_err(),
+        );
     }
 }
 
