@@ -34,7 +34,7 @@ use super::idcert::IdCert;
 /// [`Cert`]: crate::repository::cert::Cert 
 /// [`SignedObject`]: crate::repository::sigobj::SignedObject
 #[derive(Clone, Debug)]
-pub struct  SignedMessage {
+pub struct SignedMessage {
     //--- From SignedData
     //
     digest_algorithm: DigestAlgorithm,
@@ -448,6 +448,8 @@ impl SignedMessageCrl {
     fn take_from<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, DecodeError<S::Error>> {
+        // Force CRL to always be passed as DER, even if outer parts are BER.
+        cons.set_mode(Mode::Der);
         cons.take_sequence(Self::from_constructed)
     }
 
