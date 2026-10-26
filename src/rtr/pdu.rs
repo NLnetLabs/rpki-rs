@@ -921,6 +921,12 @@ impl Aspa {
                 ))
             }
         };
+        if provider_len == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData, 
+                "ASPA PDU providerSet is empty"
+            ));
+        }
         let mut fixed = AspaFixed { header, .. Default::default() };
         sock.read_exact(&mut fixed.as_mut()[Header::LEN..]).await?;
         let providers = ProviderAsns::read(sock, provider_len).await?;
