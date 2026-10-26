@@ -6,10 +6,25 @@ Breaking changes
 
 * Renamed the `OpenSslSigner` to `SoftSigner` since it doesn’t use OpenSSL
   any more. ([#358])
+* Force CRLs to be decoded in DER mode. They are required to be DER,
+  anyway, but we previously accepted BER as well, leading to issues down
+  the line. ([#389])
+* Limited the length of variable length RTR PDUs, specifically router
+  keys, ASPA PDUs and error PDUs, to 65535 as introduced in draft
+  8210-bis. ([#393])
 
 Improvements
 
 * Made the fields of `CrlEntry` public. ([#368])
+* Added a check the path portion of a rsync URI is not longer than 3072
+  bytes and individual path components are not longer than 255 bytes.
+  ([#387])
+* Added a check to CA certificate inspection to check that the manifest is
+  located in the CA repository. ([#391])
+* Added a check that the provider set in the ASPA RTR PDU is not empty.
+  ([#392])
+* Added a check to manifest validation rejecting file names with an empty
+  base name. ([#395])
 
 New
 
@@ -17,11 +32,42 @@ New
   ([#368])
 * Removed the dependencies on _ring_ and OpenSSL and replaced them with
   [aws-lc-rs]. ([#358])
+* Added ``Crl::verify_issuer_claim`. ([#396])
+
+Bug fixes
+
+* Added checks to both AS and IP address ranges as well as `AsBlock` and
+  `IpBlock` ranges to enforce that the minimum value is  smaller or equal to
+  the maximum value. ([#386], [#388])
+* Added a check in publication server support that a deserialised Base 64
+  string is valid Base 64. ([#390])
+* Correctly limit the amount of delta elements returned when parsing the
+  RRDP notification file. ([#394])
+* Fixed `Chain::from_iter_unsorted` to create resources for all kinds of
+  corner cases. ([#397])
+* Added a check for EOF when reading RTR error PDUs. Previously, a reader
+  would just hang. ([#398])
+* Fixed string parsing of X.509 times. Previously, a `+` was accepted in
+  the compontents. ([#399])
 
 Other changes
 
 [#358]: https://github.com/NLnetLabs/rpki-rs/pull/358
 [#368]: https://github.com/NLnetLabs/rpki-rs/pull/368
+[#386]: https://github.com/NLnetLabs/rpki-rs/pull/386
+[#387]: https://github.com/NLnetLabs/rpki-rs/pull/387
+[#388]: https://github.com/NLnetLabs/rpki-rs/pull/388
+[#389]: https://github.com/NLnetLabs/rpki-rs/pull/389
+[#390]: https://github.com/NLnetLabs/rpki-rs/pull/390
+[#391]: https://github.com/NLnetLabs/rpki-rs/pull/391
+[#392]: https://github.com/NLnetLabs/rpki-rs/pull/392
+[#393]: https://github.com/NLnetLabs/rpki-rs/pull/393
+[#394]: https://github.com/NLnetLabs/rpki-rs/pull/394
+[#395]: https://github.com/NLnetLabs/rpki-rs/pull/395
+[#396]: https://github.com/NLnetLabs/rpki-rs/pull/396
+[#397]: https://github.com/NLnetLabs/rpki-rs/pull/397
+[#398]: https://github.com/NLnetLabs/rpki-rs/pull/398
+[#399]: https://github.com/NLnetLabs/rpki-rs/pull/399
 [aws-lc-rs]: https://crates.io/crates/aws-lc-rs
 [num-bigint]: https://crates.io/crates/num-bigint
 
