@@ -1627,6 +1627,12 @@ impl Error {
                 // Safety: We limited the length to the buffer size.
                 unsafe { buf.get_unchecked_mut(..read_len) }
             ).await?;
+            if read == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "unexpected end of file"
+                ))
+            }
             remaining -= read;
         }
         Ok(())
