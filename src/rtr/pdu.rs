@@ -603,6 +603,12 @@ impl RouterKey {
     pub async fn read_payload<Sock: AsyncRead + Unpin>(
         header: Header, sock: &mut Sock
     ) -> Result<Self, io::Error> {
+        if header.pdu_len()? > Header::MAX_PDU_LENGTH {
+            return Err(io::Error::new(
+                io::ErrorKind::QuotaExceeded,
+                "router key data too long"
+            ));
+        }
         let info_len = match
             header.pdu_len()?.checked_sub(mem::size_of::<RouterKeyFixed>())
         {
@@ -902,6 +908,12 @@ impl Aspa {
     pub async fn read_payload<Sock: AsyncRead + Unpin>(
         header: Header, sock: &mut Sock
     ) -> Result<Self, io::Error> {
+        if header.pdu_len()? > Header::MAX_PDU_LENGTH {
+            return Err(io::Error::new(
+                io::ErrorKind::QuotaExceeded,
+                "ASPA PDU is too long"
+            ));
+        }
         let provider_len = match
             header.pdu_len()?.checked_sub(mem::size_of::<AspaFixed>())
         {
@@ -1593,6 +1605,12 @@ impl Error {
     pub async fn skip_payload<Sock: AsyncRead + Unpin>(
         header: Header, sock: &mut Sock
     ) -> Result<(), io::Error> {
+        if header.pdu_len()? > Header::MAX_PDU_LENGTH {
+            return Err(io::Error::new(
+                io::ErrorKind::QuotaExceeded,
+                "error PDU is too long"
+            ));
+        }
         let Some(mut remaining) = header.pdu_len()?.checked_sub(
             mem::size_of::<Header>()
         ) else {
@@ -1700,6 +1718,9 @@ pub struct Header {
 impl Header {
     /// The size of the header.
     const LEN: usize = mem::size_of::<Self>();
+
+    /// The maximum allowed PDU length as per RFC 8210 bis.
+    const MAX_PDU_LENGTH: usize = 65535;
 
     /// Creates a new header.
     pub fn new(version: u8, pdu: u8, session: u16, length: u32) -> Self {
