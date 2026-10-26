@@ -297,15 +297,15 @@ impl NotificationFile {
                 let mut uri = None;
                 let mut hash = None;
                 element.attributes(|name, value| match name {
-                    b"serial" => {
+                    "serial" => {
                         serial = Some(value.ascii_into()?);
                         Ok(())
                     }
-                    b"uri" => {
+                    "uri" => {
                         uri = Some(value.ascii_into()?);
                         Ok(())
                     }
-                    b"hash" => {
+                    "hash" => {
                         hash = Some(value.ascii_into()?);
                         Ok(())
                     }
