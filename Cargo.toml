@@ -1,6 +1,6 @@
 [package]
 name = "rpki"
-version = "0.20.0-dev"
+version = "0.20.0"
 rust-version = "1.87"
 edition = "2024"
 authors = ["NLnet Labs <rpki-team@nlnetlabs.nl>"]

@@ -646,6 +646,7 @@ mod signer_test {
         let ca_key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
         let ca_pubkey = signer.get_key_info(&ca_key).unwrap();
         let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
+        let mft_uri = uri::Rsync::from_str("rsync://example.com/m/p/mft.mft").unwrap();
         let mut cert = TbsCert::new(
             12u64.into(), ca_pubkey.to_subject_name(),
             Validity::from_secs(86400), None, ca_pubkey, KeyUsage::Ca,
@@ -653,7 +654,7 @@ mod signer_test {
         );
         cert.set_basic_ca(Some(true));
         cert.set_ca_repository(Some(uri.clone()));
-        cert.set_rpki_manifest(Some(uri.clone()));
+        cert.set_rpki_manifest(Some(mft_uri.clone()));
         cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
         cert.build_as_resource_blocks(|b| b.push((Asn::MIN, Asn::MAX)));

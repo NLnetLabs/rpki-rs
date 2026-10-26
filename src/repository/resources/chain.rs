@@ -647,41 +647,54 @@ fn from_iter_unsorted<T: Block, I: Iterator<Item=T>>(
     block: T,
     iter: I,
 ) -> OwnedChain<T> {
-    // Here’s the strategy for now: For each block, check whether it extends
-    // an existing block, otherwise push it to the end. Sort after we have
-    // all blocks.
     merge_or_add_block(&mut res, block);
     for block in iter {
         merge_or_add_block(&mut res, block);
     }
-    res.sort_unstable_by_key(|block| block.min());
+    res.sort_unstable_by(|a, b| {
+        // Sort by lowest min, highest max.
+        match a.min().cmp(&b.min()) {
+            Ordering::Equal => b.max().cmp(&a.max()),
+            res => res
+        }
+    });
 
-    // The strategy may may lead to consecutive blocks. We can’t have those,
-    // so we need to merge them. This is a bit ugly. Not sure if there is a
-    // cleaner way?
-    if res.len() > 1 {
-        let mut tail = 0;
-        let mut tail_next = T::next(res[0].max());
-        for j in 1..res.len() {
-            if Some(res[j].min()) == tail_next {
-                // Neighbouring. Merge j into tail and continue.
-                res[tail] = T::new(res[tail].min(), res[j].max());
-                tail_next = T::next(res[j].max());
+    // At this point the vec is sorted by minimum, contains all the blocks, 
+    // and larger blocks with the same minimum appear earlier in the vec.
+
+    let mut filtered_res = Vec::new();
+    let mut local_max = None;
+
+    for block in res.iter() {
+        if let Some(local_max) = local_max {
+            if local_max >= block.max() {
+                // This block is fully encompassed by a previous block
+                continue;
+            }
+            else if block.min() <= local_max || 
+                T::next(local_max).is_some_and(|b| b == block.min()) 
+            {
+                // This block overlaps with the previous block, or is directly
+                // after the previous block
+                let last_item: T = filtered_res.pop().unwrap();    
+                filtered_res.push(T::new(last_item.min(), block.max()));
             }
             else {
-                // Not neighbouring. Move to the next tail. If this isn’t j,
-                // we need to copy j there.
-                tail +=1;
-                if tail != j {
-                    res[tail] = res[j].clone()
-                }
-                tail_next = T::next(res[tail].max());
+                // There is a gap to the next block
+                filtered_res.push(T::new(block.min(), block.max()));
             }
         }
-        res.truncate(tail + 1);
+        else {
+            // This is the first item
+            filtered_res.push(T::new(block.min(), block.max()));
+        }
+
+        // We skipped the case where block.max is smaller than local_max, so
+        // just assign:
+        local_max = Some(block.max());
     }
 
-    unsafe { OwnedChain::from_vec_unchecked(res) }
+    unsafe { OwnedChain::from_vec_unchecked(filtered_res) }
 }
 
 fn merge_or_add_block<T: Block>(res: &mut Vec<T>, block: T) {
@@ -835,14 +848,14 @@ impl<T: Block> Eq for SharedChain<T> { }
 mod test {
     use super::*;
 
-    impl Block for (u8, u8) {
-        type Item = u8;
+    impl Block for (u64, u64) {
+        type Item = u64;
 
-        fn new(min: u8, max: u8) -> Self { (min, max) }
-        fn min(&self) -> u8 { self.0 }
-        fn max(&self) -> u8 { self.1 }
-        fn next(item: u8) -> Option<u8> { item.checked_add(1) }
-        fn previous(item: u8) -> Option<u8> { item.checked_sub(1) }
+        fn new(min: u64, max: u64) -> Self { (min, max) }
+        fn min(&self) -> u64 { self.0 }
+        fn max(&self) -> u64 { self.1 }
+        fn next(item: u64) -> Option<u64> { item.checked_add(1) }
+        fn previous(item: u64) -> Option<u64> { item.checked_sub(1) }
     }
 
     #[test]
@@ -890,6 +903,33 @@ mod test {
                 [(7,9), (3,4), (5, 6), (20, 22), (0, 1)].as_ref()
             ).as_slice(),
             &[(0, 1), (3, 9), (20, 22)][..]
+        );
+        // Test case from TU Darmstadt
+        assert_eq!(
+            OwnedChain::from([
+                (0, 8_716_288), 
+                (776_863_744, 4_294_821_839),
+                (3_067_773, 2_105_376_255),
+            ].as_ref()).as_slice(),
+            &[(0, 4_294_821_839)][..]
+        );
+        assert_eq!(
+            OwnedChain::from(
+                [(0,6), (7,9), (2,3), (7,8)].as_ref()
+            ).as_slice(),
+            &[(0, 9)][..]
+        );
+        assert_eq!(
+            OwnedChain::from(
+                [(0,10), (100,200), (0,1000)].as_ref()
+            ).as_slice(),
+            &[(0,1000)][..]
+        );
+        assert_eq!(
+            OwnedChain::from(
+                [(0,10), (100,200), (5,u64::MAX)].as_ref()
+            ).as_slice(),
+            &[(0,u64::MAX)][..]
         );
     }
 
@@ -1080,7 +1120,7 @@ mod test {
     #[test]
     #[allow(clippy::eq_op)]
     fn eq() {
-        let empty = OwnedChain::<(u8, u8)>::empty();
+        let empty = OwnedChain::<(u64, u64)>::empty();
         let one = OwnedChain::from([(1, 2)].as_ref());
         let two = OwnedChain::from([(1, 2), (3, 4)].as_ref());
 
@@ -1108,7 +1148,7 @@ mod test {
     #[test]
     fn difference_other_empty() {
         let self_chain = OwnedChain::from([(1, 2), (4, 10)].as_ref());
-        let empty = OwnedChain::<(u8,u8)>::empty();
+        let empty = OwnedChain::<(u64,u64)>::empty();
 
         let found = self_chain.difference(&empty);
 
