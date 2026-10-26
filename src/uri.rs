@@ -85,16 +85,17 @@ impl Rsync {
         let (authority, module) = {
             let mut parts = bytes[8..].splitn(3, |ch| *ch == b'/');
             let authority = match parts.next().map(|s| s.len()) {
-                Some(len) if len > 0 => len,
+                Some(len) if len > 0 && len < 256 => len,
                 _ => return Err(Error::BadUri)
             };
             let module = match parts.next().map(|s| s.len()) {
-                Some(len) if len > 0 => len,
+                Some(len) if len > 0 && len < 256 => len,
                 _ => return Err(Error::BadUri)
             };
             if parts.next().is_none() {
                 return Err(Error::BadUri)
             }
+
             (authority, module)
         };
 
@@ -123,6 +124,13 @@ impl Rsync {
     /// This does _not_ check whether the slice consists of allowed characters
     /// only. Use `check_uri_ascii` for that.
     fn check_path(path: &[u8]) -> Result<(), Error> {
+        if path.len() >= 3072 {
+            // The maximum path length on most Linux-y distributions is 4096.
+            // If your path is longer than 3072 then you are probably being
+            // silly and we will reject it to prevent an ENAMETOOLONG.
+            return Err(Error::LongUri);
+        }
+
         // Don’t allow ".." anywhere. Don’t allow empty segments except at the
         // end.
         let mut items = path.split(|ch| *ch == b'/');
@@ -136,6 +144,12 @@ impl Rsync {
             }
             if item == b".." || item == b"." {
                 return Err(Error::DotSegments)
+            }
+            if item.len() >= 256 {
+                // Technically it is allowed to have a part that is longer
+                // than 255 characters, but we don't like it if you do that,
+                // so we will reject it anyway.
+                return Err(Error::LongSegments);
             }
         }
         if items.next().is_some() {
@@ -310,6 +324,9 @@ impl Rsync {
             res
         };
         res.extend_from_slice(path);
+        if res.len() >= 3072 {
+            return Err(Error::LongUri);
+        }
         Ok(Rsync {
             bytes: res.freeze(),
             module_start: self.module_start,
@@ -551,6 +568,9 @@ impl Https {
         let path_idx = bytes.iter().enumerate().skip(start).find(|&(_, ch)| {
             *ch == b'/'
         }).map(|(idx, _)| idx).unwrap_or_else(|| bytes.len());
+        if path_idx - start >= 256 {
+            return Err(Error::BadUri);
+        }
         Ok(Https { uri: bytes, path_idx })
     }
 
@@ -931,9 +951,11 @@ fn is_u8_uri_ascii(ch: u8) -> bool {
 pub enum Error {
     InvalidCharacters,
     BadUri,
+    LongUri,
     BadScheme,
     DotSegments,
     EmptySegments,
+    LongSegments,
 }
 
 impl fmt::Display for Error {
@@ -941,9 +963,13 @@ impl fmt::Display for Error {
         f.write_str(match *self {
             Error::InvalidCharacters=> "invalid characters",
             Error::BadUri => "bad URI",
+            Error::LongUri => "URI exceeds 3072 characters",
             Error::BadScheme => "bad URI scheme",
             Error::DotSegments => "URI with dot path segments",
             Error::EmptySegments => "URI with empty path segments",
+            Error::LongSegments => {
+                "one or more segments are longer than 255 characters"
+            }
         })
     }
 }
@@ -1111,6 +1137,15 @@ mod tests {
         assert!(Rsync::from_str("rsync://host/./foo/bar").is_err());
         assert!(Rsync::from_str("rsync://host/./").is_err());
         assert!(Rsync::from_str("rsync://host/.").is_err());
+        assert!(Rsync::from_str(
+            format!("rsync://{}/module/foo/", "a".repeat(256)).as_str()
+        ).is_err());
+        assert!(Rsync::from_str(
+            format!("rsync://host/{}/foo/", "a".repeat(256)).as_str()
+        ).is_err());
+        assert!(Rsync::from_str(
+            format!("rsync://host/module/{}/", "a".repeat(256)).as_str()
+        ).is_err());
     }
 
     #[test]

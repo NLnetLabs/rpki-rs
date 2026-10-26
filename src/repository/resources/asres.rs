@@ -902,7 +902,7 @@ impl Iterator for AsBlockIter {
 //------------ AsRange -------------------------------------------------------
 
 /// A range of AS numbers.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AsRange {
     /// The smallest AS number that is part of the range.
     min: Asn,
@@ -948,9 +948,16 @@ impl AsRange {
         content: &mut decode::Content<S>
     ) -> Result<Self, DecodeError<S::Error>> {
         let cons = content.as_constructed()?;
+        let min = Asn::take_from(cons)?;
+        let max = Asn::take_from(cons)?;
+
+        if min > max {
+            return Err(cons.content_err("min is larger than max"));
+        }
+
         Ok(AsRange {
-            min: Asn::take_from(cons)?,
-            max: Asn::take_from(cons)?,
+            min,
+            max,
         })
     }
 
@@ -1202,6 +1209,26 @@ mod test {
         assert_eq!(expected, found);
     }
 
+    #[test]
+    fn as_range_reverse() {
+        // Test that a AsRange with a min larger than max is rejected when
+        // parsing.
+        use bcder::encode::Values;
+        use bcder::Mode::Der;
+
+        assert!(
+            Der.decode(
+                    AsRange::new(
+                        1001.into(), 1000.into()
+                    ).encode().to_captured(Der),
+                |cons| {
+                    cons.take_value(|_, content| {
+                        AsRange::parse_content(content)
+                    })
+                }
+            ).is_err(),
+        );
+    }
 
     #[test]
     #[cfg(feature = "serde")]
