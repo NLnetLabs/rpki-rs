@@ -1057,7 +1057,7 @@ dependencies = [
 
 [[package]]
 name = "rpki"
-version = "0.20.0"
+version = "0.20.1"
 dependencies = [
  "arbitrary",
  "aws-lc-rs",

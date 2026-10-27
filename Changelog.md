@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased next version
+## 0.20.1
 
-Breaking changes
+Released 2026-10-27.
 
 Improvements
 
@@ -16,8 +16,6 @@ Improvements
 New
 
 * Added support for parsing and validating RSC objects. ([#348])
-
-Bug fixes
 
 Other changes
 
