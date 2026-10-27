@@ -232,17 +232,17 @@ impl NotificationFile {
 
                 element.attributes(|name, value| {
                     match name {
-                        b"version" => {
+                        "version" => {
                             if value.ascii_into::<u8>()? != 1 {
                                 return Err(XmlError::Malformed)
                             }
                             Ok(())
                         }
-                        b"session_id" => {
+                        "session_id" => {
                             session_id = Some(value.ascii_into()?);
                             Ok(())
                         }
-                        b"serial" => {
+                        "serial" => {
                             serial = Some(value.ascii_into()?);
                             Ok(())
                         }
@@ -264,11 +264,11 @@ impl NotificationFile {
                 let mut uri = None;
                 let mut hash = None;
                 element.attributes(|name, value| match name {
-                    b"uri" => {
+                    "uri" => {
                         uri = Some(value.ascii_into()?);
                         Ok(())
                     }
-                    b"hash" => {
+                    "hash" => {
                         hash = Some(value.ascii_into()?);
                         Ok(())
                     }
@@ -297,15 +297,15 @@ impl NotificationFile {
                 let mut uri = None;
                 let mut hash = None;
                 element.attributes(|name, value| match name {
-                    b"serial" => {
+                    "serial" => {
                         serial = Some(value.ascii_into()?);
                         Ok(())
                     }
-                    b"uri" => {
+                    "uri" => {
                         uri = Some(value.ascii_into()?);
                         Ok(())
                     }
-                    b"hash" => {
+                    "hash" => {
                         hash = Some(value.ascii_into()?);
                         Ok(())
                     }
@@ -796,18 +796,18 @@ pub trait ProcessSnapshot {
                     return Err(XmlError::Malformed)
                 }
                 element.attributes(|name, value| match name {
-                    b"version" => {
+                    "version" => {
                         if value.ascii_into::<u8>()? != 1 {
                             info!("Bad version");
                             return Err(XmlError::Malformed)
                         }
                         Ok(())
                     }
-                    b"session_id" => {
+                    "session_id" => {
                         session_id = Some(value.ascii_into()?);
                         Ok(())
                     }
-                    b"serial" => {
+                    "serial" => {
                         serial = Some(value.ascii_into()?);
                         Ok(())
                     }
@@ -840,7 +840,7 @@ pub trait ProcessSnapshot {
                         return Err(ProcessError::malformed())
                     }
                     element.attributes(|name, value| match name {
-                        b"uri" => {
+                        "uri" => {
                             uri = Some(value.ascii_into()?);
                             Ok(())
                         }
@@ -1112,17 +1112,17 @@ pub trait ProcessDelta {
                     return Err(ProcessError::malformed())
                 }
                 element.attributes(|name, value| match name {
-                    b"version" => {
+                    "version" => {
                         if value.ascii_into::<u8>()? != 1 {
                             return Err(ProcessError::malformed())
                         }
                         Ok(())
                     }
-                    b"session_id" => {
+                    "session_id" => {
                         session_id = Some(value.ascii_into()?);
                         Ok(())
                     }
-                    b"serial" => {
+                    "serial" => {
                         serial = Some(value.ascii_into()?);
                         Ok(())
                     }
@@ -1152,11 +1152,11 @@ pub trait ProcessDelta {
                         _ => return Err(ProcessError::malformed()),
                     };
                     element.attributes(|name, value| match name {
-                        b"uri" => {
+                        "uri" => {
                             uri = Some(value.ascii_into()?);
                             Ok(())
                         }
-                        b"hash" => {
+                        "hash" => {
                             hash = Some(value.ascii_into()?);
                             Ok(())
                         }
@@ -1519,12 +1519,12 @@ impl io::Read for ObjectReader<'_> {
 
 //------------ XML Names -----------------------------------------------------
 
-const NS: &[u8] = b"http://www.ripe.net/rpki/rrdp";
-const NOTIFICATION: Name = Name::qualified(NS, b"notification");
-const SNAPSHOT: Name = Name::qualified(NS, b"snapshot");
-const DELTA: Name = Name::qualified(NS, b"delta");
-const PUBLISH: Name = Name::qualified(NS, b"publish");
-const WITHDRAW: Name = Name::qualified(NS, b"withdraw");
+const NS: &str = "http://www.ripe.net/rpki/rrdp";
+const NOTIFICATION: Name = Name::qualified(NS, "notification");
+const SNAPSHOT: Name = Name::qualified(NS, "snapshot");
+const DELTA: Name = Name::qualified(NS, "delta");
+const PUBLISH: Name = Name::qualified(NS, "publish");
+const WITHDRAW: Name = Name::qualified(NS, "withdraw");
 
 
 //============ Errors ========================================================
