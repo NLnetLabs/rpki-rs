@@ -6,11 +6,28 @@ Breaking changes
 
 Improvements
 
+* Adjusted to version 04 of the APSA SLURM draft: renamed the
+  `customerAsid` field to `customerAsn`. ([#380])
+* Adds a check that the signing time of a signed object is not after the EE
+  certificate’s notAfter time. ([#385])
+* Added additional checks for ASPA objects added to the draft up to
+  version 29. ([#360]
+
 New
+
+* Added support for parsing and validating RSC objects. ([#348])
 
 Bug fixes
 
 Other changes
+
+* Added a list of RFCs as a documentation module. ([#402])
+
+[#348]: https://github.com/NLnetLabs/rpki-rs/pull/348
+[#360]: https://github.com/NLnetLabs/rpki-rs/pull/360
+[#380]: https://github.com/NLnetLabs/rpki-rs/pull/380
+[#385]: https://github.com/NLnetLabs/rpki-rs/pull/385
+[#402]: https://github.com/NLnetLabs/rpki-rs/pull/402
 
 
 ## 0.20.0
