@@ -63,6 +63,11 @@ impl IpResources {
         self.0.is_inherited()
     }
 
+    /// Returns whether the resources are missing.
+    pub fn is_missing(&self) -> bool {
+        matches!(self.0, ResourcesChoice::Missing)
+    }
+
     /// Returns whether the resources are empty.
     ///
     /// Inherited resources are not empty.

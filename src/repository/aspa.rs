@@ -52,9 +52,9 @@ impl Aspa {
         check_crl: F
     ) -> Result<(ResourceCert, AsProviderAttestation), ValidationError>
     where F: FnOnce(&Cert) -> Result<(), ValidationError> {
+        self.content.check_resources(self.signed.cert())?;
         let cert = self.signed.validate(issuer, strict)?;
         check_crl(cert.as_ref())?;
-        self.content.verify(&cert)?;
         Ok((cert, self.content))
     }
 
@@ -124,10 +124,13 @@ impl AsProviderAttestation {
             // version [0] EXPLICIT INTEGER DEFAULT 0
             // must be 1!
             cons.take_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(1))?;
+
+            // customerASID is an INTEGER (1..4294967295), so AS0 is not
+            // allowed
             let customer_as = Asn::take_from(cons)?;
             if customer_as == Asn::from_u32(0) {
                 return Err(cons.content_err(
-                    "customer is not allowed to be AS0"
+                    "customer AS is not allowed to be AS0"
                 ));
             }
             let provider_as_set = ProviderAsSet::take_from(
@@ -141,32 +144,57 @@ impl AsProviderAttestation {
         })
     }
 
-    fn verify(
+    fn check_resources(
         &mut self,
-        cert: &ResourceCert,
+        cert: &Cert,
     ) -> Result<(), ValidationError> {
-        // The three bullet points from draft-ietf-sidrops-aspa-profile-12,
-        // section 4.
-        if !cert.as_resources().contains_asn(self.customer_as) {
+        // This checks the first three bullet points from the ASPA profile
+        // draft’s section 4.
+
+        // AS resources on `cert` must be exactly one id, not inherit and not
+        // a range.
+        let as_res = cert.as_resources();
+        if as_res.is_missing() {
             return Err(VerificationError::new(
-                "customer AS not covered by certificate"
-            ).into());
+                "EE certificate is missing AS resources"
+            ).into())
         }
-        if cert.as_cert().has_ip_resources() {
+        let Ok(as_res) = as_res.to_blocks() else {
             return Err(VerificationError::new(
-                "certificate contains IP resources"
-            ).into());
+                "EE certificate contains inherited AS resources"
+            ).into())
+        };
+        let mut block_iter = as_res.iter();
+        let Some(as_block) = block_iter.next() else {
+            return Err(VerificationError::new(
+                "EE certificate contains empty AS resources"
+            ).into())
+        };
+        if block_iter.next().is_some() {
+            return Err(VerificationError::new(
+                "EE certificate contains multiple AS resource blocks"
+            ).into())
         }
-        if let Ok(blocks) = cert.as_cert().as_resources().to_blocks() {
-            if blocks.asn_count() > 1 {
-                return Err(VerificationError::new(
-                    "certificate contains too many AS resources"
-                ).into());
-            }
-        } else {
+        let AsBlock::Id(asn) = as_block else {
             return Err(VerificationError::new(
-                "certificate contains inherited AS resources"
-            ).into());
+                "EE certificate contains AS resource with range"
+            ).into())
+        };
+        if asn != self.customer_as {
+            return Err(VerificationError::new(
+                "EE certificate does not contain customer AS in AS resources"
+            ).into())
+
+        }
+
+        // EE cert must not contain IP resources.
+        if
+               !cert.v4_resources().is_missing()
+            || !cert.v6_resources().is_missing()
+        {
+            return Err(VerificationError::new(
+                "EE certificate is contains IP resources"
+            ).into())
         }
 
         Ok(())
