@@ -26,6 +26,10 @@
 //! * `"extra-debug"`: enables printing stack traces when parsing of a
 //!   repository object fails – this feature should only be used during
 //!   debugging and must not be enabled in release builds.
+//!
+//! # Documentation-only modules
+//!
+//! * [rfcs]: A list of all the RPKI RFCs.
 
 #![allow(renamed_and_removed_lints)]
 #![allow(clippy::unknown_clippy_lints)]
@@ -44,3 +48,5 @@ pub mod uri;
 pub mod util;
 pub mod xml;
 
+// Documentation modules.
+pub mod rfcs;
