@@ -18,6 +18,7 @@ use bcder::{Captured, Mode, OctetString, Oid, Tag};
 use bcder::decode::{ContentError, DecodeError, IntoSource, Source};
 use bcder::encode::PrimitiveContent;
 use bytes::Bytes;
+use crate::repository::ResourceCert;
 use crate::{oid, uri};
 use crate::crypto::{
     KeyIdentifier, PublicKey, RpkiSignatureAlgorithm, SignatureAlgorithm,
@@ -135,6 +136,26 @@ impl Crl {
         self.signed_data.verify_signature(
             public_key
         ).map_err(VerificationError::new)
+    }
+
+    /// Verifies that the CRL claims to have been issued by `issuer`.
+    ///
+    /// This is only the first part of verification. You _must_ call
+    /// `verify_signature`, too.
+    pub fn verify_issuer_claim(
+        &self,
+        issuer: &ResourceCert,
+        _strict: bool,
+    ) -> Result<(), VerificationError> {
+        if self.authority_key_identifier() != 
+            &issuer.as_cert().subject_key_identifier() 
+        {
+            return Err(VerificationError::new(
+                "CRL's Authority Key Identifier doesn't \
+                    match issuer's Subject Key Identifier"
+            ))
+        }
+        Ok(())
     }
 
     pub fn encode_ref(&self) -> impl encode::Values + '_ {

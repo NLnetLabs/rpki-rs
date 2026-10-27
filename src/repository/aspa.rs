@@ -213,9 +213,6 @@ impl AsProviderAttestation {
 /// This type contains the provider AS set in encoded form. It guarantees that
 /// the AS in this set are ordered, free of duplicates and there is at least
 /// one AS.
-///
-/// It does not, at this point, enforce the maximum allowed number of 16380
-/// ASNs. This will be added with the next breaking change.
 #[derive(Clone, Debug)]
 pub struct ProviderAsSet {
     captured: Captured,
