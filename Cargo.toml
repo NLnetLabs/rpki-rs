@@ -17,7 +17,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-base64          = "0.22"
+base64          = "0.23.1"
 bytes           = "1.11"
 log             = "0.4.7"
 uuid            = "1.1"
