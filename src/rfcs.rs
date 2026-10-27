@@ -98,11 +98,11 @@
 //!
 //! ## RTR
 //!
-//! * [RFC 6810](https://www.rfc-editor.org/info/rfc6810)** “The Resource
+//! * [RFC 6810](https://www.rfc-editor.org/info/rfc6810) “The Resource
 //!   Public Key Infrastructure (RPKI) to Router Protocol”
 //! * **[RFC 8210](https://www.rfc-editor.org/info/rfc8210)** “The Resource
 //!   Public Key Infrastructure (RPKI) to Router Protocol, Version 1”
-//! * [RFC 6945](https://www.rfc-editor.org/info/rfc6945)** “Definitions of
+//! * [RFC 6945](https://www.rfc-editor.org/info/rfc6945) “Definitions of
 //!   Managed Objects for the Resource Public Key Infrastructure (RPKI) to
 //!   Router Protocol”
 //!
