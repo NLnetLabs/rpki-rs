@@ -620,7 +620,7 @@ mod signer_test {
 ///
 /// ASProviderAttestation ::= SEQUENCE {
 ///     version       [0] EXPLICIT INTEGER DEFAULT 0,
-///     customerASID  ASID,
+///     customerASN   ASID,
 ///     providers     ProviderASSet
 /// }
 ///
