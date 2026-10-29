@@ -1060,6 +1060,7 @@ name = "rpki"
 version = "0.20.1"
 dependencies = [
  "arbitrary",
+ "async-compression",
  "aws-lc-rs",
  "base64",
  "bcder",
