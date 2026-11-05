@@ -32,7 +32,7 @@
 //!   in Resource Public Key Infrastructure (RPKI) Certificates”
 //! * [RFC 9255](https://www.rfc-editor.org/info/rfc9255) “The 'I' in RPKI
 //!   Does Not Stand for Identity”
-//! * [RFC 6485](https://www.rfc-editor.org/info/rfc6485)** “The Profile
+//! * [RFC 6485](https://www.rfc-editor.org/info/rfc6485) “The Profile
 //!   for Algorithms and Key Sizes for Use in the Resource Public Key
 //!   Infrastructure.”
 //!   * **[RFC 7935](https://www.rfc-editor.org/info/rfc8360)** “The Profile
