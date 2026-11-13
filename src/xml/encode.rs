@@ -162,10 +162,10 @@ impl<'a, W: io::Write> Element<'a, W> {
     ) -> Result<Self, io::Error> {
         writer.write_all(b"<")?;
         if let Some(ns) = tag.namespace() {
-            writer.write_all(ns)?;
+            writer.write_all(ns.as_ref())?;
             writer.write_all(b":")?;
         }
-        writer.write_all(tag.local())?;
+        writer.write_all(tag.local().as_ref())?;
         Ok(Element { writer, tag, empty: true })
     }
 
@@ -215,10 +215,10 @@ impl<'a, W: io::Write> Element<'a, W> {
             self.writer.write_indent()?;
             self.writer.write_all(b"</")?;
             if let Some(ns) = self.tag.namespace() {
-                self.writer.write_all(ns)?;
+                self.writer.write_all(ns.as_ref())?;
                 self.writer.write_all(b":")?;
             }
-            self.writer.write_all(self.tag.local())?;
+            self.writer.write_all(self.tag.local().as_ref())?;
             self.writer.write_all(b">")?;
         }
         Ok(())
@@ -497,9 +497,9 @@ impl TextEscape {
 mod test {
     use super::*;
 
-    const ROOT_TAG: Name = Name::unqualified(b"root");
-    const OUTER_TAG: Name = Name::unqualified(b"outer");
-    const INNER_TAG: Name = Name::unqualified(b"inner");
+    const ROOT_TAG: Name = Name::unqualified("root");
+    const OUTER_TAG: Name = Name::unqualified("outer");
+    const INNER_TAG: Name = Name::unqualified("inner");
 
     #[test]
     fn xml_doc_should_not_be_wrapped_with_whitespace() -> io::Result<()> {

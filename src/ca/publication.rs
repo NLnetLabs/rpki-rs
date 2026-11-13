@@ -34,16 +34,16 @@ use super::sigmsg::SignedMessage;
 
 // Constants for the RFC 8183 XML
 const VERSION: &str = "4";
-const NS: &[u8] = b"http://www.hactrn.net/uris/rpki/publication-spec/";
+const NS: &str = "http://www.hactrn.net/uris/rpki/publication-spec/";
 
-const MSG: &[u8] = b"msg";
-const LIST: &[u8] = b"list";
-const SUCCESS: &[u8] = b"success";
-const PUBLISH: &[u8] = b"publish";
-const WITHDRAW: &[u8] = b"withdraw";
-const REPORT_ERROR: &[u8] = b"report_error";
-const ERROR_TEXT: &[u8] = b"error_text";
-const FAILED_PDU: &[u8] = b"failed_pdu";
+const MSG: &str = "msg";
+const LIST: &str = "list";
+const SUCCESS: &str = "success";
+const PUBLISH: &str = "publish";
+const WITHDRAW: &str = "withdraw";
+const REPORT_ERROR: &str = "report_error";
+const ERROR_TEXT: &str = "error_text";
+const FAILED_PDU: &str = "failed_pdu";
 
 // Content-type for HTTP(s) exchanges
 pub const CONTENT_TYPE: &str = "application/rpki-publication";
@@ -234,13 +234,13 @@ impl Message {
             }
             
             element.attributes(|name, value| match name {
-                b"version" => {
+                "version" => {
                     if value.ascii_into::<String>()? != VERSION {
                         return Err(XmlError::Malformed)
                     }
                     Ok(())
                 }
-                b"type" => {
+                "type" => {
                     kind = Some(match value.ascii_into::<String>()?.as_str() {
                         "query" => Ok(MessageKind::Query),
                         "reply" => Ok(MessageKind::Reply),
@@ -424,11 +424,11 @@ impl QueryPdu {
             // at this point so it does not matter that not all attributes
             // are applicable to all element types.
             element.attributes(|name, value| match name {
-                b"tag" => {
+                "tag" => {
                     tag = Some(value.ascii_into()?);
                     Ok(())
                 }
-                b"hash" => {
+                "hash" => {
                     let hex: String = value.ascii_into()?;
                     if let Ok(hash_value) =rrdp::Hash::from_str(&hex) {
                         hash = Some(hash_value);
@@ -437,7 +437,7 @@ impl QueryPdu {
                         Err(XmlError::Malformed)
                     }
                 }
-                b"uri" => {
+                "uri" => {
                     uri = Some(value.ascii_into()?);
                     Ok(())
                 }
@@ -898,7 +898,7 @@ impl Reply {
                 // at this point so it does not matter that not all attributes
                 // are applicable to all element types.
                 element.attributes(|name, value| match name {
-                    b"hash" => {
+                    "hash" => {
                         let hex: String = value.ascii_into()?;
                         if let Ok(hash_value) =rrdp::Hash::from_str(&hex) {
                             hash = Some(hash_value);
@@ -907,15 +907,15 @@ impl Reply {
                             Err(XmlError::Malformed)
                         }
                     }
-                    b"uri" => {
+                    "uri" => {
                         uri = Some(value.ascii_into()?);
                         Ok(())
                     }
-                    b"tag" => {
+                    "tag" => {
                         tag = Some(value.ascii_into()?);
                         Ok(())
                     }
-                    b"error_code" => {
+                    "error_code" => {
                         // let error_code_str = value.ascii_into()?;
                         error_code = Some(value.ascii_into()?);
                         Ok(())
