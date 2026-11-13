@@ -113,12 +113,12 @@
 //!
 //! ## Provisioning
 //!
-//! * **[RFC 8183](https://www.rfc-editor.org/info/rfc8181])** “An
+//! * **[RFC 8183](https://www.rfc-editor.org/info/rfc8183)** “An
 //!   Out-of-Band Setup Protocol for Resource Public Key Infrastructure
 //!   (RPKI) Production Services”
-//! * **[RFC 6492](https://www.rfc-editor.org/info/rfc6492])** “A Protocol
+//! * **[RFC 6492](https://www.rfc-editor.org/info/rfc6492)** “A Protocol
 //!   for Provisioning Resource Certificates”
-//! * **[RFC 8181](https://www.rfc-editor.org/info/rfc8181])** “A Publication
+//! * **[RFC 8181](https://www.rfc-editor.org/info/rfc8181)** “A Publication
 //!   Protocol for the Resource Public Key Infrastructure (RPKI)”
 //!
 //! ## Other
