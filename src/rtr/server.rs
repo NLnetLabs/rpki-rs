@@ -123,7 +123,7 @@ impl Socket for tokio::net::TcpStream { }
 /// The server takes a stream socket listener – a stream of new sockets – and
 /// a VRP source and serves RTR data. In order to also serve notifications
 /// whenever new data is available, the server uses a notification dispatch
-/// system via the [`Dispatch`] system.
+/// system via the [`NotifySender`] system.
 pub struct Server<Listener, Source> {
     /// The listener socket.
     listener: Listener,

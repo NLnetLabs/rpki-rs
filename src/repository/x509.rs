@@ -425,9 +425,9 @@ impl Serial {
     fn div_assign_u8(&mut self, rhs: u8) -> u8 {
         let mut step: u16 = 0;
         let rhs = u16::from(rhs);
-        for i in 0..20 {
-            step = step.overflowing_shl(8).0 + u16::from(self.0[i]);
-            self.0[i] = (step / rhs) as u8;
+        for d in &mut self.0 {
+            step = (step << 8) + u16::from(*d);
+            *d = (step / rhs) as u8;
             step %= rhs;
         }
         step as u8
