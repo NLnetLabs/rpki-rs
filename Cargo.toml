@@ -1,6 +1,6 @@
 [package]
 name = "rpki"
-version = "0.20.0"
+version = "0.20.1"
 rust-version = "1.87"
 edition = "2024"
 authors = ["NLnet Labs <rpki-team@nlnetlabs.nl>"]
@@ -17,21 +17,21 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-base64          = "0.22"
+base64          = "0.23.1"
 bytes           = "1.11"
-log             = "0.4.7"
-uuid            = "1.1"
 
 arbitrary       = { version = "1", optional = true, features = ["derive"] }
-bcder           = { version = "0.7.6", optional = true }
-chrono          = { version = "0.4.35", features = [ "serde" ] }
-futures-util    = { version = "0.3", optional = true }
-num-bigint      = { version = "0.4.6", optional = true }
-quick-xml       = { version = "0.39.4", optional = true }
 aws-lc-rs       = { version = "1.16.2", optional = true }
+bcder           = { version = "0.7.7", optional = true }
+chrono          = { version = "0.4.35", optional = true, features = [ "serde" ] }
+futures-util    = { version = "0.3", optional = true }
+log             = { version = "0.4.7", optional = true }
+num-bigint      = { version = "0.4.6", optional = true }
+quick-xml       = { version = "0.42.0", optional = true }
 serde           = { version = "1.0.228", optional = true, features = [ "derive" ] }
 serde_json      = { version = "1.0.40", optional = true }
 tokio           = { version = "1.0", optional = true, features = ["io-util",  "net", "rt", "sync", "time"] }
+uuid            = { version  = "1.1", optional = true }
 
 [dev-dependencies]
 serde_json      = "1.0.40"
@@ -54,14 +54,14 @@ async-compression = { version = "0.4.32" }
 
 
 [features]
-default = []
+default = [ "repository", "rrdp" ]
 
 # Main components of the crate.
-ca         = [ "repository", "serde-support", "rrdp" ]
+ca         = [ "repository", "serde-support", "rrdp", "dep:log", "dep:chrono" ]
 crypto     = [ "bcder", "aws-lc-rs" ]
-repository = [ "bcder", "crypto" ]
-rrdp       = [ "xml", "aws-lc-rs" ]
-rtr        = [ "futures-util", "tokio" ]
+repository = [ "bcder", "crypto", "dep:log", "dep:chrono" ]
+rrdp       = [ "xml", "aws-lc-rs", "dep:log", "dep:uuid" ]
+rtr        = [ "futures-util", "tokio", "dep:log" ]
 slurm      = [ "rtr", "serde-support", "serde_json" ]
 
 # Feature that provides compatibility with (technically incorrect) objects

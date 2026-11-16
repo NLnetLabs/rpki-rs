@@ -325,8 +325,8 @@ pub struct AspaFilter {
     #[serde(with = "self::serde_opt_asn")]
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "customerAsid")]
-    pub customer_asid: Option<Asn>,
+    #[serde(rename = "customerAsn")]
+    pub customer_asn: Option<Asn>,
 
     /// An optional cpmment.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -336,15 +336,15 @@ pub struct AspaFilter {
 impl AspaFilter {
     /// Creates a new aspa filter.
     pub fn new(
-        customer_asid: Option<Asn>, comment: Option<String>
+        customer_asn: Option<Asn>, comment: Option<String>
     ) -> Self {
-        AspaFilter { customer_asid, comment }
+        AspaFilter { customer_asn, comment }
     }
 
     /// Returns whether a vap should be dropped.
-    pub fn drop_aspa(&self, aspa: &rtr::Aspa) -> bool {
-        let drop_vap = self.customer_asid.map(|self_asid| {
-            self_asid == aspa.customer
+    pub fn drop_aspa(&self, customer: Asn) -> bool {
+        let drop_vap = self.customer_asn.map(|self_asid| {
+            self_asid == customer
         });
 
         drop_vap.unwrap_or(false)
@@ -353,7 +353,7 @@ impl AspaFilter {
     /// Returns whether the given payload item should be dropped.
     pub fn drop_payload(&self, payload: &rtr::Payload) -> bool {
         match payload {
-            rtr::Payload::Aspa(aspa) => self.drop_aspa(aspa),
+            rtr::Payload::Aspa(aspa) => self.drop_aspa(aspa.customer),
             _ => false
         }
     }

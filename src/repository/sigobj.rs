@@ -81,6 +81,10 @@ impl SignedObject {
     pub fn signing_time(&self) -> Time {
         self.signing_time
     }
+
+    pub fn digest_algorithm(&self) -> DigestAlgorithm {
+        self.digest_algorithm
+    }
 }
 
 /// # Decoding, Validation, and Encoding
@@ -227,6 +231,30 @@ impl SignedObject {
         self.cert.validate_ee_at(issuer, strict, now)
     }
 
+    /// Validates the signed object.
+    ///
+    /// Upon success, the method returns the validated EE certificate of the
+    /// object.
+    pub fn validate_detached(
+        self,
+        issuer: &ResourceCert,
+        strict: bool,
+    ) -> Result<ResourceCert, ValidationError> {
+        self.validate_detached_at(issuer, strict, Time::now())
+    }
+
+    /// Validates the signed object at he given time.
+    pub fn validate_detached_at(
+        self,
+        issuer: &ResourceCert,
+        strict: bool,
+        now: Time,
+    ) -> Result<ResourceCert, ValidationError> {
+        self.inspect(strict)?;
+        self.verify(strict)?;
+        self.cert.validate_detached_ee_at(issuer, strict, now)
+    }
+
     /// Validates that the signed object complies with the specification.
     ///
     /// This is item 1 of [RFC 6488]`s section 3.
@@ -263,6 +291,13 @@ impl SignedObject {
                 "message digest mismatch in signed object"
             ))
         }
+
+        if self.signing_time() > self.cert().validity().not_after() {
+            return Err(VerificationError::new(
+                "signing time is after not_after validity time"
+            ));
+        }
+
         let msg = self.signed_attrs.encode_verify();
         self.cert.subject_public_key_info().verify(
             &msg,
@@ -1183,19 +1218,12 @@ mod signer_test {
 /// Time                    ::= CHOICE {
 ///     utcTime                 UTCTime,
 ///     generalizedTime         GeneralizedTime }
-///
-/// BinarySigningTime       ::= BinaryTime
-///
-/// BinaryTime              ::= INTEGER (0..MAX)
 /// ```
 ///
-/// The two mandatory attributes are _ContentType_ and _MessageDigest_. The
-/// content type attribute must be the same as the _eContentType_ field of
-/// the _encapContentInfo_. The message digest attribute contains the digest
-/// value of the (actual) content.
-///
-/// The _SigningTime_ and _BinarySigningTime_ attributes are optional. Their
-/// presence is not considered when validating a signed object.
+/// The three mandatory attributes are _ContentType_, _MessageDigest_, and
+/// _SigningTime. The content type attribute must be the same as the 
+/// _eContentType_ field of the _encapContentInfo_. The message digest 
+/// attribute contains the digest value of the (actual) content.
 ///
 /// No other attribute may be present.
 ///
