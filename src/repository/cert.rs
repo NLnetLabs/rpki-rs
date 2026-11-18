@@ -2819,7 +2819,7 @@ impl fmt::Display for UnexpectedCriticalExtension {
 
 //------------ IssuerError ---------------------------------------------------
 
-/// An error happened when decoding the certificate’s subject.
+/// An error happened when decoding the certificate’s issuer.
 #[derive(Debug)]
 struct IssuerError(InspectionError);
 
@@ -2831,7 +2831,7 @@ impl From<IssuerError> for InspectionError {
 
 impl fmt::Display for IssuerError{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "invalid subject: {}", self.0)
+        write!(f, "invalid issuer: {}", self.0)
     }
 }
 
